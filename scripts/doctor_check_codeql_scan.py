@@ -67,8 +67,16 @@ def _gh_api(path, run):
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "", "", exc
-    stdout = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
-    stderr = done.stderr.decode("utf-8", "replace") if isinstance(done.stderr, bytes) else (done.stderr or "")
+    stdout = (
+        done.stdout.decode("utf-8", "replace")
+        if isinstance(done.stdout, bytes)
+        else (done.stdout or "")
+    )
+    stderr = (
+        done.stderr.decode("utf-8", "replace")
+        if isinstance(done.stderr, bytes)
+        else (done.stderr or "")
+    )
     return done.returncode, stdout, stderr, None
 
 
@@ -120,14 +128,24 @@ CODEQL_LANGUAGE_FAMILIES = {
 #: "present outside the owned paths" locally -- see the module docstring's
 #: third bullet for what this can and cannot claim.
 _EXTENSION_FAMILIES = {
-    ".c": "c-cpp", ".h": "c-cpp", ".cc": "c-cpp", ".cpp": "c-cpp",
-    ".cxx": "c-cpp", ".hpp": "c-cpp", ".hxx": "c-cpp",
+    ".c": "c-cpp",
+    ".h": "c-cpp",
+    ".cc": "c-cpp",
+    ".cpp": "c-cpp",
+    ".cxx": "c-cpp",
+    ".hpp": "c-cpp",
+    ".hxx": "c-cpp",
     ".cs": "csharp",
     ".go": "go",
-    ".java": "java-kotlin", ".kt": "java-kotlin", ".kts": "java-kotlin",
-    ".js": "javascript-typescript", ".jsx": "javascript-typescript",
-    ".mjs": "javascript-typescript", ".cjs": "javascript-typescript",
-    ".ts": "javascript-typescript", ".tsx": "javascript-typescript",
+    ".java": "java-kotlin",
+    ".kt": "java-kotlin",
+    ".kts": "java-kotlin",
+    ".js": "javascript-typescript",
+    ".jsx": "javascript-typescript",
+    ".mjs": "javascript-typescript",
+    ".cjs": "javascript-typescript",
+    ".ts": "javascript-typescript",
+    ".tsx": "javascript-typescript",
     ".py": "python",
     ".rb": "ruby",
     ".swift": "swift",
@@ -211,7 +229,9 @@ def _local_families_outside_owned(project_dir, owned_dir):
             pruned = []
             for name in dirnames:
                 child = "{}/{}".format(relroot, name) if relroot else name
-                if name in _SKIP_DIR_NAMES or _is_owned_relpath(child, owned_dir, owned_files_outside_dir):
+                if name in _SKIP_DIR_NAMES or _is_owned_relpath(
+                    child, owned_dir, owned_files_outside_dir
+                ):
                     pruned.append(name)
             for name in pruned:
                 dirnames.remove(name)
@@ -285,9 +305,14 @@ def _default_setup_state(slug, run):
     A clean 404 IS an answer -- the endpoint reports no default setup here --
     and is the issue's own second outcome.
     """
-    rc, out, err, exc = _gh_api("repos/{}/code-scanning/default-setup".format(slug), run)
+    rc, out, err, exc = _gh_api(
+        "repos/{}/code-scanning/default-setup".format(slug), run
+    )
     if exc is not None:
-        return "unknown", "gh api .../code-scanning/default-setup did not run ({})".format(exc)
+        return (
+            "unknown",
+            "gh api .../code-scanning/default-setup did not run ({})".format(exc),
+        )
     status = _classify_gh_api_status(rc, out, err)
     if status == "not-found":
         return "not-configured", None
@@ -307,9 +332,15 @@ def _default_setup_state(slug, run):
     try:
         body = json.loads(out or "{}")
     except ValueError:
-        return "unknown", "the code-scanning/default-setup response did not parse as JSON"
+        return (
+            "unknown",
+            "the code-scanning/default-setup response did not parse as JSON",
+        )
     if not isinstance(body, dict):
-        return "unknown", "the code-scanning/default-setup response was not a JSON object"
+        return (
+            "unknown",
+            "the code-scanning/default-setup response was not a JSON object",
+        )
     state = body.get("state")
     if state == "configured":
         languages = body.get("languages")
@@ -317,14 +348,20 @@ def _default_setup_state(slug, run):
             return (
                 "unknown",
                 "code-scanning/default-setup reports state=configured for {} and carried "
-                "no languages list, so which families it covers could not be read".format(slug),
+                "no languages list, so which families it covers could not be read".format(
+                    slug
+                ),
             )
-        return "configured", [name.lower() for name in languages if isinstance(name, str)]
+        return "configured", [
+            name.lower() for name in languages if isinstance(name, str)
+        ]
     if state == "not-configured":
         return "not-configured", None
     return (
         "unknown",
-        "code-scanning/default-setup for {} carried no recognised state (got {!r})".format(slug, state),
+        "code-scanning/default-setup for {} carried no recognised state (got {!r})".format(
+            slug, state
+        ),
     )
 
 
@@ -352,10 +389,17 @@ def codeql_scan_state(project_dir, config=None, run=None):
         return "could-not-tell", reason
     rc, out, err, exc = _gh_api("repos/{}/languages".format(slug), run_)
     if exc is not None:
-        return "could-not-tell", "gh api repos/{}/languages did not run ({})".format(slug, exc)
+        return "could-not-tell", "gh api repos/{}/languages did not run ({})".format(
+            slug, exc
+        )
     status = _classify_gh_api_status(rc, out, err)
     if status == "forbidden":
-        return "could-not-tell", "reading repos/{}/languages returned a permission error (HTTP 403)".format(slug)
+        return (
+            "could-not-tell",
+            "reading repos/{}/languages returned a permission error (HTTP 403)".format(
+                slug
+            ),
+        )
     if status != "ok":
         return (
             "could-not-tell",
@@ -366,14 +410,22 @@ def codeql_scan_state(project_dir, config=None, run=None):
     try:
         languages = json.loads(out or "{}")
     except ValueError:
-        return "could-not-tell", "repos/{}/languages response did not parse as JSON".format(slug)
+        return (
+            "could-not-tell",
+            "repos/{}/languages response did not parse as JSON".format(slug),
+        )
     if not isinstance(languages, dict):
-        return "could-not-tell", "repos/{}/languages response was not a JSON object".format(slug)
+        return (
+            "could-not-tell",
+            "repos/{}/languages response was not a JSON object".format(slug),
+        )
 
     supported_families = {
         CODEQL_LANGUAGE_FAMILIES[name]
         for name, byte_count in languages.items()
-        if name in CODEQL_LANGUAGE_FAMILIES and isinstance(byte_count, int) and byte_count > 0
+        if name in CODEQL_LANGUAGE_FAMILIES
+        and isinstance(byte_count, int)
+        and byte_count > 0
     }
     owned_dir = _default_owned_dir()
     #: Self-review finding: `CODEQL_LANGUAGE_FAMILIES` is a hardcoded

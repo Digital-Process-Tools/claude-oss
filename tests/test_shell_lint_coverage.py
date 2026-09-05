@@ -52,7 +52,8 @@ SHELLS = {"sh", "bash", "dash", "ksh", "ash", "zsh"}
 def _tracked():
     done = subprocess.run(
         ["git", "-C", str(REPO_ROOT), "ls-files", "-z"],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     if done.returncode != 0:
         pytest.skip("git ls-files failed here: {!r}".format(done.stderr[-200:]))
@@ -142,7 +143,9 @@ def test_the_enumerator_covers_every_tracked_shell_source():
 def _run(args, cwd=None):
     return subprocess.run(
         [sys.executable, str(REPO_ROOT / "scripts" / "shell_sources.py")] + args,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=cwd,
     )
 
 
@@ -150,7 +153,8 @@ def _git_repo(path):
     path.mkdir(parents=True, exist_ok=True)
     done = subprocess.run(
         ["git", "init", "-q", str(path)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     if done.returncode != 0:
         pytest.skip("git init failed here: {!r}".format(done.stderr[-200:]))
@@ -293,7 +297,7 @@ def _shell_job_lines(text):
             break
     assert start is not None, "no `shell:` job in {}".format(WORKFLOW)
     body = []
-    for line in lines[start + 1:]:
+    for line in lines[start + 1 :]:
         if line.strip() and not line.startswith("    "):
             break
         body.append(line)

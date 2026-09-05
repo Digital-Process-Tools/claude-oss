@@ -141,14 +141,16 @@ _ARG_ALTERNATION = "(?:" + _QUOTED_ARG + "|" + _BARE_ARG + ")"
 #: only the word characters a boundary already covers.
 _CALL_RE = re.compile(
     r"(?:\./|\$\{CLAUDE_PLUGIN_ROOT\}/)?(?<![\w.-])supertool(?![\w.-])[ \t]+"
-    + "(" + _ARG_ALTERNATION + r"(?:[ \t]+" + _ARG_ALTERNATION + r")*)"
+    + "("
+    + _ARG_ALTERNATION
+    + r"(?:[ \t]+"
+    + _ARG_ALTERNATION
+    + r")*)"
 )
 
 #: One argument out of a matched call. Written as concatenated raw strings so
 #: neither quote character has to be escaped inside the other.
-_ARG_RE = re.compile(
-    r"'([^'\n]*)'" + r'|"([^"\n]*)"' + "|(" + _BARE_ARG + ")"
-)
+_ARG_RE = re.compile(r"'([^'\n]*)'" + r'|"([^"\n]*)"' + "|(" + _BARE_ARG + ")")
 
 #: The op name is the leading segment of an op string, before its first colon.
 #: An argument that does not start with one -- `@-`, `<N>`, a placeholder in
@@ -507,7 +509,11 @@ def supertool_roster(run=None, which=None, cwd=None):
     try:
         completed = run(argv, **kwargs)
     except (OSError, subprocess.SubprocessError) as exc:
-        return "could-not-ask", set(), "`supertool {}` did not run ({})".format(ROSTER_OP, exc)
+        return (
+            "could-not-ask",
+            set(),
+            "`supertool {}` did not run ({})".format(ROSTER_OP, exc),
+        )
     if completed.returncode != 0:
         return (
             "could-not-ask",
@@ -520,7 +526,11 @@ def supertool_roster(run=None, which=None, cwd=None):
     # `ValueError`, so the guard above would not catch it -- out of a script
     # contracted to exit 0. `check_tool` in `doctor.py` records the same trap.
     stdout = completed.stdout
-    text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+    text = (
+        stdout.decode("utf-8", "replace")
+        if isinstance(stdout, bytes)
+        else str(stdout or "")
+    )
     available = parse_roster(text)
     if control not in available:
         return (
@@ -548,7 +558,9 @@ def supertool_op_inventory(plugin_root=None, run=None, which=None, cwd=None):
     `present` is the same defect as reporting an unread roster as one.
     """
     named, roots = named_ops(plugin_root)
-    unreadable = [(name, detail) for name, state, detail in roots if state == "unreadable"]
+    unreadable = [
+        (name, detail) for name, state, detail in roots if state == "unreadable"
+    ]
     # #748: a file carrying the op table's own shape under a heading that no
     # longer matches `_OP_TABLE_HEADING` narrows `named` silently -- the same
     # class of gap `unreadable` above already carries, and it is folded into
@@ -590,7 +602,8 @@ def supertool_op_inventory(plugin_root=None, run=None, which=None, cwd=None):
             "this plugin were not, and {} file(s) carry an op-table-shaped block "
             "under a heading that no longer matches `_OP_TABLE_HEADING`, so "
             "whether every op it names resolves is unknown: {}; {}".format(
-                len(unreadable), len(drifted),
+                len(unreadable),
+                len(drifted),
                 "; ".join("{}: {}".format(n, d) for n, d in unreadable),
                 ", ".join(drifted),
             )

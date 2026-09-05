@@ -309,8 +309,9 @@ def _scope(repo, match, config):
             # -- and a protection applied to one of two routes reads, in the receipt,
             # exactly like one applied to both.
             return _unscoped(
-                "--match carries a control character, so it is not a tag glob, and {0}"
-                .format(UNSCOPED_CONSEQUENCE),
+                "--match carries a control character, so it is not a tag glob, and {0}".format(
+                    UNSCOPED_CONSEQUENCE
+                ),
                 "--match",
             )
         if match.strip("*") == "":
@@ -324,8 +325,9 @@ def _scope(repo, match, config):
             "scope": match,
             "scope_source": "--match",
             "scope_reason": _one_line_scope(
-                "the previous tag was matched against {0!r}, given with "
-                "--match".format(match)
+                "the previous tag was matched against {0!r}, given with --match".format(
+                    match
+                )
             ),
         }
     if match is not None:

@@ -98,9 +98,7 @@ def test_candidates_state_names_the_issue_and_the_overlapping_paths():
         REPO_ROOT, 851, ["scripts/lane_setup.py"], board
     )
     assert result["state"] == "candidates"
-    assert result["candidates"] == [
-        {"number": 100, "files": ["scripts/lane_setup.py"]}
-    ]
+    assert result["candidates"] == [{"number": 100, "files": ["scripts/lane_setup.py"]}]
 
 
 def test_own_issue_is_excluded_from_the_sweep():
@@ -247,9 +245,7 @@ def test_control_a_readable_declared_path_that_simply_misses_still_reads_none(tm
     not overlap", not collapse both into could-not-tell."""
     (tmp_path / "readable").mkdir()
     (tmp_path / "readable" / "other.py").write_text("x\n")
-    board = _board(
-        [{"number": 200, "title": "see `readable/other.py`", "body": ""}]
-    )
+    board = _board([{"number": 200, "title": "see `readable/other.py`", "body": ""}])
     result = lane_setup.suggest_companions(
         tmp_path, 851, ["scripts/lane_setup.py"], board
     )
@@ -284,9 +280,7 @@ def _run_cli(args, stdin_text=None):
 
 def test_cli_reports_candidates_and_exits_ok():
     board_json = json.dumps(
-        _board(
-            [{"number": 100, "title": "t", "body": "`scripts/lane_setup.py`"}]
-        )
+        _board([{"number": 100, "title": "t", "body": "`scripts/lane_setup.py`"}])
     )
     done = _run_cli(
         ["--suggest-companions", "851", "--lane", "scripts/lane_setup.py"],

@@ -54,7 +54,9 @@ def _run_sequence(responses):
         try:
             rc, out, err = next(it)
         except StopIteration:  # pragma: no cover - a fixture bug, not a product path
-            raise AssertionError("more gh calls than the fixture staged: {}".format(cmd))
+            raise AssertionError(
+                "more gh calls than the fixture staged: {}".format(cmd)
+            )
         return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr=err)
 
     run.calls = calls
@@ -72,12 +74,18 @@ def test_could_not_tell_when_gh_is_not_on_path(tmp_path, monkeypatch):
 
 
 def test_could_not_tell_when_default_branch_is_not_configured(tmp_path):
-    state, _detail = doctor.branch_protection_state(tmp_path, config=_config(default_branch=None))
+    state, _detail = doctor.branch_protection_state(
+        tmp_path, config=_config(default_branch=None)
+    )
     assert state == "could-not-tell"
 
 
 def test_could_not_tell_when_origin_cannot_be_resolved(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor, "_origin_slug", lambda project_dir, run=None: (None, "no readable origin remote here"))
+    monkeypatch.setattr(
+        doctor,
+        "_origin_slug",
+        lambda project_dir, run=None: (None, "no readable origin remote here"),
+    )
     state, detail = doctor.branch_protection_state(tmp_path, config=None)
     assert state == "could-not-tell"
     assert "origin" in detail
@@ -101,10 +109,12 @@ def test_ruleset_covers_it_when_classic_protection_404s(tmp_path):
     """A repo can be covered by a ruleset while the classic endpoint 404s -- the
     issue's own scenario for why both endpoints must be read before concluding
     `not-protected`."""
-    run = _run_sequence([
-        (1, "", "gh: Branch not protected (HTTP 404)"),
-        (0, '[{"id": 1, "name": "main-guard", "enforcement": "active"}]', ""),
-    ])
+    run = _run_sequence(
+        [
+            (1, "", "gh: Branch not protected (HTTP 404)"),
+            (0, '[{"id": 1, "name": "main-guard", "enforcement": "active"}]', ""),
+        ]
+    )
     state, detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
     assert state == "protected"
     assert "ruleset" in detail
@@ -119,10 +129,12 @@ def test_a_disabled_ruleset_does_not_count_as_protection(tmp_path):
     list's mere non-emptiness as `protected` would collapse those two cases the
     same way the issue itself warns against for the 403 case, one level down.
     Must-fire pair for the active-ruleset positive control above."""
-    run = _run_sequence([
-        (1, "", "gh: Branch not protected (HTTP 404)"),
-        (0, '[{"id": 1, "name": "draft-guard", "enforcement": "disabled"}]', ""),
-    ])
+    run = _run_sequence(
+        [
+            (1, "", "gh: Branch not protected (HTTP 404)"),
+            (0, '[{"id": 1, "name": "draft-guard", "enforcement": "disabled"}]', ""),
+        ]
+    )
     state, detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
     assert state == "not-protected"
     assert "main" in detail
@@ -130,14 +142,16 @@ def test_a_disabled_ruleset_does_not_count_as_protection(tmp_path):
 
 def test_a_mix_of_disabled_and_active_rulesets_is_still_protected(tmp_path):
     """Not every ruleset entry has to be active -- only one does."""
-    run = _run_sequence([
-        (1, "", "gh: Branch not protected (HTTP 404)"),
-        (
-            0,
-            '[{"id": 1, "enforcement": "disabled"}, {"id": 2, "enforcement": "active"}]',
-            "",
-        ),
-    ])
+    run = _run_sequence(
+        [
+            (1, "", "gh: Branch not protected (HTTP 404)"),
+            (
+                0,
+                '[{"id": 1, "enforcement": "disabled"}, {"id": 2, "enforcement": "active"}]',
+                "",
+            ),
+        ]
+    )
     state, _detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
     assert state == "protected"
 
@@ -146,10 +160,12 @@ def test_a_mix_of_disabled_and_active_rulesets_is_still_protected(tmp_path):
 
 
 def test_404_on_protection_and_empty_rulesets_is_not_protected(tmp_path):
-    run = _run_sequence([
-        (1, "", "gh: Branch not protected (HTTP 404)"),
-        (0, "[]", ""),
-    ])
+    run = _run_sequence(
+        [
+            (1, "", "gh: Branch not protected (HTTP 404)"),
+            (0, "[]", ""),
+        ]
+    )
     state, detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
     assert state == "not-protected"
     assert "main" in detail
@@ -162,9 +178,11 @@ def test_403_on_protection_is_could_not_tell_never_not_protected(tmp_path):
     """The state most likely to be got wrong (issue's own words): a 403 must not
     collapse into `not-protected`, because it renders identically to "you lack
     permission" and a repo that IS protected can answer this way too."""
-    run = _run_sequence([
-        (1, "", "gh: Resource not accessible by integration (HTTP 403)"),
-    ])
+    run = _run_sequence(
+        [
+            (1, "", "gh: Resource not accessible by integration (HTTP 403)"),
+        ]
+    )
     state, detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
     assert state == "could-not-tell"
     assert "403" in detail
@@ -175,10 +193,12 @@ def test_403_on_protection_is_could_not_tell_never_not_protected(tmp_path):
 
 
 def test_403_on_rulesets_after_a_clean_404_is_still_could_not_tell(tmp_path):
-    run = _run_sequence([
-        (1, "", "gh: Branch not protected (HTTP 404)"),
-        (1, "", "gh: Resource not accessible by integration (HTTP 403)"),
-    ])
+    run = _run_sequence(
+        [
+            (1, "", "gh: Branch not protected (HTTP 404)"),
+            (1, "", "gh: Resource not accessible by integration (HTTP 403)"),
+        ]
+    )
     state, detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
     assert state == "could-not-tell"
     assert "403" in detail
@@ -237,10 +257,12 @@ def test_ordinary_bytes_stdout_still_decodes_and_classifies_correctly(tmp_path):
 
 
 def test_rulesets_response_that_is_not_a_json_list_is_could_not_tell(tmp_path):
-    run = _run_sequence([
-        (1, "", "gh: Branch not protected (HTTP 404)"),
-        (0, '{"unexpected": "shape"}', ""),
-    ])
+    run = _run_sequence(
+        [
+            (1, "", "gh: Branch not protected (HTTP 404)"),
+            (0, '{"unexpected": "shape"}', ""),
+        ]
+    )
     state, _detail = doctor.branch_protection_state(tmp_path, config=_config(), run=run)
     assert state == "could-not-tell"
 
@@ -257,10 +279,12 @@ def test_check_branch_protection_reports_protected(tmp_path, capsys):
 
 
 def test_check_branch_protection_reports_not_protected_with_a_remedy(tmp_path, capsys):
-    run = _run_sequence([
-        (1, "", "gh: Branch not protected (HTTP 404)"),
-        (0, "[]", ""),
-    ])
+    run = _run_sequence(
+        [
+            (1, "", "gh: Branch not protected (HTTP 404)"),
+            (0, "[]", ""),
+        ]
+    )
     doctor.check_branch_protection(tmp_path, config=_config(repo="owner/name"), run=run)
     out = capsys.readouterr().out
     assert doctor.FINDINGS[-1][0] == "WARN"
@@ -270,7 +294,9 @@ def test_check_branch_protection_reports_not_protected_with_a_remedy(tmp_path, c
 def test_check_branch_protection_reports_could_not_tell_distinctly(tmp_path, capsys):
     """Negative control paired with the two tests above: neither OK nor the
     not-protected WARN wording appears when the answer is ambiguous."""
-    run = _run_sequence([(1, "", "gh: Resource not accessible by integration (HTTP 403)")])
+    run = _run_sequence(
+        [(1, "", "gh: Resource not accessible by integration (HTTP 403)")]
+    )
     doctor.check_branch_protection(tmp_path, config=_config(), run=run)
     out = capsys.readouterr().out
     assert doctor.FINDINGS[-1][0] == "WARN"

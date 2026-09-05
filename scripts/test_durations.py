@@ -197,7 +197,9 @@ def write_baseline(path, shape):
         "slowest_share": round(shape["slowest_share"], 6),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return payload
 
 
@@ -242,13 +244,18 @@ def format_report(shape, baseline, baseline_error, state, top_n=DEFAULT_TOP_N):
         lines.append("  {:>9.2f}s  {}".format(seconds, nodeid))
     lines.append(
         "slowest test: {} -- {:.2f}s, {:.1%} of {:.2f}s total".format(
-            shape["slowest_nodeid"], shape["slowest_seconds"], shape["slowest_share"], shape["total_seconds"]
+            shape["slowest_nodeid"],
+            shape["slowest_seconds"],
+            shape["slowest_share"],
+            shape["total_seconds"],
         )
     )
     if state == NO_BASELINE:
         lines.append(
             "baseline: {} ({}) -- nothing recorded to compare against; "
-            "run with --record-duration-baseline to record one".format(NO_BASELINE, baseline_error)
+            "run with --record-duration-baseline to record one".format(
+                NO_BASELINE, baseline_error
+            )
         )
     else:
         delta = shape["slowest_share"] - baseline["slowest_share"]

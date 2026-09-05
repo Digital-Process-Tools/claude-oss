@@ -20,7 +20,9 @@ def test_a_corrupt_receipt_is_not_the_ordinary_no_receipt_state(tmp_path, monkey
     """The must-fire half: a receipt that exists and is broken must WARN, distinctly
     from the OK "hook has not run yet" arm."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(
         plugin_update, "read_receipt", lambda: plugin_update.ReceiptUnreadable("boom")
     )
@@ -35,7 +37,9 @@ def test_no_receipt_at_all_is_still_ok_not_warn(tmp_path, monkeypatch):
     """The must-not-fire control: a receipt that was genuinely never written is still
     the ordinary pre-first-run state, not the broken-receipt WARN above."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(plugin_update, "read_receipt", lambda: None)
     doctor.check_auto_update(str(tmp_path))
     assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
@@ -51,7 +55,9 @@ def test_opt_out_unknown_warns_and_is_neither_on_nor_off_492(tmp_path, monkeypat
     never calls `update`."""
     _reset()
     monkeypatch.setattr(
-        plugin_update, "opt_out", lambda root=None, env=None: ("unknown", ".oss.json (boom)")
+        plugin_update,
+        "opt_out",
+        lambda root=None, env=None: ("unknown", ".oss.json (boom)"),
     )
     monkeypatch.setattr(plugin_update, "read_receipt", lambda: None)
     doctor.check_auto_update(str(tmp_path))
@@ -66,7 +72,9 @@ def test_current_with_no_partial_failure_is_still_ok_521(tmp_path, monkeypatch):
     """The must-not-fire control for the two tests below: a clean `current` receipt --
     no `partial_failure` at all -- must keep reading as OK."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(
         plugin_update,
         "read_receipt",
@@ -87,7 +95,9 @@ def test_current_with_a_partial_failure_warns_and_names_it_521(tmp_path, monkeyp
     transient SSH error. The row must not print the same OK a clean run gets -- the
     failed scope has to reach the one surface a maintainer actually reads."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(
         plugin_update,
         "read_receipt",
@@ -108,12 +118,16 @@ def test_current_with_a_partial_failure_warns_and_names_it_521(tmp_path, monkeyp
     assert "local" in message and "Could not read from remote repository" in message
 
 
-def test_updated_with_a_partial_failure_names_the_failed_scope_too_521(tmp_path, monkeypatch):
+def test_updated_with_a_partial_failure_names_the_failed_scope_too_521(
+    tmp_path, monkeypatch
+):
     """The `updated` arm was already WARN, but it dropped `detail` entirely -- the same
     structural gap #521 found in the `current` arm, just less visible because the state
     itself already read as WARN."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(
         plugin_update,
         "read_receipt",

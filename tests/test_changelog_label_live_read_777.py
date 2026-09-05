@@ -60,11 +60,13 @@ def _gh_shim(output_lines, exit_code=0):
     directory = tempfile.mkdtemp(prefix="oss-gate-gh-shim-")
     atexit.register(shutil.rmtree, directory, True)
     out_file = Path(directory) / "gh.out"
-    out_file.write_text("\n".join(output_lines) + ("\n" if output_lines else ""), encoding="utf-8")
+    out_file.write_text(
+        "\n".join(output_lines) + ("\n" if output_lines else ""), encoding="utf-8"
+    )
     shim = Path(directory) / "gh"
     shim.write_text(
         "#!/bin/sh\n"
-        "if [ \"$1\" = api ]; then\n"
+        'if [ "$1" = api ]; then\n'
         "  cat '{}'\n"
         "  exit {}\n"
         "fi\n"
@@ -100,7 +102,7 @@ def test_permissions_grants_pull_requests_read():
     assert len(perm_lines) == 1, lines
     start = perm_lines[0]
     block = []
-    for line in lines[start + 1:]:
+    for line in lines[start + 1 :]:
         if not line.strip() or line.startswith("  "):
             block.append(line)
             continue
@@ -151,7 +153,9 @@ def test_a_pull_request_carrying_neither_label_is_still_refused(tmp_path):
 # ------------------------------------------------------------ degrade, not fail-closed
 
 
-def test_a_failed_live_read_degrades_to_the_event_payload_rather_than_failing_closed(tmp_path):
+def test_a_failed_live_read_degrades_to_the_event_payload_rather_than_failing_closed(
+    tmp_path,
+):
     """Must fire: `gh` reachable but erroring (a bad scope, an outage, no auth) must
     not redden a board that the payload alone would have kept green -- the read
     degrades to the frozen labels rather than treating a read failure as `no label`."""

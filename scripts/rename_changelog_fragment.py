@@ -216,7 +216,11 @@ def rename(fragment_path, new_issue, use_git=True):
     if use_git:
         git = shutil.which("git")
         if git is None:
-            return REFUSED, "git is not on PATH -- cannot `git mv` {0}".format(old_path), None
+            return (
+                REFUSED,
+                "git is not on PATH -- cannot `git mv` {0}".format(old_path),
+                None,
+            )
         try:
             result = subprocess.run(
                 [git, "mv", "--", str(old_path), str(new_path)],
@@ -235,7 +239,9 @@ def rename(fragment_path, new_issue, use_git=True):
         if result.returncode != 0:
             return (
                 REFUSED,
-                "git mv {0} {1} failed: {2}".format(old_path, new_path, result.stderr.strip()),
+                "git mv {0} {1} failed: {2}".format(
+                    old_path, new_path, result.stderr.strip()
+                ),
                 None,
             )
     else:
@@ -311,8 +317,9 @@ def rename(fragment_path, new_issue, use_git=True):
         if count == 0:
             detail += (
                 " -- the old body never named #{0} either, so nothing here could be moved "
-                "automatically; write (#{1}) into the entry by hand and re-run --check"
-                .format(fragment.issue, new_issue)
+                "automatically; write (#{1}) into the entry by hand and re-run --check".format(
+                    fragment.issue, new_issue
+                )
             )
         return REFUSED, detail, new_path
 
@@ -338,7 +345,9 @@ def main(argv=None):
         "fragment", help="path to the existing fragment, e.g. changelog.d/338.fixed.md"
     )
     parser.add_argument(
-        "new_issue", type=int, help="the issue or pull request number to key the fragment to"
+        "new_issue",
+        type=int,
+        help="the issue or pull request number to key the fragment to",
     )
     parser.add_argument(
         "--no-git",

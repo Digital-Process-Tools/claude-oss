@@ -47,10 +47,15 @@ def test_healthy_tree_reports_undeclared_rows_positive_control(tmp_path):
 
     rows = skill_phases._undeclared_rows(root)
 
-    assert any(r["path"] == "skills/manager/phases/surprise.md" and r["state"] == "undeclared" for r in rows)
+    assert any(
+        r["path"] == "skills/manager/phases/surprise.md" and r["state"] == "undeclared"
+        for r in rows
+    )
 
 
-def test_documents_raising_permission_error_is_not_folded_to_empty(tmp_path, monkeypatch):
+def test_documents_raising_permission_error_is_not_folded_to_empty(
+    tmp_path, monkeypatch
+):
     """Arm 2. When `documents()` raises `PermissionError` (an `OSError`
     subclass), `_undeclared_rows()` must report it as `unreadable`, not
     silently return `[]` -- the fold this issue is about.

@@ -69,7 +69,11 @@ def _plugin_tree(root, contract=5, note="the report contract", schema=True):
         (root / "schemas" / "agent-report.schema.json").write_bytes(
             (
                 json.dumps(
-                    {"x-schema-version": contract, "description": note, "type": "object"},
+                    {
+                        "x-schema-version": contract,
+                        "description": note,
+                        "type": "object",
+                    },
                     indent=2,
                 )
                 + "\n"
@@ -81,7 +85,9 @@ def _plugin_tree(root, contract=5, note="the report contract", schema=True):
 def _copy_line(answered, checkout):
     lines = doctor.plugin_provenance(answered, checkout)
     matched = [(level, message) for level, message in lines if message.startswith(COPY)]
-    assert len(matched) == 1, "expected exactly one {!r} line, got {!r}".format(COPY, lines)
+    assert len(matched) == 1, "expected exactly one {!r} line, got {!r}".format(
+        COPY, lines
+    )
     return matched[0]
 
 
@@ -106,7 +112,7 @@ def test_a_schema_only_difference_is_reported(tmp_path):
 
 
 def test_a_schema_skew_names_both_declared_contract_numbers(tmp_path):
-    """"These bytes differ" is weaker than the fact the reader acts on."""
+    """ "These bytes differ" is weaker than the fact the reader acts on."""
     answered = _plugin_tree(tmp_path / "installed", contract=4)
     checkout = _plugin_tree(tmp_path / "clone", contract=5)
     _, message = _copy_line(answered, checkout)
@@ -125,8 +131,12 @@ def test_bytes_differing_without_the_number_moving_says_the_numbers_agree(tmp_pa
     either: the number is a declaration, and #221 is the case of a number that stayed
     still while the contract moved.
     """
-    answered = _plugin_tree(tmp_path / "installed", contract=5, note="the report contract")
-    checkout = _plugin_tree(tmp_path / "clone", contract=5, note="the agent report contract")
+    answered = _plugin_tree(
+        tmp_path / "installed", contract=5, note="the report contract"
+    )
+    checkout = _plugin_tree(
+        tmp_path / "clone", contract=5, note="the agent report contract"
+    )
     level, message = _copy_line(answered, checkout)
     assert level == "WARN", message
     assert "SKEW" in message
@@ -147,7 +157,9 @@ def test_a_copy_shipping_no_schema_says_the_contract_was_not_established(tmp_pat
     assert "UNVALIDATABLE" not in message, message
 
 
-def test_a_sibling_module_of_the_wrong_shape_does_not_take_out_the_run(tmp_path, monkeypatch):
+def test_a_sibling_module_of_the_wrong_shape_does_not_take_out_the_run(
+    tmp_path, monkeypatch
+):
     """`doctor.main` has no outer `except`, and this check runs from it.
 
     `report_schema.py` is a live file (#416 is editing it as this lands), so
@@ -191,7 +203,9 @@ def test_the_partition_helper_fires_and_stays_silent():
     return anything, so both halves are pinned in one place.
     """
     assert _uncovered({"schemas", "scripts", ".claude-plugin"}) == set()
-    assert _uncovered({"a-directory-nobody-classified"}) == {"a-directory-nobody-classified"}
+    assert _uncovered({"a-directory-nobody-classified"}) == {
+        "a-directory-nobody-classified"
+    }
 
 
 def _empty_reasons(mapping):
@@ -261,7 +275,9 @@ def test_no_not_compared_entry_names_a_path_that_has_left_the_tree():
                 done.returncode, REPO_ROOT
             )
         )
-    top_level = {line.split("/")[0] for line in done.stdout.splitlines() if line.strip()}
+    top_level = {
+        line.split("/")[0] for line in done.stdout.splitlines() if line.strip()
+    }
     assert top_level, "git ls-files returned nothing, so this checked nothing"
     stale = _stale_entries(doctor.NOT_COMPARED_TOP_LEVEL, top_level)
     assert stale == set(), (
@@ -294,7 +310,9 @@ def test_every_tracked_top_level_entry_is_compared_or_documented():
             "git ls-files exited {} in {}, so the tracked top level was not enumerated "
             "and nothing here was checked".format(done.returncode, REPO_ROOT)
         )
-    top_level = {line.split("/")[0] for line in done.stdout.splitlines() if line.strip()}
+    top_level = {
+        line.split("/")[0] for line in done.stdout.splitlines() if line.strip()
+    }
     assert top_level, "git ls-files returned nothing, so this checked nothing"
     assert _uncovered(top_level) == set(), (
         "these top-level entries of the plugin tree are neither in "

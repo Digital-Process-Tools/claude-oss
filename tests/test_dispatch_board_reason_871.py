@@ -61,7 +61,9 @@ def test_no_adjacent_is_unaffected_by_candidates():
 def test_candidates_exactly_at_the_cap_refuses():
     """MAX_LANE candidates remaining is enough to fill a full lane -- the
     board was not exhausted at the boundary either."""
-    answer = dispatch_rank.check_lane([1, 2], "board-exhausted", candidates=dispatch_rank.MAX_LANE)
+    answer = dispatch_rank.check_lane(
+        [1, 2], "board-exhausted", candidates=dispatch_rank.MAX_LANE
+    )
     assert answer["state"] != "ok", answer
 
 
@@ -69,12 +71,16 @@ def test_candidates_exactly_at_the_cap_refuses():
 
 
 def test_cli_lane_mode_accepts_candidates_flag():
-    answer = dispatch_rank.main(["--lane", "1", "2", "--short-reason", "board-exhausted", "--candidates", "1"])
+    answer = dispatch_rank.main(
+        ["--lane", "1", "2", "--short-reason", "board-exhausted", "--candidates", "1"]
+    )
     assert answer == 0
 
 
 def test_cli_lane_mode_refuses_on_candidates_flag(capsys):
-    answer = dispatch_rank.main(["--lane", "1", "2", "--short-reason", "board-exhausted", "--candidates", "5"])
+    answer = dispatch_rank.main(
+        ["--lane", "1", "2", "--short-reason", "board-exhausted", "--candidates", "5"]
+    )
     assert answer != 0
     out = capsys.readouterr().out
     assert "5" in out
@@ -99,14 +105,26 @@ def test_lane_fill_refuses_an_unsupported_board_exhausted_claim():
     declined dispatch to attach to."""
     with pytest.raises(oss_state.StateError, match="board-exhausted"):
         oss_state.lane_fill(
-            [{"primary": 871, "count": 1, "reason": "board-exhausted", "candidates": 4}],
+            [
+                {
+                    "primary": 871,
+                    "count": 1,
+                    "reason": "board-exhausted",
+                    "candidates": 4,
+                }
+            ],
             window=WINDOW,
         )
 
 
 def test_lane_fill_cli_argument_parses_the_fourth_field():
     entry = oss_state._lane_fill_argument("871:1:board-exhausted:1")
-    assert entry == {"primary": 871, "count": 1, "reason": "board-exhausted", "candidates": 1}
+    assert entry == {
+        "primary": 871,
+        "count": 1,
+        "reason": "board-exhausted",
+        "candidates": 1,
+    }
 
 
 # ------------------------------------------------------------------- #953
@@ -153,6 +171,13 @@ def test_lane_fill_still_refuses_a_record_candidates_contradicts():
     proves the board was not exhausted -- must keep refusing."""
     with pytest.raises(oss_state.StateError, match="board-exhausted"):
         oss_state.lane_fill(
-            [{"primary": 953, "count": 1, "reason": "board-exhausted", "candidates": 3}],
+            [
+                {
+                    "primary": 953,
+                    "count": 1,
+                    "reason": "board-exhausted",
+                    "candidates": 3,
+                }
+            ],
             window=WINDOW,
         )

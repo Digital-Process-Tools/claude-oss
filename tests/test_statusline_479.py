@@ -54,7 +54,9 @@ def test_a_cache_missing_a_count_is_unknown_for_that_count_alone():
 
 def _transcript(tmp_path, lines):
     path = tmp_path / "transcript.jsonl"
-    path.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
+    path.write_text(
+        "".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8"
+    )
     return path
 
 
@@ -77,7 +79,9 @@ def test_no_transcript_is_unknown_not_none():
 
 def test_scanned_transcript_without_a_wakeup_reports_none(tmp_path):
     """The must-fire control for the arm above: a file that was read and held nothing."""
-    path = _transcript(tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}])
+    path = _transcript(
+        tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}]
+    )
     tick = statusline.next_tick(str(path), now=0.0)
     assert tick["state"] == "none"
 
@@ -98,16 +102,26 @@ def test_a_wakeup_whose_time_has_passed_is_due_not_armed(tmp_path):
 
 
 def test_a_stop_is_not_an_armed_tick(tmp_path):
-    path = _transcript(tmp_path, [_wakeup("2026-08-22T10:00:00.000Z", 600),
-                                  _wakeup("2026-08-22T10:01:00.000Z", None, stop=True)])
+    path = _transcript(
+        tmp_path,
+        [
+            _wakeup("2026-08-22T10:00:00.000Z", 600),
+            _wakeup("2026-08-22T10:01:00.000Z", None, stop=True),
+        ],
+    )
     now = statusline.parse_timestamp("2026-08-22T10:02:00.000Z")
     tick = statusline.next_tick(str(path), now=now)
     assert tick["state"] == "stopped"
 
 
 def test_the_last_wakeup_wins(tmp_path):
-    path = _transcript(tmp_path, [_wakeup("2026-08-22T10:00:00.000Z", 60),
-                                  _wakeup("2026-08-22T10:01:00.000Z", 3600)])
+    path = _transcript(
+        tmp_path,
+        [
+            _wakeup("2026-08-22T10:00:00.000Z", 60),
+            _wakeup("2026-08-22T10:01:00.000Z", 3600),
+        ],
+    )
     now = statusline.parse_timestamp("2026-08-22T10:02:00.000Z")
     tick = statusline.next_tick(str(path), now=now)
     assert tick["state"] == "armed"
@@ -121,7 +135,9 @@ def test_a_truncated_scan_reports_unknown_rather_than_none(tmp_path):
     start of a long session is below the window, and "I did not look there" must not
     render as "nothing is armed".
     """
-    path = _transcript(tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}] * 40)
+    path = _transcript(
+        tmp_path, [{"timestamp": "2026-08-22T10:00:00.000Z", "message": {}}] * 40
+    )
     tick = statusline.next_tick(str(path), now=0.0, max_bytes=200)
     assert tick["state"] == "unknown"
 
@@ -194,7 +210,9 @@ def test_an_unparseable_version_does_not_erase_a_readable_one(tmp_path):
     assert statusline.installed_plugins(None, tmp_path)["oss"]["version"] == "0.10.0"
 
 
-def test_installed_plugins_is_resolved_per_project_not_the_newest_anywhere_521(tmp_path):
+def test_installed_plugins_is_resolved_per_project_not_the_newest_anywhere_521(
+    tmp_path,
+):
     """#521: two projects, two entries, two different versions. The pre-fix behaviour
     (`max()` over the whole table) reported the higher one for both projects; resolved
     per project, each sees its own pin."""
@@ -207,8 +225,16 @@ def test_installed_plugins_is_resolved_per_project_not_the_newest_anywhere_521(t
             {
                 "plugins": {
                     "oss@dpt": [
-                        {"version": "9.9.8", "scope": "project", "projectPath": str(behind)},
-                        {"version": "9.9.9", "scope": "project", "projectPath": str(ahead)},
+                        {
+                            "version": "9.9.8",
+                            "scope": "project",
+                            "projectPath": str(behind),
+                        },
+                        {
+                            "version": "9.9.9",
+                            "scope": "project",
+                            "projectPath": str(ahead),
+                        },
                     ]
                 }
             }
@@ -229,7 +255,11 @@ def test_a_project_current_on_its_own_entry_still_reports_current_521(tmp_path):
             {
                 "plugins": {
                     "oss@dpt": [
-                        {"version": "9.9.9", "scope": "project", "projectPath": str(here)},
+                        {
+                            "version": "9.9.9",
+                            "scope": "project",
+                            "projectPath": str(here),
+                        },
                     ]
                 }
             }
@@ -251,7 +281,11 @@ def test_a_project_with_no_matching_entry_has_no_version_521(tmp_path):
             {
                 "plugins": {
                     "oss@dpt": [
-                        {"version": "9.9.9", "scope": "project", "projectPath": str(elsewhere)},
+                        {
+                            "version": "9.9.9",
+                            "scope": "project",
+                            "projectPath": str(elsewhere),
+                        },
                     ]
                 }
             }
@@ -269,11 +303,13 @@ def test_normalized_path_folds_case_on_windows_521():
     intentionally unobserved here -- this test runs on every platform and only asserts
     the Windows-observable half."""
     if os.name == "nt":
-        assert statusline._normalized_path("C:\\Users\\Me\\Proj") == statusline._normalized_path(
-            "c:\\users\\me\\proj"
-        )
+        assert statusline._normalized_path(
+            "C:\\Users\\Me\\Proj"
+        ) == statusline._normalized_path("c:\\users\\me\\proj")
     else:
-        assert statusline._normalized_path("/tmp/Proj") != statusline._normalized_path("/tmp/proj")
+        assert statusline._normalized_path("/tmp/Proj") != statusline._normalized_path(
+            "/tmp/proj"
+        )
 
 
 # --------------------------------------------------------------------- gather
@@ -342,7 +378,10 @@ def _facts(**overrides):
         "last": "23:47",
         "plugins": [
             ("oss", {"state": "current", "installed": "0.10.0", "latest": "0.10.0"}),
-            ("supertool", {"state": "behind", "installed": "0.48.0", "latest": "0.49.0"}),
+            (
+                "supertool",
+                {"state": "behind", "installed": "0.48.0", "latest": "0.49.0"},
+            ),
         ],
         # #613: `render()` reads `facts.get("channel")`, so it must be a key here
         # too, or `test_facts_fixture_carries_every_top_level_key_render_reads`
@@ -409,17 +448,20 @@ def test_render_states_the_measured_board():
 
 def test_render_never_prints_a_zero_for_an_unknown_board():
     """The must-not-fire half. Paired with the test above, which proves it can print."""
-    line = statusline.render(_facts(board={"prs": None, "issues": None}),
-                             ascii_only=True)
+    line = statusline.render(
+        _facts(board={"prs": None, "issues": None}), ascii_only=True
+    )
     assert "?pr" in line and "?is" in line
     assert "0pr" not in line and "0is" not in line
 
 
 def test_render_distinguishes_a_zero_board_from_an_unknown_one():
-    zero = statusline.render(_facts(board={"prs": 0, "issues": 0, "age": 1}),
-                             ascii_only=True)
-    unknown = statusline.render(_facts(board={"prs": None, "issues": None}),
-                                ascii_only=True)
+    zero = statusline.render(
+        _facts(board={"prs": 0, "issues": 0, "age": 1}), ascii_only=True
+    )
+    unknown = statusline.render(
+        _facts(board={"prs": None, "issues": None}), ascii_only=True
+    )
     assert zero != unknown
     assert "0pr" in zero
 
@@ -658,7 +700,9 @@ def test_a_newline_and_escape_in_a_dependency_name_do_not_reach_the_line():
     # would pass without folding anything.
     hostile = "\nFAKE STATUS LINE\x1b[31mX"
     facts = _facts(
-        plugins=[(hostile, {"state": "behind", "installed": "1.0.0", "latest": "2.0.0"})]
+        plugins=[
+            (hostile, {"state": "behind", "installed": "1.0.0", "latest": "2.0.0"})
+        ]
     )
     line = statusline.render(facts, ascii_only=True)
     assert "\n" not in line
@@ -668,7 +712,10 @@ def test_a_newline_and_escape_in_a_dependency_name_do_not_reach_the_line():
 def test_the_must_fire_control_an_ordinary_dependency_name_still_renders():
     facts = _facts(
         plugins=[
-            ("claude-jit-context", {"state": "behind", "installed": "1.0.0", "latest": "2.0.0"})
+            (
+                "claude-jit-context",
+                {"state": "behind", "installed": "1.0.0", "latest": "2.0.0"},
+            )
         ]
     )
     line = statusline.render(facts, ascii_only=True)
@@ -691,7 +738,9 @@ def test_latest_is_asked_of_the_manifest_the_installer_would_read(monkeypatch):
 
     monkeypatch.setattr(statusline, "_run", fake_run)
     statusline._latest_release("owner/name")
-    assert seen, "nothing was asked -- this test would pass against a stub that never calls"
+    assert seen, (
+        "nothing was asked -- this test would pass against a stub that never calls"
+    )
     asked = " ".join(seen[0])
     assert "contents/.claude-plugin/plugin.json" in asked, asked
     assert "releases/latest" not in asked, asked
@@ -733,8 +782,11 @@ def test_the_owned_statusline_is_not_gated_on_the_changelog_gate(tmp_path, monke
     a file for a reason that has nothing to do with it -- and a declined file and a file
     this plugin does not ship render the same on disk.
     """
-    monkeypatch.setattr(scaffold, "_detect_changelog_gate",
-                        lambda root, config: ("found", "release.yml"))
+    monkeypatch.setattr(
+        scaffold,
+        "_detect_changelog_gate",
+        lambda root, config: ("found", "release.yml"),
+    )
     entries = {e["path"]: e for e in scaffold.plan(str(tmp_path), _config())}
     assert entries[".oss/statusline.py"]["action"] == "replace"
     assert entries[".oss/assemble_changelog.py"]["action"] == "decline"
@@ -751,19 +803,25 @@ def test_settings_are_created_when_the_file_is_absent(tmp_path):
 def test_an_existing_statusline_key_is_never_overwritten(tmp_path):
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"statusLine": {"type": "command", "command": "mine.sh"}}),
-                        encoding="utf-8")
+    settings.write_text(
+        json.dumps({"statusLine": {"type": "command", "command": "mine.sh"}}),
+        encoding="utf-8",
+    )
     entry = scaffold.settings_plan(str(tmp_path))
     assert entry["action"] == "present"
     scaffold.apply_settings(str(tmp_path))
-    assert json.loads(settings.read_text(encoding="utf-8"))["statusLine"]["command"] == "mine.sh"
+    assert (
+        json.loads(settings.read_text(encoding="utf-8"))["statusLine"]["command"]
+        == "mine.sh"
+    )
 
 
 def test_a_settings_file_without_the_key_is_extended_and_keeps_its_other_keys(tmp_path):
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}),
-                        encoding="utf-8")
+    settings.write_text(
+        json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}), encoding="utf-8"
+    )
     assert scaffold.settings_plan(str(tmp_path))["action"] == "extend"
     scaffold.apply_settings(str(tmp_path))
     written = json.loads(settings.read_text(encoding="utf-8"))
@@ -838,8 +896,8 @@ def test_the_reader_itself_catches_a_read_it_has_never_seen_before():
     """
     synthetic = (
         "def render(facts, ascii_only=False, color=False):\n"
-        "    x = facts.get(\"totally_new_key_nobody_wrote_down\")\n"
-        "    y = facts[\"another_brand_new_key\"]\n"
+        '    x = facts.get("totally_new_key_nobody_wrote_down")\n'
+        '    y = facts["another_brand_new_key"]\n'
     )
     keys = _render_reads_from_tree(ast.parse(synthetic))
     assert "totally_new_key_nobody_wrote_down" in keys

@@ -58,7 +58,9 @@ def test_a_wrapper_aliasing_the_trees_own_core_is_ok(tmp_path):
     if refused:
         pytest.skip(refused + "; what went untested is the own-tree-ok arm")
 
-    state, detail = doctor.supertool_entry_point(project, cache_root=str(tmp_path / "no-cache"))
+    state, detail = doctor.supertool_entry_point(
+        project, cache_root=str(tmp_path / "no-cache")
+    )
     assert state == "own-tree-ok", (state, detail)
 
     doctor.check_supertool_entry_point(project, cache_root=str(tmp_path / "no-cache"))
@@ -92,13 +94,17 @@ def test_a_wrapper_pointing_elsewhere_still_warns(tmp_path):
     )
     assert state == "own-tree-stranger", (state, detail)
 
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
     assert len(doctor.FINDINGS) == 1
 
 
-def test_a_readlink_failure_reads_as_could_not_tell_not_a_stranger(tmp_path, monkeypatch):
+def test_a_readlink_failure_reads_as_could_not_tell_not_a_stranger(
+    tmp_path, monkeypatch
+):
     """`_same_file` returning `None` -- the filesystem refusing to answer -- must
     render as its own `own-tree-unknown` WARN, not silently fold into the
     `own-tree-stranger` accusation. Stubbed at `_same_file` rather than by
@@ -110,7 +116,9 @@ def test_a_readlink_failure_reads_as_could_not_tell_not_a_stranger(tmp_path, mon
 
     monkeypatch.setattr(doctor, "_same_file", lambda left, right: None)
 
-    state, detail = doctor.supertool_entry_point(project, cache_root=str(tmp_path / "no-cache"))
+    state, detail = doctor.supertool_entry_point(
+        project, cache_root=str(tmp_path / "no-cache")
+    )
     assert state == "own-tree-unknown", (state, detail)
 
     doctor.check_supertool_entry_point(project, cache_root=str(tmp_path / "no-cache"))

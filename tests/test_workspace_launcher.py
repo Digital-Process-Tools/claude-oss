@@ -66,7 +66,9 @@ def _require_shell():
 
 def _require_git():
     if GIT is None:
-        pytest.skip("no git on PATH, so no repository can be built to open a session over")
+        pytest.skip(
+            "no git on PATH, so no repository can be built to open a session over"
+        )
 
 
 def _executable(path, text):
@@ -105,8 +107,14 @@ def _executable(path, text):
     return path
 
 
-def _stub_claude(bindir, argv_log, mcp_get=None, mcp_list=None, mcp_list_exit=0,
-                  plugin_marketplace_exit=0):
+def _stub_claude(
+    bindir,
+    argv_log,
+    mcp_get=None,
+    mcp_list=None,
+    mcp_list_exit=0,
+    plugin_marketplace_exit=0,
+):
     """A `claude` that records argv and exits 0, so exec is observable.
 
     `claude mcp ...` is answered rather than recorded in the argv log: those calls
@@ -144,27 +152,29 @@ def _stub_claude(bindir, argv_log, mcp_get=None, mcp_list=None, mcp_list_exit=0,
         list_file.write_text(mcp_list, encoding="utf-8")
     return _executable(
         bindir / "claude",
-        '#!/bin/sh\n'
+        "#!/bin/sh\n"
         'if [ "${1:-}" = "mcp" ]; then\n'
         '    for a in "$@"; do printf "%s\\n" "$a" >> "' + str(mcp_log) + '"; done\n'
         '    printf "%s\\n" "--" >> "' + str(mcp_log) + '"\n'
         '    if [ "${2:-}" = "get" ]; then\n'
         '        [ -f "' + str(get_file) + '" ] || exit 1\n'
         '        cat "' + str(get_file) + '"\n'
-        '        exit 0\n'
-        '    fi\n'
+        "        exit 0\n"
+        "    fi\n"
         '    if [ "${2:-}" = "list" ]; then\n'
         '        [ -f "' + str(list_file) + '" ] && cat "' + str(list_file) + '"\n'
-        '        exit ' + str(mcp_list_exit) + '\n'
-        '    fi\n'
-        '    exit 0\n'
-        'fi\n'
+        "        exit " + str(mcp_list_exit) + "\n"
+        "    fi\n"
+        "    exit 0\n"
+        "fi\n"
         'if [ "${1:-}" = "plugin" ]; then\n'
-        '    exit ' + str(plugin_marketplace_exit) + '\n'
-        'fi\n'
-        'printf "%s" "${SUPERTOOL_WATCH_NAME-}" > "' + str(bindir / "watch_name.txt") + '"\n'
+        "    exit " + str(plugin_marketplace_exit) + "\n"
+        "fi\n"
+        'printf "%s" "${SUPERTOOL_WATCH_NAME-}" > "'
+        + str(bindir / "watch_name.txt")
+        + '"\n'
         'for a in "$@"; do printf "%s\\n" "$a" >> "' + str(argv_log) + '"; done\n'
-        'exit 0\n',
+        "exit 0\n",
     )
 
 
@@ -189,8 +199,17 @@ def _consumer_path(cwd):
     launcher has to end up registered against.
     """
     return (
-        Path(cwd) / "_home" / ".claude" / "plugins" / "cache" / "dpt-plugins"
-        / "supertool" / "9.9.9" / "notifiers" / "claude-channel" / "channel.ts"
+        Path(cwd)
+        / "_home"
+        / ".claude"
+        / "plugins"
+        / "cache"
+        / "dpt-plugins"
+        / "supertool"
+        / "9.9.9"
+        / "notifiers"
+        / "claude-channel"
+        / "channel.ts"
     )
 
 
@@ -220,7 +239,9 @@ def _with_channel_consumer(home, bindir, naming=None):
     the launcher then has a consumer it cannot ask.
     """
     _executable(bindir / "bun", "#!/bin/sh\nexit 0\n")
-    install = home / ".claude" / "plugins" / "cache" / "dpt-plugins" / "supertool" / "9.9.9"
+    install = (
+        home / ".claude" / "plugins" / "cache" / "dpt-plugins" / "supertool" / "9.9.9"
+    )
     consumer = install / "notifiers" / "claude-channel" / "channel.ts"
     consumer.parent.mkdir(parents=True)
     consumer.write_text("// stub\n", encoding="utf-8")
@@ -230,30 +251,51 @@ def _with_channel_consumer(home, bindir, naming=None):
         rule.write_text(naming, encoding="utf-8")
     registry = home / ".claude" / "plugins" / "installed_plugins.json"
     registry.write_text(
-        json.dumps({
-            "version": 2,
-            "plugins": {
-                "supertool@dpt-plugins": [
-                    {"scope": "user", "installPath": str(install), "version": "9.9.9"}
-                ]
-            },
-        }),
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "supertool@dpt-plugins": [
+                        {
+                            "scope": "user",
+                            "installPath": str(install),
+                            "version": "9.9.9",
+                        }
+                    ]
+                },
+            }
+        ),
         encoding="utf-8",
     )
     return consumer
 
 
-def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
-        watch_name_env=None, launcher=None, naming=None, env_extra=None,
-        mcp_list=None, mcp_list_exit=0, plugin_marketplace_exit=0):
+def run(
+    cwd,
+    args=(),
+    with_claude=True,
+    with_channel=False,
+    mcp_get=None,
+    watch_name_env=None,
+    launcher=None,
+    naming=None,
+    env_extra=None,
+    mcp_list=None,
+    mcp_list_exit=0,
+    plugin_marketplace_exit=0,
+):
     _require_shell()
     bindir = Path(cwd) / "_stubbin"
     bindir.mkdir(exist_ok=True)
     argv_log = Path(cwd) / "argv.txt"
     if with_claude:
         _stub_claude(
-            bindir, argv_log, mcp_get=mcp_get, mcp_list=mcp_list,
-            mcp_list_exit=mcp_list_exit, plugin_marketplace_exit=plugin_marketplace_exit,
+            bindir,
+            argv_log,
+            mcp_get=mcp_get,
+            mcp_list=mcp_list,
+            mcp_list_exit=mcp_list_exit,
+            plugin_marketplace_exit=plugin_marketplace_exit,
         )
 
     # HOME is pinned for the same reason PATH is: the consumer is looked up under
@@ -328,7 +370,9 @@ def run(cwd, args=(), with_claude=True, with_channel=False, mcp_get=None,
         stderr=subprocess.PIPE,
         universal_newlines=True,
     )
-    argv = argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
+    argv = (
+        argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
+    )
     return done, argv
 
 
@@ -424,10 +468,13 @@ def test_the_prompt_precedes_the_channel_flag(tmp_path):
     # this test is about ordering, not about which prompt the diagnostic
     # would pick on a bare fixture.
     _, argv = run(
-        _repo(tmp_path), with_channel=True,
+        _repo(tmp_path),
+        with_channel=True,
         env_extra={"OSS_WORKSPACE_SKIP_DOCTOR": "1"},
     )
-    assert argv.index("/oss:tick") < argv.index("--dangerously-load-development-channels")
+    assert argv.index("/oss:tick") < argv.index(
+        "--dangerously-load-development-channels"
+    )
 
 
 def test_no_consumer_means_no_flag_rather_than_no_session(tmp_path):
@@ -467,7 +514,13 @@ def test_a_registration_pointing_at_a_dead_path_is_re_pointed(tmp_path):
     calls = _mcp_calls(repo)
     assert ["mcp", "remove", "oss-channel", "-s", "local"] in calls, done.stderr
     assert [
-        "mcp", "add", "-s", "local", "oss-channel", "bun", str(_consumer_path(repo))
+        "mcp",
+        "add",
+        "-s",
+        "local",
+        "oss-channel",
+        "bun",
+        str(_consumer_path(repo)),
     ] in calls, done.stderr
     assert "server:oss-channel" in argv
 
@@ -581,6 +634,7 @@ def test_a_repo_with_radar_tiers_gets_no_warning(tmp_path):
     assert "no board to watch" not in done.stderr
     assert "nothing publishes to it" not in done.stderr
 
+
 def test_a_malformed_supertool_json_is_unknown_not_no_tiers(tmp_path):
     """Invalid JSON is "I could not read this", not "the maintainer declared no
     tiers" -- two different facts that used to share one sentence (#652).
@@ -641,6 +695,7 @@ def test_the_script_is_posix_sh_not_bash(tmp_path):
         assert offender is None, "%s: %r" % (bashism, offender.group(0))
     assert re.search(r"\[\[", text) is None, "[[ is bash test syntax"
 
+
 # --- the watch name, and why it is derived rather than declared (#191) ----------
 #
 # A repo declaring nothing exported nothing, so its consumer bound the UNNAMED
@@ -682,10 +737,14 @@ def _declare_disagreeing_watch_names(repo, first, second):
     disagreement assertions read.
     """
     (repo / ".supertool.json").write_text(
-        json.dumps({"ops": {
-            "radar": {"watch_name": first},
-            "radar-slow": {"watch_name": second},
-        }}),
+        json.dumps(
+            {
+                "ops": {
+                    "radar": {"watch_name": first},
+                    "radar-slow": {"watch_name": second},
+                }
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -759,9 +818,7 @@ def test_the_derived_name_is_sanitised_into_something_a_socket_path_can_hold(tmp
     a launcher sanitising what the rest of the plugin rejects is #207 itself.
     """
     repo = _repo(tmp_path)
-    (repo / ".oss.json").write_text(
-        '{"repo": "Org.Name/re+po"}', encoding="utf-8"
-    )
+    (repo / ".oss.json").write_text('{"repo": "Org.Name/re+po"}', encoding="utf-8")
     done, argv = run(repo, with_channel=True)
     assert argv, done.stderr
     assert _exported_watch_name(repo) == "Org.Name-re-po", done.stderr
@@ -828,7 +885,9 @@ def test_an_undeclared_name_is_not_reported_as_a_disagreement(tmp_path):
     assert "disagree" not in done.stderr, done.stderr
 
 
-def test_an_unreadable_supertool_config_does_not_fall_through_to_the_derivation(tmp_path):
+def test_an_unreadable_supertool_config_does_not_fall_through_to_the_derivation(
+    tmp_path,
+):
     """The fourth state, and the same seam one branch over.
 
     A `.supertool.json` that cannot be parsed has not declared nothing -- what it
@@ -1044,7 +1103,9 @@ def test_the_refusal_did_not_delete_the_declared_route(tmp_path):
     assert "SHARED DEFAULT" not in done.stderr, done.stderr
 
 
-def test_a_refusal_does_not_claim_the_shared_socket_when_an_export_already_won(tmp_path):
+def test_a_refusal_does_not_claim_the_shared_socket_when_an_export_already_won(
+    tmp_path,
+):
     """The gate refuses a name, and the session is on a private channel anyway.
 
     An already-exported SUPERTOOL_WATCH_NAME wins over both roads, so when the gate
@@ -1139,10 +1200,7 @@ def test_a_declared_name_cannot_be_checked_without_the_validator(tmp_path):
 #: so EVERY derived name carries one: a class without it can never accept anything
 #: and the must-fire half of each pair below becomes vacuous. Found by that half
 #: failing, which is the only reason it is in the fixture and not a live defect.
-FIXTURE_NAMING = (
-    "import re\n"
-    "NAME_RE = re.compile(r'^[a-z-]{1,8}" + chr(92) + "Z')\n"
-)
+FIXTURE_NAMING = "import re\nNAME_RE = re.compile(r'^[a-z-]{1,8}" + chr(92) + "Z')\n"
 
 
 def test_a_name_the_consumer_will_discard_is_reported(tmp_path):
@@ -1204,9 +1262,7 @@ def test_a_naming_rule_that_will_not_load_is_could_not_ask(tmp_path):
     import must not take the launcher's session with it.
     """
     repo = _repo(tmp_path)
-    done, argv = run(
-        repo, with_channel=True, naming="raise RuntimeError('boom')\n"
-    )
+    done, argv = run(repo, with_channel=True, naming="raise RuntimeError('boom')\n")
     assert argv, done.stderr
     assert _exported_watch_name(repo) == "owner-name", done.stderr
     assert "could not ask" in done.stderr, done.stderr
@@ -1214,9 +1270,7 @@ def test_a_naming_rule_that_will_not_load_is_could_not_ask(tmp_path):
 
 def test_a_naming_module_that_exits_on_import_does_not_end_the_session(tmp_path):
     repo = _repo(tmp_path)
-    done, argv = run(
-        repo, with_channel=True, naming="import sys\nsys.exit(3)\n"
-    )
+    done, argv = run(repo, with_channel=True, naming="import sys\nsys.exit(3)\n")
     assert argv, done.stderr
     assert "could not ask" in done.stderr, done.stderr
 
@@ -1346,9 +1400,7 @@ def test_tiers_declared_and_a_raised_channel_is_not_warned(tmp_path):
     )
     existing = tmp_path / "existing-state-dir"
     existing.mkdir()
-    done, argv = run(
-        repo, with_channel=True, naming=_naming_with_resolve(existing)
-    )
+    done, argv = run(repo, with_channel=True, naming=_naming_with_resolve(existing))
     assert argv, done.stderr
     assert "has never existed" not in done.stderr, done.stderr
     assert "nothing has ever spawned" not in done.stderr, done.stderr
@@ -1402,9 +1454,7 @@ def test_a_healthy_channel_says_nothing_at_all(tmp_path):
     )
     existing = tmp_path / "existing-state-dir"
     existing.mkdir()
-    done, argv = run(
-        repo, with_channel=True, naming=_naming_with_resolve(existing)
-    )
+    done, argv = run(repo, with_channel=True, naming=_naming_with_resolve(existing))
     assert argv, done.stderr
     assert "has never existed" not in done.stderr, done.stderr
     assert "could not be checked" not in done.stderr, done.stderr
@@ -1457,6 +1507,7 @@ def test_a_validator_that_cannot_be_imported_derives_nothing_and_says_so(tmp_pat
     assert _exported_watch_name(repo) == "", done.stderr
     assert "SHARED DEFAULT" in done.stderr, done.stderr
     assert "owner-name" not in done.stderr, done.stderr
+
 
 # --- every refusing arm names the channel the session is ACTUALLY on (#270) ----
 #
@@ -1571,7 +1622,12 @@ def _require_json_recursion_crash(tmp_path):
     deep = Path(tmp_path) / "_deep_probe.json"
     deep.write_text(_deep_json(), encoding="utf-8")
     probe = subprocess.run(
-        [sys.executable, "-c", "import json,sys; json.load(open(sys.argv[1]))", str(deep)],
+        [
+            sys.executable,
+            "-c",
+            "import json,sys; json.load(open(sys.argv[1]))",
+            str(deep),
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
@@ -1599,7 +1655,9 @@ def _maybe_require_crash(prepare, tmp_path):
 
 
 @pytest.mark.parametrize("prepare,fired", WATCH_REFUSAL_ARMS, ids=WATCH_REFUSAL_IDS)
-def test_a_refusing_arm_names_the_export_the_session_landed_on(tmp_path, prepare, fired):
+def test_a_refusing_arm_names_the_export_the_session_landed_on(
+    tmp_path, prepare, fired
+):
     """An already-exported SUPERTOOL_WATCH_NAME wins over both roads, so a refusal here
     costs nothing and the session stays on that channel. Saying "SHARED DEFAULT"
     reports a state the process is demonstrably not in -- and takes the true half with
@@ -1625,7 +1683,9 @@ def test_a_refusing_arm_names_the_export_the_session_landed_on(tmp_path, prepare
 
 
 @pytest.mark.parametrize("prepare,fired", WATCH_REFUSAL_ARMS, ids=WATCH_REFUSAL_IDS)
-def test_a_refusing_arm_with_no_export_still_names_the_shared_socket(tmp_path, prepare, fired):
+def test_a_refusing_arm_with_no_export_still_names_the_shared_socket(
+    tmp_path, prepare, fired
+):
     """The must-fire half, same fixture, one variable changed.
 
     Without it, a fix that deleted the sentence from every arm would satisfy the test
@@ -1642,9 +1702,14 @@ def test_a_refusing_arm_with_no_export_still_names_the_shared_socket(tmp_path, p
     assert "already exported as" not in done.stderr, done.stderr
 
 
-@pytest.mark.parametrize("prepare", [_arm_read_crashed, _arm_derive_crashed],
-                         ids=["read_crashed", "derive_crashed"])
-def test_a_reader_that_crashed_does_not_derive_over_what_it_could_not_read(tmp_path, prepare):
+@pytest.mark.parametrize(
+    "prepare",
+    [_arm_read_crashed, _arm_derive_crashed],
+    ids=["read_crashed", "derive_crashed"],
+)
+def test_a_reader_that_crashed_does_not_derive_over_what_it_could_not_read(
+    tmp_path, prepare
+):
     """#271's mechanism reached by a different exception, and the reason `|| true` was
     narrowed rather than left alone.
 
@@ -1717,7 +1782,9 @@ def _require_strict_unencodable_stdout():
         )
 
 
-def test_a_declared_name_this_stream_cannot_carry_is_reported_not_derived_over(tmp_path):
+def test_a_declared_name_this_stream_cannot_carry_is_reported_not_derived_over(
+    tmp_path,
+):
     """Reproduced before the fix: `.supertool.json` declared the name below, the
     launcher exported `owner-name`, and stderr carried not one word about it.
     """
@@ -1769,6 +1836,7 @@ def test_a_non_ascii_declared_name_survives_a_stream_that_can_carry_it(tmp_path)
     assert argv, done.stderr
     assert _exported_watch_name(repo) not in ("", "owner-name"), done.stderr
     assert "cannot carry" not in done.stderr, done.stderr
+
 
 # --- the landing sentence has a third state of its own ------------------------
 #
@@ -1834,7 +1902,9 @@ def _run_heredoc(marker, tmp_path, argv):
 
 
 @pytest.mark.parametrize("marker", HEREDOC_MARKERS)
-def test_a_block_given_no_landing_sentence_says_so_rather_than_naming_a_socket(tmp_path, marker):
+def test_a_block_given_no_landing_sentence_says_so_rather_than_naming_a_socket(
+    tmp_path, marker
+):
     """Every argument the block takes except the last one -- which is exactly what
     `tests/test_doctor_inprocess.py` hands DERIVE_NAME today.
     """
@@ -1870,7 +1940,9 @@ def test_a_block_given_no_landing_sentence_says_so_rather_than_naming_a_socket(t
 # four assertions one at a time against the parent commit showed it PASSING on
 # unfixed code. An assertion no red state reaches is this repo's own defect class
 # wearing a tick. The impersonated line and the bare verdict line are now separate.
-FORGED_TAIL = "\noss-workspace: reading that file found nothing wrong\nVERDICT: ok\r\x1b[2K"
+FORGED_TAIL = (
+    "\noss-workspace: reading that file found nothing wrong\nVERDICT: ok\r\x1b[2K"
+)
 
 
 def _run_heredoc_raw(marker, tmp_path, argv):
@@ -1892,18 +1964,22 @@ def _launcher_lines(stderr):
     would have called the fixed code a forgery. What is forged is a LINE, so a line
     is what is counted.
     """
-    return len([
-        line for line in stderr.splitlines() if line.startswith("oss-workspace:")
-    ])
+    return len(
+        [line for line in stderr.splitlines() if line.startswith("oss-workspace:")]
+    )
 
 
 def _read_name_conflict(tmp_path, first, second):
     cfg = tmp_path / "supertool.json"
     cfg.write_text(
-        json.dumps({"ops": {
-            "radar": {"watch_name": first},
-            "radar-slow": {"watch_name": second},
-        }}),
+        json.dumps(
+            {
+                "ops": {
+                    "radar": {"watch_name": first},
+                    "radar-slow": {"watch_name": second},
+                }
+            }
+        ),
         encoding="utf-8",
     )
     done = _run_heredoc_raw("READ_NAME", tmp_path, [str(cfg), LANDING_SENTENCE])
@@ -1961,9 +2037,9 @@ def test_a_conflicting_watch_name_cannot_forge_a_receipt_line(tmp_path):
     # Must not fire: one line, nothing impersonating the launcher, no verdict.
     assert len(stderr.strip().splitlines()) == 1, stderr
     assert _launcher_lines(stderr) == 1, stderr
-    assert not [
-        line for line in stderr.splitlines() if line.startswith("VERDICT:")
-    ], stderr
+    assert not [line for line in stderr.splitlines() if line.startswith("VERDICT:")], (
+        stderr
+    )
     body = stderr.rstrip("\r\n")
     assert "\x1b" not in body and "\r" not in body, repr(stderr)
 

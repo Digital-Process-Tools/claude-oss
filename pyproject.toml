@@ -55,6 +55,19 @@ requires-python = ">=3.9"
 [tool.ruff]
 target-version = "py39"
 
+# `.oss/` is an OWNED path (CLAUDE.md's ownership table): this plugin replaces
+# every file in it wholesale on each `/oss:scaffold` run, so anything a
+# formatter or a lint autofix writes there is reverted at the next scaffold --
+# and, before that, renders in `/oss:doctor`'s own `owned files` line as a repo
+# whose copy "would change" if re-scaffolded. Excluded from ruff on both sides
+# for that reason, not because the code there is exempt from standards.
+# `force-exclude` is what makes the exclusion hold when ruff is handed the file
+# path directly, which is exactly how the write-time formatter below invokes it.
+# Measured before excluding it: `ruff check .oss/` reported 0 findings, so the
+# `ruff_ratchet.py` baseline is unchanged by this.
+extend-exclude = [".oss"]
+force-exclude = true
+
 [tool.ruff.lint]
 select = ["F401", "F841", "E722", "B006", "A001"]
 

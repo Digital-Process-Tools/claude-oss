@@ -127,7 +127,10 @@ def test_an_identical_spelling_of_an_absent_directory_is_still_same(tmp_path):
     """
     absent = tmp_path / "nowhere"
     assert doctor.same_directory(absent, absent) is True
-    assert doctor.same_directory(str(absent), os.path.join(str(tmp_path), ".", "nowhere")) is True
+    assert (
+        doctor.same_directory(str(absent), os.path.join(str(tmp_path), ".", "nowhere"))
+        is True
+    )
 
 
 def test_the_undecided_verdict_carries_the_reason_from_the_exception_in_hand(tmp_path):
@@ -197,7 +200,9 @@ def test_root_and_env_naming_one_absent_tree_are_not_reported_as_disagreeing(tmp
     (target / "tree").mkdir()
     other = target / "elsewhere"
     other.mkdir()
-    _, findings = doctor.resolve_project_dir(str(other), missing_via_target, str(tmp_path))
+    _, findings = doctor.resolve_project_dir(
+        str(other), missing_via_target, str(tmp_path)
+    )
     assert any("disagree" in m for _, m in findings), findings
 
     # And the second control: the two spellings of the tree that now exists agree.
@@ -246,7 +251,9 @@ def _scope_line(lines):
     return matched[0]
 
 
-def test_an_attested_plugin_root_that_is_not_there_is_undecided_not_a_mismatch(tmp_path):
+def test_an_attested_plugin_root_that_is_not_there_is_undecided_not_a_mismatch(
+    tmp_path,
+):
     """`--plugin-root /typo` is a path that does not exist, and the old comparison
     turned that into "names X, but doctor.py ran from Y" -- a sentence about a
     disagreement between two trees, one of which was never looked at.
@@ -257,7 +264,10 @@ def test_an_attested_plugin_root_that_is_not_there_is_undecided_not_a_mismatch(t
 
     level, message = _scope_line(
         doctor.plugin_provenance(
-            answered, checkout, attested=tmp_path / "typo", attested_source="--plugin-root"
+            answered,
+            checkout,
+            attested=tmp_path / "typo",
+            attested_source="--plugin-root",
         )
     )
     assert level == "WARN", message
@@ -307,7 +317,9 @@ def test_two_spellings_of_the_attested_plugin_root_agree_once_it_exists(tmp_path
     assert level == "OK", message
 
 
-def test_an_undecided_checkout_comparison_says_so_and_still_compares(tmp_path, monkeypatch):
+def test_an_undecided_checkout_comparison_says_so_and_still_compares(
+    tmp_path, monkeypatch
+):
     """The third call site. Reached by injection on purpose, and the docstring in
     `plugin_provenance` says why: both trees have already had a manifest read out of
     them by the time this runs, so the filesystem has answered for both and the
@@ -318,7 +330,9 @@ def test_an_undecided_checkout_comparison_says_so_and_still_compares(tmp_path, m
     checkout = _plugin_tree(tmp_path / "clone")
 
     monkeypatch.setattr(
-        doctor, "compare_directories", lambda left, right: (None, "injected: could not stat")
+        doctor,
+        "compare_directories",
+        lambda left, right: (None, "injected: could not stat"),
     )
     lines = doctor.plugin_provenance(answered, checkout)
     copy = [m for _, m in lines if m.startswith(COPY)]
@@ -340,7 +354,9 @@ def test_an_undecided_checkout_comparison_says_so_and_still_compares(tmp_path, m
 # --------------------------------------------------------------------------
 
 
-def test_config_search_path_does_not_widen_on_an_undecided_verdict(tmp_path, monkeypatch):
+def test_config_search_path_does_not_widen_on_an_undecided_verdict(
+    tmp_path, monkeypatch
+):
     """`True` is the only verdict that may hand back the bare name.
 
     Widening is what searches the enclosing clone, and it is only correct when the
@@ -378,7 +394,12 @@ def test_exit_0_and_one_verdict_line_survive_an_undecided_comparison(tmp_path):
     env = dict(os.environ)
     env["CLAUDE_PROJECT_DIR"] = str(target / "tree")
     done = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "doctor.py"), "--root", str(alias / "tree")],
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "doctor.py"),
+            "--root",
+            str(alias / "tree"),
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
@@ -386,6 +407,8 @@ def test_exit_0_and_one_verdict_line_survive_an_undecided_comparison(tmp_path):
         cwd=str(tmp_path),
     )
     assert done.returncode == 0, done.stdout
-    verdicts = [line for line in done.stdout.splitlines() if line.startswith("VERDICT:")]
+    verdicts = [
+        line for line in done.stdout.splitlines() if line.startswith("VERDICT:")
+    ]
     assert len(verdicts) == 1, done.stdout
     assert "disagree" not in done.stdout, done.stdout

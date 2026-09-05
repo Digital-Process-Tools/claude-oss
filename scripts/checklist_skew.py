@@ -172,15 +172,11 @@ def _read_version(manifest_path):
         # gate whose whole contract is "never blocks, always could-not-tell".
         raw = manifest_path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return None, "{0} could not be read: {1}".format(
-            manifest_path, _one_line(exc)
-        )
+        return None, "{0} could not be read: {1}".format(manifest_path, _one_line(exc))
     try:
         data = json.loads(raw)
     except ValueError as exc:
-        return None, "{0} is not valid JSON: {1}".format(
-            manifest_path, _one_line(exc)
-        )
+        return None, "{0} is not valid JSON: {1}".format(manifest_path, _one_line(exc))
     version = data.get("version") if isinstance(data, dict) else None
     if not isinstance(version, str) or not version:
         return None, "{0} has no string 'version' field".format(manifest_path)
@@ -291,7 +287,9 @@ def _compare_definitions(plugin_root, repo):
         rows.append(
             {
                 "path": rel,
-                "state": DEF_IDENTICAL if installed_bytes == repo_bytes else DEF_DIFFERS,
+                "state": DEF_IDENTICAL
+                if installed_bytes == repo_bytes
+                else DEF_DIFFERS,
                 "detail": "",
             }
         )

@@ -96,9 +96,7 @@ def test_a_genuinely_missing_tick_header_still_says_no_header():
 
 def test_off_enum_tick_header_recognised_case_still_works():
     """Positive control: a recognised TICK: value is unaffected."""
-    verdict = tick_handback.classify(
-        "TICK: blocked\nBLOCKER: waiting on a human\n"
-    )
+    verdict = tick_handback.classify("TICK: blocked\nBLOCKER: waiting on a human\n")
     assert verdict["state"] == "blocked"
     assert verdict["detail"] == "waiting on a human"
 

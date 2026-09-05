@@ -13,7 +13,9 @@ round-trip the issue describes happens again one file away from the fix.
 
 import pathlib
 
-DEVELOPER_MD = pathlib.Path(__file__).resolve().parent.parent / "agents" / "developer.md"
+DEVELOPER_MD = (
+    pathlib.Path(__file__).resolve().parent.parent / "agents" / "developer.md"
+)
 
 
 def test_guard_paragraph_names_all_three_receipt_states():
@@ -21,7 +23,7 @@ def test_guard_paragraph_names_all_three_receipt_states():
     anchor = "is the derived list"
     idx = text.find(anchor)
     assert idx != -1, "the #432 guard paragraph moved or was reworded"
-    window = text[max(0, idx - 400):idx + 1600]
+    window = text[max(0, idx - 400) : idx + 1600]
     assert "NOT IN THIS REPO" in window, (
         "the guard paragraph must say what an absent receipt line means -- "
         "lane_setup.py's own wording, since #566"

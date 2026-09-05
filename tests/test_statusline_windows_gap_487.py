@@ -49,14 +49,18 @@ def test_the_posix_var_in_our_own_written_command_is_found_on_windows():
     found = doctor._statusline_windows_gap(
         scaffold.STATUSLINE_COMMAND, windows=True, sh_available=False
     )
-    assert found, "expected the POSIX $VAR syntax in scaffold.STATUSLINE_COMMAND to be found"
+    assert found, (
+        "expected the POSIX $VAR syntax in scaffold.STATUSLINE_COMMAND to be found"
+    )
     assert found.startswith("$")
 
 
 def test_the_same_command_is_clean_off_windows():
     """The must-not-fire control, same command: on the platform it was written for,
     there is nothing to report."""
-    assert doctor._statusline_windows_gap(scaffold.STATUSLINE_COMMAND, windows=False) == ""
+    assert (
+        doctor._statusline_windows_gap(scaffold.STATUSLINE_COMMAND, windows=False) == ""
+    )
 
 
 def test_a_command_with_no_posix_syntax_is_clean_even_on_windows():
@@ -90,7 +94,9 @@ def test_check_statusline_warns_when_the_gap_detector_fires(tmp_path, monkeypatc
     actual reader can act on -- not just the name of the gap -- because the message
     is what a Windows user sees when this fires on the exact command scaffold
     wrote for them, with no other statusLine to fall back to."""
-    monkeypatch.setattr(doctor, "_statusline_windows_gap", lambda command: "$CLAUDE_PROJECT_DIR")
+    monkeypatch.setattr(
+        doctor, "_statusline_windows_gap", lambda command: "$CLAUDE_PROJECT_DIR"
+    )
     _settings(tmp_path, scaffold.STATUSLINE_COMMAND)
     _reset()
     doctor.check_statusline(str(tmp_path))
@@ -102,7 +108,9 @@ def test_check_statusline_warns_when_the_gap_detector_fires(tmp_path, monkeypatc
     assert "not observed" in message, message
 
 
-def test_check_statusline_stays_ok_when_the_gap_detector_is_clean(tmp_path, monkeypatch):
+def test_check_statusline_stays_ok_when_the_gap_detector_is_clean(
+    tmp_path, monkeypatch
+):
     """The must-not-fire control for the integration test above, same fixture."""
     monkeypatch.setattr(doctor, "_statusline_windows_gap", lambda command: "")
     _settings(tmp_path, scaffold.STATUSLINE_COMMAND)
@@ -116,7 +124,9 @@ def test_check_statusline_stays_ok_when_the_gap_detector_is_clean(tmp_path, monk
 def test_a_third_party_command_also_warns_when_the_gap_fires(tmp_path, monkeypatch):
     """The gap applies to a status line that is not ours too: the finding is about
     whether the command runs here, not about who wrote it."""
-    monkeypatch.setattr(doctor, "_statusline_windows_gap", lambda command: "$CLAUDE_PROJECT_DIR")
+    monkeypatch.setattr(
+        doctor, "_statusline_windows_gap", lambda command: "$CLAUDE_PROJECT_DIR"
+    )
     _settings(tmp_path, 'sh "$CLAUDE_PROJECT_DIR"/mine.sh')
     _reset()
     doctor.check_statusline(str(tmp_path))

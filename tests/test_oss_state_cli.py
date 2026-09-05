@@ -47,14 +47,27 @@ def test_append_writes_and_prints_the_entry(tmp_path, capsys):
 def test_append_carries_a_json_detail(tmp_path, capsys):
     path = tmp_path / "state.json"
     oss_state._main(
-        [str(path), "--decision", "triaged", "--at", STAMP, "--detail", '{"issues": [1, 2]}']
+        [
+            str(path),
+            "--decision",
+            "triaged",
+            "--at",
+            STAMP,
+            "--detail",
+            '{"issues": [1, 2]}',
+        ]
     )
     assert json.loads(capsys.readouterr().out)["detail"] == {"issues": [1, 2]}
 
 
 def test_a_malformed_detail_is_refused_and_writes_nothing(tmp_path, capsys):
     path = tmp_path / "state.json"
-    assert oss_state._main([str(path), "--decision", "x", "--at", STAMP, "--detail", "{oops"]) == 1
+    assert (
+        oss_state._main(
+            [str(path), "--decision", "x", "--at", STAMP, "--detail", "{oops"]
+        )
+        == 1
+    )
     assert "not valid JSON" in capsys.readouterr().out
     assert not path.exists()
 
@@ -326,7 +339,9 @@ def test_a_write_that_cannot_land_is_a_fail_line_and_leaves_the_history_intact(
                 "untested here".format(" and ".join(permitted))
             )
 
-        assert oss_state._main([str(path), "--decision", "merged #4"] + INTAKE_ARGV) == 1
+        assert (
+            oss_state._main([str(path), "--decision", "merged #4"] + INTAKE_ARGV) == 1
+        )
         captured = capsys.readouterr()
         assert _lines_starting(captured.out, "FAIL"), captured.out
         assert "unchanged" in captured.out

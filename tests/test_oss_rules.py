@@ -48,7 +48,9 @@ def test_install_writes_into_the_owned_layer_only(tmp_path):
     oss_rules.install(tmp_path)
     for dimension in oss_rules.RULES:
         assert _layer(tmp_path, dimension).is_dir()
-        assert not (tmp_path / ".claude" / "jit-context" / dimension / "00-manual").exists()
+        assert not (
+            tmp_path / ".claude" / "jit-context" / dimension / "00-manual"
+        ).exists()
 
 
 def test_install_writes_an_index_beside_the_rules(tmp_path):
@@ -57,7 +59,9 @@ def test_install_writes_an_index_beside_the_rules(tmp_path):
     for dimension in oss_rules.RULES:
         index = _layer(tmp_path, dimension) / "00-index.tsv"
         assert index.is_file()
-        assert index.read_text(encoding="utf-8").strip(), "{}: empty index".format(dimension)
+        assert index.read_text(encoding="utf-8").strip(), "{}: empty index".format(
+            dimension
+        )
 
 
 def test_index_rows_are_shaped_per_dimension(tmp_path):
@@ -105,7 +109,9 @@ def test_every_rule_file_is_indexed(tmp_path):
         column = FILENAME_COLUMN[dimension]
         indexed = {
             line.split("\t")[column]
-            for line in (layer / "00-index.tsv").read_text(encoding="utf-8").splitlines()
+            for line in (layer / "00-index.tsv")
+            .read_text(encoding="utf-8")
+            .splitlines()
         }
         on_disk = {p.name for p in layer.glob("*.md")} - {NOT_A_RULE}
         assert on_disk, "{}: every entry was exempted -- nothing was checked".format(
@@ -131,12 +137,17 @@ def test_reinstall_never_touches_the_human_layer(tmp_path):
     theirs = tmp_path / ".claude" / "jit-context" / "paths" / "00-manual"
     theirs.mkdir(parents=True)
     mine = theirs / "their-convention.md"
-    mine.write_text("---\ntitle: theirs\nmatch: src/\n---\nhand written\n", encoding="utf-8")
+    mine.write_text(
+        "---\ntitle: theirs\nmatch: src/\n---\nhand written\n", encoding="utf-8"
+    )
 
     oss_rules.install(tmp_path)
     oss_rules.install(tmp_path)
 
-    assert mine.read_text(encoding="utf-8") == "---\ntitle: theirs\nmatch: src/\n---\nhand written\n"
+    assert (
+        mine.read_text(encoding="utf-8")
+        == "---\ntitle: theirs\nmatch: src/\n---\nhand written\n"
+    )
 
 
 def test_install_reports_what_it_wrote(tmp_path):
@@ -259,9 +270,15 @@ def test_the_changelog_match_fires_on_changelog_md_and_still_fires_on_a_fragment
     ][0]
     pattern = match_line.split(":", 1)[1].strip()
 
-    assert _ere_matches(pattern, "CHANGELOG.md"), "must fire: opening the file it warns about"
-    assert _ere_matches(pattern, "docs/CHANGELOG.md"), "must fire: nested under a directory too"
-    assert _ere_matches(pattern, "changelog.d/106.added.md"), "must still fire: a fragment"
+    assert _ere_matches(pattern, "CHANGELOG.md"), (
+        "must fire: opening the file it warns about"
+    )
+    assert _ere_matches(pattern, "docs/CHANGELOG.md"), (
+        "must fire: nested under a directory too"
+    )
+    assert _ere_matches(pattern, "changelog.d/106.added.md"), (
+        "must still fire: a fragment"
+    )
     assert not _ere_matches(pattern, "src/CHANGELOG_notes.md"), (
         "must not fire: this is the positive control -- an unrelated file whose name merely "
         "contains the word must stay silent, or the pattern is matching everything"
@@ -344,12 +361,16 @@ def test_tools_rule_names_the_replacement_op():
     tools = tool_line.split(":", 1)[1].strip().split("|")
     assert len(tools) == 5, tools
     for tool in tools:
-        rows = [ln for ln in body.splitlines() if ln.startswith("- **{}**".format(tool))]
-        assert len(rows) == 1, "{}: expected one bullet naming its replacement, got {}".format(
-            tool, rows
+        rows = [
+            ln for ln in body.splitlines() if ln.startswith("- **{}**".format(tool))
+        ]
+        assert len(rows) == 1, (
+            "{}: expected one bullet naming its replacement, got {}".format(tool, rows)
         )
         named = [op for op, _ in spellings.op_spellings(rows[0])]
-        assert named, "{}: the row names no supertool invocation: {}".format(tool, rows[0])
+        assert named, "{}: the row names no supertool invocation: {}".format(
+            tool, rows[0]
+        )
         undeclared = [op for op in named if op not in spellings.OP_INVENTORY]
         assert not undeclared, (
             "{}: the row sends a blocked reader to {}, which is not a declared op -- "
@@ -428,7 +449,11 @@ def test_tools_match_fires_on_a_representative_payload_for_each_blocked_tool():
 def test_rules_name_no_specific_repo():
     for dimension, rules in oss_rules.RULES.items():
         for name, body in rules.items():
-            for spelling in ("Digital-Process-Tools", "claude-supertool", "claude-remember"):
+            for spelling in (
+                "Digital-Process-Tools",
+                "claude-supertool",
+                "claude-remember",
+            ):
                 assert spelling not in body, (dimension, name, spelling)
 
 
@@ -447,7 +472,9 @@ IN_TREE = "scripts/assemble_changelog.py"
 
 
 def _changelog_rule(root):
-    return (_layer(root, "paths") / "changelog-fragments.md").read_text(encoding="utf-8")
+    return (_layer(root, "paths") / "changelog-fragments.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def _assembler_commands(body):
@@ -502,7 +529,9 @@ def _scaffolded(tmp_path):
     """A managed repo: the assembler is vendored into the owned directory."""
     root = tmp_path / "managed"
     (root / ".oss").mkdir(parents=True)
-    (root / ".oss" / "assemble_changelog.py").write_text("# vendored\n", encoding="utf-8")
+    (root / ".oss" / "assemble_changelog.py").write_text(
+        "# vendored\n", encoding="utf-8"
+    )
     return root
 
 
@@ -510,7 +539,9 @@ def _plugin_shaped(tmp_path):
     """This repository's shape: the assembler is the plugin's own script."""
     root = tmp_path / "plugin"
     (root / "scripts").mkdir(parents=True)
-    (root / "scripts" / "assemble_changelog.py").write_text("# ours\n", encoding="utf-8")
+    (root / "scripts" / "assemble_changelog.py").write_text(
+        "# ours\n", encoding="utf-8"
+    )
     return root
 
 
@@ -524,8 +555,8 @@ def test_scaffolded_rule_names_an_assembler_that_exists_in_that_tree(tmp_path):
     # tree is the identical defect, and it is the one a singular helper could not see.
     for command in commands:
         script = _script_argument(command)
-        assert (root / script).is_file(), "{}: not in the tree it was written into".format(
-            script
+        assert (root / script).is_file(), (
+            "{}: not in the tree it was written into".format(script)
         )
         assert script == VENDORED, script
 
@@ -541,8 +572,8 @@ def test_this_repo_shaped_rule_names_an_assembler_that_exists_in_that_tree(tmp_p
     assert commands, "no invocation emitted for a tree that has an assembler"
     for command in commands:
         script = _script_argument(command)
-        assert (root / script).is_file(), "{}: not in the tree it was written into".format(
-            script
+        assert (root / script).is_file(), (
+            "{}: not in the tree it was written into".format(script)
         )
         assert script == IN_TREE, script
 
@@ -631,13 +662,20 @@ def test_the_committed_layer_in_this_repo_names_a_path_that_is_here():
     ran leaves the old answer in the tree with every test above still green (#68).
     """
     body = (
-        REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "changelog-fragments.md"
+        REPO_ROOT
+        / ".claude"
+        / "jit-context"
+        / "paths"
+        / "01-oss"
+        / "changelog-fragments.md"
     ).read_text(encoding="utf-8")
     commands = _assembler_commands(body)
     assert commands, "the committed rule emits no invocation, though this repo has one"
     for command in commands:
         script = _script_argument(command)
-        assert (REPO_ROOT / script).is_file(), "{}: not in this repository".format(script)
+        assert (REPO_ROOT / script).is_file(), "{}: not in this repository".format(
+            script
+        )
 
     # And that it is the CURRENT rendering. Resolving is necessary and not sufficient: the
     # old committed string named a path that resolves here, which is precisely why the bug
@@ -688,7 +726,9 @@ def test_the_committed_tools_layer_in_this_repo_is_the_current_rendering():
         "{}. Generated but not here: {}. Same name, different text: {}.".format(
             sorted(set(committed) - set(current)),
             sorted(set(current) - set(committed)),
-            sorted(n for n in set(committed) & set(current) if committed[n] != current[n]),
+            sorted(
+                n for n in set(committed) & set(current) if committed[n] != current[n]
+            ),
         )
     )
 

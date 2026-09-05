@@ -96,9 +96,7 @@ def test_glob_match_subdirectory_is_still_excluded_control(tmp_path):
     repo = tmp_path
     (repo / "changelog.d").mkdir()
     (repo / "changelog.d" / "sub").mkdir()
-    (repo / "changelog.d" / "383.fixed.md").write_text(
-        "- x (#383)\n", encoding="utf-8"
-    )
+    (repo / "changelog.d" / "383.fixed.md").write_text("- x (#383)\n", encoding="utf-8")
 
     result = lane_setup.resolve_lane(repo, ["changelog.d/*"])
     entry = result["patterns"][0]
@@ -110,9 +108,7 @@ def test_glob_pattern_still_resolves_normally_control(tmp_path):
     """Second control: the ordinary readable case, unaffected by the fix."""
     repo = tmp_path
     (repo / "changelog.d").mkdir()
-    (repo / "changelog.d" / "383.fixed.md").write_text(
-        "- x (#383)\n", encoding="utf-8"
-    )
+    (repo / "changelog.d" / "383.fixed.md").write_text("- x (#383)\n", encoding="utf-8")
 
     result = lane_setup.resolve_lane(repo, ["changelog.d/*.md"])
     entry = result["patterns"][0]

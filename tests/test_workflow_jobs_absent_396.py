@@ -106,7 +106,9 @@ def _workflows_dir(root):
 # ------------------------------------------------- the enumeration, on its own
 
 
-def test_a_workflow_in_the_list_and_not_on_disk_is_absent_rather_than_unreadable(tmp_path):
+def test_a_workflow_in_the_list_and_not_on_disk_is_absent_rather_than_unreadable(
+    tmp_path,
+):
     """The bucket split. Absence is decided from the exception already in hand --
     no `exists()` follow-up, which swallows a different set of errnos on different
     interpreter versions and is what broke the release gate in #76.

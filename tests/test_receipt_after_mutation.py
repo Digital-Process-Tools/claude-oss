@@ -76,7 +76,8 @@ def _repo(tmp_path, name, changelog_text=FIRST, fragments=True):
     (root / "changelog.d").mkdir()
     if fragments:
         (root / "changelog.d" / "41.added.md").write_text(
-            "- A thing (#41).\n", encoding="utf-8")
+            "- A thing (#41).\n", encoding="utf-8"
+        )
     (root / "CHANGELOG.md").write_text(changelog_text, encoding="utf-8")
     return root, script_path
 
@@ -92,23 +93,38 @@ def _cut(root, script_path, version, encoding):
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = encoding
     return subprocess.run(
-        [sys.executable, str(script_path), "--version", version,
-         "--date", "2026-08-14", "--dir", "changelog.d",
-         "--changelog", "CHANGELOG.md"],
-        cwd=str(root), capture_output=True, encoding=encoding,
-        errors="backslashreplace", env=env,
+        [
+            sys.executable,
+            str(script_path),
+            "--version",
+            version,
+            "--date",
+            "2026-08-14",
+            "--dir",
+            "changelog.d",
+            "--changelog",
+            "CHANGELOG.md",
+        ],
+        cwd=str(root),
+        capture_output=True,
+        encoding=encoding,
+        errors="backslashreplace",
+        env=env,
     )
 
 
 def _cut_landed(root, version="0.1.0"):
     text = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    return ("## [{0}] - 2026-08-14".format(version) in text
-            and not (root / "changelog.d" / "41.added.md").exists())
+    return (
+        "## [{0}] - 2026-08-14".format(version) in text
+        and not (root / "changelog.d" / "41.added.md").exists()
+    )
 
 
 # --------------------------------------------------------------------------
 # 1. the receipt cannot fail on a console that cannot represent it
 # --------------------------------------------------------------------------
+
 
 def test_the_first_release_receipt_holds_something_ascii_cannot_encode(tmp_path):
     """The positive control for the test below, measured rather than assumed.
@@ -125,7 +141,8 @@ def test_the_first_release_receipt_holds_something_ascii_cannot_encode(tmp_path)
         "the first-release receipt is pure ASCII, so pinning the console to "
         "ascii below no longer exercises a degrade path -- find a codepage "
         "this receipt does break, or delete the test rather than keeping a "
-        "green one that measures nothing:\n" + result.stdout)
+        "green one that measures nothing:\n" + result.stdout
+    )
 
 
 def test_a_receipt_reaches_a_console_that_cannot_represent_it(tmp_path):
@@ -151,6 +168,7 @@ def test_a_receipt_reaches_a_console_that_cannot_represent_it(tmp_path):
 # --------------------------------------------------------------------------
 # 2. if the receipt fails anyway, the exit code does not deny the mutation
 # --------------------------------------------------------------------------
+
 
 def _module(script_path, name):
     """Import the copy under test as a module.
@@ -192,15 +210,18 @@ def test_a_reporter_that_raises_after_the_cut_does_not_exit_skipped(tmp_path):
         return real(state, summary, details)
 
     module._receipt = _stub
-    code = module.assemble(root / "CHANGELOG.md", root / "changelog.d",
-                           "0.1.0", "2026-08-14")
+    code = module.assemble(
+        root / "CHANGELOG.md", root / "changelog.d", "0.1.0", "2026-08-14"
+    )
 
     assert _cut_landed(root), (
         "the cut did not land, so this asserts nothing about a mutation that "
-        "was reported wrongly")
+        "was reported wrongly"
+    )
     assert code != SKIPPED, (
         "the tree moved and the exit code says SKIPPED -- 'nothing to do, or "
-        "nothing provable', which tells a wrapper to carry on")
+        "nothing provable', which tells a wrapper to carry on"
+    )
     assert code == REFUSED, code
 
 
@@ -254,13 +275,18 @@ def test_a_write_that_never_landed_is_not_reported_as_a_release(tmp_path):
     module = _module(script_path, "assemble_unwritable")
     before = (root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    code = module.assemble(_UnwritableChangelog(root / "CHANGELOG.md"),
-                           root / "changelog.d", "0.1.0", "2026-08-14")
+    code = module.assemble(
+        _UnwritableChangelog(root / "CHANGELOG.md"),
+        root / "changelog.d",
+        "0.1.0",
+        "2026-08-14",
+    )
 
     assert code == REFUSED, code
     assert (root / "CHANGELOG.md").read_text(encoding="utf-8") == before
     assert (root / "changelog.d" / "41.added.md").exists(), (
-        "the write failed and the fragments were consumed anyway")
+        "the write failed and the fragments were consumed anyway"
+    )
 
 
 def test_the_same_fixture_reports_ok_when_the_reporter_works(tmp_path):
@@ -268,8 +294,12 @@ def test_the_same_fixture_reports_ok_when_the_reporter_works(tmp_path):
     fixture is an ordinary successful cut."""
     root, script_path = _repo(tmp_path, "working")
     module = _module(script_path, "assemble_working")
-    assert module.assemble(root / "CHANGELOG.md", root / "changelog.d",
-                           "0.1.0", "2026-08-14") == OK
+    assert (
+        module.assemble(
+            root / "CHANGELOG.md", root / "changelog.d", "0.1.0", "2026-08-14"
+        )
+        == OK
+    )
     assert _cut_landed(root)
 
 
@@ -279,14 +309,19 @@ def test_a_run_that_mutated_nothing_still_reports_skipped(tmp_path):
     leaves CHANGELOG.md alone."""
     root, script_path = _repo(tmp_path, "empty", fragments=False)
     module = _module(script_path, "assemble_empty")
-    assert module.assemble(root / "CHANGELOG.md", root / "changelog.d",
-                           "0.1.0", "2026-08-14") == SKIPPED
+    assert (
+        module.assemble(
+            root / "CHANGELOG.md", root / "changelog.d", "0.1.0", "2026-08-14"
+        )
+        == SKIPPED
+    )
     assert (root / "CHANGELOG.md").read_text(encoding="utf-8") == FIRST
 
 
 # --------------------------------------------------------------------------
 # 3. the first-release receipt names the source it read, and the one it did not
 # --------------------------------------------------------------------------
+
 
 def test_the_first_release_receipt_names_the_source_it_did_not_read(tmp_path):
     """The changelog is this script's sole source of truth, by decision. A file
@@ -299,7 +334,8 @@ def test_the_first_release_receipt_names_the_source_it_did_not_read(tmp_path):
     assert "git tag" in result.stdout, (
         "the first-release receipt infers 'never released' from the file's "
         "structure alone and does not name the second source that would "
-        "contradict it:\n" + result.stdout)
+        "contradict it:\n" + result.stdout
+    )
 
 
 def test_a_repo_with_a_release_heading_makes_no_such_claim(tmp_path):

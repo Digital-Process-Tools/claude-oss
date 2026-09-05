@@ -52,7 +52,12 @@ import oss_rules  # noqa: E402
 REFUSED = assemble_changelog.REFUSED
 
 COMMITTED_RULE = (
-    REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "changelog-fragments.md"
+    REPO_ROOT
+    / ".claude"
+    / "jit-context"
+    / "paths"
+    / "01-oss"
+    / "changelog-fragments.md"
 )
 
 #: The three states `oss_rules._untagged_clause` keeps apart, each with the
@@ -118,7 +123,9 @@ def _tree(tmp_path, name="repo", changelog=DEFAULT_CHANGELOG):
     """A plugin-shaped tree with one valid fragment and one release heading."""
     root = tmp_path / name
     (root / "scripts").mkdir(parents=True)
-    (root / "scripts" / "assemble_changelog.py").write_text("# ours\n", encoding="utf-8")
+    (root / "scripts" / "assemble_changelog.py").write_text(
+        "# ours\n", encoding="utf-8"
+    )
     (root / "changelog.d").mkdir()
     (root / "changelog.d" / "1.fixed.md").write_text(FRAGMENT_BODY, encoding="utf-8")
     (root / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
@@ -126,9 +133,9 @@ def _tree(tmp_path, name="repo", changelog=DEFAULT_CHANGELOG):
 
 
 def _rendered(root, untagged=DEFAULT_UNTAGGED):
-    return oss_rules.rules(
-        root, fragments_dir="changelog.d", untagged=untagged
-    )["paths"]["changelog-fragments.md"]
+    return oss_rules.rules(root, fragments_dir="changelog.d", untagged=untagged)[
+        "paths"
+    ]["changelog-fragments.md"]
 
 
 def _run(root, command, monkeypatch):
@@ -171,7 +178,9 @@ def test_every_command_the_generated_rule_publishes_is_one_the_assembler_accepts
         code, out = _run(root, command, monkeypatch)
         assert code != REFUSED, (
             "the rule publishes a command the assembler refuses:\n{0}\n{1}".format(
-                command, out))
+                command, out
+            )
+        )
 
 
 def test_every_command_the_committed_rule_publishes_is_one_the_assembler_accepts(
@@ -194,7 +203,9 @@ def test_every_command_the_committed_rule_publishes_is_one_the_assembler_accepts
         code, out = _run(root, command, monkeypatch)
         assert code != REFUSED, (
             "the committed rule publishes a refused command:\n{0}\n{1}".format(
-                command, out))
+                command, out
+            )
+        )
 
 
 # ------------------------------------------------------ the controls that must fire
@@ -246,7 +257,8 @@ def test_both_audits_are_published_rather_than_one_being_dropped(tmp_path):
         flags = set()
         for command in _assembler_lines(body):
             flags.update(
-                t for t in shlex.split(command) if t in ("--check", "--check-links"))
+                t for t in shlex.split(command) if t in ("--check", "--check-links")
+            )
         assert flags == {"--check", "--check-links"}, (label, sorted(flags))
 
 

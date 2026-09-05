@@ -293,8 +293,10 @@ def test_check_dependency_diagnostics_is_ok_on_relayed_and_not_installed(tmp_pat
     names = doctor.declared_dependencies()
 
     def fake_state(name, project_dir, **kwargs):
-        return ("relayed", "{} ok".format(name)) if name == names[0] else (
-            "not-installed", "{} absent".format(name)
+        return (
+            ("relayed", "{} ok".format(name))
+            if name == names[0]
+            else ("not-installed", "{} absent".format(name))
         )
 
     original = doctor.dependency_diagnostic_state
@@ -307,7 +309,9 @@ def test_check_dependency_diagnostics_is_ok_on_relayed_and_not_installed(tmp_pat
     assert states and all(s == "OK" for s in states), doctor.FINDINGS
 
 
-def test_check_dependency_diagnostics_unmeasured_with_no_declared_dependencies(tmp_path, monkeypatch):
+def test_check_dependency_diagnostics_unmeasured_with_no_declared_dependencies(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
     doctor.check_dependency_diagnostics(tmp_path)
     state, message = doctor.FINDINGS[-1]
@@ -332,7 +336,9 @@ def _run_that_decodes_like_real_subprocess(stdout_bytes, returncode=0):
 
     def run(cmd, **kwargs):
         if kwargs.get("universal_newlines") or kwargs.get("text"):
-            stdout_bytes.decode("utf-8")  # raises UnicodeDecodeError, same as the real call
+            stdout_bytes.decode(
+                "utf-8"
+            )  # raises UnicodeDecodeError, same as the real call
         return _FakeCompleted(returncode, stdout_bytes)
 
     return run
@@ -349,7 +355,9 @@ def test_supertool_op_survives_non_utf8_stdout_bytes(tmp_path):
     raw = b"line one\nsupertool doctor: \xff\xfe not utf-8\n"
 
     state, detail = doctor.dependency_diagnostic_state(
-        "supertool", tmp_path, record=record,
+        "supertool",
+        tmp_path,
+        record=record,
         run=_run_that_decodes_like_real_subprocess(raw),
         which=lambda name: "/usr/bin/supertool",
     )
@@ -363,7 +371,9 @@ def test_jit_context_script_survives_non_utf8_stdout_bytes(tmp_path):
     raw = b"jit-doctor: ok \xff\xfe trailing garbage\n"
 
     state, detail = doctor.dependency_diagnostic_state(
-        doctor.JIT_PLUGIN, tmp_path, record=record,
+        doctor.JIT_PLUGIN,
+        tmp_path,
+        record=record,
         run=_run_that_decodes_like_real_subprocess(raw),
         which=lambda name: "/bin/bash",
     )
@@ -375,5 +385,7 @@ def test_jit_context_script_survives_non_utf8_stdout_bytes(tmp_path):
 
 
 def test_unknown_dependency_shape_is_could_not_run(tmp_path):
-    state, detail = doctor.dependency_diagnostic_state("some-future-dependency", tmp_path)
+    state, detail = doctor.dependency_diagnostic_state(
+        "some-future-dependency", tmp_path
+    )
     assert state == "could-not-run", (state, detail)

@@ -38,9 +38,7 @@ def test_a_short_lane_with_no_reason_is_refused():
     """The positive control's negative half: a short lane with no reason must not
     be silently recorded."""
     with pytest.raises(oss_state.StateError, match="board-exhausted"):
-        oss_state.lane_fill(
-            [{"primary": 852, "count": 1}], window=WINDOW
-        )
+        oss_state.lane_fill([{"primary": 852, "count": 1}], window=WINDOW)
 
 
 def test_a_short_lane_with_a_valid_reason_is_recorded():
@@ -99,8 +97,8 @@ def test_an_absurd_count_is_refused_without_materializing_a_list():
     with pytest.raises(oss_state.StateError, match="over the cap"):
         oss_state.lane_fill([{"primary": 852, "count": 10**8}], window=WINDOW)
     elapsed = time.time() - start
-    assert elapsed < 1.0, "refusal took {:.2f}s -- looks like a list got materialized".format(
-        elapsed
+    assert elapsed < 1.0, (
+        "refusal took {:.2f}s -- looks like a list got materialized".format(elapsed)
     )
 
 
@@ -108,7 +106,9 @@ def test_no_lanes_dispatched_is_not_the_same_state_as_no_record():
     dispatched_none = oss_state.lane_fill([], window=WINDOW)
     assert dispatched_none["state"] == oss_state.LANE_FILL_NONE_DISPATCHED
 
-    could_not_establish = oss_state.lane_fill(None, window=WINDOW, why="transcripts reaped")
+    could_not_establish = oss_state.lane_fill(
+        None, window=WINDOW, why="transcripts reaped"
+    )
     assert could_not_establish["state"] == oss_state.LANE_FILL_COULD_NOT_ESTABLISH
     assert could_not_establish["why"] == "transcripts reaped"
 

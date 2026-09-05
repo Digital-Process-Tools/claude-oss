@@ -81,7 +81,9 @@ _PRE_881_ADDOPTS = "-rs --cov=scripts --cov-report=term-missing --cov-fail-under
 
 def _declared_addopts():
     """The literal `addopts` string in `pyproject.toml`'s `[tool.pytest.ini_options]`."""
-    match = _ADDOPTS_LINE.search(Path(REPO_ROOT, "pyproject.toml").read_text(encoding="utf-8"))
+    match = _ADDOPTS_LINE.search(
+        Path(REPO_ROOT, "pyproject.toml").read_text(encoding="utf-8")
+    )
     return match.group(1) if match else None
 
 

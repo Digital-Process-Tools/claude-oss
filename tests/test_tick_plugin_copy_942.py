@@ -93,7 +93,10 @@ def test_plugin_provenance_names_both_versions_on_a_lagging_install(tmp_path):
     _write_plugin(checkout, "0.20.0")
 
     lines = doctor.plugin_provenance(
-        installed, checkout, attested=str(installed), attested_source="CLAUDE_PLUGIN_ROOT"
+        installed,
+        checkout,
+        attested=str(installed),
+        attested_source="CLAUDE_PLUGIN_ROOT",
     )
     copy_lines = [msg for _level, msg in lines if msg.startswith("plugin copy: ")]
     assert copy_lines, "no 'plugin copy:' line at all: {!r}".format(lines)
@@ -136,8 +139,10 @@ def test_plugin_provenance_is_quiet_on_an_unrelated_repo():
     """
     installed = Path("scripts").parent  # this repo's own plugin root
     lines = doctor.plugin_provenance(
-        REPO_ROOT, Path("/nonexistent-unrelated-repo-942"),
-        attested=str(REPO_ROOT), attested_source="CLAUDE_PLUGIN_ROOT",
+        REPO_ROOT,
+        Path("/nonexistent-unrelated-repo-942"),
+        attested=str(REPO_ROOT),
+        attested_source="CLAUDE_PLUGIN_ROOT",
     )
     copy_lines = [msg for _level, msg in lines if msg.startswith("plugin copy: ")]
     assert copy_lines

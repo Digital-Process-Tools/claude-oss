@@ -163,7 +163,9 @@ def _walk_files(root):
         return [], []
 
     def _onerror(exc, _root=root):
-        unreadable_dirs.append({"path": getattr(exc, "filename", None) or str(_root), "reason": str(exc)})
+        unreadable_dirs.append(
+            {"path": getattr(exc, "filename", None) or str(_root), "reason": str(exc)}
+        )
 
     for dirpath, dirnames, filenames in os.walk(str(root), onerror=_onerror):
         # Never descend into version control metadata -- not a source file,
@@ -206,7 +208,9 @@ def search(pattern, roots):
             "state": STATE_COULD_NOT_SEARCH,
             "pattern": pattern,
             "roots": root_strs,
-            "problem": "root(s) could not be searched: {0}".format(", ".join(missing_roots)),
+            "problem": "root(s) could not be searched: {0}".format(
+                ", ".join(missing_roots)
+            ),
         }
 
     matches = []
@@ -263,7 +267,9 @@ def search(pattern, roots):
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             if compiled.search(line):
-                matches.append({"path": str(path), "line": lineno, "text": line.strip()})
+                matches.append(
+                    {"path": str(path), "line": lineno, "text": line.strip()}
+                )
 
     # A match found is a match found regardless of what else could not be
     # read -- but an *absence* is only trustworthy when nothing was skipped.
@@ -304,16 +310,34 @@ def search(pattern, roots):
                 )
             )
         if unreadable_files:
-            problems.append("file(s) could not be read: {0}".format(", ".join(unreadable_files)))
-        result["problem"] = "no match found, but not every path was searched -- " + "; ".join(problems)
+            problems.append(
+                "file(s) could not be read: {0}".format(", ".join(unreadable_files))
+            )
+        result["problem"] = (
+            "no match found, but not every path was searched -- " + "; ".join(problems)
+        )
     return result
 
 
 def _build_parser():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else "")
-    parser.add_argument("--pattern", required=True, help="Regular expression naming the code path or contract to check.")
-    parser.add_argument("--path", action="append", default=[], dest="paths", help="File or directory to search. Repeatable; defaults to the current directory.")
-    parser.add_argument("--indent", type=int, default=2, help="JSON indent (0 for compact).")
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0] if __doc__ else ""
+    )
+    parser.add_argument(
+        "--pattern",
+        required=True,
+        help="Regular expression naming the code path or contract to check.",
+    )
+    parser.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        dest="paths",
+        help="File or directory to search. Repeatable; defaults to the current directory.",
+    )
+    parser.add_argument(
+        "--indent", type=int, default=2, help="JSON indent (0 for compact)."
+    )
     return parser
 
 
@@ -328,7 +352,9 @@ def main(argv=None):
     result = search(args.pattern, roots)
     indent = args.indent if args.indent > 0 else None
     print(json.dumps(result, indent=indent, sort_keys=True))
-    return EXIT_COULD_NOT_SEARCH if result["state"] == STATE_COULD_NOT_SEARCH else EXIT_OK
+    return (
+        EXIT_COULD_NOT_SEARCH if result["state"] == STATE_COULD_NOT_SEARCH else EXIT_OK
+    )
 
 
 if __name__ == "__main__":

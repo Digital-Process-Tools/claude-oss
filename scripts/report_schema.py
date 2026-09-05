@@ -60,25 +60,47 @@ import re
 import sys
 from pathlib import Path
 
-SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "agent-report.schema.json"
+SCHEMA_PATH = (
+    Path(__file__).resolve().parent.parent / "schemas" / "agent-report.schema.json"
+)
 
 # Keywords this validator implements. Anything else in a subschema is refused rather
 # than skipped: a `minLength` or a `oneOf` written into the schema and quietly ignored
 # is a constraint that reads as enforced and is not -- a guard nominally on, effectively
 # off, which is the class of defect this whole document exists to make visible.
 _KEYWORDS = {
-    "type", "const", "enum", "required", "properties", "additionalProperties",
-    "items", "$ref", "allOf",
+    "type",
+    "const",
+    "enum",
+    "required",
+    "properties",
+    "additionalProperties",
+    "items",
+    "$ref",
+    "allOf",
     # ours
-    "x-items", "x-rule",
+    "x-items",
+    "x-rule",
     # the contract number and the relations between contracts, both read by the
     # version pass below rather than by _walk
-    "x-schema-version", "x-schema-compatibility",
+    "x-schema-version",
+    "x-schema-compatibility",
     # annotations, carried for readers and ignored on purpose
-    "$schema", "$id", "$defs", "$comment", "title", "description", "examples",
-    "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-honesty-compatibility",
+    "$schema",
+    "$id",
+    "$defs",
+    "$comment",
+    "title",
+    "description",
+    "examples",
+    "x-honesty",
+    "x-honesty-on-disk",
+    "x-honesty-versioning",
+    "x-honesty-compatibility",
     "x-honesty-compliance",
-    "x-enforced", "x-enforced-on-disk", "x-convention",
+    "x-enforced",
+    "x-enforced-on-disk",
+    "x-convention",
 }
 
 # Keys that carry prose for a reader and change nothing a validator does. Stripped
@@ -105,8 +127,14 @@ _KEYWORDS = {
 # The prose about the map (x-honesty-compatibility) is stripped, like every other
 # narrative. The map itself is inside.
 _ANNOTATION_KEYS = {
-    "title", "description", "examples", "$comment",
-    "x-honesty", "x-honesty-on-disk", "x-honesty-versioning", "x-honesty-compatibility",
+    "title",
+    "description",
+    "examples",
+    "$comment",
+    "x-honesty",
+    "x-honesty-on-disk",
+    "x-honesty-versioning",
+    "x-honesty-compatibility",
     "x-honesty-compliance",
     "x-convention",
     "x-schema-version",
@@ -420,10 +448,12 @@ def version_verdict(report, schema, record=None):
         "this report was written against report schema version {} and this copy "
         "implements version {} -- {} contract, which this copy does not hold. That "
         "is not a defect in the report.{}".format(
-            theirs, ours,
+            theirs,
+            ours,
             "a newer" if newer else "an older",
             " Install a plugin copy at or above the one that wrote it."
-            if newer else "",
+            if newer
+            else "",
         )
     )
 
@@ -475,7 +505,9 @@ def semantic_fingerprint(schema):
     rather than the version bumped when this function moves.
     """
     canonical = json.dumps(
-        _strip_annotations(schema), sort_keys=True, separators=(",", ":"),
+        _strip_annotations(schema),
+        sort_keys=True,
+        separators=(",", ":"),
         ensure_ascii=False,
     )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -578,7 +610,9 @@ def _walk(value, sub, root, path, errors, rules):
             return
 
     if "const" in sub and value != sub["const"]:
-        errors.append("{}: expected {!r}, got {!r}".format(_label(path), sub["const"], value))
+        errors.append(
+            "{}: expected {!r}, got {!r}".format(_label(path), sub["const"], value)
+        )
     if "enum" in sub and value not in sub["enum"]:
         errors.append(
             "{}: {!r} is not one of {}".format(_label(path), value, sub["enum"])
@@ -595,16 +629,35 @@ def _walk(value, sub, root, path, errors, rules):
                     errors.append("{}: unknown key {!r}".format(_label(path), key))
         for key, child in properties.items():
             if key in value:
-                _walk(value[key], child, root, "{}.{}".format(path, key) if path else key,
-                      errors, rules)
+                _walk(
+                    value[key],
+                    child,
+                    root,
+                    "{}.{}".format(path, key) if path else key,
+                    errors,
+                    rules,
+                )
         if "x-items" in sub and isinstance(value.get("items"), list):
             for index, item in enumerate(value["items"]):
-                _walk(item, sub["x-items"], root,
-                      "{}.items[{}]".format(_label(path), index), errors, rules)
+                _walk(
+                    item,
+                    sub["x-items"],
+                    root,
+                    "{}.items[{}]".format(_label(path), index),
+                    errors,
+                    rules,
+                )
 
     if isinstance(value, list) and "items" in sub and isinstance(sub["items"], dict):
         for index, item in enumerate(value):
-            _walk(item, sub["items"], root, "{}[{}]".format(_label(path), index), errors, rules)
+            _walk(
+                item,
+                sub["items"],
+                root,
+                "{}[{}]".format(_label(path), index),
+                errors,
+                rules,
+            )
 
     if "x-rule" in sub:
         rules.append((sub["x-rule"], value, path))
@@ -683,11 +736,17 @@ def _rule_finding(node, path, errors):
     sentence to write.
     """
     if not _text(node, "text"):
-        errors.append("{}: a finding carries its sentence, not a boolean".format(_label(path)))
-    if node.get("disposition") in ("refused", "argued-down") and not _text(node, "reason"):
+        errors.append(
+            "{}: a finding carries its sentence, not a boolean".format(_label(path))
+        )
+    if node.get("disposition") in ("refused", "argued-down") and not _text(
+        node, "reason"
+    ):
         errors.append(
             "{}: disposition {!r} needs a reason -- a refusal with no argument reads "
-            "exactly like a well-argued one".format(_label(path), node.get("disposition"))
+            "exactly like a well-argued one".format(
+                _label(path), node.get("disposition")
+            )
         )
     if node.get("disposition") == "report-for-filing" and not _text(node, "reason"):
         errors.append(
@@ -732,7 +791,9 @@ def _rule_compliance_item(node, path, errors):
 
 
 def _rule_class_verdict(node, path, errors):
-    if node.get("state") in ("not-applicable", "not-checked") and not _text(node, "why"):
+    if node.get("state") in ("not-applicable", "not-checked") and not _text(
+        node, "why"
+    ):
         errors.append(
             "{}: state {!r} needs a why -- a class nobody reached must not read like a "
             "class that passed".format(_label(path), node.get("state"))
@@ -763,7 +824,9 @@ def _rule_docs_target(node, path, errors):
 def _rule_test_phase(node, path, errors):
     state = node.get("state")
     if state == "observed" and not _text(node, "result"):
-        errors.append("{}: state 'observed' needs the result it observed".format(_label(path)))
+        errors.append(
+            "{}: state 'observed' needs the result it observed".format(_label(path))
+        )
     if state in ("not-applicable", "not-run") and not _text(node, "reason"):
         errors.append(
             "{}: state {!r} needs a reason -- a phase nobody ran is not a phase that "
@@ -800,7 +863,9 @@ def _rule_full_suite(node, path, errors):
 def _rule_pr_body(node, path, errors):
     state = node.get("state")
     if state == "written" and not _text(node, "path"):
-        errors.append("{}: state 'written' needs the path it was written to".format(_label(path)))
+        errors.append(
+            "{}: state 'written' needs the path it was written to".format(_label(path))
+        )
     if state == "not-written" and not _text(node, "reason"):
         errors.append("{}: state 'not-written' needs a reason".format(_label(path)))
 
@@ -821,7 +886,9 @@ def _rule_pr_body(node, path, errors):
     if closes_state == "closes" and not _issue_numbers(closes.get("issues")):
         errors.append(
             "{}: state 'closes' needs at least one issue number in `issues`. Saying it "
-            "closes something without saying what closes nothing.".format(_label(closes_path))
+            "closes something without saying what closes nothing.".format(
+                _label(closes_path)
+            )
         )
     if closes_state == "closes-nothing" and not _text(closes, "reason"):
         errors.append(
@@ -924,8 +991,9 @@ def below_bar_report_errors(report):
             errors.append(
                 "{}: below-bar says this is recorded in the pull request body, and "
                 "pr_body.state is {!r}. There is no body for it to be in, so the "
-                "decision has no receipt -- file it, fix it, or write the body."
-                .format(label, state)
+                "decision has no receipt -- file it, fix it, or write the body.".format(
+                    label, state
+                )
             )
     return errors
 
@@ -1173,8 +1241,9 @@ _CLOSING_KEYWORD = r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)"
 _BOUND = r"\b" + _CLOSING_KEYWORD + r"\b[ \t]*:?\s+(?:[\w.-]+/[\w.-]+)?"
 
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
-_FENCE = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,}).*?(?:^[ \t]{0,3}\1[^\n]*$|\Z)",
-                    re.DOTALL | re.MULTILINE)
+_FENCE = re.compile(
+    r"^[ \t]{0,3}(`{3,}|~{3,}).*?(?:^[ \t]{0,3}\1[^\n]*$|\Z)", re.DOTALL | re.MULTILINE
+)
 _INLINE_CODE = re.compile(r"(`+)[\s\S]*?\1")
 _ANY_CLOSING_REFERENCE = re.compile(_BOUND + r"#\d+", re.IGNORECASE)
 
@@ -1261,7 +1330,9 @@ def no_close_body_errors(payload):
         "outside a code span or an HTML comment. no_close is supertool's own escape "
         "hatch for a pull request that genuinely closes nothing; a bound keyword "
         "beside it says the opposite, and the forge would close the issue despite "
-        "the payload's own claim that it would not.".format(_one_line(found.group(0), 60))
+        "the payload's own claim that it would not.".format(
+            _one_line(found.group(0), 60)
+        )
     ]
 
 
@@ -1401,7 +1472,14 @@ def validate_pr_body(report, schema=None, base_dir=None):
     schema = schema if schema is not None else load_schema()
     errors = []
     rules = []
-    _walk(payload, schema["$defs"]["forge_payload"], schema, "pr_body.payload", errors, rules)
+    _walk(
+        payload,
+        schema["$defs"]["forge_payload"],
+        schema,
+        "pr_body.payload",
+        errors,
+        rules,
+    )
     if errors:
         return errors
 
@@ -1415,7 +1493,9 @@ def validate_pr_body(report, schema=None, base_dir=None):
     if isinstance(branch, str) and payload.get("head") != branch:
         errors.append(
             "pr_body.payload.head: {!r} but the report is on branch {!r} -- a pull "
-            "request opened from somewhere other than the work".format(payload.get("head"), branch)
+            "request opened from somewhere other than the work".format(
+                payload.get("head"), branch
+            )
         )
     # Reached only once the payload was opened and parsed. A body that could not be
     # read has no closing keyword to be missing, and reporting one for it would be
@@ -1475,7 +1555,9 @@ def _wrong_file(path):
         "names this payload at pr_body.path, and validating it opens this file and "
         "checks its head against the report's branch, which is the check this file "
         "cannot answer on its own:"
-        "\n    python3 report_schema.py <the report path the agent replied with>".format(path)
+        "\n    python3 report_schema.py <the report path the agent replied with>".format(
+            path
+        )
     )
 
 
@@ -1503,15 +1585,19 @@ def inspect_file(path, schema=None, check_pr_body=True):
         # configuration being broken: a wrong answer delivered calmly, which is
         # worse than the traceback it replaced. `_contained_path` already makes
         # exactly this argument for the payload path one field over.
-        return VERSION_UNDECIDABLE, "the report could not be read", [
-            "{}: cannot read the report ({})".format(_one_line(path), _one_line(exc))
-        ]
+        return (
+            VERSION_UNDECIDABLE,
+            "the report could not be read",
+            ["{}: cannot read the report ({})".format(_one_line(path), _one_line(exc))],
+        )
     try:
         report = json.loads(raw)
     except json.JSONDecodeError as exc:
-        return VERSION_UNDECIDABLE, "the report could not be parsed", [
-            "{}: not valid json ({})".format(path, exc)
-        ]
+        return (
+            VERSION_UNDECIDABLE,
+            "the report could not be parsed",
+            ["{}: not valid json ({})".format(path, exc)],
+        )
     if _is_forge_payload(report, schema):
         # A category error, not a contract question. Naming a version here would
         # invite correcting a correct payload.
@@ -1599,25 +1685,33 @@ def main(argv=None):
         )
         if cannot_speak:
             unvalidatable = True
-            held = "version {}".format(ours) if ours is not None else (
-                "the schema this copy loaded, which names no contract"
+            held = (
+                "version {}".format(ours)
+                if ours is not None
+                else ("the schema this copy loaded, which names no contract")
             )
             _line(sys.stdout, "UNVALIDATABLE {}".format(report))
             _line(sys.stdout, "  {}".format(sentence))
             if errors:
-                _line(sys.stdout, (
-                    "  the shape pass ran anyway, against {}. These are findings "
-                    "about the contract THIS copy holds and are not necessarily "
-                    "defects in the report:".format(held)
-                ))
+                _line(
+                    sys.stdout,
+                    (
+                        "  the shape pass ran anyway, against {}. These are findings "
+                        "about the contract THIS copy holds and are not necessarily "
+                        "defects in the report:".format(held)
+                    ),
+                )
                 for error in errors:
                     _line(sys.stdout, "    {}".format(error))
             else:
-                _line(sys.stdout, (
-                    "  the shape pass found nothing, but it answered a question about "
-                    "{} and not about the contract this report claims, so it is not "
-                    "necessarily a clean report.".format(held)
-                ))
+                _line(
+                    sys.stdout,
+                    (
+                        "  the shape pass found nothing, but it answered a question about "
+                        "{} and not about the contract this report claims, so it is not "
+                        "necessarily a clean report.".format(held)
+                    ),
+                )
         elif errors:
             failed = True
             _line(sys.stdout, "INVALID {} ({})".format(report, sentence))
@@ -1633,9 +1727,12 @@ def main(argv=None):
         # comparing them, which was #212's remedy defeating itself one field
         # over. The path above is the argument as typed; this is where it landed.
         where, where_state = resolved_receipt(report)
-        _line(sys.stdout, "  at: {}".format(
-            where if where_state == "resolved" else "could-not-resolve -- " + where
-        ))
+        _line(
+            sys.stdout,
+            "  at: {}".format(
+                where if where_state == "resolved" else "could-not-resolve -- " + where
+            ),
+        )
         if args.shape_only:
             # A check that was skipped must never render as a check that passed.
             _line(sys.stdout, "  shape only: the pull request payload was not read")

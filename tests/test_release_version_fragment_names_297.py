@@ -169,7 +169,9 @@ CAUSE_PHRASES = [case[2] for case in CAUSES]
 
 
 @pytest.mark.parametrize("label, arrange, phrase", CAUSES, ids=CAUSE_IDS)
-def test_every_unreadable_cause_names_itself_and_no_other(tmp_path, label, arrange, phrase):
+def test_every_unreadable_cause_names_itself_and_no_other(
+    tmp_path, label, arrange, phrase
+):
     """One cause per fixture, and the reason names that one and none of the other
     three. Asserting only that the right phrase is present would pass against a
     reason line that recited all four every time, which is the defect #297 is."""

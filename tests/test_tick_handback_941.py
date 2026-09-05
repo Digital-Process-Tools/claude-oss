@@ -94,9 +94,7 @@ def test_a_promise_after_a_real_header_does_not_trigger_the_promise_reason():
 
 
 def test_cli_names_the_promise_pattern_in_the_reason():
-    result = _run(
-        "Merged fix/899. Will resume once the poller reports back in."
-    )
+    result = _run("Merged fix/899. Will resume once the poller reports back in.")
     assert result.returncode == tick_handback.EXIT_CODES["could-not-classify"], (
         result.stdout + result.stderr
     )

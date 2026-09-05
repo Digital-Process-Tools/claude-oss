@@ -27,7 +27,9 @@ import sys
 #: `<issue>.<slug>.md`. The issue number is what ties a fragment to the work that found the trap;
 #: the slug is what stops two fragments on one issue colliding. Both halves are required, so
 #: `904.md` does not parse -- a fragment with no slug is a path two lanes on one issue would share.
-FRAGMENT_RE = re.compile(r"\A(?P<issue>[0-9]+)\.(?P<slug>[A-Za-z0-9][A-Za-z0-9._-]*)\.md\Z")
+FRAGMENT_RE = re.compile(
+    r"\A(?P<issue>[0-9]+)\.(?P<slug>[A-Za-z0-9][A-Za-z0-9._-]*)\.md\Z"
+)
 
 DIRNAME = "trap.d"
 

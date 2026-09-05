@@ -280,7 +280,9 @@ def test_the_two_rules_agree_on_whether_a_fragment_declares_readably(section, bo
         verdict is None and section in release_version.MUST_DECLARE
     )
     check_finding = (
-        assemble_changelog.compatibility_finding("1.{0}.md".format(section), section, body)
+        assemble_changelog.compatibility_finding(
+            "1.{0}.md".format(section), section, body
+        )
         is not None
     )
 
@@ -291,7 +293,8 @@ def test_the_corpus_exercises_both_answers():
     """The control on the parametrised test above: a corpus every arm of which lands
     on the same side proves the two rules agree about nothing in particular."""
     answers = {
-        assemble_changelog.compatibility_finding("1.removed.md", "removed", body) is None
+        assemble_changelog.compatibility_finding("1.removed.md", "removed", body)
+        is None
         for body in COMPAT_CORPUS
     }
 

@@ -65,8 +65,12 @@ BATCH_OP_MISSING_ERROR = "batch op missing 'op' field"
 #: a document. A `None` return means the document does not state the fact at
 #: all -- reported as a finding rather than crashing the comparison.
 _OP_ROSTER_RE = re.compile(r"Batch 6-7 ops per call — (.*?) — never one \w+ per file")
-_PASTE_FIELDS_RE = re.compile(r"paste:@-'?\`?[^.;]*?carrying `(path)`(?: and| ,)? `(content)`")
-_EDIT_FIELDS_RE = re.compile(r"edit:@-'?\`?[^.;]*?carrying `(path)`, `(old)` and `(new)`")
+_PASTE_FIELDS_RE = re.compile(
+    r"paste:@-'?\`?[^.;]*?carrying `(path)`(?: and| ,)? `(content)`"
+)
+_EDIT_FIELDS_RE = re.compile(
+    r"edit:@-'?\`?[^.;]*?carrying `(path)`, `(old)` and `(new)`"
+)
 _BATCH_ERROR_RE = re.compile(r"fails[^`]*`(batch op missing[^`]*)`")
 
 
@@ -134,11 +138,16 @@ def test_the_shared_facts_are_actually_findable_in_both_documents():
     dev = _collapse(DEVELOPER_MD.read_text(encoding="utf-8"))
     loop = _collapse(MANAGER_SKILL.read_text(encoding="utf-8"))
     missing = {
-        name: ("developer.md" if fn(dev) is None else None, "manager loop" if fn(loop) is None else None)
+        name: (
+            "developer.md" if fn(dev) is None else None,
+            "manager loop" if fn(loop) is None else None,
+        )
         for name, fn in FACT_EXTRACTORS.items()
         if fn(dev) is None or fn(loop) is None
     }
-    assert not missing, "a shared fact is not stated at all in one copy: {}".format(missing)
+    assert not missing, "a shared fact is not stated at all in one copy: {}".format(
+        missing
+    )
 
 
 def test_the_batch_error_string_matches_the_measured_tool_output():

@@ -104,7 +104,9 @@ EXIT_LABEL_MISSING = 4
 
 LABEL_PREFIX = "cohort-"
 
-ISSUES_LISTING_JQ = ".[] | select(.pull_request == null) | {number, created_at, closed_at}"
+ISSUES_LISTING_JQ = (
+    ".[] | select(.pull_request == null) | {number, created_at, closed_at}"
+)
 
 DEFAULT_TIMEOUT = 60
 
@@ -162,21 +164,27 @@ def _gh_api_json(gh, path_args, run, timeout=25):
             timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return "could-not-read", None, "{} did not run ({})".format(
-            _command_text(command), exc
+        return (
+            "could-not-read",
+            None,
+            "{} did not run ({})".format(_command_text(command), exc),
         )
     stdout = _decode_output(done.stdout)
     stderr = _decode_output(done.stderr)
     if done.returncode != 0:
         message = (stderr or stdout or "").strip()
-        return "could-not-read", None, "{} failed: {}".format(
-            _command_text(command), message
+        return (
+            "could-not-read",
+            None,
+            "{} failed: {}".format(_command_text(command), message),
         )
     try:
         data = json.loads(stdout)
     except (ValueError, TypeError):
-        return "could-not-read", None, "{} printed text that is not JSON".format(
-            _command_text(command)
+        return (
+            "could-not-read",
+            None,
+            "{} printed text that is not JSON".format(_command_text(command)),
         )
     return "ok", data, ""
 
@@ -437,9 +445,7 @@ def _label_missing_reason(label, repo):
         "{} does not exist on {} yet -- gh issue edit --add-label does not "
         "create a missing label. Create it first: "
         "gh label create {} --repo {} --description "
-        "'cohort, frozen at a release' --color ededed".format(
-            label, repo, label, repo
-        )
+        "'cohort, frozen at a release' --color ededed".format(label, repo, label, repo)
     )
 
 
@@ -490,7 +496,9 @@ def apply_labels(repo, label, numbers, gh, run, timeout=25):
             )
             continue
         if done.returncode != 0:
-            message = (_decode_output(done.stderr) or _decode_output(done.stdout) or "").strip()
+            message = (
+                _decode_output(done.stderr) or _decode_output(done.stdout) or ""
+            ).strip()
             failed.append({"number": number, "reason": message})
             continue
         added.append(number)
@@ -611,9 +619,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
     if not execute:
         return {
             "state": STATE_FROZEN,
-            "reason": "dry run: would add {} to {} issue(s)".format(
-                label, len(to_add)
-            ),
+            "reason": "dry run: would add {} to {} issue(s)".format(label, len(to_add)),
             "label": label,
             "tag": tag,
             "cutoff": cutoff,
@@ -776,11 +782,12 @@ def main(argv=None):
         _emit(payload, args.as_json)
         return _exit_code(payload["state"])
 
-    payload = freeze(slug, args.tag, args.cohort, gh, subprocess.run, execute=args.execute)
+    payload = freeze(
+        slug, args.tag, args.cohort, gh, subprocess.run, execute=args.execute
+    )
     _emit(payload, args.as_json)
     return _exit_code(payload["state"])
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

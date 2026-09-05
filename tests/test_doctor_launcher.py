@@ -130,9 +130,14 @@ def test_both_shipped_scripts_strip_either_separator():
     """Asserted on the source too: the branch is one edit from being tidied away,
     and the platform that needs it is the one nobody runs locally.
     """
-    for path in (REPO_ROOT / "scripts" / "doctor.sh", REPO_ROOT / "bin" / "oss-workspace"):
+    for path in (
+        REPO_ROOT / "scripts" / "doctor.sh",
+        REPO_ROOT / "bin" / "oss-workspace",
+    ):
         text = path.read_text(encoding="utf-8")
-        assert "%\\\\*}" in text, "{} no longer strips a backslash separator".format(path.name)
+        assert "%\\\\*}" in text, "{} no longer strips a backslash separator".format(
+            path.name
+        )
 
 
 def test_launcher_never_invokes_bare_python3_as_a_command(tmp_path):
@@ -140,6 +145,10 @@ def test_launcher_never_invokes_bare_python3_as_a_command(tmp_path):
     text = LAUNCHER.read_text(encoding="utf-8")
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.startswith("#") or "candidate" in stripped or "SENTINEL" in stripped:
+        if (
+            stripped.startswith("#")
+            or "candidate" in stripped
+            or "SENTINEL" in stripped
+        ):
             continue
         assert not stripped.startswith("python3 "), line

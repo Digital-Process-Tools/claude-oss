@@ -69,7 +69,9 @@ def _byte_the_default_text_codec_rejects():
     return None, codec
 
 
-def test_git_dir_survives_a_byte_the_default_text_codec_cannot_decode(monkeypatch, tmp_path):
+def test_git_dir_survives_a_byte_the_default_text_codec_cannot_decode(
+    monkeypatch, tmp_path
+):
     rejected, codec = _byte_the_default_text_codec_rejects()
     if rejected is None:
         pytest.skip(
@@ -99,7 +101,9 @@ def test_git_dir_survives_a_byte_the_default_text_codec_cannot_decode(monkeypatc
     assert result is None or isinstance(result, Path)
 
 
-def test_undecodable_bytes_are_could_not_determine_not_a_garbled_path(monkeypatch, tmp_path):
+def test_undecodable_bytes_are_could_not_determine_not_a_garbled_path(
+    monkeypatch, tmp_path
+):
     """Auditor finding on #707's own fix: decoding with `errors="replace"`
     alone does not merely avoid the crash, it silently substitutes U+FFFD
     for bytes that are not valid UTF-8 AT ALL -- not just bytes a legacy

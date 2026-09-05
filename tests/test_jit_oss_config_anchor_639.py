@@ -4,6 +4,7 @@ fires wherever that name occurs -- `.oss.json.bak`, an inner path segment, anyth
 repository (the same shape #577 fixed for TOOLS_SUPERTOOL), so both copies are covered
 here rather than just the tracked `.md`.
 """
+
 import re
 import sys
 from pathlib import Path
@@ -19,7 +20,7 @@ RULE_MD = REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "oss-conf
 def _frontmatter_match(body):
     for line in body.splitlines():
         if line.startswith("match:"):
-            return line[len("match:"):].strip()
+            return line[len("match:") :].strip()
     raise AssertionError("no match: line found in frontmatter")
 
 
@@ -67,7 +68,9 @@ def test_index_tsv_agrees_with_the_md_pattern():
     """
     index = REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "00-index.tsv"
     rows = [
-        line.split(chr(9)) for line in index.read_text(encoding="utf-8").splitlines() if line
+        line.split(chr(9))
+        for line in index.read_text(encoding="utf-8").splitlines()
+        if line
     ]
     matches = [row[0] for row in rows if len(row) > 1 and row[1] == "oss-config.md"]
     assert matches == [_pattern_from_md()]

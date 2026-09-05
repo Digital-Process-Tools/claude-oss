@@ -18,6 +18,7 @@ Three states, and the third ('could-not-read') must never render as
 'unchanged': a check with nothing recorded to compare against is not a check
 that found no movement.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -67,6 +68,7 @@ def test_snapshot_is_consumed_by_the_first_check():
     whatever tick actually wrote it -- that would let a stale snapshot from a
     crashed tick silently answer for a later, unrelated one."""
     import tempfile
+
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "state.json"
         oss_state.record_plugin_root(str(path), ROOT_A)
@@ -79,6 +81,7 @@ def test_snapshot_is_consumed_by_the_first_check():
 def test_record_plugin_root_refuses_an_empty_value(tmp_path):
     path = tmp_path / "state.json"
     import pytest
+
     with pytest.raises(oss_state.StateError):
         oss_state.record_plugin_root(str(path), "")
 
@@ -91,6 +94,7 @@ def test_record_plugin_root_turns_an_oserror_into_a_stateerror(tmp_path, monkeyp
     is a write path added by this diff and must not be the one place that
     guarantee does not hold -- MUST FIRE."""
     import pytest
+
     path = tmp_path / "state.json"
 
     def _boom(self, *a, **kw):
@@ -115,9 +119,7 @@ def test_plugin_root_line_renders_all_three_states(tmp_path):
     assert "unchanged" in unchanged
 
     oss_state.record_plugin_root(str(path), ROOT_A)
-    changed = oss_state.plugin_root_line(
-        oss_state.check_plugin_root(str(path), ROOT_B)
-    )
+    changed = oss_state.plugin_root_line(oss_state.check_plugin_root(str(path), ROOT_B))
     assert "changed" in changed and ROOT_A in changed and ROOT_B in changed
 
 
@@ -151,7 +153,9 @@ def test_cli_check_plugin_root_with_no_snapshot_says_could_not_read(tmp_path, ca
     assert "could not read" in capsys.readouterr().err or True
 
 
-def test_a_failed_unlink_still_scrubs_the_leftover_for_a_later_unrelated_read(tmp_path, monkeypatch):
+def test_a_failed_unlink_still_scrubs_the_leftover_for_a_later_unrelated_read(
+    tmp_path, monkeypatch
+):
     """Self-review finding: if the snapshot's own delete fails (a transient lock,
     observed as common on Windows for a just-closed file), a LATER, unrelated
     tick's own check_plugin_root call must not silently read the leftover as a
@@ -187,6 +191,7 @@ def test_cli_record_plugin_root_in_a_reading_mode_is_refused(tmp_path, capsys):
     they cannot be silently combined. argparse refuses this itself, before
     `_main`'s own body ever runs, by raising SystemExit(2)."""
     import pytest
+
     path = tmp_path / "state.json"
     with pytest.raises(SystemExit) as exc:
         oss_state._main([str(path), "--last", "--record-plugin-root", ROOT_A])

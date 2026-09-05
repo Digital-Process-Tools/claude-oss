@@ -81,7 +81,9 @@ def test_this_repos_own_config_carries_no_ci_block():
     """The issue's subject. 3 on disk, 14 on the board, and the value nobody may
     trust is the one a reader who has not read the manager skill will believe.
     """
-    config = json.loads((REPO_ROOT / oss_config.CONFIG_NAME).read_text(encoding="utf-8"))
+    config = json.loads(
+        (REPO_ROOT / oss_config.CONFIG_NAME).read_text(encoding="utf-8")
+    )
     assert "ci" not in config
 
 
@@ -141,7 +143,9 @@ def test_the_probe_emits_no_ci_block_even_with_workflow_jobs():
     """`--probe` counted job declarations and shipped the count as `required_checks`.
     That is where the wrong value on disk came from (#85).
     """
-    built = oss_config.build(_probe(workflow_jobs=["tests.yml:pytest", "changelog.yml:fragment"]))
+    built = oss_config.build(
+        _probe(workflow_jobs=["tests.yml:pytest", "changelog.yml:fragment"])
+    )
     assert "ci" not in built
 
 
@@ -150,7 +154,9 @@ def test_build_says_nothing_about_required_checks_but_still_speaks(monkeypatch, 
     when `--build` printed nothing at all -- so pin a NOTE that must still fire.
     """
     monkeypatch.setattr(
-        sys, "stdin", io.StringIO(json.dumps(_probe(workflow_jobs=["tests.yml:pytest"])))
+        sys,
+        "stdin",
+        io.StringIO(json.dumps(_probe(workflow_jobs=["tests.yml:pytest"]))),
     )
     assert oss_config._main(["--build"]) == 0
     captured = capsys.readouterr()
@@ -281,7 +287,9 @@ def test_this_repos_installed_rule_copy_matches_the_template_it_is_generated_fro
     reader of this repo opens is the installed copy. If the two drift, the assertion is
     about text nobody reads.
     """
-    installed = REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "oss-config.md"
+    installed = (
+        REPO_ROOT / ".claude" / "jit-context" / "paths" / "01-oss" / "oss-config.md"
+    )
     assert installed.read_text(encoding="utf-8") == oss_rules.OSS_CONFIG
 
 
@@ -296,7 +304,9 @@ def test_the_docs_that_still_name_the_key_say_it_was_deleted():
     # The loop is over docs that mention the key, so it inspects nothing if none do.
     # That is a legitimate end state -- but it must be reached by measurement, not by
     # a glob that came back empty, so both halves are pinned.
-    assert named, "no command doc names the key; a reader arriving with it is told nothing"
+    assert named, (
+        "no command doc names the key; a reader arriving with it is told nothing"
+    )
     for path in named:
         body = path.read_text(encoding="utf-8")
         assert "#113" in body, path.name

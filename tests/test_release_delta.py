@@ -1037,9 +1037,7 @@ def test_an_eacces_parent_directory_is_measured_not_assumed(tmp_path):
 
         scope = module._scope(str(tmp_path), None, str(config))
         assert scope["scope"] is None, "the gate stays unscoped whatever the OS said"
-        assert str(config) in scope["scope_reason"], (
-            "the reason lost the path it names"
-        )
+        assert str(config) in scope["scope_reason"], "the reason lost the path it names"
 
         payload = module.compute(str(tmp_path), None, str(config))
         assert payload["scope"] is None
@@ -1098,8 +1096,9 @@ def test_a_config_the_filesystem_will_not_look_at_is_unscoped_not_a_traceback(
     # introduced is tested wherever this suite runs.
     unreadable = tmp_path / "undecodable.json"
     unreadable.write_bytes(b'{"release": {"tag_pattern": "v\xff{version}"}}')
-    assert "could not be read" in (
-        module._scope(str(tmp_path), None, str(unreadable))["scope_reason"]
+    assert (
+        "could not be read"
+        in (module._scope(str(tmp_path), None, str(unreadable))["scope_reason"])
     )
     absent = module._scope(str(tmp_path), None, str(tmp_path / CONFIG_NAME))
     assert "there is no" in absent["scope_reason"]

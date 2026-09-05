@@ -163,17 +163,21 @@ def test_compare_survives_a_console_that_cannot_encode_a_mutated_verdict(tmp_pat
 
     done = _child(
         [
-            str(TREE_SNAPSHOT), "compare",
-            "--before", str(before_path),
-            "--root", str(root),
+            str(TREE_SNAPSHOT),
+            "compare",
+            "--before",
+            str(before_path),
+            "--root",
+            str(root),
         ],
         CP1252_ENV,
         subject="whether compare's VERDICT print survives a cp1252 console "
         "for a mutated tree",
     )
     assert "UnicodeEncodeError" not in (done.stderr or ""), (
-        "tree_snapshot.py compare died encoding its own VERDICT line: "
-        "{0}".format((done.stderr or "")[-400:])
+        "tree_snapshot.py compare died encoding its own VERDICT line: {0}".format(
+            (done.stderr or "")[-400:]
+        )
     )
     assert done.returncode == 1, (
         "expected EXIT_CODES['mutated'] (1) for a genuinely mutated tree, "
@@ -216,17 +220,21 @@ def test_compare_survives_a_console_that_cannot_encode_a_could_not_compare_verdi
 
     done = _child(
         [
-            str(TREE_SNAPSHOT), "compare",
-            "--before", str(before_path),
-            "--root", str(root),
+            str(TREE_SNAPSHOT),
+            "compare",
+            "--before",
+            str(before_path),
+            "--root",
+            str(root),
         ],
         CP1252_ENV,
         subject="whether compare's VERDICT print survives a cp1252 console "
         "for a could-not-compare verdict",
     )
     assert "UnicodeEncodeError" not in (done.stderr or ""), (
-        "tree_snapshot.py compare died encoding its own VERDICT line: "
-        "{0}".format((done.stderr or "")[-400:])
+        "tree_snapshot.py compare died encoding its own VERDICT line: {0}".format(
+            (done.stderr or "")[-400:]
+        )
     )
     assert done.returncode == 3, (
         "expected EXIT_CODES['could-not-compare'] (3), got {0} -- a crash "

@@ -127,7 +127,8 @@ def _cli(tmp_path, issue, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(SCRIPT), str(issue), "--repo", str(tmp_path), "--json"] + list(extra_args),
+        [sys.executable, str(SCRIPT), str(issue), "--repo", str(tmp_path), "--json"]
+        + list(extra_args),
         subject="lane_setup.py --release",
         capture_output=True,
         text=True,
@@ -166,22 +167,36 @@ def _real_git_repo(tmp_path):
     repo.mkdir()
     done = subprocess.run(
         ["git", "init", "--quiet", str(repo)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {0}".format(done.stderr.strip() or done.returncode))
+        pytest.skip(
+            "git init failed here: {0}".format(done.stderr.strip() or done.returncode)
+        )
     env = dict(os.environ)
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.com"], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@example.com"],
+        env=env,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True
+    )
     (repo / "README.md").write_text("x\n")
     subprocess.run(["git", "-C", str(repo), "add", "."], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "x"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--quiet", "-m", "x"], env=env, check=True
+    )
     return repo
 
 
-def test_held_from_live_lanes_keeps_a_record_whose_branch_still_exists_locally(tmp_path):
+def test_held_from_live_lanes_keeps_a_record_whose_branch_still_exists_locally(
+    tmp_path,
+):
     repo = _real_git_repo(tmp_path)
     subprocess.run(["git", "-C", str(repo), "branch", "fix/694"], check=True)
     worktree_root = tmp_path / "wt"
@@ -211,7 +226,9 @@ def test_held_from_live_lanes_prunes_a_record_whose_branch_is_confirmed_gone(tmp
     repo = _real_git_repo(tmp_path)
     subprocess.run(["git", "-C", str(repo), "branch", "fix/694"], check=True)
     worktree_root = tmp_path / "wt"
-    record_path = _write_record(worktree_root, 694, files=["commands/tick.md"], branch="fix/694")
+    record_path = _write_record(
+        worktree_root, 694, files=["commands/tick.md"], branch="fix/694"
+    )
     # A first read while the branch exists -- #771's own precondition for
     # trusting a later absence as deletion rather than "never created".
     first = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
@@ -225,7 +242,9 @@ def test_held_from_live_lanes_prunes_a_record_whose_branch_is_confirmed_gone(tmp
     assert result["stale_pruned"] == [{"issue": 694, "branch": "fix/694"}]
 
 
-def test_held_from_live_lanes_stale_branch_prune_does_not_touch_a_live_sibling(tmp_path):
+def test_held_from_live_lanes_stale_branch_prune_does_not_touch_a_live_sibling(
+    tmp_path,
+):
     """Two records, one prunable and one not -- the held set must keep exactly
     the live one's files, and only the gone branch's record is removed from
     disk. #771 review: both branches are created (and observed by a first
@@ -286,14 +305,17 @@ def test_branch_confirmed_gone_is_false_when_git_itself_cannot_answer(tmp_path):
 # --- derive_held_set: `repo` threads through to the corroborating check ----------
 
 
-def test_derive_held_set_forwards_repo_so_a_merged_lane_stops_blocking(tmp_path, monkeypatch):
+def test_derive_held_set_forwards_repo_so_a_merged_lane_stops_blocking(
+    tmp_path, monkeypatch
+):
     """End to end, the issue's own reproduction shape: a live record for a
     merged-and-cleaned-up lane must not survive into the combined held set
     once `repo` is given, so a sibling lane checking availability against it
     reads `available` rather than `BLOCKED`."""
     real_which = lane_setup.shutil.which
     monkeypatch.setattr(
-        lane_setup.shutil, "which",
+        lane_setup.shutil,
+        "which",
         lambda name: "/usr/bin/gh" if name == "gh" else real_which(name),
     )
     real_run = subprocess.run
@@ -344,10 +366,19 @@ def test_lane_report_surfaces_which_records_were_pruned(tmp_path):
     subprocess.run(["git", "-C", str(repo), "branch", "-D", "fix/694"], check=True)
     derived = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
     # Wrap in the same shape `derive_held_set` hands `lane_report`.
-    derived_held = {"state": "resolved", "held": derived["held"], "lanes": derived, "detail": ""}
+    derived_held = {
+        "state": "resolved",
+        "held": derived["held"],
+        "lanes": derived,
+        "detail": "",
+    }
 
-    report = lane_setup.lane_report(tmp_path, ["scripts/free.py"], None, derived_held=derived_held)
-    assert report["held_source"]["stale_pruned"] == [{"issue": 694, "branch": "fix/694"}]
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/free.py"], None, derived_held=derived_held
+    )
+    assert report["held_source"]["stale_pruned"] == [
+        {"issue": 694, "branch": "fix/694"}
+    ]
 
 
 def test_lane_report_stale_pruned_is_empty_when_nothing_was_pruned(tmp_path):
@@ -358,9 +389,16 @@ def test_lane_report_stale_pruned_is_empty_when_nothing_was_pruned(tmp_path):
     worktree_root = tmp_path / "wt"
     _write_record(worktree_root, 1, files=["a.py"], branch="fix/1")
     derived = lane_setup.held_from_live_lanes(worktree_root, repo=repo)
-    derived_held = {"state": "resolved", "held": derived["held"], "lanes": derived, "detail": ""}
+    derived_held = {
+        "state": "resolved",
+        "held": derived["held"],
+        "lanes": derived,
+        "detail": "",
+    }
 
-    report = lane_setup.lane_report(tmp_path, ["scripts/free.py"], None, derived_held=derived_held)
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/free.py"], None, derived_held=derived_held
+    )
     assert report["held_source"]["stale_pruned"] == []
 
 
@@ -385,7 +423,12 @@ def test_receipt_says_nothing_about_a_prune_when_none_happened(tmp_path):
     """Control: the new line must not appear on an ordinary, clean derivation."""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "free.py").write_text("x\n")
-    derived_held = {"state": "resolved", "held": {}, "lanes": {"stale_pruned": []}, "detail": ""}
+    derived_held = {
+        "state": "resolved",
+        "held": {},
+        "lanes": {"stale_pruned": []},
+        "detail": "",
+    }
     payload = _minimal_payload(tmp_path, derived_held, ["scripts/free.py"])
     text = lane_setup.receipt(payload)
     assert "stale record(s) released" not in text
@@ -397,15 +440,30 @@ def _minimal_payload(repo, derived_held, lane_patterns):
         "repo": str(repo),
         "config": {"state": "ok", "problems": []},
         "base": {
-            "state": "resolved", "remote": "origin", "ref": "origin/main",
-            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef", "detail": "",
+            "state": "resolved",
+            "remote": "origin",
+            "ref": "origin/main",
+            "sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+            "detail": "",
         },
         "branch": {
-            "state": "resolved", "pattern": "fix/{issue}", "name": "fix/734",
-            "detail": "", "exists_local": False, "exists_remote": False,
+            "state": "resolved",
+            "pattern": "fix/{issue}",
+            "name": "fix/734",
+            "detail": "",
+            "exists_local": False,
+            "exists_remote": False,
         },
-        "worktree": {"state": "resolved", "root": "/tmp", "path": "/tmp/734", "detail": "", "exists": False},
+        "worktree": {
+            "state": "resolved",
+            "root": "/tmp",
+            "path": "/tmp/734",
+            "detail": "",
+            "exists": False,
+        },
         "board": {"state": "ok", "lines": []},
         "lanes": None,
-        "lane": lane_setup.lane_report(repo, lane_patterns, None, derived_held=derived_held),
+        "lane": lane_setup.lane_report(
+            repo, lane_patterns, None, derived_held=derived_held
+        ),
     }

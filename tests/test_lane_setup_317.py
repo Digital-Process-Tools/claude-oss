@@ -111,7 +111,8 @@ def _clone(origin, dest, config=None):
 
 def _run(repo, issue, *extra, env=None):
     return subprocess.run(
-        [sys.executable, str(SCRIPT), str(issue), "--repo", str(repo), "--json"] + list(extra),
+        [sys.executable, str(SCRIPT), str(issue), "--repo", str(repo), "--json"]
+        + list(extra),
         capture_output=True,
         text=True,
         env=env if env is not None else _env(),
@@ -171,7 +172,9 @@ def test_base_resolves_to_the_fetched_default_branch(tmp_path):
     assert code == OK
 
 
-def test_base_could_not_resolve_when_there_is_nothing_to_fetch_and_no_local_ref(tmp_path):
+def test_base_could_not_resolve_when_there_is_nothing_to_fetch_and_no_local_ref(
+    tmp_path,
+):
     """No origin remote at all, and no prior fetch to fall back on."""
     bare = tmp_path / "lone"
     bare.mkdir()
@@ -230,7 +233,9 @@ def test_branch_occupancy_is_reported_both_ways(tmp_path):
 
     _git(repo, "branch", "fix/999")
     _, taken = _payload(repo, 999)
-    assert taken["branch"]["exists_local"] is True, "must-fire: the branch is already there"
+    assert taken["branch"]["exists_local"] is True, (
+        "must-fire: the branch is already there"
+    )
 
 
 # ------------------------------------------------------------------------- worktree
@@ -279,7 +284,9 @@ def test_worktree_invalid_when_resolve_worktree_refuses(tmp_path, monkeypatch):
     import oss_config  # noqa: E402
 
     def _refuse(root, target):
-        raise oss_config.ContainmentError("worktree target {!r} escapes the root".format(target))
+        raise oss_config.ContainmentError(
+            "worktree target {!r} escapes the root".format(target)
+        )
 
     monkeypatch.setattr(oss_config, "resolve_worktree", _refuse)
     result = lane_setup.derive_worktree({"worktree_root": str(tmp_path)}, 317)
@@ -327,13 +334,14 @@ def _stub_supertool(tmp_path, text, exit_code=0):
     if os.name == "nt":
         stub = bindir / "supertool.cmd"
         stub.write_text(
-            "@echo off\r\ntype \"{0}\"\r\nexit /b {1}\r\n".format(board, exit_code),
+            '@echo off\r\ntype "{0}"\r\nexit /b {1}\r\n'.format(board, exit_code),
             encoding="utf-8",
         )
     else:
         stub = bindir / "supertool"
         stub.write_text(
-            "#!/bin/sh\ncat \"{0}\"\nexit {1}\n".format(board, exit_code), encoding="utf-8"
+            '#!/bin/sh\ncat "{0}"\nexit {1}\n'.format(board, exit_code),
+            encoding="utf-8",
         )
         stub.chmod(0o755)
 
@@ -373,7 +381,9 @@ def test_board_is_condensed_from_a_stubbed_supertool(tmp_path):
     assert not any(line.startswith("PASS") for line in lines)
 
 
-def test_board_is_could_not_run_on_a_nonzero_exit_even_when_the_op_name_is_echoed(tmp_path):
+def test_board_is_could_not_run_on_a_nonzero_exit_even_when_the_op_name_is_echoed(
+    tmp_path,
+):
     """A real failure this plugin's own supertool produces: an unavailable-op error
     still echoes the op's own name in its message ("op 'git-worktrees' is
     unavailable here..."), so a substring check on stdout alone cannot tell that
@@ -382,7 +392,9 @@ def test_board_is_could_not_run_on_a_nonzero_exit_even_when_the_op_name_is_echoe
     """
     origin = _origin(tmp_path)
     repo = _clone(origin, tmp_path / "work")
-    fake_error = "--- git-worktrees ---\nERROR: op 'git-worktrees' is unavailable here\n"
+    fake_error = (
+        "--- git-worktrees ---\nERROR: op 'git-worktrees' is unavailable here\n"
+    )
     env = _stub_supertool(tmp_path, fake_error, exit_code=1)
 
     code, payload = _payload(repo, 317, env=env)
@@ -395,6 +407,7 @@ def test_board_is_could_not_run_when_supertool_is_absent(tmp_path):
     origin = _origin(tmp_path)
     repo = _clone(origin, tmp_path / "work")
     env = _env()
+
     # A PATH with no supertool on it at all -- not merely "supertool failed". Any
     # extension (`.cmd`, `.exe`, ...) counts, since `shutil.which` on Windows would
     # find those too.
@@ -422,7 +435,9 @@ def test_board_could_not_run_is_distinct_from_an_empty_board(tmp_path):
     """
     origin = _origin(tmp_path)
     repo = _clone(origin, tmp_path / "work")
-    fake_board = "# git-worktrees (0)\n[result] 0 occupied, 0 idle, 0 cannot tell, 0 DIRTY\n"
+    fake_board = (
+        "# git-worktrees (0)\n[result] 0 occupied, 0 idle, 0 cannot tell, 0 DIRTY\n"
+    )
     env = _stub_supertool(tmp_path, fake_board)
 
     code, payload = _payload(repo, 317, env=env)
@@ -441,7 +456,13 @@ def test_receipt_distinguishes_unknown_branch_occupancy_from_confirmed_free(tmp_
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
     import lane_setup  # noqa: E402
 
-    base_payload = {"remote": "origin", "state": "resolved", "ref": "origin/main", "sha": "a" * 40, "detail": ""}
+    base_payload = {
+        "remote": "origin",
+        "state": "resolved",
+        "ref": "origin/main",
+        "sha": "a" * 40,
+        "detail": "",
+    }
 
     confirmed_free = dict(
         issue=317,
@@ -456,18 +477,30 @@ def test_receipt_distinguishes_unknown_branch_occupancy_from_confirmed_free(tmp_
             "exists_remote": False,
             "detail": "",
         },
-        worktree={"state": "unknown", "root": None, "path": None, "detail": "", "exists": None},
+        worktree={
+            "state": "unknown",
+            "root": None,
+            "path": None,
+            "detail": "",
+            "exists": None,
+        },
         board={"state": "ok", "lines": [], "detail": ""},
     )
     unknown = dict(confirmed_free)
-    unknown["branch"] = dict(confirmed_free["branch"], exists_local=None, exists_remote=None)
+    unknown["branch"] = dict(
+        confirmed_free["branch"], exists_local=None, exists_remote=None
+    )
 
     free_text = lane_setup.receipt(confirmed_free)
     unknown_text = lane_setup.receipt(unknown)
 
     assert "unknown" not in free_text.split("branch")[1].splitlines()[0]
-    assert "unknown" in [l for l in unknown_text.splitlines() if l.startswith("branch")][0]
-    assert free_text != unknown_text, "a confirmed-free branch and an unknown one must not render alike"
+    assert (
+        "unknown" in [l for l in unknown_text.splitlines() if l.startswith("branch")][0]
+    )
+    assert free_text != unknown_text, (
+        "a confirmed-free branch and an unknown one must not render alike"
+    )
 
 
 def test_receipt_mode_prints_text_not_json(tmp_path):

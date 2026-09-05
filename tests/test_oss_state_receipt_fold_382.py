@@ -48,7 +48,8 @@ FORGE_INTAKE = "\nintake the next tick: 0 filings / 9 merged pull requests = 0.0
 
 def _lane_record(window="a tick", model="sonnet"):
     return oss_state.lane_models(
-        [{"issue": 1, "model": model, "choice": oss_state.CHOICE_DEFAULT}], window=window
+        [{"issue": 1, "model": model, "choice": oss_state.CHOICE_DEFAULT}],
+        window=window,
     )
 
 

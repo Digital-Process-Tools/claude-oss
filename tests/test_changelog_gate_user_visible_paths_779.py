@@ -118,15 +118,21 @@ def test_an_ordinary_ere_pattern_still_validates():
     """Positive control for the three refusals above: a pattern using only
     POSIX ERE syntax -- anchors, character classes, alternation, quantifiers,
     a backslash-escaped metacharacter -- is still accepted."""
-    assert oss_config.user_visible_paths_problem(
-        [r"^docs/", r"^README\.md$", r"^(docs|tests)/"]
-    ) is None
+    assert (
+        oss_config.user_visible_paths_problem(
+            [r"^docs/", r"^README\.md$", r"^(docs|tests)/"]
+        )
+        is None
+    )
 
 
-@pytest.mark.parametrize("pattern", [
-    "a{1,2,3}",  # three counts -- grep -E: "invalid repetition count(s)"
-    "a{",        # unbalanced brace -- grep -E: "braces not balanced"
-])
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "a{1,2,3}",  # three counts -- grep -E: "invalid repetition count(s)"
+        "a{",  # unbalanced brace -- grep -E: "braces not balanced"
+    ],
+)
 def test_a_malformed_brace_interval_is_refused(pattern):
     """#1015: `re.compile` reads `a{1,2,3}` as eight literal characters (it does
     not match Python's own interval grammar either, so it never raises), and
@@ -144,25 +150,31 @@ def test_a_malformed_brace_interval_is_refused(pattern):
 def test_a_well_formed_brace_interval_still_validates():
     """Positive control for the pair above: `{m}`, `{m,}` and `{m,n}` with
     m <= n are real POSIX ERE interval bounds and must still be accepted."""
-    assert oss_config.user_visible_paths_problem(
-        [r"^v[0-9]{4}/", r"^docs/.{2,}", r"^a{1,3}$"]
-    ) is None
+    assert (
+        oss_config.user_visible_paths_problem(
+            [r"^v[0-9]{4}/", r"^docs/.{2,}", r"^a{1,3}$"]
+        )
+        is None
+    )
 
 
-@pytest.mark.parametrize("pattern", [
-    "a{99999}",   # #1058: well beyond either known grep-family limit
-    "a{40000}",
-    "a{32768}",   # #1058 (revised, self-review): one past GNU's documented
-                  # RE_DUP_MAX (32767) -- the limit that actually binds,
-                  # since the generated changelog-gate workflow always runs
-                  # on `ubuntu-latest` (GNU grep), confirmed in
-                  # `scripts/scaffold.py`'s own template and this repo's own
-                  # generated `.github/workflows/changelog.yml`, never on
-                  # BSD grep. Found by the auditor spawn in self-review: the
-                  # original 255 (BSD's measured RE_DUP_MAX) refused values
-                  # the actual deployed runner accepts fine.
-    "a{1,32768}",  # the upper bound of a range can carry the same defect
-])
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "a{99999}",  # #1058: well beyond either known grep-family limit
+        "a{40000}",
+        "a{32768}",  # #1058 (revised, self-review): one past GNU's documented
+        # RE_DUP_MAX (32767) -- the limit that actually binds,
+        # since the generated changelog-gate workflow always runs
+        # on `ubuntu-latest` (GNU grep), confirmed in
+        # `scripts/scaffold.py`'s own template and this repo's own
+        # generated `.github/workflows/changelog.yml`, never on
+        # BSD grep. Found by the auditor spawn in self-review: the
+        # original 255 (BSD's measured RE_DUP_MAX) refused values
+        # the actual deployed runner accepts fine.
+        "a{1,32768}",  # the upper bound of a range can carry the same defect
+    ],
+)
 def test_a_brace_interval_magnitude_above_the_grep_limit_is_refused(pattern):
     """#1058: `_brace_interval_problem` validated the *arrangement* of a
     `{m,n}` interval but never its *magnitude*. `a{99999}` (and any bound
@@ -178,19 +190,22 @@ def test_a_brace_interval_magnitude_above_the_grep_limit_is_refused(pattern):
     assert "32767" in problem, problem
 
 
-@pytest.mark.parametrize("pattern", [
-    "a{32767}",   # #1058: at GNU grep's documented RE_DUP_MAX -- must still pass
-    "a{1,32767}",
-    "a{5000}",    # #1058 (revised, self-review): within GNU's limit even
-                  # though it is well past BSD's much lower one -- the
-                  # deployed runner is always GNU grep, so this must not be
-                  # refused just because a different grep family would
-                  # reject it.
-    "a{99999999999999}",  # #1058 (revised, self-review): a value so large
-                           # `int()` still parses it but it dwarfs either
-                           # limit -- not a magnitude-overflow crash, just
-                           # an ordinary refusal.
-])
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "a{32767}",  # #1058: at GNU grep's documented RE_DUP_MAX -- must still pass
+        "a{1,32767}",
+        "a{5000}",  # #1058 (revised, self-review): within GNU's limit even
+        # though it is well past BSD's much lower one -- the
+        # deployed runner is always GNU grep, so this must not be
+        # refused just because a different grep family would
+        # reject it.
+        "a{99999999999999}",  # #1058 (revised, self-review): a value so large
+        # `int()` still parses it but it dwarfs either
+        # limit -- not a magnitude-overflow crash, just
+        # an ordinary refusal.
+    ],
+)
 def test_a_brace_interval_magnitude_at_or_below_the_grep_limit_still_validates(pattern):
     """Positive control for the pair above: a magnitude within GNU grep's
     documented `RE_DUP_MAX` (32767) -- the grep that actually runs the
@@ -209,13 +224,16 @@ def test_a_brace_interval_magnitude_at_or_below_the_grep_limit_still_validates(p
     assert oss_config.user_visible_paths_problem([pattern]) is None, pattern
 
 
-@pytest.mark.parametrize("pattern", [
-    "[{]",     # a bracket expression whose sole content is `{`
-    "[a{]",    # `{` alongside an ordinary character inside the brackets
-    "[^{]",    # negated bracket expression containing `{`
-    "[]{]",    # leading `]` per POSIX bracket-expression rules -- literal `]`
-    "[^]{]",   # negated leading `]` -- literal `]`, then `{`
-])
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "[{]",  # a bracket expression whose sole content is `{`
+        "[a{]",  # `{` alongside an ordinary character inside the brackets
+        "[^{]",  # negated bracket expression containing `{`
+        "[]{]",  # leading `]` per POSIX bracket-expression rules -- literal `]`
+        "[^]{]",  # negated leading `]` -- literal `]`, then `{`
+    ],
+)
 def test_a_brace_inside_a_bracket_expression_is_not_an_interval_opener(pattern):
     """#1059: `_brace_interval_problem` did not track bracket-expression
     (`[...]`) state while scanning for `{`/`}`, so a `{` inside one was
@@ -240,16 +258,19 @@ def test_a_genuine_interval_outside_any_bracket_is_still_correctly_validated():
     assert "unbalanced" in problem
 
 
-@pytest.mark.parametrize("pattern", [
-    "[[:alpha:]{]",         # a `{` still logically inside the bracket,
-                             # after a named POSIX character class
-    "[[:digit:]{99999}]",   # a would-be over-limit magnitude, but it too
-                             # sits inside the bracket and is just literal
-                             # characters to `grep -E`, not an interval
-    "[a[:digit:]{]",
-    "[[.hyphen.]{]",        # a collating-symbol sub-expression
-    "[[=a=]{]",             # an equivalence-class sub-expression
-])
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        "[[:alpha:]{]",  # a `{` still logically inside the bracket,
+        # after a named POSIX character class
+        "[[:digit:]{99999}]",  # a would-be over-limit magnitude, but it too
+        # sits inside the bracket and is just literal
+        # characters to `grep -E`, not an interval
+        "[a[:digit:]{]",
+        "[[.hyphen.]{]",  # a collating-symbol sub-expression
+        "[[=a=]{]",  # an equivalence-class sub-expression
+    ],
+)
 def test_a_brace_after_a_posix_bracket_subexpression_is_not_an_interval_opener(pattern):
     """Found by both self-review spawns (Explore and oss:auditor):
     #1059's bracket-expression skip closed the bracket at the *first* `]`
@@ -310,9 +331,7 @@ def test_printable_ascii_still_validates_positive_control_for_the_allow_list():
     only printable ASCII (letters, digits, ERE metacharacters, `~`, `%`)
     still validates -- the allow-list must not be narrower than POSIX ERE
     itself."""
-    assert oss_config.user_visible_paths_problem(
-        [r"^docs/[A-Za-z0-9_~%.-]+$"]
-    ) is None
+    assert oss_config.user_visible_paths_problem([r"^docs/[A-Za-z0-9_~%.-]+$"]) is None
 
 
 # --------------------------------------------------------- rendered workflow
@@ -465,7 +484,9 @@ def test_with_no_user_visible_paths_configured_the_same_diff_is_still_refused(tm
     assert "No changelog fragment" in done.stdout, done.stdout
 
 
-def test_a_fragment_present_still_passes_even_with_user_visible_paths_configured(tmp_path):
+def test_a_fragment_present_still_passes_even_with_user_visible_paths_configured(
+    tmp_path,
+):
     """A fragment satisfies the gate regardless of `user_visible_paths` -- the
     exemption is an additional way to pass, never a narrower way to fail."""
     config = _user_visible_config(user_visible_paths=[r"^docs/"])
@@ -478,7 +499,9 @@ def test_a_fragment_present_still_passes_even_with_user_visible_paths_configured
     assert "925.fixed.md" in done.stdout, done.stdout
 
 
-def test_deleting_a_fragment_is_refused_even_when_the_rest_of_the_diff_is_user_visible_only(tmp_path):
+def test_deleting_a_fragment_is_refused_even_when_the_rest_of_the_diff_is_user_visible_only(
+    tmp_path,
+):
     """Acceptance bar #1, executed rather than read: the deleted-fragment branch
     sits ABOVE the user-visible-paths exemption, so losing a pending fragment is
     refused even when every OTHER changed path matches the configured pattern.
@@ -491,4 +514,3 @@ def test_deleting_a_fragment_is_refused_even_when_the_rest_of_the_diff_is_user_v
     done = _run_gate(repo, config)
     assert done.returncode == 1, done.stdout
     assert "deleted without being assembled" in done.stdout, done.stdout
-

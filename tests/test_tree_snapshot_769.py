@@ -53,16 +53,30 @@ def _real_git_repo(tmp_path):
     env = _git_env()
     done = subprocess.run(
         ["git", "init", "--quiet", str(repo)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
         env=env,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {0}".format(done.stderr.strip() or done.returncode))
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.com"], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True)
+        pytest.skip(
+            "git init failed here: {0}".format(done.stderr.strip() or done.returncode)
+        )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@example.com"],
+        env=env,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True
+    )
     (repo / "tracked.txt").write_text("original content\n")
     subprocess.run(["git", "-C", str(repo), "add", "."], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "initial"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--quiet", "-m", "initial"],
+        env=env,
+        check=True,
+    )
     return repo
 
 
@@ -131,7 +145,8 @@ def test_compare_catches_head_moving_with_no_content_change(tmp_path):
     before = tree_snapshot.snapshot(str(repo))
     subprocess.run(
         ["git", "-C", str(repo), "commit", "--quiet", "--allow-empty", "-m", "moved"],
-        env=_git_env(), check=True,
+        env=_git_env(),
+        check=True,
     )
     after = tree_snapshot.snapshot(str(repo))
 
@@ -184,8 +199,11 @@ def test_compare_never_reads_an_after_snapshot_error_as_clean(tmp_path):
 def _run_cli(args, cwd=None, stdin=None):
     return subprocess.run(
         [sys.executable, str(SCRIPT)] + args,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
-        cwd=cwd, input=stdin,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        cwd=cwd,
+        input=stdin,
     )
 
 
@@ -293,10 +311,13 @@ def test_gitignored_persisting_write_is_a_stated_limit_not_a_silent_promise(tmp_
     not silently promised away as coverage this tool does not have."""
     repo = _real_git_repo(tmp_path)
     (repo / ".gitignore").write_text("*.scratch\n")
-    subprocess.run(["git", "-C", str(repo), "add", ".gitignore"], env=_git_env(), check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "add", ".gitignore"], env=_git_env(), check=True
+    )
     subprocess.run(
         ["git", "-C", str(repo), "commit", "--quiet", "-m", "gitignore"],
-        env=_git_env(), check=True,
+        env=_git_env(),
+        check=True,
     )
     before = tree_snapshot.snapshot(str(repo))
     (repo / "leftover.scratch").write_text("a persisting write at a gitignored path\n")

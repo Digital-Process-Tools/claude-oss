@@ -174,17 +174,23 @@ def check_statusline(project_dir):
     nobody has run a status line on Windows to confirm it (reasoned, not observed) -- so
     the WARN below names that gap rather than asserting the command definitely fails.
     """
-    if doctor.scaffold is None:  # pragma: no cover - guarded the same way the callers are
+    if (
+        doctor.scaffold is None
+    ):  # pragma: no cover - guarded the same way the callers are
         doctor.unmeasured("statusline", doctor.NO_SCAFFOLD)
         return
     tracked_path = Path(project_dir) / ".claude" / "settings.json"
     local_path = Path(project_dir) / ".claude" / "settings.local.json"
-    block = json.dumps({"statusLine": dict(doctor.scaffold.STATUSLINE_SETTING)}, indent=2)
+    block = json.dumps(
+        {"statusLine": dict(doctor.scaffold.STATUSLINE_SETTING)}, indent=2
+    )
 
     tracked = _statusline_entry(tracked_path)
     local = _statusline_entry(local_path)
 
-    unreadable = [p for p, r in ((tracked_path, tracked), (local_path, local)) if r["unreadable"]]
+    unreadable = [
+        p for p, r in ((tracked_path, tracked), (local_path, local)) if r["unreadable"]
+    ]
     if unreadable:
         doctor.report(
             "WARN",
@@ -238,7 +244,9 @@ def check_statusline(project_dir):
             # process environment, not observed by running a status line on Windows, so
             # it is offered as a thing to try rather than asserted as the fix.
             windows_try = (
-                'python "%CLAUDE_PROJECT_DIR%"/' + doctor.scaffold.OWNED_DIR + "/statusline.py"
+                'python "%CLAUDE_PROJECT_DIR%"/'
+                + doctor.scaffold.OWNED_DIR
+                + "/statusline.py"
             )
             doctor.report(
                 "WARN",
@@ -253,7 +261,9 @@ def check_statusline(project_dir):
             return
         doctor.report(
             "OK",
-            "statusline: wired to {}{}{}".format(command, local_only_note, disagreement_note),
+            "statusline: wired to {}{}{}".format(
+                command, local_only_note, disagreement_note
+            ),
         )
         return
     if unresolved:
@@ -269,5 +279,7 @@ def check_statusline(project_dir):
     doctor.report(
         "OK",
         "statusline: wired to a status line that is not ours ({}){}{} -- a decision, "
-        "left alone.".format(command or "no command", local_only_note, disagreement_note),
+        "left alone.".format(
+            command or "no command", local_only_note, disagreement_note
+        ),
     )

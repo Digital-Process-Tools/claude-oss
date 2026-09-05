@@ -64,7 +64,9 @@ EMBARGO_EXCEPTIONS = {
     ),
 }
 
-_ROW = re.compile(r"^\s*\|\s*`([a-z-]+(?: \([a-z]+\))?)`([^|]*)\|([^|]*)\|([^|]*)\|\s*$")
+_ROW = re.compile(
+    r"^\s*\|\s*`([a-z-]+(?: \([a-z]+\))?)`([^|]*)\|([^|]*)\|([^|]*)\|\s*$"
+)
 
 
 def parse_table(text):
@@ -126,7 +128,9 @@ def test_the_parser_sees_a_two_column_table_as_two_columns():
 def test_the_ranking_table_carries_an_embargo_column_for_every_row():
     rows = parse_table(MANAGER_SKILL.read_text(encoding="utf-8"))
     assert len(rows) >= 10, "only {} ranking rows parsed".format(len(rows))
-    blank = sorted(name for name, (blocks, embargo) in rows.items() if not blocks or not embargo)
+    blank = sorted(
+        name for name, (blocks, embargo) in rows.items() if not blocks or not embargo
+    )
     assert blank == [], "rows with an empty verdict: {}".format(blank)
 
 
@@ -166,7 +170,10 @@ def _flatten(text):
 def _routes_on_embargo(text):
     """``(reads the embargo column, still routes on blocking)``."""
     folded = _flatten(text)
-    return ("embargo column" in folded, "blocking" in folded and "embargo column" not in folded)
+    return (
+        "embargo column" in folded,
+        "blocking" in folded and "embargo column" not in folded,
+    )
 
 
 def test_the_routing_checker_can_find_something_and_can_find_nothing():
@@ -208,10 +215,14 @@ def test_neither_document_restates_the_embargo_set():
         window = folded[folded.find("embargo") : folded.find("embargo") + 600]
         named = [
             name
-            for name in ("`destroys`", "`discloses`", "`forges`", "`containment (read)`")
+            for name in (
+                "`destroys`",
+                "`discloses`",
+                "`forges`",
+                "`containment (read)`",
+            )
             if name in window
         ]
         assert len(named) < 2, "{} restates the embargo set: {}".format(
             path.relative_to(REPO_ROOT), named
         )
-

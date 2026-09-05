@@ -204,9 +204,7 @@ def test_control_windows_style_single_backslash_separator_is_not_an_escape(tmp_p
     """Control: a Windows-style single backslash separator (#267) must not be
     consumed as an escape character -- only a backslash immediately before a
     comma or another backslash is special."""
-    assert lane_setup._split_lane_value("commands\\tick.md") == [
-        "commands\\tick.md"
-    ]
+    assert lane_setup._split_lane_value("commands\\tick.md") == ["commands\\tick.md"]
 
 
 # --- part 2: the two stale pre-#809 enumerations named by the issue -----------
@@ -254,5 +252,10 @@ def test_control_receipt_comment_still_names_the_older_states_too():
     named in the same comment block, proving nothing was deleted to add
     the new one."""
     comment_block = _receipt_availability_comment()
-    for state in ("available", "blocked", "could-not-check", "could-not-derive-the-held-set"):
+    for state in (
+        "available",
+        "blocked",
+        "could-not-check",
+        "could-not-derive-the-held-set",
+    ):
         assert state in comment_block, comment_block

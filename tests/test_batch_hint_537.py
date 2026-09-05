@@ -139,7 +139,9 @@ def test_derive_roster_parses_a_successful_call(monkeypatch):
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=SAMPLE_ROSTER_TEXT, stderr=""),
+        lambda *a, **k: subprocess.CompletedProcess(
+            a, 0, stdout=SAMPLE_ROSTER_TEXT, stderr=""
+        ),
     )
     parsed = batch_hint._derive_roster()
     assert parsed == {
@@ -167,7 +169,9 @@ def test_roster_is_derived_once_and_memoized_in_process(monkeypatch, tmp_path):
     assert len(calls) == 1  # not called twice for two roster() reads in one process
 
 
-def test_roster_is_cached_to_disk_and_reused_without_a_second_derivation(monkeypatch, tmp_path):
+def test_roster_is_cached_to_disk_and_reused_without_a_second_derivation(
+    monkeypatch, tmp_path
+):
     """The fact the module never checked: a cheap call is still worth caching
     across the many separate `batch_hint.py` subprocess invocations one
     session makes -- this is the read side of that cache, independent of the

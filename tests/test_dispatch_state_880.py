@@ -264,7 +264,11 @@ def test_lane_model_trend_accumulates_resumed_and_unreachable():
 
 def test_cli_lane_dispatch_state_argument_parses():
     entry = oss_state._lane_dispatch_state_argument("880=resumed:CI fix")
-    assert entry == {"issue": 880, "dispatch_state": "resumed", "dispatch_state_why": "CI fix"}
+    assert entry == {
+        "issue": 880,
+        "dispatch_state": "resumed",
+        "dispatch_state_why": "CI fix",
+    }
 
 
 def test_cli_lane_dispatch_state_argument_requires_a_state():
@@ -340,7 +344,9 @@ def test_cli_accepts_a_normal_single_dispatch(tmp_path):
     assert result.returncode == 0, result.stdout
 
 
-def test_cli_fifo_matches_two_lane_dispatch_state_entries_to_two_lane_entries_in_order(tmp_path):
+def test_cli_fifo_matches_two_lane_dispatch_state_entries_to_two_lane_entries_in_order(
+    tmp_path,
+):
     """The one shape the FIFO-per-issue design exists for (found by review): two
     --lane entries for the same issue -- an abandoned dispatch and its
     agent-unreachable respawn -- each getting its OWN --lane-dispatch-state,
@@ -390,7 +396,9 @@ def test_cli_fifo_order_reversed_would_be_caught():
         {"model": "sonnet", "dispatch_state": "agent-unreachable"},
         {"model": "opus", "dispatch_state": "dispatched"},
     ]
-    assert not (lanes[0]["model"] == "sonnet" and lanes[0]["dispatch_state"] == "dispatched")
+    assert not (
+        lanes[0]["model"] == "sonnet" and lanes[0]["dispatch_state"] == "dispatched"
+    )
 
 
 def test_cli_refuses_lane_dispatch_state_with_no_matching_lane(tmp_path):
@@ -408,5 +416,3 @@ def test_cli_refuses_lane_dispatch_state_with_no_matching_lane(tmp_path):
     )
     assert result.returncode != 0
     assert "no matching --lane" in result.stdout
-
-

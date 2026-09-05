@@ -66,8 +66,16 @@ def _gh_api(path, run):
     # straight out of what is meant to be a check that exits 0 always. Bytes,
     # decoded here with `errors="replace"` instead -- the same fix `doctor.py`'s
     # own two subprocess reads already carry for the identical trap.
-    stdout = done.stdout.decode("utf-8", "replace") if isinstance(done.stdout, bytes) else (done.stdout or "")
-    stderr = done.stderr.decode("utf-8", "replace") if isinstance(done.stderr, bytes) else (done.stderr or "")
+    stdout = (
+        done.stdout.decode("utf-8", "replace")
+        if isinstance(done.stdout, bytes)
+        else (done.stdout or "")
+    )
+    stderr = (
+        done.stderr.decode("utf-8", "replace")
+        if isinstance(done.stderr, bytes)
+        else (done.stderr or "")
+    )
     return done.returncode, stdout, stderr, None
 
 
@@ -167,7 +175,11 @@ def security_alert_state(project_dir, scanner, config=None, run=None):
     not know, which is a caller bug (a typo in this file), not a repo state.
     """
     if scanner not in SCANNERS:
-        raise ValueError("unknown scanner {!r} (expected one of {})".format(scanner, sorted(SCANNERS)))
+        raise ValueError(
+            "unknown scanner {!r} (expected one of {})".format(
+                scanner, sorted(SCANNERS)
+            )
+        )
     run = subprocess.run if run is None else run
     if shutil.which("gh") is None:
         return "could-not-tell", "gh is not on PATH"
@@ -207,7 +219,9 @@ def security_alert_state(project_dir, scanner, config=None, run=None):
     if _is_disabled_body(out):
         return (
             "disabled",
-            "{} is disabled on {} (HTTP 404, {})".format(scanner, slug, (out or "").strip()[:150]),
+            "{} is disabled on {} (HTTP 404, {})".format(
+                scanner, slug, (out or "").strip()[:150]
+            ),
         )
     return (
         "never-scanned",
@@ -223,7 +237,11 @@ def _report_security_alert_check(project_dir, scanner, config=None, run=None):
     if state in ("never-scanned", "disabled"):
         run_ = subprocess.run if run is None else run
         slug, _reason = _resolve_slug(project_dir, config, run_)
-        url = SECURITY_SETTINGS_URL.format(slug) if isinstance(slug, str) and slug else None
+        url = (
+            SECURITY_SETTINGS_URL.format(slug)
+            if isinstance(slug, str) and slug
+            else None
+        )
         # #1065: offer the runnable command where one exists, falling back to
         # the settings-page URL only when no slug is in hand to build it
         # from -- same shape as `doctor_check_security_settings.py`'s own
@@ -234,10 +252,8 @@ def _report_security_alert_check(project_dir, scanner, config=None, run=None):
                 command.format(slug), url
             )
         else:
-            remedy = (
-                "Enable it from the repo's Settings > Code security and analysis page{}.".format(
-                    " ({})".format(url) if url else ""
-                )
+            remedy = "Enable it from the repo's Settings > Code security and analysis page{}.".format(
+                " ({})".format(url) if url else ""
             )
         doctor.report("WARN", "{}: {} -- {}".format(scanner, detail, remedy))
         return

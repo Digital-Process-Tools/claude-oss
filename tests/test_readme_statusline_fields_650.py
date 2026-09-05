@@ -46,7 +46,9 @@ def test_readme_status_line_section_exists():
 def test_readme_names_every_field_prefix_render_emits():
     section = _status_line_section()
     for prefix in FIELD_PREFIXES:
-        assert prefix.strip() in section, "README's status line section omits {!r}".format(prefix)
+        assert prefix.strip() in section, (
+            "README's status line section omits {!r}".format(prefix)
+        )
 
 
 def test_readme_documents_the_watch_channel_opt_out():
@@ -68,4 +70,6 @@ def test_readme_names_every_channel_state_glyph():
     section = _status_line_section()
     # The unicode markers `_symbols(ascii_only=False)` uses for `ch`.
     for glyph in ("✓", "✗", "◐", "!", "?"):
-        assert glyph in section, "README's ch row is missing the {!r} state marker".format(glyph)
+        assert glyph in section, (
+            "README's ch row is missing the {!r} state marker".format(glyph)
+        )

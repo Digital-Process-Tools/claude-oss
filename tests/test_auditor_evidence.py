@@ -53,9 +53,7 @@ def _markdown_under(directory):
     """
     found = []
     for parent, _dirs, names in os.walk(directory, onerror=_raise):
-        found.extend(
-            Path(parent) / name for name in names if name.endswith(".md")
-        )
+        found.extend(Path(parent) / name for name in names if name.endswith(".md"))
     return found
 
 
@@ -224,7 +222,9 @@ def test_the_ambient_check_fires_on_a_document_that_does_carry_a_phrase():
     was there, not that the checker never matches.
     """
     plausible = "The requirement stops at comparison claims: the same defect with a longer receipt."
-    assert _ambient_hits(plausible) == ["longer receipt"], repr(_ambient_hits(plausible))
+    assert _ambient_hits(plausible) == ["longer receipt"], repr(
+        _ambient_hits(plausible)
+    )
 
 
 def test_these_anchors_are_not_ambient_house_vocabulary():
@@ -267,7 +267,10 @@ def test_the_walk_raises_instead_of_dropping_an_unreadable_subtree(tmp_path):
     (root / "visible.md").write_text("y", encoding="utf-8")
     (locked / "hidden.md").write_text("x", encoding="utf-8")
 
-    assert sorted(p.name for p in _markdown_under(root)) == ["hidden.md", "visible.md"], (
+    assert sorted(p.name for p in _markdown_under(root)) == [
+        "hidden.md",
+        "visible.md",
+    ], (
         "the walk does not find a readable tree, so raising on an unreadable one "
         "would prove nothing"
     )
@@ -292,4 +295,3 @@ def test_the_walk_raises_instead_of_dropping_an_unreadable_subtree(tmp_path):
             _markdown_under(root)
     finally:
         os.chmod(locked, 0o700)
-

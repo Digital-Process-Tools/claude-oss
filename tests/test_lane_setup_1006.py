@@ -36,18 +36,30 @@ def _real_git_repo(tmp_path):
     repo.mkdir()
     done = subprocess.run(
         ["git", "init", "--quiet", str(repo)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {0}".format(done.stderr.strip() or done.returncode))
+        pytest.skip(
+            "git init failed here: {0}".format(done.stderr.strip() or done.returncode)
+        )
     env = dict(os.environ)
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
-    subprocess.run(["git", "-C", str(repo), "config", "user.email", "t@example.com"], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@example.com"],
+        env=env,
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.name", "t"], env=env, check=True
+    )
     (repo / "README.md").write_text("x\n")
     subprocess.run(["git", "-C", str(repo), "add", "."], env=env, check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "-m", "x"], env=env, check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--quiet", "-m", "x"], env=env, check=True
+    )
     return repo
 
 
@@ -71,7 +83,10 @@ def test_control_unresolved_branch_does_not_resolve(tmp_path):
 
 def test_falls_back_to_a_remote_tracking_ref_and_flags_it(tmp_path):
     repo = _real_git_repo(tmp_path)
-    subprocess.run(["git", "-C", str(repo), "update-ref", "refs/remotes/origin/fix/683", "HEAD"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "update-ref", "refs/remotes/origin/fix/683", "HEAD"],
+        check=True,
+    )
     result = lane_setup.resolve_stacked_base(repo, "origin", "fix/683")
     assert result["state"] == "resolved-remote"
     assert result["ref"] == "refs/remotes/origin/fix/683"
@@ -81,8 +96,14 @@ def test_falls_back_to_a_remote_tracking_ref_and_flags_it(tmp_path):
 
 def test_local_ref_preferred_over_remote_tracking_ref(tmp_path):
     repo = _real_git_repo(tmp_path)
-    subprocess.run(["git", "-C", str(repo), "update-ref", "refs/remotes/origin/fix/683", "HEAD"], check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "--quiet", "--allow-empty", "-m", "y"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "update-ref", "refs/remotes/origin/fix/683", "HEAD"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "--quiet", "--allow-empty", "-m", "y"],
+        check=True,
+    )
     subprocess.run(["git", "-C", str(repo), "branch", "fix/683"], check=True)
     result = lane_setup.resolve_stacked_base(repo, "origin", "fix/683")
     assert result["state"] == "resolved"
@@ -158,16 +179,27 @@ def _minimal_payload(base_payload):
             "exists_remote": False,
             "detail": "",
         },
-        worktree={"state": "unknown", "root": None, "path": None, "detail": "", "exists": None},
+        worktree={
+            "state": "unknown",
+            "root": None,
+            "path": None,
+            "detail": "",
+            "exists": None,
+        },
         board={"state": "ok", "lines": [], "detail": ""},
     )
 
 
 def test_receipt_still_says_stale_for_a_genuinely_stale_default_branch_fetch():
-    payload = _minimal_payload({
-        "remote": "origin", "state": "resolved-stale", "ref": "origin/main",
-        "sha": "a" * 40, "detail": "fetch failed, using the last-known ref: timed out",
-    })
+    payload = _minimal_payload(
+        {
+            "remote": "origin",
+            "state": "resolved-stale",
+            "ref": "origin/main",
+            "sha": "a" * 40,
+            "detail": "fetch failed, using the last-known ref: timed out",
+        }
+    )
     text = lane_setup.receipt(payload)
     base_line = [l for l in text.splitlines() if l.startswith("base")][0]
     assert "STALE" in base_line
@@ -175,10 +207,15 @@ def test_receipt_still_says_stale_for_a_genuinely_stale_default_branch_fetch():
 
 
 def test_receipt_says_note_not_stale_for_a_resolved_remote_stacked_base():
-    payload = _minimal_payload({
-        "remote": "origin", "state": "resolved-remote", "ref": "refs/remotes/origin/fix/683",
-        "sha": "b" * 40, "detail": "found only as a remote-tracking ref",
-    })
+    payload = _minimal_payload(
+        {
+            "remote": "origin",
+            "state": "resolved-remote",
+            "ref": "refs/remotes/origin/fix/683",
+            "sha": "b" * 40,
+            "detail": "found only as a remote-tracking ref",
+        }
+    )
     text = lane_setup.receipt(payload)
     base_line = [l for l in text.splitlines() if l.startswith("base")][0]
     assert "NOTE" in base_line

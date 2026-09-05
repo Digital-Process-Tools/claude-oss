@@ -76,7 +76,11 @@ def test_a_probe_that_could_not_look_is_a_warn_that_carries_its_reason():
     lines = doctor.interpreter_architecture(
         machine="x86_64",
         system="Darwin",
-        translation=("unknown", None, "sysctl.proc_translated could not be read (errno 1)"),
+        translation=(
+            "unknown",
+            None,
+            "sysctl.proc_translated could not be read (errno 1)",
+        ),
     )
     assert _levels(lines) == ["WARN"], lines
     text = _text(lines)
@@ -93,8 +97,14 @@ def test_neither_gap_state_ever_claims_native():
     if the word can never appear at all, so this is not vacuous.
     """
     for system, translation in (
-        ("Darwin", ("unknown", None, "sysctl.proc_translated could not be read (errno 1)")),
-        ("Linux", ("not-probed", None, "no translation probe is implemented for Linux")),
+        (
+            "Darwin",
+            ("unknown", None, "sysctl.proc_translated could not be read (errno 1)"),
+        ),
+        (
+            "Linux",
+            ("not-probed", None, "no translation probe is implemented for Linux"),
+        ),
     ):
         lines = doctor.interpreter_architecture(
             machine="x86_64", system=system, translation=translation
@@ -167,7 +177,11 @@ def test_a_platform_with_no_probe_at_all_is_ok_with_the_gap_named():
     lines = doctor.interpreter_architecture(
         machine="x86_64",
         system="Linux",
-        translation=("not-probed", None, "no translation probe is implemented for Linux"),
+        translation=(
+            "not-probed",
+            None,
+            "no translation probe is implemented for Linux",
+        ),
     )
     assert _levels(lines) == ["OK"], lines
     text = _text(lines)
@@ -185,7 +199,11 @@ def test_a_probe_that_ran_and_could_not_answer_is_still_a_warn():
     lines = doctor.interpreter_architecture(
         machine="arm64",
         system="Darwin",
-        translation=("unknown", None, "sysctl.proc_translated could not be read (errno 1)"),
+        translation=(
+            "unknown",
+            None,
+            "sysctl.proc_translated could not be read (errno 1)",
+        ),
     )
     assert _levels(lines) == ["WARN"], lines
     text = _text(lines)
@@ -253,8 +271,14 @@ def test_every_architecture_line_survives_the_printable_ascii_fold():
         ("Darwin", ("native", "arm64", "")),
         ("Darwin", ("translated", None, "")),
         ("Darwin", ("native", None, "")),
-        ("Darwin", ("unknown", None, "sysctl.proc_translated could not be read (errno 1)")),
-        ("Linux", ("not-probed", None, "no translation probe is implemented for Linux")),
+        (
+            "Darwin",
+            ("unknown", None, "sysctl.proc_translated could not be read (errno 1)"),
+        ),
+        (
+            "Linux",
+            ("not-probed", None, "no translation probe is implemented for Linux"),
+        ),
     ):
         lines = doctor.interpreter_architecture(
             machine="x86_64", system=system, translation=translation
@@ -287,7 +311,10 @@ def test_an_unparseable_env_var_falls_through_and_says_so():
     their cap was in effect.
     """
     count, source, note = doctor.xdist_auto_workers(
-        env={"PYTEST_XDIST_AUTO_NUM_WORKERS": "half"}, physical=11, affinity=11, logical=11
+        env={"PYTEST_XDIST_AUTO_NUM_WORKERS": "half"},
+        physical=11,
+        affinity=11,
+        logical=11,
     )
     assert count == 11, (count, source)
     assert "psutil" in source, source
@@ -433,7 +460,11 @@ def test_xdist_absent_is_said_rather_than_assumed():
 def test_an_ignored_cap_reaches_the_line():
     lines = doctor.worker_sizing(
         topology=(11, 5, 6, "split"),
-        workers=(11, "psutil.cpu_count(logical=False)", "PYTEST_XDIST_AUTO_NUM_WORKERS is set to 'half', which is not a number: xdist warns and ignores it"),
+        workers=(
+            11,
+            "psutil.cpu_count(logical=False)",
+            "PYTEST_XDIST_AUTO_NUM_WORKERS is set to 'half', which is not a number: xdist warns and ignores it",
+        ),
         xdist_installed=True,
     )
     assert "ignores it" in _text(lines), lines
@@ -532,7 +563,11 @@ def test_cpu_topology_returns_its_four_slots_on_this_platform():
     """
     logical, perf, eff, split = doctor.cpu_topology()
     assert split in ("split", "none", "unknown"), split
-    assert (split == "split") == (perf is not None and eff is not None), (split, perf, eff)
+    assert (split == "split") == (perf is not None and eff is not None), (
+        split,
+        perf,
+        eff,
+    )
     if logical is None:
         pytest.skip(
             "UNTESTED here: this platform reported no logical core count, so the "

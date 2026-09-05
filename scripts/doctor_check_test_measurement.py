@@ -139,13 +139,11 @@ def check_test_measurement(project_dir, config):
             "`--durations=25` (or similar) and a coverage flag (e.g. `--cov`) "
             "to this repo's own pytest config -- `pyproject.toml`'s "
             "`[tool.pytest.ini_options] addopts`, or `pytest.ini` / "
-            "`setup.cfg` -- then set `\"test_measurement_configured\": true` "
+            '`setup.cfg` -- then set `"test_measurement_configured": true` '
             "in .oss.json. `--durations=25` plus a `pytest-cov` addopts entry "
             "is one plausible shape, not the only one. No threshold or trend "
             "check is implied -- this only makes the measurement exist and "
-            "be visible.".format(
-                "false" if attested is False else "absent"
-            ),
+            "be visible.".format("false" if attested is False else "absent"),
         )
         return
     path, detail = _pytest_config_file(project_dir)

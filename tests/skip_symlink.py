@@ -69,7 +69,9 @@ def _junction(link, target):
             text=True,
         )
     except OSError as exc:
-        return False, "mklink could not be spawned ({}: {})".format(type(exc).__name__, exc)
+        return False, "mklink could not be spawned ({}: {})".format(
+            type(exc).__name__, exc
+        )
     if proc.returncode != 0:
         return False, "mklink /J exited {} ({})".format(
             proc.returncode, (proc.stderr or proc.stdout or "").strip()
@@ -99,7 +101,9 @@ def symlink_or_skip(link, target, target_is_directory=False, what="this case"):
         link.symlink_to(target, target_is_directory=target_is_directory)
     except (OSError, NotImplementedError) as exc:
         symlink_reason = "symlink_to raised {} (errno {!r}, winerror {!r})".format(
-            type(exc).__name__, getattr(exc, "errno", None), getattr(exc, "winerror", None)
+            type(exc).__name__,
+            getattr(exc, "errno", None),
+            getattr(exc, "winerror", None),
         )
         if target_is_directory:
             landed, junction_reason = _junction(link, target)

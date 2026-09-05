@@ -23,7 +23,9 @@ import fleet_label as fl  # noqa: E402
 
 
 def test_agent_call_renders_the_whole_invocation():
-    call = fl.agent_call(534, [534, 537, 495], "auto-update path", "oss:developer", model="sonnet")
+    call = fl.agent_call(
+        534, [534, 537, 495], "auto-update path", "oss:developer", model="sonnet"
+    )
     assert call == (
         'Agent(subagent_type: "oss:developer", model: "sonnet", '
         'run_in_background: false, description: "Lane 534 x3  auto-update path", '
@@ -56,7 +58,10 @@ def test_agent_call_escapes_a_model_value_carrying_a_quote_999():
     keyword the whitelist above just closed, in a line whose whole purpose is
     to be pasted and run."""
     call = fl.agent_call(
-        534, [534], "auto-update path", "oss:developer",
+        534,
+        [534],
+        "auto-update path",
+        "oss:developer",
         model='sonnet", subagent_type: "general-purpose',
     )
     assert call.count('subagent_type: "') == 1
@@ -68,8 +73,16 @@ def test_cli_prints_the_whole_agent_call():
     import subprocess
 
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "fleet_label.py"),
-         "534", "534,537,495", "auto-update path", "oss:developer", "--model", "sonnet"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            "534",
+            "534,537,495",
+            "auto-update path",
+            "oss:developer",
+            "--model",
+            "sonnet",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
@@ -86,8 +99,14 @@ def test_cli_refuses_an_unknown_agent_type():
     import subprocess
 
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "fleet_label.py"),
-         "534", "534", "auto-update path", "general-purpose"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            "534",
+            "534",
+            "auto-update path",
+            "general-purpose",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
@@ -120,13 +139,19 @@ def test_agent_call_escapes_a_backslash_in_the_phrase():
         'description: "Lane 534  trailing backslash \\\\", prompt: "<brief>")'
     )
 
+
 def test_cli_without_agent_type_still_prints_only_the_label():
     # Positive control -- the original three-argument form is untouched.
     import subprocess
 
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "scripts" / "fleet_label.py"),
-         "534", "534,537,495", "auto-update path"],
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "fleet_label.py"),
+            "534",
+            "534,537,495",
+            "auto-update path",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,

@@ -166,8 +166,9 @@ def remote_problem(value):
         return "remote: expected a remote name, URL or path; got None."
     if not isinstance(value, str):
         return (
-            "remote: expected a remote name, URL or path as a string; "
-            "got {!r}.".format(value)
+            "remote: expected a remote name, URL or path as a string; got {!r}.".format(
+                value
+            )
         )
     if value.startswith("-"):
         return (
@@ -250,7 +251,9 @@ def resolve_base(repo, remote, default_branch):
             "remote": remote,
             "ref": ref,
             "sha": out,
-            "detail": "" if fetched else "fetch failed, using the last-known ref: {0}".format(
+            "detail": ""
+            if fetched
+            else "fetch failed, using the last-known ref: {0}".format(
                 _one_line(fetch_err)
             ),
         }
@@ -300,7 +303,9 @@ def resolve_stacked_base(repo, remote, stack_on):
             "remote": remote,
             "ref": None,
             "sha": None,
-            "detail": "stack_on: expected a non-empty branch name; got {0!r}.".format(stack_on),
+            "detail": "stack_on: expected a non-empty branch name; got {0!r}.".format(
+                stack_on
+            ),
         }
 
     local_ref = "refs/heads/" + stack_on
@@ -315,7 +320,9 @@ def resolve_stacked_base(repo, remote, stack_on):
         }
 
     remote_ref = "refs/remotes/{0}/{1}".format(remote, stack_on)
-    remote_code, remote_out, remote_err = _git(repo, "rev-parse", "--verify", remote_ref)
+    remote_code, remote_out, remote_err = _git(
+        repo, "rev-parse", "--verify", remote_ref
+    )
     if remote_code == 0 and remote_out:
         return {
             "state": "resolved-remote",
@@ -360,7 +367,9 @@ def derive_branch(pattern, issue):
             "pattern": pattern,
             "name": None,
             "detail": "branch_pattern has no {0} placeholder -- every issue would "
-            "resolve to the same branch, so nothing is derived.".format(ISSUE_PLACEHOLDER),
+            "resolve to the same branch, so nothing is derived.".format(
+                ISSUE_PLACEHOLDER
+            ),
         }
     return {
         "state": "resolved",
@@ -372,11 +381,17 @@ def derive_branch(pattern, issue):
 
 def branch_occupancy(repo, remote, name):
     """Whether `name` already exists locally or on `remote`. None means unknown."""
-    local_code, _, _ = _git(repo, "show-ref", "--verify", "--quiet", "refs/heads/" + name)
+    local_code, _, _ = _git(
+        repo, "show-ref", "--verify", "--quiet", "refs/heads/" + name
+    )
     exists_local = None if local_code is None else local_code == 0
 
     remote_code, _, _ = _git(
-        repo, "show-ref", "--verify", "--quiet", "refs/remotes/{0}/{1}".format(remote, name)
+        repo,
+        "show-ref",
+        "--verify",
+        "--quiet",
+        "refs/remotes/{0}/{1}".format(remote, name),
     )
     exists_remote = None if remote_code is None else remote_code == 0
     return exists_local, exists_remote
@@ -700,7 +715,9 @@ def resolve_lane(repo, patterns):
     for pattern in members:
         problem = _lane_pattern_problem(pattern)
         if problem is not None:
-            entries.append({"pattern": pattern, "state": "refused", "files": [], "detail": problem})
+            entries.append(
+                {"pattern": pattern, "state": "refused", "files": [], "detail": problem}
+            )
             continue
         # #267 review: normalized once here, and both branches below use the
         # normalized form -- the literal branch always did (`os.path.normpath`
@@ -729,7 +746,9 @@ def resolve_lane(repo, patterns):
                 )
                 continue
             state = "glob-resolved" if matches else "glob-no-match"
-            entries.append({"pattern": pattern, "state": state, "files": matches, "detail": ""})
+            entries.append(
+                {"pattern": pattern, "state": state, "files": matches, "detail": ""}
+            )
             files.update(matches)
         else:
             rel = os.path.normpath(normalized).replace(os.sep, "/")
@@ -759,10 +778,19 @@ def resolve_lane(repo, patterns):
                     )
                     continue
                 state = "dir-expanded" if matches else "glob-no-match"
-                entries.append({"pattern": pattern, "state": state, "files": matches, "detail": ""})
+                entries.append(
+                    {"pattern": pattern, "state": state, "files": matches, "detail": ""}
+                )
                 files.update(matches)
             else:
-                entries.append({"pattern": pattern, "state": "literal", "files": [rel], "detail": ""})
+                entries.append(
+                    {
+                        "pattern": pattern,
+                        "state": "literal",
+                        "files": [rel],
+                        "detail": "",
+                    }
+                )
                 files.add(rel)
     return {"patterns": entries, "files": sorted(files)}
 
@@ -1069,16 +1097,31 @@ def suggest_companions(repo, own_issue, claimed_files, board):
 # the guard, never to call it -- the same bug this issue is about, one level up,
 # caught by writing the fix and running the guard it documents.
 CROSS_CUTTING_GUARDS = (
-    ("skills/", "tests/test_content_invariants.py",
-     "hardcoded repo facts in skill/agent/command prose"),
-    ("agents/", "tests/test_content_invariants.py",
-     "hardcoded repo facts in skill/agent/command prose"),
-    ("commands/", "tests/test_content_invariants.py",
-     "hardcoded repo facts in skill/agent/command prose"),
-    ("scripts/", "tests/test_unwired_scripts_253.py",
-     "a script added, removed, or dropped from its last live reference"),
-    ("bin/", "tests/test_unwired_scripts_253.py",
-     "a script added, removed, or dropped from its last live reference"),
+    (
+        "skills/",
+        "tests/test_content_invariants.py",
+        "hardcoded repo facts in skill/agent/command prose",
+    ),
+    (
+        "agents/",
+        "tests/test_content_invariants.py",
+        "hardcoded repo facts in skill/agent/command prose",
+    ),
+    (
+        "commands/",
+        "tests/test_content_invariants.py",
+        "hardcoded repo facts in skill/agent/command prose",
+    ),
+    (
+        "scripts/",
+        "tests/test_unwired_scripts_253.py",
+        "a script added, removed, or dropped from its last live reference",
+    ),
+    (
+        "bin/",
+        "tests/test_unwired_scripts_253.py",
+        "a script added, removed, or dropped from its last live reference",
+    ),
     # test_gate_state_consumers_328.py scans *every* tracked file under commands/ and
     # scripts/ for a bare occurrence of the gate producer's identifier, not only the
     # files that already call it -- an auditor caught the first version of this
@@ -1086,22 +1129,46 @@ CROSS_CUTTING_GUARDS = (
     # brand-new file that started calling it, exactly the PR #431 shape this issue is
     # about. So the trigger here is the same two directories the real guard scans,
     # not an enumeration of who currently calls it.
-    ("scripts/", "tests/test_gate_state_consumers_328.py",
-     "may add or lose a consumer of the changelog scaffolding gate's state"),
-    ("commands/", "tests/test_gate_state_consumers_328.py",
-     "may add or lose a consumer of the changelog scaffolding gate's state"),
-    ("CLAUDE.md", "tests/test_claude_md_currency.py",
-     "the 'What is not proven yet' release marker paragraph"),
-    ("changelog.d/", "tests/test_claude_md_currency.py",
-     "fragment presence gates whether the release marker must be current"),
-    ("pyproject.toml", "tests/test_python_floor_410.py",
-     "the declared Python floor and its four derived sites"),
-    ("README.md", "tests/test_python_floor_410.py",
-     "the Python floor's README support badge"),
-    ("scripts/doctor.sh", "tests/test_python_floor_410.py",
-     "the Python floor's oldest python3.N candidate in the interpreter walk"),
-    (".github/workflows/tests.yml", "tests/test_python_floor_410.py",
-     "the Python floor's CI matrix lowest entry"),
+    (
+        "scripts/",
+        "tests/test_gate_state_consumers_328.py",
+        "may add or lose a consumer of the changelog scaffolding gate's state",
+    ),
+    (
+        "commands/",
+        "tests/test_gate_state_consumers_328.py",
+        "may add or lose a consumer of the changelog scaffolding gate's state",
+    ),
+    (
+        "CLAUDE.md",
+        "tests/test_claude_md_currency.py",
+        "the 'What is not proven yet' release marker paragraph",
+    ),
+    (
+        "changelog.d/",
+        "tests/test_claude_md_currency.py",
+        "fragment presence gates whether the release marker must be current",
+    ),
+    (
+        "pyproject.toml",
+        "tests/test_python_floor_410.py",
+        "the declared Python floor and its four derived sites",
+    ),
+    (
+        "README.md",
+        "tests/test_python_floor_410.py",
+        "the Python floor's README support badge",
+    ),
+    (
+        "scripts/doctor.sh",
+        "tests/test_python_floor_410.py",
+        "the Python floor's oldest python3.N candidate in the interpreter walk",
+    ),
+    (
+        ".github/workflows/tests.yml",
+        "tests/test_python_floor_410.py",
+        "the Python floor's CI matrix lowest entry",
+    ),
 )
 
 
@@ -1220,7 +1287,11 @@ def _refused_patterns(resolved):
     """
     if resolved is None:
         return []
-    return [entry["pattern"] for entry in resolved["patterns"] if entry["state"] == "refused"]
+    return [
+        entry["pattern"]
+        for entry in resolved["patterns"]
+        if entry["state"] == "refused"
+    ]
 
 
 def _unresolved_overlap_detail(a, a_refused, b, b_refused):
@@ -1321,7 +1392,11 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
                 }
         else:
             held_files = sorted(derived_held["held"])
-            b = resolve_lane(repo, held_files) if held_files else {"patterns": [], "files": []}
+            b = (
+                resolve_lane(repo, held_files)
+                if held_files
+                else {"patterns": [], "files": []}
+            )
             # #774, audit round: a held FILE can trip `_lane_pattern_problem`
             # exactly the way a hand-typed pattern can -- a real git-tracked path
             # containing '|' is legal on the filesystems this loop runs on, and
@@ -1384,7 +1459,12 @@ def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
                         "was compared against the held set (#809)",
                     }
                 else:
-                    availability = {"state": "available", "files": [], "holders": [], "detail": ""}
+                    availability = {
+                        "state": "available",
+                        "files": [],
+                        "holders": [],
+                        "detail": "",
+                    }
     else:
         b = resolve_lane(repo, against_patterns) if against_patterns else None
         b_refused = _refused_patterns(b)
@@ -1493,7 +1573,9 @@ def linked_worktree_state(repo):
     common_code, common_out, common_err = _git(repo, "rev-parse", "--git-common-dir")
     git_code, git_out, git_err = _git(repo, "rev-parse", "--git-dir")
     if common_code != 0 or git_code != 0 or not common_out or not git_out:
-        return WORKTREE_COULD_NOT_TELL, _one_line(common_err or git_err or "git did not answer")
+        return WORKTREE_COULD_NOT_TELL, _one_line(
+            common_err or git_err or "git did not answer"
+        )
     common_path = Path(repo, common_out).resolve()
     git_path = Path(repo, git_out).resolve()
     if common_path == git_path:
@@ -1533,15 +1615,30 @@ def derive_worktree(config, issue, origin=None):
                 ".oss.local.json carries no worktree_root in this tree -- expected "
                 "if this is running inside a worktree rather than the main clone."
             )
-        return {"state": "unknown", "root": None, "path": None, "detail": detail, "origin": origin_state}
+        return {
+            "state": "unknown",
+            "root": None,
+            "path": None,
+            "detail": detail,
+            "origin": origin_state,
+        }
     try:
         path = oss_config.resolve_worktree(root, str(issue))
     except oss_config.ContainmentError as exc:
         return {
-            "state": "invalid", "root": root, "path": None, "detail": _one_line(str(exc)),
+            "state": "invalid",
+            "root": root,
+            "path": None,
+            "detail": _one_line(str(exc)),
             "origin": origin_state,
         }
-    return {"state": "resolved", "root": root, "path": str(path), "detail": "", "origin": origin_state}
+    return {
+        "state": "resolved",
+        "root": root,
+        "path": str(path),
+        "detail": "",
+        "origin": origin_state,
+    }
 
 
 def lane_registry_dir(worktree_root):
@@ -1764,7 +1861,11 @@ def lane_count(worktree_root):
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
-        return {"state": "unknown", "count": None, "detail": "worktree_root is not known."}
+        return {
+            "state": "unknown",
+            "count": None,
+            "detail": "worktree_root is not known.",
+        }
     # #472: `os.path.isdir` (`genericpath.isdir`) swallows `(OSError, ValueError)`
     # unconditionally, so a registry that exists under an untraversable parent used to
     # answer `False` here, and the `detail` below then claimed a confirmed absence for a
@@ -1923,7 +2024,11 @@ def detect_vanished_worktrees(worktree_root):
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
-        return {"state": "unknown", "vanished": [], "detail": "worktree_root is not known."}
+        return {
+            "state": "unknown",
+            "vanished": [],
+            "detail": "worktree_root is not known.",
+        }
     try:
         found = os.stat(root)
     except (FileNotFoundError, NotADirectoryError):
@@ -1950,7 +2055,8 @@ def detect_vanished_worktrees(worktree_root):
         }
     if found is None or not stat.S_ISDIR(found.st_mode):
         return {
-            "state": "unknown", "vanished": [],
+            "state": "unknown",
+            "vanished": [],
             "detail": "no lane registry at {0}.".format(root),
         }
     try:
@@ -1982,7 +2088,9 @@ def detect_vanished_worktrees(worktree_root):
             return {
                 "state": "could-not-run",
                 "vanished": vanished,
-                "detail": "lane record {0} under {1} could not be read.".format(name, root),
+                "detail": "lane record {0} under {1} could not be read.".format(
+                    name, root
+                ),
             }
         age = now - recorded_at
         if age >= 0 and age > LANE_RECORD_TTL_SECONDS:
@@ -1992,16 +2100,19 @@ def detect_vanished_worktrees(worktree_root):
         if not path:
             continue
         if worktree_occupancy(path) is False:
-            vanished.append({
-                "issue": issue,
-                "branch": data.get("branch"),
-                "path": path,
-                "recorded_at": recorded_at,
-            })
+            vanished.append(
+                {
+                    "issue": issue,
+                    "branch": data.get("branch"),
+                    "path": path,
+                    "recorded_at": recorded_at,
+                }
+            )
 
     if live == 0:
         return {
-            "state": "unknown", "vanished": [],
+            "state": "unknown",
+            "vanished": [],
             "detail": "no live lane records under {0}.".format(root),
         }
     return {"state": "resolved", "vanished": vanished, "detail": ""}
@@ -2102,8 +2213,17 @@ def held_from_open_prs(repo_slug):
     try:
         done = subprocess.run(
             [
-                gh, "pr", "list", "--repo", str(repo_slug), "--state", "open",
-                "--json", "number,files", "--limit", str(_PR_LIST_LIMIT),
+                gh,
+                "pr",
+                "list",
+                "--repo",
+                str(repo_slug),
+                "--state",
+                "open",
+                "--json",
+                "number,files",
+                "--limit",
+                str(_PR_LIST_LIMIT),
             ],
             capture_output=True,
             text=True,
@@ -2136,13 +2256,19 @@ def held_from_open_prs(repo_slug):
             "detail": "could not parse gh pr list output: {0}".format(exc),
         }
     if not isinstance(prs, list):
-        return {"state": "could-not-derive", "held": {}, "detail": "gh pr list did not return a list"}
+        return {
+            "state": "could-not-derive",
+            "held": {},
+            "detail": "gh pr list did not return a list",
+        }
     if len(prs) >= _PR_LIST_LIMIT:
         return {
             "state": "could-not-derive",
             "held": {},
             "detail": "gh pr list returned {0} open PR(s), at or past the {1}-PR page "
-            "limit -- the held set cannot be trusted complete.".format(len(prs), _PR_LIST_LIMIT),
+            "limit -- the held set cannot be trusted complete.".format(
+                len(prs), _PR_LIST_LIMIT
+            ),
         }
     held = {}
     for pr in prs:
@@ -2311,7 +2437,13 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
     """
     root = lane_registry_dir(worktree_root)
     if root is None:
-        return {"state": "unknown", "held": {}, "stale_pruned": [], "prune_failed": [], "detail": "worktree_root is not known."}
+        return {
+            "state": "unknown",
+            "held": {},
+            "stale_pruned": [],
+            "prune_failed": [],
+            "detail": "worktree_root is not known.",
+        }
     try:
         found = os.stat(root)
     except (FileNotFoundError, NotADirectoryError):
@@ -2326,7 +2458,10 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
                 "absence.".format(root),
             }
         return {
-            "state": "unknown", "held": {}, "stale_pruned": [], "prune_failed": [],
+            "state": "unknown",
+            "held": {},
+            "stale_pruned": [],
+            "prune_failed": [],
             "detail": "no lane registry at {0}.".format(root),
         }
     except OSError as exc:
@@ -2347,7 +2482,10 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
         }
     if not stat.S_ISDIR(found.st_mode):
         return {
-            "state": "unknown", "held": {}, "stale_pruned": [], "prune_failed": [],
+            "state": "unknown",
+            "held": {},
+            "stale_pruned": [],
+            "prune_failed": [],
             "detail": "no lane registry at {0}.".format(root),
         }
     try:
@@ -2386,7 +2524,9 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
                 "held": {},
                 "stale_pruned": stale_pruned,
                 "prune_failed": prune_failed,
-                "detail": "lane record {0} under {1} could not be read.".format(name, root),
+                "detail": "lane record {0} under {1} could not be read.".format(
+                    name, root
+                ),
             }
         if exclude_issue is not None and str(issue) == str(exclude_issue):
             continue
@@ -2416,11 +2556,13 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
                     except FileNotFoundError:
                         pass
                     except OSError as exc:
-                        prune_failed.append({
-                            "issue": issue,
-                            "branch": branch,
-                            "detail": "{0}: {1}".format(type(exc).__name__, exc),
-                        })
+                        prune_failed.append(
+                            {
+                                "issue": issue,
+                                "branch": branch,
+                                "detail": "{0}: {1}".format(type(exc).__name__, exc),
+                            }
+                        )
                         continue
                     stale_pruned.append({"issue": issue, "branch": branch})
                     continue
@@ -2460,7 +2602,9 @@ def held_from_live_lanes(worktree_root, exclude_issue=None, repo=None):
             "held": {},
             "stale_pruned": stale_pruned,
             "prune_failed": prune_failed,
-            "detail": "no live lane records under {0} besides the excluded issue.".format(root),
+            "detail": "no live lane records under {0} besides the excluded issue.".format(
+                root
+            ),
         }
     return {
         "state": "resolved",
@@ -2687,7 +2831,11 @@ def read_board(repo):
     """The live worktree board, condensed. `could-not-run` is a state, not a crash."""
     supertool = shutil.which("supertool")
     if supertool is None:
-        return {"state": "could-not-run", "lines": [], "detail": "supertool is not on PATH"}
+        return {
+            "state": "could-not-run",
+            "lines": [],
+            "detail": "supertool is not on PATH",
+        }
     try:
         done = subprocess.run(
             [supertool, "git-worktrees"],
@@ -2715,7 +2863,9 @@ def read_board(repo):
             "state": "could-not-run",
             "lines": [],
             "detail": _one_line(
-                "exit {0}: {1}".format(done.returncode, done.stderr or done.stdout or "empty output"),
+                "exit {0}: {1}".format(
+                    done.returncode, done.stderr or done.stdout or "empty output"
+                ),
                 300,
             ),
         }
@@ -2813,13 +2963,17 @@ def compute(
         base = resolve_stacked_base(repo, remote, stack_on)
     else:
         default_branch = config.get("default_branch")
-        base = resolve_base(repo, remote, default_branch) if default_branch else {
-            "state": "could-not-resolve",
-            "remote": remote,
-            "ref": None,
-            "sha": None,
-            "detail": "no default_branch in config",
-        }
+        base = (
+            resolve_base(repo, remote, default_branch)
+            if default_branch
+            else {
+                "state": "could-not-resolve",
+                "remote": remote,
+                "ref": None,
+                "sha": None,
+                "detail": "no default_branch in config",
+            }
+        )
 
     branch = derive_branch(config.get("branch_pattern"), issue)
     if branch["state"] == "resolved":
@@ -2842,7 +2996,10 @@ def compute(
 
     derived_held = (
         derive_held_set(
-            config.get("repo"), config.get("worktree_root"), exclude_issue=issue, repo=repo,
+            config.get("repo"),
+            config.get("worktree_root"),
+            exclude_issue=issue,
+            repo=repo,
         )
         if derive_held
         else None
@@ -2852,7 +3009,9 @@ def compute(
     # #558: this lane's own resolved files are recorded so a *later* candidate's
     # `derive_held_set` call can read them back -- computed here, after `lane_report`,
     # rather than calling `resolve_lane` a second time for the same patterns.
-    lane_files = lane["lane"]["files"] if lane and lane.get("lane") is not None else None
+    lane_files = (
+        lane["lane"]["files"] if lane and lane.get("lane") is not None else None
+    )
 
     # #865: a claim standing inside a linked worktree derives `worktree_root`
     # from THAT worktree's own path (#608), not the clone's -- a value, not
@@ -2876,8 +3035,12 @@ def compute(
     # refusing and writing nothing at all.
     effective_claim = claim and not claim_refused
     lanes = lanes_snapshot(
-        config.get("worktree_root"), issue, branch.get("name"), worktree.get("path"),
-        files=lane_files, claim=effective_claim,
+        config.get("worktree_root"),
+        issue,
+        branch.get("name"),
+        worktree.get("path"),
+        files=lane_files,
+        claim=effective_claim,
     )
 
     return {
@@ -3000,7 +3163,9 @@ def receipt(payload):
             flag = "  ** NOTE ** {0}".format(base["detail"])
         else:
             flag = "  ** STALE ** {0}".format(base["detail"])
-        lines.append(_row("base", "{0} ({1}){2}".format(base["sha"], base["ref"], flag)))
+        lines.append(
+            _row("base", "{0} ({1}){2}".format(base["sha"], base["ref"], flag))
+        )
 
     branch = payload["branch"]
     if branch["state"] != "resolved":
@@ -3020,11 +3185,19 @@ def receipt(payload):
 
     worktree = payload["worktree"]
     if worktree["state"] != "resolved":
-        lines.append("worktree  : {0} -- {1}".format(worktree["state"].upper(), worktree["detail"]))
+        lines.append(
+            "worktree  : {0} -- {1}".format(
+                worktree["state"].upper(), worktree["detail"]
+            )
+        )
     else:
         exists = worktree["exists"]
         exists_text = (
-            "already exists" if exists is True else "free" if exists is False else "unknown"
+            "already exists"
+            if exists is True
+            else "free"
+            if exists is False
+            else "unknown"
         )
         # #608: a `worktree_root` this call GUESSED from the repository root (no
         # .oss.local.json here, or none carrying the key) must not read the same as
@@ -3036,7 +3209,10 @@ def receipt(payload):
             else ""
         )
         lines.append(
-            _row("worktree", "{0} [{1}]{2}".format(worktree["path"], exists_text, origin_note))
+            _row(
+                "worktree",
+                "{0} [{1}]{2}".format(worktree["path"], exists_text, origin_note),
+            )
         )
 
     board = payload["board"]
@@ -3051,11 +3227,21 @@ def receipt(payload):
     if lanes is not None:
         count = lanes["count"]
         if count["state"] == "resolved":
-            lines.append(_row("lanes", "{0} live (recorded, TTL {1}m)".format(
-                count["count"], LANE_RECORD_TTL_SECONDS // 60
-            )))
+            lines.append(
+                _row(
+                    "lanes",
+                    "{0} live (recorded, TTL {1}m)".format(
+                        count["count"], LANE_RECORD_TTL_SECONDS // 60
+                    ),
+                )
+            )
         else:
-            lines.append(_row("lanes", "{0} -- {1}".format(count["state"].upper(), count["detail"])))
+            lines.append(
+                _row(
+                    "lanes",
+                    "{0} -- {1}".format(count["state"].upper(), count["detail"]),
+                )
+            )
         record = lanes["record"]
         if payload.get("claim_refused"):
             # #865: --claim was requested and could not be trusted -- either a
@@ -3081,22 +3267,29 @@ def receipt(payload):
                     "was not trusted (#865)"
                 )
         elif record["state"] != "recorded":
-            lines.append("  this lane not recorded: {0} -- {1}".format(
-                record["state"], record["detail"]
-            ))
+            lines.append(
+                "  this lane not recorded: {0} -- {1}".format(
+                    record["state"], record["detail"]
+                )
+            )
 
     lane = payload.get("lane")
     if lane is not None:
         lines.append("lane      :")
         held_source = lane.get("held_source")
         if held_source is None:
-            for side_label, side in (("lane", lane["lane"]), ("against", lane["against"])):
+            for side_label, side in (
+                ("lane", lane["lane"]),
+                ("against", lane["against"]),
+            ):
                 if side is None:
                     continue
                 for entry in side["patterns"]:
                     lines.append(
                         "  [{0}] {1} ({2}): {3}".format(
-                            side_label, entry["pattern"], entry["state"],
+                            side_label,
+                            entry["pattern"],
+                            entry["state"],
                             ", ".join(entry["files"]) or "-",
                         )
                     )
@@ -3109,15 +3302,21 @@ def receipt(payload):
             for entry in lane["lane"]["patterns"] if lane["lane"] else []:
                 lines.append(
                     "  [lane] {0} ({1}): {2}".format(
-                        entry["pattern"], entry["state"], ", ".join(entry["files"]) or "-"
+                        entry["pattern"],
+                        entry["state"],
+                        ", ".join(entry["files"]) or "-",
                     )
                 )
             if held_source["state"] == "resolved":
                 held_count = len(lane["against"]["files"]) if lane["against"] else 0
-                lines.append("  against : derived held set, {0} file(s)".format(held_count))
+                lines.append(
+                    "  against : derived held set, {0} file(s)".format(held_count)
+                )
             else:
                 lines.append(
-                    "  against : COULD NOT DERIVE THE HELD SET -- {0}".format(held_source["detail"])
+                    "  against : COULD NOT DERIVE THE HELD SET -- {0}".format(
+                        held_source["detail"]
+                    )
                 )
             # #734, review round: a stale-branch prune is a real write this call
             # performs even when --claim was never passed -- named here so it is
@@ -3154,7 +3353,11 @@ def receipt(payload):
         # hand-built dict) still renders the pre-#774 lines below rather than
         # raising.
         if lane.get("overlap_state") == "could-not-check":
-            lines.append("  overlap : COULD NOT CHECK -- {0}".format(lane.get("overlap_detail", "")))
+            lines.append(
+                "  overlap : COULD NOT CHECK -- {0}".format(
+                    lane.get("overlap_detail", "")
+                )
+            )
         elif lane.get("overlap_state") == "resolved-to-nothing":
             # #809: the lane side named no file on disk -- an empty `overlap`
             # here is not the same claim an empty `overlap` from two real,
@@ -3170,7 +3373,9 @@ def receipt(payload):
             # and printing the old sentence there would misdescribe a derived-held
             # call that never named a lane at all.
             if held_source is not None and lane["lane"] is None:
-                lines.append("  overlap : n/a -- no --lane given to compare against the held set")
+                lines.append(
+                    "  overlap : n/a -- no --lane given to compare against the held set"
+                )
             else:
                 lines.append("  overlap : n/a -- only one side given")
         elif lane["overlap"]:
@@ -3191,7 +3396,8 @@ def receipt(payload):
             elif availability["state"] == "blocked":
                 lines.append(
                     "  verdict : BLOCKED -- {0} (held by {1})".format(
-                        ", ".join(availability["files"]), ", ".join(availability["holders"])
+                        ", ".join(availability["files"]),
+                        ", ".join(availability["holders"]),
                     )
                 )
             elif availability["state"] == "could-not-check":
@@ -3205,7 +3411,9 @@ def receipt(payload):
                 # `available`, the dangerous direction: a lane that resolved
                 # to nothing is not confirmed free, it is unnamed.
                 lines.append(
-                    "  verdict : RESOLVED TO NOTHING -- {0}".format(availability["detail"])
+                    "  verdict : RESOLVED TO NOTHING -- {0}".format(
+                        availability["detail"]
+                    )
                 )
             else:
                 lines.append(
@@ -3238,7 +3446,9 @@ def receipt(payload):
                 else:
                     lines.append("  guard   : {0} ({1})".format(entry["test"], why))
         else:
-            lines.append("  guard   : none of the lane's files match a known cross-cutting guard")
+            lines.append(
+                "  guard   : none of the lane's files match a known cross-cutting guard"
+            )
 
     return _render(lines)
 
@@ -3263,8 +3473,7 @@ def _receipt_companions_line(result):
         if result["undetermined"]:
             line += "; also could not derive a file set for {0}".format(
                 ", ".join(
-                    "#{0}".format(entry["number"])
-                    for entry in result["undetermined"]
+                    "#{0}".format(entry["number"]) for entry in result["undetermined"]
                 )
             )
         return line
@@ -3290,7 +3499,9 @@ def main(argv=None):
         "--suggest-companions, which carries its own issue number as its argument",
     )
     parser.add_argument("--repo", default=".", help="repository to read (default: .)")
-    parser.add_argument("--remote", default="origin", help="remote to fetch from (default: origin)")
+    parser.add_argument(
+        "--remote", default="origin", help="remote to fetch from (default: origin)"
+    )
     parser.add_argument(
         "--stack-on",
         default=None,
@@ -3303,7 +3514,9 @@ def main(argv=None):
         "live lane's branch and sidestep git-worktrees' 'cannot tell' "
         "collision on that worktree entirely, rather than reasoning about it.",
     )
-    parser.add_argument("--json", action="store_true", help="emit the payload instead of the receipt")
+    parser.add_argument(
+        "--json", action="store_true", help="emit the payload instead of the receipt"
+    )
     parser.add_argument(
         "--lane",
         action="append",
@@ -3424,7 +3637,9 @@ def main(argv=None):
                     "other modes (#845)".format(flag_name)
                 )
     elif args.issue is None:
-        parser.error("the issue argument is required unless --suggest-companions or --check-vanished is given")
+        parser.error(
+            "the issue argument is required unless --suggest-companions or --check-vanished is given"
+        )
 
     if args.derive_held and args.against:
         parser.error("--derive-held and --against are mutually exclusive (#558)")
@@ -3472,9 +3687,11 @@ def main(argv=None):
         # already fixed in `review_return.py`, `tree_snapshot.py`,
         # `dispatch_rank.py`, `statusline.py` and `batch_hint.py`.
         if sys.stdin is None:
-            print("COULD NOT READ: stdin is not JSON (no readable stdin: "
-                  "the process was handed a closed or unopenable standard "
-                  "input)")
+            print(
+                "COULD NOT READ: stdin is not JSON (no readable stdin: "
+                "the process was handed a closed or unopenable standard "
+                "input)"
+            )
             return EXIT_COULD_NOT_RUN
         try:
             sys.stdin.reconfigure(encoding="utf-8")
@@ -3483,7 +3700,9 @@ def main(argv=None):
         try:
             board = json.load(sys.stdin)
         except UnicodeDecodeError as err:
-            print("COULD NOT READ: stdin could not be decoded as UTF-8 ({0})".format(err))
+            print(
+                "COULD NOT READ: stdin could not be decoded as UTF-8 ({0})".format(err)
+            )
             return EXIT_COULD_NOT_RUN
         except ValueError as err:
             print("COULD NOT READ: stdin is not JSON ({0})".format(err))
@@ -3499,7 +3718,9 @@ def main(argv=None):
                     _receipt_companions_line(result),
                 )
             )
-        return EXIT_OK if result["state"] in ("candidates", "none") else EXIT_COULD_NOT_RUN
+        return (
+            EXIT_OK if result["state"] in ("candidates", "none") else EXIT_COULD_NOT_RUN
+        )
 
     if args.release:
         config, problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
@@ -3553,10 +3774,13 @@ def main(argv=None):
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
-            print("RELEASE #{0}: {1}{2}".format(
-                args.issue, result["state"],
-                " -- " + result["detail"] if result["detail"] else "",
-            ))
+            print(
+                "RELEASE #{0}: {1}{2}".format(
+                    args.issue,
+                    result["state"],
+                    " -- " + result["detail"] if result["detail"] else "",
+                )
+            )
         return EXIT_COULD_NOT_RUN if result["state"] == "could-not-release" else EXIT_OK
 
     if args.check_vanished:
@@ -3582,25 +3806,44 @@ def main(argv=None):
             print(json.dumps(result, indent=2, sort_keys=True))
         else:
             if result["state"] == "resolved" and result["vanished"]:
-                lines = ["VANISHED WORKTREES: {0} live lane record(s) whose own "
-                         "worktree directory is confirmed absent".format(len(result["vanished"]))]
+                lines = [
+                    "VANISHED WORKTREES: {0} live lane record(s) whose own "
+                    "worktree directory is confirmed absent".format(
+                        len(result["vanished"])
+                    )
+                ]
                 for entry in result["vanished"]:
-                    lines.append("  lane #{0} branch={1} path={2} recorded_at={3}".format(
-                        entry["issue"], entry["branch"], entry["path"], entry["recorded_at"],
-                    ))
+                    lines.append(
+                        "  lane #{0} branch={1} path={2} recorded_at={3}".format(
+                            entry["issue"],
+                            entry["branch"],
+                            entry["path"],
+                            entry["recorded_at"],
+                        )
+                    )
                 print("\n".join(lines))
             else:
-                print("VANISHED WORKTREES: {0}{1}".format(
-                    result["state"],
-                    " -- " + result["detail"] if result["detail"] else " -- none found",
-                ))
+                print(
+                    "VANISHED WORKTREES: {0}{1}".format(
+                        result["state"],
+                        " -- " + result["detail"]
+                        if result["detail"]
+                        else " -- none found",
+                    )
+                )
         if result["state"] == "could-not-run":
             return EXIT_COULD_NOT_RUN
         return 1 if result.get("vanished") else EXIT_OK
 
     payload = compute(
-        args.repo, args.issue, args.remote, args.lane, args.against,
-        derive_held=args.derive_held, claim=args.claim, stack_on=args.stack_on,
+        args.repo,
+        args.issue,
+        args.remote,
+        args.lane,
+        args.against,
+        derive_held=args.derive_held,
+        claim=args.claim,
+        stack_on=args.stack_on,
     )
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))

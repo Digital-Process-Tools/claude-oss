@@ -55,18 +55,25 @@ def _record_and_read(tmp_path, check_wait=None, cleared_by=None, why=None):
     _piped(
         [
             str(path),
-            "--decision", "blocked on gate 3 audit",
-            "--at", RECORDED_AT,
-            "--wait-dispatch", DISPATCH,
-            "--wait-observable", OBSERVABLE,
+            "--decision",
+            "blocked on gate 3 audit",
+            "--at",
+            RECORDED_AT,
+            "--wait-dispatch",
+            DISPATCH,
+            "--wait-observable",
+            OBSERVABLE,
         ]
     )
     if check_wait is not None:
         argv = [
             str(path),
-            "--decision", "re-derived",
-            "--at", "2026-08-17T01:15:00Z",
-            "--check-wait", check_wait,
+            "--decision",
+            "re-derived",
+            "--at",
+            "2026-08-17T01:15:00Z",
+            "--check-wait",
+            check_wait,
         ]
         if cleared_by is not None:
             argv += ["--wait-cleared-by", cleared_by]
@@ -127,7 +134,15 @@ def test_no_two_of_the_four_wait_states_render_alike_except_the_two_true_negativ
     never_recorded_dir = tmp_path / "never"
     never_recorded_dir.mkdir()
     never_recorded = never_recorded_dir / "never.json"
-    _piped([str(never_recorded), "--decision", "first tick", "--at", "2026-08-16T00:00:00Z"])
+    _piped(
+        [
+            str(never_recorded),
+            "--decision",
+            "first tick",
+            "--at",
+            "2026-08-16T00:00:00Z",
+        ]
+    )
 
     holds_dir = tmp_path / "holds"
     holds_dir.mkdir()
@@ -137,9 +152,7 @@ def test_no_two_of_the_four_wait_states_render_alike_except_the_two_true_negativ
     cne_dir.mkdir()
 
     outputs = {
-        "no wait ever recorded": _piped(
-            [str(never_recorded), "--pending-wait"]
-        ).stdout,
+        "no wait ever recorded": _piped([str(never_recorded), "--pending-wait"]).stdout,
         "holds": _record_and_read(holds_dir),
         "cleared": _record_and_read(
             cleared_dir, check_wait="cleared", cleared_by="issues filed"
@@ -181,7 +194,5 @@ def test_could_not_evaluate_does_not_render_the_same_as_holds(tmp_path):
     cne_dir = tmp_path / "cne"
     cne_dir.mkdir()
     holds_stdout = _record_and_read(holds_dir)
-    cne_stdout = _record_and_read(
-        cne_dir, check_wait="could-not-evaluate", why=WHY
-    )
+    cne_stdout = _record_and_read(cne_dir, check_wait="could-not-evaluate", why=WHY)
     assert holds_stdout.strip() != cne_stdout.strip()

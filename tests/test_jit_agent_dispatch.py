@@ -187,7 +187,9 @@ def test_the_record_still_names_what_the_subject_is_built_from():
 
 def test_the_record_ships_into_an_installed_layer(tmp_path):
     written = oss_rules.install(tmp_path)
-    record = tmp_path / ".claude" / "jit-context" / "tools" / oss_rules.LAYER / LAYER_RECORD
+    record = (
+        tmp_path / ".claude" / "jit-context" / "tools" / oss_rules.LAYER / LAYER_RECORD
+    )
     assert record in written, "install() did not report writing the record"
     assert record.is_file()
 
@@ -214,7 +216,9 @@ def test_the_record_gets_no_index_row_but_a_real_rule_does(tmp_path):
     record = oss_rules.RULES["tools"][LAYER_RECORD]
     assert oss_rules._field(record, "match") is None, "the record declares a match:"
     assert oss_rules._field(record, "tool") is None, "the record declares a tool:"
-    assert oss_rules._field(record, "description"), "the record declares no description:"
+    assert oss_rules._field(record, "description"), (
+        "the record declares no description:"
+    )
 
 
 def test_the_diagnostic_does_not_count_the_record_as_a_rule(tmp_path, capsys):
@@ -241,15 +245,11 @@ def test_the_diagnostic_does_not_count_the_record_as_a_rule(tmp_path, capsys):
 
     doctor.check_jit_rules(tmp_path)
     lines = [
-        line
-        for line in capsys.readouterr().out.splitlines()
-        if _layer_label() in line
+        line for line in capsys.readouterr().out.splitlines() if _layer_label() in line
     ]
     assert lines, "the tools layer was not reported at all"
     reported = lines[0]
-    indexed = len(
-        [row for row in content.splitlines() if row.strip()]
-    )
+    indexed = len([row for row in content.splitlines() if row.strip()])
     assert "{} rule(s)".format(indexed) in reported, reported
 
 
@@ -266,9 +266,7 @@ def test_the_failure_arms_do_not_count_the_record_either(tmp_path, capsys):
     rules = len([p for p in layer.glob("*.md") if p.name != LAYER_RECORD])
     doctor.check_jit_rules(tmp_path)
     reported = [
-        line
-        for line in capsys.readouterr().out.splitlines()
-        if _layer_label() in line
+        line for line in capsys.readouterr().out.splitlines() if _layer_label() in line
     ]
     assert reported, "the tools layer was not reported at all"
     assert "{} rule(s)".format(rules) in reported[0], reported[0]
@@ -294,8 +292,18 @@ def _fabricated_layer(project):
     directory.mkdir(parents=True)
     rows = []
     for filename, tool, pattern, sentinel in (
-        ("agent-matching.md", "Agent", "~^" + MATCHED_SUBAGENT.split(":")[0], AGENT_SENTINEL),
-        ("agent-missing.md", "Agent", "~^" + UNMATCHED_SUBAGENT.split(":")[0], OTHER_SENTINEL),
+        (
+            "agent-matching.md",
+            "Agent",
+            "~^" + MATCHED_SUBAGENT.split(":")[0],
+            AGENT_SENTINEL,
+        ),
+        (
+            "agent-missing.md",
+            "Agent",
+            "~^" + UNMATCHED_SUBAGENT.split(":")[0],
+            OTHER_SENTINEL,
+        ),
         ("bash-control.md", "Bash", "~.*", BASH_SENTINEL),
     ):
         (directory / filename).write_text(

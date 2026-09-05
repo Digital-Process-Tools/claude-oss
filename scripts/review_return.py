@@ -156,7 +156,9 @@ from pathlib import Path
 _HEADER = re.compile(r"^[ \t>*_#]*FINDINGS:[ \t]*(\d+)", re.MULTILINE | re.IGNORECASE)
 
 # The clean sentinel. Anchored at line start so "FINDINGS: 2" cannot match it.
-_NO_FINDINGS = re.compile(r"^[ \t>*_#]*NO[ \t]+FINDINGS\b", re.MULTILINE | re.IGNORECASE)
+_NO_FINDINGS = re.compile(
+    r"^[ \t>*_#]*NO[ \t]+FINDINGS\b", re.MULTILINE | re.IGNORECASE
+)
 
 # A pointer at material that is not in the return value. Deliberately a closed
 # list of verbs plus a closed list of directions: a looser rule ("findings"
@@ -181,9 +183,7 @@ _BACKREF = re.compile(
 # a bolded lead-in. Indented lines are not counted, because sub-bullets belong
 # to the block above them and counting them would over-count towards
 # `states-findings` -- the one direction an error here must not take.
-_BLOCK = re.compile(
-    r"^(?:\d+[.)][ \t]|[-*+][ \t]|#{1,6}[ \t]|\*\*\S)", re.MULTILINE
-)
+_BLOCK = re.compile(r"^(?:\d+[.)][ \t]|[-*+][ \t]|#{1,6}[ \t]|\*\*\S)", re.MULTILINE)
 
 # A count left behind by a message that did not state what it counted.
 _IMPLIED_COUNT = (
@@ -280,8 +280,7 @@ def classify(message):
     if clean and not header:
         return _verdict(
             "no-findings",
-            "a NO FINDINGS sentinel: the reviewer said it looked and found "
-            "nothing",
+            "a NO FINDINGS sentinel: the reviewer said it looked and found nothing",
             implied_count=implied,
             quoted=fold_to_one_ascii_line(_line_containing(text, clean.start())),
         )
@@ -290,12 +289,11 @@ def classify(message):
         if claimed == 0:
             return _verdict(
                 "no-findings",
-                "a FINDINGS: 0 header: the reviewer said it looked and found "
-                "nothing",
+                "a FINDINGS: 0 header: the reviewer said it looked and found nothing",
                 claimed=0,
                 implied_count=implied,
             )
-        body = text[header.end():]
+        body = text[header.end() :]
         blocks = len(_BLOCK.findall(body))
         header_line = fold_to_one_ascii_line(_line_containing(text, header.start()))
         if blocks >= claimed and not backref:
@@ -334,9 +332,9 @@ def classify(message):
                 claimed=claimed,
                 stated_blocks=blocks,
                 implied_count=implied,
-                quoted=fold_to_one_ascii_line(
-                    _line_containing(text, backref.start())
-                ) if backref else header_line,
+                quoted=fold_to_one_ascii_line(_line_containing(text, backref.start()))
+                if backref
+                else header_line,
             )
         return _verdict(
             "could-not-classify",

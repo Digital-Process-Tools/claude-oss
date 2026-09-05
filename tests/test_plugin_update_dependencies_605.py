@@ -59,7 +59,9 @@ def _plugin_root(tmp_path, dependencies=("remember", "supertool"), name="oss"):
         manifest["dependencies"] = (
             dependencies if isinstance(dependencies, str) else list(dependencies)
         )
-    (root / ".claude-plugin" / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (root / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
     return root
 
 
@@ -92,7 +94,8 @@ class _Runner:
         return [
             call
             for call in self.calls
-            if call[:3] == ["claude", "plugin", "update"] and call[3].split("@", 1)[0] == target
+            if call[:3] == ["claude", "plugin", "update"]
+            and call[3].split("@", 1)[0] == target
         ]
 
 
@@ -149,7 +152,9 @@ def test_the_marketplace_is_refreshed_exactly_once_for_the_whole_run(tmp_path):
         runner=runner,
     )
     refreshes = [
-        call for call in runner.calls if call[:4] == ["claude", "plugin", "marketplace", "update"]
+        call
+        for call in runner.calls
+        if call[:4] == ["claude", "plugin", "marketplace", "update"]
     ]
     assert len(refreshes) == 1, runner.calls
 
@@ -194,7 +199,9 @@ def test_a_dependency_that_moved_carries_its_two_versions(tmp_path):
     class Moving(_Runner):
         def __call__(self, command, timeout=180):
             result = _Runner.__call__(self, command, timeout)
-            if command[:3] == ["claude", "plugin", "update"] and command[3].startswith("remember"):
+            if command[:3] == ["claude", "plugin", "update"] and command[3].startswith(
+                "remember"
+            ):
                 (plugins / "installed_plugins.json").write_text(
                     json.dumps(
                         {
@@ -225,7 +232,9 @@ def test_a_dependency_that_moved_carries_its_two_versions(tmp_path):
 # ------------------------------------------------------- the fourth state, and its control
 
 
-def test_a_dependency_this_project_never_installed_is_not_installed_not_a_failure(tmp_path):
+def test_a_dependency_this_project_never_installed_is_not_installed_not_a_failure(
+    tmp_path,
+):
     """The loop plugin's `installed_scopes(...) or ["user"]` fallback must not be reused
     here: it would run `claude plugin update jit --scope user` against a project that has
     no such install, and record `Plugin "jit" not found` as a plugin silently lost.
@@ -388,7 +397,10 @@ def test_doctors_dependency_set_and_the_updaters_are_the_same_set():
 
     names, status = plugin_update.declared_dependencies(REPO_ROOT)
     assert status == "ok", (names, status)
-    assert names == list(doctor.declared_dependencies()), (names, doctor.declared_dependencies())
+    assert names == list(doctor.declared_dependencies()), (
+        names,
+        doctor.declared_dependencies(),
+    )
 
 
 # ------------------------------------------------------------------- the shipped manifest
@@ -401,6 +413,7 @@ def test_the_shipped_manifest_still_declares_the_dependencies_this_updates():
     names, status = plugin_update.declared_dependencies(REPO_ROOT)
     assert status == "ok"
     assert names, "the manifest declares no dependencies; #605's subject would be empty"
+
 
 # ------------------------------------------------------- what a maintainer actually reads
 #
@@ -415,7 +428,9 @@ import doctor  # noqa: E402
 
 def _doctor_rows(receipt, monkeypatch, tmp_path):
     doctor.FINDINGS.clear()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(plugin_update, "read_receipt", lambda: receipt)
     doctor.check_auto_update(str(tmp_path))
     return list(doctor.FINDINGS)
@@ -427,7 +442,9 @@ def _clean_loop_plugin(**extra):
     return document
 
 
-def test_a_dependency_that_could_not_be_updated_reaches_the_doctor_row(tmp_path, monkeypatch):
+def test_a_dependency_that_could_not_be_updated_reaches_the_doctor_row(
+    tmp_path, monkeypatch
+):
     """The must-fire half. The loop plugin is clean in this fixture, so the only thing
     that can produce a WARN is the dependency -- which is the point."""
     rows = _doctor_rows(
@@ -435,7 +452,12 @@ def test_a_dependency_that_could_not_be_updated_reaches_the_doctor_row(tmp_path,
             dependencies_unreadable=False,
             dependencies=[
                 {"name": "remember", "state": "could-not-check", "detail": "boom"},
-                {"name": "supertool", "state": "current", "from": "0.40.0", "to": "0.40.0"},
+                {
+                    "name": "supertool",
+                    "state": "current",
+                    "from": "0.40.0",
+                    "to": "0.40.0",
+                },
             ],
         ),
         monkeypatch,
@@ -456,8 +478,18 @@ def test_every_dependency_current_is_the_ok_control(tmp_path, monkeypatch):
         _clean_loop_plugin(
             dependencies_unreadable=False,
             dependencies=[
-                {"name": "remember", "state": "current", "from": "9.22.0", "to": "9.22.0"},
-                {"name": "supertool", "state": "current", "from": "0.40.0", "to": "0.40.0"},
+                {
+                    "name": "remember",
+                    "state": "current",
+                    "from": "9.22.0",
+                    "to": "9.22.0",
+                },
+                {
+                    "name": "supertool",
+                    "state": "current",
+                    "from": "0.40.0",
+                    "to": "0.40.0",
+                },
             ],
         ),
         monkeypatch,
@@ -477,7 +509,12 @@ def test_a_dependency_that_moved_warns_because_this_session_runs_the_old_copy(
         _clean_loop_plugin(
             dependencies_unreadable=False,
             dependencies=[
-                {"name": "remember", "state": "updated", "from": "9.21.0", "to": "9.22.0"}
+                {
+                    "name": "remember",
+                    "state": "updated",
+                    "from": "9.21.0",
+                    "to": "9.22.0",
+                }
             ],
         ),
         monkeypatch,
@@ -490,7 +527,9 @@ def test_a_dependency_that_moved_warns_because_this_session_runs_the_old_copy(
     assert "/reload-plugins" in message, message
 
 
-def test_a_receipt_with_no_dependencies_key_does_not_read_as_all_current(tmp_path, monkeypatch):
+def test_a_receipt_with_no_dependencies_key_does_not_read_as_all_current(
+    tmp_path, monkeypatch
+):
     """A receipt written by the updater before #605 says nothing about dependencies. The
     row must say that it says nothing -- the absence is in the instrument, not the world,
     and rendering it as a clean pass is this repository's whole subject."""
@@ -502,7 +541,9 @@ def test_a_receipt_with_no_dependencies_key_does_not_read_as_all_current(tmp_pat
     assert "not a statement" in message, message
 
 
-def test_an_unreadable_dependencies_key_warns_rather_than_reading_as_none(tmp_path, monkeypatch):
+def test_an_unreadable_dependencies_key_warns_rather_than_reading_as_none(
+    tmp_path, monkeypatch
+):
     """`dependencies_unreadable` is the manifest half of the same distinction: which
     dependencies should have been updated could not be told, so none were."""
     rows = _doctor_rows(
@@ -527,8 +568,17 @@ def test_a_dependency_this_project_never_installed_is_named_without_warning(
         _clean_loop_plugin(
             dependencies_unreadable=False,
             dependencies=[
-                {"name": "jit", "state": "not-installed", "detail": "no install record"},
-                {"name": "remember", "state": "current", "from": "9.22.0", "to": "9.22.0"},
+                {
+                    "name": "jit",
+                    "state": "not-installed",
+                    "detail": "no install record",
+                },
+                {
+                    "name": "remember",
+                    "state": "current",
+                    "from": "9.22.0",
+                    "to": "9.22.0",
+                },
             ],
         ),
         monkeypatch,
@@ -540,13 +590,17 @@ def test_a_dependency_this_project_never_installed_is_named_without_warning(
     assert "jit" in message and "not installed" in message, message
 
 
-def test_the_dependency_row_is_not_emitted_when_the_updater_never_ran(tmp_path, monkeypatch):
+def test_the_dependency_row_is_not_emitted_when_the_updater_never_ran(
+    tmp_path, monkeypatch
+):
     """Switched off, or no receipt at all: nothing ran, so there is nothing to say about
     dependencies and a row claiming otherwise would be inventing one. The `off` arm's own
     single row is the control that the check still reports something."""
     doctor.FINDINGS.clear()
     monkeypatch.setattr(
-        plugin_update, "opt_out", lambda root=None, env=None: ("off", "OSS_NO_AUTO_UPDATE")
+        plugin_update,
+        "opt_out",
+        lambda root=None, env=None: ("off", "OSS_NO_AUTO_UPDATE"),
     )
     monkeypatch.setattr(plugin_update, "read_receipt", lambda: None)
     doctor.check_auto_update(str(tmp_path))

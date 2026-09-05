@@ -158,8 +158,10 @@ def test_returned_nothing_is_not_read_as_a_clean_idle_tick():
     text = _tick_md_text()
     assert "returned-nothing" in text
     idx = text.index("`returned-nothing`")
-    window = text[idx:idx + 400]
-    assert re.search(r"not read this as an idle, clean tick|must not read as", window), (
+    window = text[idx : idx + 400]
+    assert re.search(
+        r"not read this as an idle, clean tick|must not read as", window
+    ), (
         "commands/tick.md's `returned-nothing` entry does not say it must not "
         "be read as a clean, idle tick"
     )
@@ -183,7 +185,7 @@ def _spawn_block(text):
     if fence_start == -1 or fence_end == -1:
         line_start = text.rfind("\n", 0, match.start()) + 1
         line_end = text.find("\n", match.end())
-        return text[line_start:line_end if line_end != -1 else len(text)]
+        return text[line_start : line_end if line_end != -1 else len(text)]
     return text[fence_start:fence_end]
 
 
@@ -262,7 +264,8 @@ def test_release_authority_withholding_language_is_unchanged():
     """
     assert "scripts/agent_role.py" in _tick_md_text()
     assert "never tags, never publishes" in _sub_manager_md_text() or (
-        "never tags" in _sub_manager_md_text() and "never publishes" in _sub_manager_md_text()
+        "never tags" in _sub_manager_md_text()
+        and "never publishes" in _sub_manager_md_text()
     )
 
 
@@ -294,6 +297,9 @@ def test_what_ends_a_tick_heading_still_resolves():
     """
     tick_order = (
         Path(__file__).resolve().parent.parent
-        / "skills" / "manager" / "phases" / "tick-order.md"
+        / "skills"
+        / "manager"
+        / "phases"
+        / "tick-order.md"
     ).read_text(encoding="utf-8")
     assert re.search(r"(?m)^## What ends a tick", tick_order)

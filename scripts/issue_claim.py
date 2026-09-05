@@ -306,9 +306,7 @@ def _render(rows, mode):
     ok = _OK_STATES[mode]
     bad = [row for row in rows if row["state"] not in ok]
     lines.append(
-        "{0}: {1} row(s), {2} not {3}".format(
-            mode, len(rows), len(bad), "/".join(ok)
-        )
+        "{0}: {1} row(s), {2} not {3}".format(mode, len(rows), len(bad), "/".join(ok))
     )
     return "\n".join(lines)
 
@@ -318,9 +316,15 @@ def main(argv=None):
     parser.add_argument("issues", nargs="+", help="one or more issue numbers")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--read", action="store_true", help="report the assignee field")
-    group.add_argument("--claim", action="store_true", help="assign to the authenticated user")
-    group.add_argument("--release", action="store_true", help="unassign the authenticated user")
-    parser.add_argument("--repo", default=None, help="OWNER/NAME; defaults to the cwd's remote")
+    group.add_argument(
+        "--claim", action="store_true", help="assign to the authenticated user"
+    )
+    group.add_argument(
+        "--release", action="store_true", help="unassign the authenticated user"
+    )
+    parser.add_argument(
+        "--repo", default=None, help="OWNER/NAME; defaults to the cwd's remote"
+    )
     parser.add_argument("--json", action="store_true", help="emit the rows as JSON")
     args = parser.parse_args(argv)
 

@@ -201,7 +201,10 @@ def parse_supertool_calls(command):
         return []
     calls = []
     for match in _SUPERTOOL_CALL_RE.finditer(command):
-        ops = [single or double for single, double in _QUOTED_ARG_RE.findall(match.group(1))]
+        ops = [
+            single or double
+            for single, double in _QUOTED_ARG_RE.findall(match.group(1))
+        ]
         if ops:
             calls.append(ops)
     return calls
@@ -242,7 +245,11 @@ def analyze_transcript(path):
     try:
         raw = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
-        return {"ok": False, "path": str(path), "reason": "{0}: {1}".format(type(exc).__name__, exc)}
+        return {
+            "ok": False,
+            "path": str(path),
+            "reason": "{0}: {1}".format(type(exc).__name__, exc),
+        }
 
     turns = 0
     turns_with_tool = 0
@@ -260,7 +267,11 @@ def analyze_transcript(path):
     refusals = {}
     models_seen = set()
     agent = None
-    tokens = {"cache_read_input_tokens": 0, "cache_creation_input_tokens": 0, "output_tokens": 0}
+    tokens = {
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+        "output_tokens": 0,
+    }
     parse_errors = 0
     non_blank_lines = 0
     parsed_records = 0
@@ -455,7 +466,12 @@ def discover_transcripts(roots):
             continue
 
         def _onerror(exc, _root=root):
-            unreadable_dirs.append({"path": getattr(exc, "filename", None) or str(_root), "reason": str(exc)})
+            unreadable_dirs.append(
+                {
+                    "path": getattr(exc, "filename", None) or str(_root),
+                    "reason": str(exc),
+                }
+            )
 
         for dirpath, _dirnames, filenames in os.walk(str(root), onerror=_onerror):
             for name in filenames:
@@ -565,12 +581,18 @@ def _summarize_group(analyses, turns_threshold=DEFAULT_TURNS_THRESHOLD):
         "turns_removable": sum(a["turns_removable"] for a in analyses),
         "token_totals": {
             key: sum(a["tokens"][key] for a in analyses)
-            for key in ("cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens")
+            for key in (
+                "cache_read_input_tokens",
+                "cache_creation_input_tokens",
+                "output_tokens",
+            )
         },
     }
 
 
-def run(roots, agent_filter=None, detail=False, turns_threshold=DEFAULT_TURNS_THRESHOLD):
+def run(
+    roots, agent_filter=None, detail=False, turns_threshold=DEFAULT_TURNS_THRESHOLD
+):
     """The whole scan over `roots`. Returns the report dict; never raises."""
     files, unreadable_dirs = discover_transcripts(roots)
 
@@ -591,7 +613,9 @@ def run(roots, agent_filter=None, detail=False, turns_threshold=DEFAULT_TURNS_TH
         if result["ok"]:
             parsed.append(result)
         else:
-            unreadable_files.append({"path": result["path"], "reason": result["reason"]})
+            unreadable_files.append(
+                {"path": result["path"], "reason": result["reason"]}
+            )
 
     # `transcripts_parsed` counts every file the parser actually read, and is
     # therefore taken *before* the agent filter (#374). Filtering first made one
@@ -618,7 +642,9 @@ def run(roots, agent_filter=None, detail=False, turns_threshold=DEFAULT_TURNS_TH
 
     by_agent = {}
     for a in analyses:
-        agent_bucket = by_agent.setdefault(a["agent"], {"count": 0, "_analyses": [], "by_model": {}})
+        agent_bucket = by_agent.setdefault(
+            a["agent"], {"count": 0, "_analyses": [], "by_model": {}}
+        )
         agent_bucket["count"] += 1
         agent_bucket["_analyses"].append(a)
         model_bucket = agent_bucket["by_model"].setdefault(a["model"], [])
@@ -627,7 +653,9 @@ def run(roots, agent_filter=None, detail=False, turns_threshold=DEFAULT_TURNS_TH
     for agent_bucket in by_agent.values():
         by_model = {}
         for model, model_analyses in agent_bucket["by_model"].items():
-            by_model[model] = _summarize_group(model_analyses, turns_threshold=turns_threshold)
+            by_model[model] = _summarize_group(
+                model_analyses, turns_threshold=turns_threshold
+            )
         agent_bucket["by_model"] = by_model
         del agent_bucket["_analyses"]
 
@@ -701,11 +729,28 @@ def _encode_cwd_segment(cwd):
 
 
 def _build_parser():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else "")
-    parser.add_argument("--root", action="append", default=[], help="Directory to search recursively for *.jsonl transcripts. Repeatable.")
-    parser.add_argument("--agent", default=None, help="Filter to one attributionAgent value, e.g. oss:developer.")
-    parser.add_argument("--detail", action="store_true", help="Include a full per-transcript row list in the output.")
-    parser.add_argument("--indent", type=int, default=2, help="JSON indent (0 for compact).")
+    parser = argparse.ArgumentParser(
+        description=__doc__.splitlines()[0] if __doc__ else ""
+    )
+    parser.add_argument(
+        "--root",
+        action="append",
+        default=[],
+        help="Directory to search recursively for *.jsonl transcripts. Repeatable.",
+    )
+    parser.add_argument(
+        "--agent",
+        default=None,
+        help="Filter to one attributionAgent value, e.g. oss:developer.",
+    )
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="Include a full per-transcript row list in the output.",
+    )
+    parser.add_argument(
+        "--indent", type=int, default=2, help="JSON indent (0 for compact)."
+    )
     parser.add_argument(
         "--turns-threshold",
         type=int,
@@ -724,7 +769,12 @@ def main(argv=None):
         return exc.code if isinstance(exc.code, int) else EXIT_USAGE
 
     roots = [Path(r) for r in args.root] if args.root else [default_transcripts_root()]
-    report = run(roots, agent_filter=args.agent, detail=args.detail, turns_threshold=args.turns_threshold)
+    report = run(
+        roots,
+        agent_filter=args.agent,
+        detail=args.detail,
+        turns_threshold=args.turns_threshold,
+    )
     indent = args.indent if args.indent > 0 else None
     print(json.dumps(report, indent=indent, sort_keys=True))
     return EXIT_MEASURED if report["state"] == STATE_MEASURED else EXIT_NO_TRANSCRIPTS

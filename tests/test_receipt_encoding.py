@@ -94,8 +94,12 @@ def test_the_script_holds_no_character_the_console_cannot_print():
     on the branch that builds it, so a character sitting on an untested branch
     is invisible until a maintainer hits it mid-release."""
     found = _unencodable(SCRIPT.read_text(encoding="utf-8"))
-    assert not found, "{0} cannot encode: {1}".format(CONSOLE, ", ".join(
-        "line {0}: U+{1:04X}".format(number, ord(char)) for number, char in found))
+    assert not found, "{0} cannot encode: {1}".format(
+        CONSOLE,
+        ", ".join(
+            "line {0}: U+{1:04X}".format(number, ord(char)) for number, char in found
+        ),
+    )
 
 
 def _repo(tmp_path, changelog_text, name):
@@ -106,7 +110,8 @@ def _repo(tmp_path, changelog_text, name):
     shutil.copy(SCRIPT, script_path)
     (root / "changelog.d").mkdir()
     (root / "changelog.d" / "41.added.md").write_text(
-        "- A thing (#41).\n", encoding="utf-8")
+        "- A thing (#41).\n", encoding="utf-8"
+    )
     (root / "CHANGELOG.md").write_text(changelog_text, encoding="utf-8")
     return root, script_path
 
@@ -143,10 +148,23 @@ def _assemble_on_a_console(root, script_path, version, *extra):
     env = dict(os.environ)
     env["PYTHONIOENCODING"] = CONSOLE
     return subprocess.run(
-        [sys.executable, str(script_path), "--version", version,
-         "--date", "2026-08-14", "--dir", "changelog.d",
-         "--changelog", "CHANGELOG.md", *extra],
-        cwd=str(root), capture_output=True, encoding=CONSOLE, env=env,
+        [
+            sys.executable,
+            str(script_path),
+            "--version",
+            version,
+            "--date",
+            "2026-08-14",
+            "--dir",
+            "changelog.d",
+            "--changelog",
+            "CHANGELOG.md",
+            *extra,
+        ],
+        cwd=str(root),
+        capture_output=True,
+        encoding=CONSOLE,
+        env=env,
     )
 
 
@@ -156,10 +174,12 @@ def _assemble_on_a_console(root, script_path, version, *extra):
 ESCAPE = chr(92) + "u"
 
 #: The failure this asserts against, spelled once.
-DEGRADED = ("this receipt holds a character cp1252 cannot print. It no longer "
-            "crashes the run -- it is degraded to an escape and shipped -- so "
-            "the escape is what a Windows maintainer reads instead of the "
-            "sentence:\n")
+DEGRADED = (
+    "this receipt holds a character cp1252 cannot print. It no longer "
+    "crashes the run -- it is degraded to an escape and shipped -- so "
+    "the escape is what a Windows maintainer reads instead of the "
+    "sentence:\n"
+)
 
 
 def test_a_first_release_receipt_prints_on_a_cp1252_console(tmp_path):
@@ -185,8 +205,11 @@ def test_an_ordinary_release_receipt_prints_on_a_cp1252_console(tmp_path):
     assert ESCAPE not in result.stdout, DEGRADED + result.stdout
     # The write half of the failure: the release landed and the fragment was
     # consumed while the exit code said SKIPPED. Assert both halves agree.
-    assert "## [0.2.0] - 2026-08-14" in (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## [0.2.0] - 2026-08-14" in (root / "CHANGELOG.md").read_text(
+        encoding="utf-8"
+    )
     assert not (root / "changelog.d" / "41.added.md").exists()
+
 
 def test_a_titled_release_receipt_prints_on_a_cp1252_console(tmp_path):
     """The heading is now the first thing on the summary line, and with a title
@@ -197,8 +220,9 @@ def test_a_titled_release_receipt_prints_on_a_cp1252_console(tmp_path):
     character joined to a value that arrived on argv. This drives it.
     """
     root, script_path = _repo(tmp_path, HAS_RELEASE, "titled")
-    result = _assemble_on_a_console(root, script_path, "0.2.0",
-                                    "--title", "A heading that says why")
+    result = _assemble_on_a_console(
+        root, script_path, "0.2.0", "--title", "A heading that says why"
+    )
     assert "UnicodeEncodeError" not in result.stderr, result.stderr
     assert "Traceback" not in result.stderr, result.stderr
     assert result.stdout.startswith("assemble    : ok"), result.stdout + result.stderr
@@ -207,7 +231,8 @@ def test_a_titled_release_receipt_prints_on_a_cp1252_console(tmp_path):
     # The write half, as above: the receipt printed and the heading it quoted
     # is the one on disk.
     assert "## [0.2.0] - 2026-08-14 — A heading that says why" in (
-        root / "CHANGELOG.md").read_text(encoding="utf-8")
+        root / "CHANGELOG.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_the_missing_title_refusal_prints_on_a_cp1252_console(tmp_path):
@@ -224,7 +249,8 @@ def test_the_missing_title_refusal_prints_on_a_cp1252_console(tmp_path):
     assert "UnicodeEncodeError" not in result.stderr, result.stderr
     assert "Traceback" not in result.stderr, result.stderr
     assert result.stdout.startswith("assemble    : refused"), (
-        result.stdout + result.stderr)
+        result.stdout + result.stderr
+    )
     assert result.returncode == 2
     assert ESCAPE not in result.stdout, DEGRADED + result.stdout
     # And the refusal meant it: nothing written, nothing consumed.

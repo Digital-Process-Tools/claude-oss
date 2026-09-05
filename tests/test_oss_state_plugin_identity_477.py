@@ -15,6 +15,7 @@ because #418 measured two installs both reading "0.9.0" 16 commits apart. A
 version-only comparison would be silent for exactly the skew this issue is
 about.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -107,14 +108,20 @@ def test_plugin_identity_line_renders_all_three_states():
 def test_last_plugin_identity_scans_back_past_other_entry_kinds(tmp_path):
     state_path = tmp_path / "state.json"
     oss_state.append(
-        str(state_path), "2026-01-01T00:00:00Z", "first tick",
+        str(state_path),
+        "2026-01-01T00:00:00Z",
+        "first tick",
         detail={"plugin_identity": IDENTITY_A},
     )
     oss_state.append(
-        str(state_path), "2026-01-02T00:00:00Z", "second tick, no identity recorded",
+        str(state_path),
+        "2026-01-02T00:00:00Z",
+        "second tick, no identity recorded",
     )
     oss_state.append(
-        str(state_path), "2026-01-03T00:00:00Z", "third tick, an intake record",
+        str(state_path),
+        "2026-01-03T00:00:00Z",
+        "third tick, an intake record",
         detail={"intake": oss_state.intake(1, 1, window="test")},
     )
     entry, identity, route = oss_state._last_plugin_identity(str(state_path))
@@ -137,8 +144,15 @@ STAMP = "2026-08-25T00:00:00Z"
 def test_cli_decision_records_a_plugin_identity(tmp_path, capsys):
     path = tmp_path / "state.json"
     rc = oss_state._main(
-        [str(path), "--decision", "first tick", "--at", STAMP,
-         "--plugin-identity", IDENTITY_A]
+        [
+            str(path),
+            "--decision",
+            "first tick",
+            "--at",
+            STAMP,
+            "--plugin-identity",
+            IDENTITY_A,
+        ]
     )
     assert rc == 0
     out = capsys.readouterr()
@@ -160,8 +174,15 @@ def test_cli_check_plugin_identity_with_no_prior_says_could_not_tell(tmp_path, c
 def test_cli_check_plugin_identity_finds_the_prior_across_a_tick(tmp_path, capsys):
     path = tmp_path / "state.json"
     oss_state._main(
-        [str(path), "--decision", "first tick", "--at", STAMP,
-         "--plugin-identity", IDENTITY_A]
+        [
+            str(path),
+            "--decision",
+            "first tick",
+            "--at",
+            STAMP,
+            "--plugin-identity",
+            IDENTITY_A,
+        ]
     )
     capsys.readouterr()
     rc = oss_state._main([str(path), "--check-plugin-identity", IDENTITY_B])
@@ -173,14 +194,23 @@ def test_cli_check_plugin_identity_finds_the_prior_across_a_tick(tmp_path, capsy
     assert record["current"] == IDENTITY_B
 
 
-def test_cli_check_plugin_identity_must_not_fire_when_the_reading_repeats(tmp_path, capsys):
+def test_cli_check_plugin_identity_must_not_fire_when_the_reading_repeats(
+    tmp_path, capsys
+):
     """MUST NOT FIRE: the paired negative control for the CLI path -- a real
     round trip through --decision then --check-plugin-identity with an
     unchanged reading must not report `changed`."""
     path = tmp_path / "state.json"
     oss_state._main(
-        [str(path), "--decision", "first tick", "--at", STAMP,
-         "--plugin-identity", IDENTITY_A]
+        [
+            str(path),
+            "--decision",
+            "first tick",
+            "--at",
+            STAMP,
+            "--plugin-identity",
+            IDENTITY_A,
+        ]
     )
     capsys.readouterr()
     oss_state._main([str(path), "--check-plugin-identity", IDENTITY_A])
@@ -188,14 +218,18 @@ def test_cli_check_plugin_identity_must_not_fire_when_the_reading_repeats(tmp_pa
     assert record["state"] == oss_state.PLUGIN_UNCHANGED
 
 
-def test_cli_plugin_identity_in_a_reading_mode_is_refused_not_silently_dropped(tmp_path, capsys):
+def test_cli_plugin_identity_in_a_reading_mode_is_refused_not_silently_dropped(
+    tmp_path, capsys
+):
     path = tmp_path / "state.json"
     rc = oss_state._main([str(path), "--last", "--plugin-identity", IDENTITY_A])
     assert rc == 1
     assert "FAIL" in capsys.readouterr().out
 
 
-def test_cli_check_plugin_identity_with_an_empty_value_is_refused_not_dropped(tmp_path, capsys):
+def test_cli_check_plugin_identity_with_an_empty_value_is_refused_not_dropped(
+    tmp_path, capsys
+):
     """MUST NOT FIRE as --decision: an empty string is still a value somebody
     passed (a broken $IDENTITY capture upstream, say), and it used to be
     treated as absent -- falling all the way through to --decision's own

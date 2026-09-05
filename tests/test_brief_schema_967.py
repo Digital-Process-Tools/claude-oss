@@ -50,7 +50,9 @@ def _without(block):
     """The good brief minus one paragraph, so each negative case differs from the
     positive control by exactly the element under test."""
     kept = [p for p in GOOD.split("\n\n") if block not in p]
-    assert len(kept) < len(GOOD.split("\n\n")), "fixture did not change: {!r}".format(block)
+    assert len(kept) < len(GOOD.split("\n\n")), "fixture did not change: {!r}".format(
+        block
+    )
     return "\n\n".join(kept)
 
 

@@ -76,7 +76,9 @@ PRODUCER_FUNCTION = "scaffolded_changelog_gate"
 CHANGELOG_COMMAND = REPO_ROOT / "commands" / "changelog.md"
 SCAFFOLD_COMMAND = REPO_ROOT / "commands" / "scaffold.md"
 RELEASE_VERSION = REPO_ROOT / "scripts" / "release_version.py"
-DOCTOR_CHECK_FRAGMENTS_README = REPO_ROOT / "scripts" / "doctor_check_fragments_readme.py"
+DOCTOR_CHECK_FRAGMENTS_README = (
+    REPO_ROOT / "scripts" / "doctor_check_fragments_readme.py"
+)
 
 # #348's producer/consumer pair. Both functions live in the same file, so
 # there is exactly one `_doc` read and one `_function_body` extraction on
@@ -176,7 +178,7 @@ def _function_body(text, name):
     start = re.search(r"^def " + re.escape(name) + r"\(", text, re.MULTILINE)
     if start is None:
         raise LookupError("no top-level `def {}(` found".format(name))
-    rest = text[start.end():]
+    rest = text[start.end() :]
     end = re.search(r"^(?:def |class |@)", rest, re.MULTILINE)
     return rest[: end.start()] if end else rest
 
@@ -209,9 +211,7 @@ def states_unnamed_by(text, states):
     """The states this document does not name as a delimited literal."""
     unnamed = set()
     for state in states:
-        wrapped = [
-            left + state + right for left in DELIMITERS for right in DELIMITERS
-        ]
+        wrapped = [left + state + right for left in DELIMITERS for right in DELIMITERS]
         if not any(candidate in text for candidate in wrapped):
             unnamed.add(state)
     return unnamed
@@ -456,8 +456,9 @@ def test_the_deferred_consumer_is_still_deferred():
         unnamed = states_unnamed_by(_doc(path), states)
         assert unnamed, (
             "{} is listed in DEFERRED_CONSUMERS ({}) but now names every gate "
-            "state. Move it into ENFORCED_CONSUMERS and remove the deferral."
-            .format(path.relative_to(REPO_ROOT), reason)
+            "state. Move it into ENFORCED_CONSUMERS and remove the deferral.".format(
+                path.relative_to(REPO_ROOT), reason
+            )
         )
 
 
@@ -504,9 +505,7 @@ def test_the_consumer_census_lists_every_file_that_calls_the_gate():
     assert not unreadable, (
         "the consumer census could not read {} -- so it cannot claim that no "
         "consumer is missing from GATE_STATE_CONSUMERS. An unreadable file is "
-        "unknown, not absent.".format(
-            [(str(p), repr(e)) for p, e in unreadable]
-        )
+        "unknown, not absent.".format([(str(p), repr(e)) for p, e in unreadable])
     )
     # #396. Absence is named rather than dropped, and it does not sink the claim the
     # way `unreadable` does: a path git lists and the working tree does not hold is a
@@ -516,10 +515,12 @@ def test_the_consumer_census_lists_every_file_that_calls_the_gate():
     # the ordinary green run, where there is no message to ride on.
     caveat = ""
     if absent:
-        caveat = "\n\n  Note: {} tracked path(s) are in the index and not on disk, " \
+        caveat = (
+            "\n\n  Note: {} tracked path(s) are in the index and not on disk, "
             "so the census did not read them: {}".format(
                 len(absent), [str(p) for p, _e in absent]
             )
+        )
     missing = unlisted_callers(texts, set(GATE_STATE_CONSUMERS))
     assert not missing, (
         "{} name `{}` and are in neither ENFORCED_CONSUMERS nor "
@@ -576,9 +577,7 @@ def test_the_state_check_passes_text_that_names_all_four():
         "`absent` refuses and `unknown` says why."
     )
     assert (
-        states_unnamed_by(
-            text, {"present", "absent", "unknown", "present-other-dir"}
-        )
+        states_unnamed_by(text, {"present", "absent", "unknown", "present-other-dir"})
         == set()
     )
 
@@ -786,12 +785,15 @@ def test_the_census_reports_a_listing_it_could_not_get(tmp_path):
     fires is a fact about the runner rather than about the code.
     """
     try:
-        inside = subprocess.run(
-            ["git", "rev-parse", "--is-inside-work-tree"],
-            cwd=str(tmp_path),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        ).returncode == 0
+        inside = (
+            subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                cwd=str(tmp_path),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            ).returncode
+            == 0
+        )
     except OSError:
         # No git on this runner. tracked_paths then answers through its OSError
         # arm, which is the same third state this control is about, so the
@@ -822,7 +824,7 @@ def test_the_census_enumeration_returns_no_problem_on_a_real_repository():
 
 def test_the_producer_extraction_fails_loudly_when_the_function_is_gone():
     with pytest.raises(LookupError):
-        producer_states("def something_else(x):\n    return \"present\"\n")
+        producer_states('def something_else(x):\n    return "present"\n')
 
 
 def test_the_producer_extraction_stops_at_the_next_function():
@@ -831,10 +833,10 @@ def test_the_producer_extraction_stops_at_the_next_function():
     """
     text = (
         "def scaffolded_changelog_gate(root):\n"
-        "    return \"present\", \"\"\n"
+        '    return "present", ""\n'
         "\n\n"
         "def other(x):\n"
-        "    return \"borrowed\"\n"
+        '    return "borrowed"\n'
     )
     assert producer_states(text) == {"present"}
 

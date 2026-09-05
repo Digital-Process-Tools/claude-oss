@@ -89,7 +89,9 @@ def _repo_with_gate(tmp_path, named):
 
 
 @pytest.mark.parametrize("label,named", HOSTILE, ids=[label for label, _ in HOSTILE])
-def test_the_gate_refuses_a_dir_the_config_entrance_would_refuse(tmp_path, label, named):
+def test_the_gate_refuses_a_dir_the_config_entrance_would_refuse(
+    tmp_path, label, named
+):
     root = _repo_with_gate(tmp_path, named)
 
     state, detail = oss_config.scaffolded_changelog_gate(root)
@@ -161,10 +163,12 @@ def test_the_resolver_returns_no_directory_for_a_refused_gate(tmp_path, label, n
     `problem=None`, which is what the reproduction in #343 measured."""
     root = _repo_with_gate(tmp_path, named)
 
-    directory, problem = release_version._fragment_dir(root, None, {"changelog_dir": None})
+    directory, problem = release_version._fragment_dir(
+        root, None, {"changelog_dir": None}
+    )
 
-    assert directory is None, (
-        "resolved {0!r} from a --dir of {1!r}".format(str(directory), named)
+    assert directory is None, "resolved {0!r} from a --dir of {1!r}".format(
+        str(directory), named
     )
     assert problem, "a refusal with no reason is a silence"
     assert "changelog_dir" in problem or "--dir" in problem
@@ -174,7 +178,9 @@ def test_the_resolver_returns_no_directory_for_a_refused_gate(tmp_path, label, n
 def test_the_resolver_still_resolves_every_legitimate_directory(tmp_path, label, named):
     root = _repo_with_gate(tmp_path, named)
 
-    directory, problem = release_version._fragment_dir(root, None, {"changelog_dir": None})
+    directory, problem = release_version._fragment_dir(
+        root, None, {"changelog_dir": None}
+    )
 
     assert problem is None
     assert directory == root.joinpath(*named.split("/"))
@@ -184,7 +190,9 @@ def test_the_resolver_still_resolves_every_legitimate_directory(tmp_path, label,
 
 
 @pytest.mark.parametrize("label,named", HOSTILE, ids=[label for label, _ in HOSTILE])
-def test_the_config_entrance_is_guarded_on_the_path_that_actually_runs(tmp_path, label, named):
+def test_the_config_entrance_is_guarded_on_the_path_that_actually_runs(
+    tmp_path, label, named
+):
     """Found reviewing the fix for #343, and it inverts the issue's framing.
 
     `changelog_dir_problem` is reached from `oss_config.validate()`, and
@@ -203,14 +211,16 @@ def test_the_config_entrance_is_guarded_on_the_path_that_actually_runs(tmp_path,
         tmp_path, None, {"changelog_dir": named}
     )
 
-    assert directory is None, (
-        "resolved {0!r} straight out of .oss.json".format(str(directory))
+    assert directory is None, "resolved {0!r} straight out of .oss.json".format(
+        str(directory)
     )
     assert problem and "changelog_dir" in problem
 
 
 @pytest.mark.parametrize("label,named", BENIGN, ids=[label for label, _ in BENIGN])
-def test_the_config_entrance_still_resolves_every_legitimate_directory(tmp_path, label, named):
+def test_the_config_entrance_still_resolves_every_legitimate_directory(
+    tmp_path, label, named
+):
     """The must-not-fire half, in the same fixture."""
     directory, problem = release_version._fragment_dir(
         tmp_path, None, {"changelog_dir": named}

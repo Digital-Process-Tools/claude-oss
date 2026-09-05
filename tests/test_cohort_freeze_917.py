@@ -88,9 +88,7 @@ def _annotated_tag_script(extra=None):
     script = {
         tuple(TAG_REF_URL_ARGS): _Done(
             0,
-            json.dumps(
-                {"object": {"sha": TAG_SHA, "type": "tag"}}
-            ),
+            json.dumps({"object": {"sha": TAG_SHA, "type": "tag"}}),
         ),
         (
             "gh",
@@ -214,9 +212,7 @@ def test_cohort_members_created_at_cutoff_is_inclusive():
 
 
 def test_cohort_members_created_after_cutoff_excluded():
-    issues = [
-        {"number": 1, "created_at": "2026-09-03T08:13:41Z", "closed_at": None}
-    ]
+    issues = [{"number": 1, "created_at": "2026-09-03T08:13:41Z", "closed_at": None}]
     assert cohort_freeze.cohort_members(issues, CUTOFF) == []
 
 
@@ -247,9 +243,7 @@ def test_cohort_members_closed_one_second_after_cutoff_included():
 
 
 def test_cohort_members_still_open_included():
-    issues = [
-        {"number": 1, "created_at": "2026-09-01T00:00:00Z", "closed_at": None}
-    ]
+    issues = [{"number": 1, "created_at": "2026-09-01T00:00:00Z", "closed_at": None}]
     assert cohort_freeze.cohort_members(issues, CUTOFF) == [1]
 
 
@@ -505,7 +499,9 @@ def test_apply_labels_decodes_nonutf8_bytes_without_raising():
 # --------------------------------------------------------------- freeze (orchestration)
 
 
-def _freeze_script(members_numbers, already_numbers, apply_ok=True, label_missing=False):
+def _freeze_script(
+    members_numbers, already_numbers, apply_ok=True, label_missing=False
+):
     label = "cohort-16"
     script = _annotated_tag_script()
     script[("gh", "api", "-X", "GET", "repos/{}/labels/{}".format(REPO, label))] = (
@@ -624,9 +620,7 @@ def test_freeze_partial_add_leaves_the_rest_for_next_run():
 
 
 def test_freeze_execute_partial_failure_is_could_not_read_not_frozen():
-    script = _freeze_script(
-        members_numbers=[1, 2], already_numbers=[], apply_ok=False
-    )
+    script = _freeze_script(members_numbers=[1, 2], already_numbers=[], apply_ok=False)
     run = _scripted_run(script)
     result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=True)
     assert result["state"] == "could-not-read"
@@ -720,8 +714,14 @@ def test_freeze_collapses_apply_failures_that_all_report_label_not_found():
     script = _freeze_script(members_numbers=[1, 2, 3], already_numbers=[])
     label = "cohort-16"
     for n in (1, 2, 3):
-        script[("gh", "issue", "edit", str(n), "--repo", REPO, "--add-label", label)] = _Done(
-            1, "", "failed to update .../issues/{}: '{}' not found\\nfailed to update 1 issue".format(n, label)
+        script[
+            ("gh", "issue", "edit", str(n), "--repo", REPO, "--add-label", label)
+        ] = _Done(
+            1,
+            "",
+            "failed to update .../issues/{}: '{}' not found\\nfailed to update 1 issue".format(
+                n, label
+            ),
         )
     run = _scripted_run(script)
     result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=True)
@@ -751,24 +751,18 @@ def test_main_could_not_read_when_gh_missing(tmp_path, monkeypatch):
     config = tmp_path / ".oss.json"
     config.write_text(json.dumps({"repo": REPO}), encoding="utf-8")
     monkeypatch.setattr(cohort_freeze.shutil, "which", lambda name: None)
-    code = cohort_freeze.main(
-        ["--repo", str(tmp_path), "--tag", TAG, "--cohort", "16"]
-    )
+    code = cohort_freeze.main(["--repo", str(tmp_path), "--tag", TAG, "--cohort", "16"])
     assert code == cohort_freeze.EXIT_COULD_NOT_READ
 
 
 def test_main_repo_resolution_rejects_missing_config(tmp_path):
-    code = cohort_freeze.main(
-        ["--repo", str(tmp_path), "--tag", TAG, "--cohort", "16"]
-    )
+    code = cohort_freeze.main(["--repo", str(tmp_path), "--tag", TAG, "--cohort", "16"])
     assert code == cohort_freeze.EXIT_COULD_NOT_READ
 
 
 def test_main_accepts_explicit_slug(monkeypatch):
     monkeypatch.setattr(cohort_freeze.shutil, "which", lambda name: None)
-    code = cohort_freeze.main(
-        ["--repo", REPO, "--tag", TAG, "--cohort", "16"]
-    )
+    code = cohort_freeze.main(["--repo", REPO, "--tag", TAG, "--cohort", "16"])
     # gh missing either way -- this only proves the slug itself was accepted
     # without needing a .oss.json on disk, not that the freeze ran.
     assert code == cohort_freeze.EXIT_COULD_NOT_READ
@@ -827,4 +821,3 @@ def test_resolve_repo_slug_still_accepts_valid_repo_from_oss_json(tmp_path):
     slug, problem = cohort_freeze._resolve_repo_slug(str(tmp_path))
     assert slug == REPO
     assert problem is None
-

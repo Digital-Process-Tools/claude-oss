@@ -37,8 +37,12 @@ def clean_findings():
 
 
 def _git(root, *args):
-    subprocess.run(["git", "-C", str(root)] + list(args), check=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(
+        ["git", "-C", str(root)] + list(args),
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
 
 
 def _init_repo(root):
@@ -68,6 +72,7 @@ def _config(**overrides):
 def _fake_run(stdout="", returncode=0):
     def run(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, returncode, stdout=stdout, stderr="")
+
     return run
 
 
@@ -81,7 +86,8 @@ def test_a_tracked_oss_json_reports_committed(tmp_path):
     _git(tmp_path, "commit", "-q", "-m", "x")
     doctor.check_oss_json_committed(tmp_path)
     assert any(
-        state == "OK" and "committed: tracked by git" in msg for state, msg in doctor.FINDINGS
+        state == "OK" and "committed: tracked by git" in msg
+        for state, msg in doctor.FINDINGS
     )
 
 
@@ -93,7 +99,8 @@ def test_an_untracked_oss_json_is_a_named_gap_not_a_silent_pass(tmp_path):
     (tmp_path / ".oss.json").write_text("{}", encoding="utf-8")
     doctor.check_oss_json_committed(tmp_path)
     assert any(
-        state == "WARN" and "NOT tracked by git" in msg for state, msg in doctor.FINDINGS
+        state == "WARN" and "NOT tracked by git" in msg
+        for state, msg in doctor.FINDINGS
     )
 
 
@@ -124,7 +131,9 @@ def test_a_valid_config_reports_ok_and_returns_it(tmp_path):
     (tmp_path / ".oss.local.json").write_text(json.dumps(local), encoding="utf-8")
     config = doctor.check_oss_json_presence(tmp_path)
     assert config is not None
-    assert any(state == "OK" and "present and valid" in msg for state, msg in doctor.FINDINGS)
+    assert any(
+        state == "OK" and "present and valid" in msg for state, msg in doctor.FINDINGS
+    )
 
 
 def test_a_missing_config_is_warn_not_fail(tmp_path):
@@ -134,7 +143,10 @@ def test_a_missing_config_is_warn_not_fail(tmp_path):
     config = doctor.check_oss_json_presence(tmp_path)
     assert config is None
     assert not any(state == "FAIL" for state, _ in doctor.FINDINGS)
-    assert any(state == "WARN" and "missing or unreadable" in msg for state, msg in doctor.FINDINGS)
+    assert any(
+        state == "WARN" and "missing or unreadable" in msg
+        for state, msg in doctor.FINDINGS
+    )
 
 
 # ------------------------------------------------------- dependency resolution
@@ -162,14 +174,20 @@ def test_an_active_dependency_with_no_readable_manifest_is_contract_unknown(tmp_
         json.dumps({"plugins": {"supertool@dpt-plugins": [{"version": "0.40.0"}]}}),
         encoding="utf-8",
     )
-    findings = doctor.dependency_resolution_state(["supertool"], record=record, repos={})
-    assert findings == [{"name": "supertool", "state": "contract-unknown", "version": "0.40.0"}]
+    findings = doctor.dependency_resolution_state(
+        ["supertool"], record=record, repos={}
+    )
+    assert findings == [
+        {"name": "supertool", "state": "contract-unknown", "version": "0.40.0"}
+    ]
 
 
 def test_a_missing_dependency_is_reported_separately_from_contract_unknown(tmp_path):
     record = tmp_path / "installed_plugins.json"
     record.write_text(json.dumps({"plugins": {}}), encoding="utf-8")
-    findings = doctor.dependency_resolution_state(["supertool"], record=record, repos={})
+    findings = doctor.dependency_resolution_state(
+        ["supertool"], record=record, repos={}
+    )
     assert findings == [{"name": "supertool", "state": "missing", "version": None}]
 
 
@@ -180,7 +198,9 @@ def test_a_resolving_dependency_with_a_readable_manifest_is_resolves(tmp_path):
         encoding="utf-8",
     )
     findings = doctor.dependency_resolution_state(
-        ["supertool"], record=record, repos={"supertool": "dpt-plugins/claude-supertool"}
+        ["supertool"],
+        record=record,
+        repos={"supertool": "dpt-plugins/claude-supertool"},
     )
     assert findings == [{"name": "supertool", "state": "resolves", "version": "0.40.0"}]
 
@@ -191,19 +211,21 @@ def test_check_dependency_resolution_reports_each_state(tmp_path, monkeypatch):
         json.dumps({"plugins": {"supertool@dpt-plugins": [{"version": "0.40.0"}]}}),
         encoding="utf-8",
     )
-    monkeypatch.setattr(doctor, "declared_dependencies", lambda: ["supertool", "remember"])
+    monkeypatch.setattr(
+        doctor, "declared_dependencies", lambda: ["supertool", "remember"]
+    )
     doctor.check_dependency_resolution(record=record, repos={})
     messages = [msg for _, msg in doctor.FINDINGS]
-    assert any("dependency supertool" in m and "contract-unknown" not in m for m in messages)
+    assert any(
+        "dependency supertool" in m and "contract-unknown" not in m for m in messages
+    )
     assert any("dependency remember" in m and "not active" in m for m in messages)
 
 
 def test_no_declared_dependencies_reports_ok(monkeypatch):
     monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
     doctor.check_dependency_resolution()
-    assert any(
-        state == "OK" and "none named" in msg for state, msg in doctor.FINDINGS
-    )
+    assert any(state == "OK" and "none named" in msg for state, msg in doctor.FINDINGS)
 
 
 def test_an_unreadable_manifest_is_could_not_tell_not_zero(tmp_path, monkeypatch):
@@ -213,7 +235,9 @@ def test_an_unreadable_manifest_is_could_not_tell_not_zero(tmp_path, monkeypatch
     that collapse -- a corrupt manifest must not read as a clean board.
     """
     monkeypatch.setattr(doctor, "declared_dependencies", lambda: [])
-    monkeypatch.setattr(doctor, "PLUGIN_ROOT", tmp_path)  # no .claude-plugin/plugin.json here
+    monkeypatch.setattr(
+        doctor, "PLUGIN_ROOT", tmp_path
+    )  # no .claude-plugin/plugin.json here
     doctor.check_dependency_resolution()
     assert any(
         state == "WARN" and "could not tell" in msg and "manifest" in msg
@@ -226,7 +250,9 @@ def test_an_unreadable_manifest_is_could_not_tell_not_zero(tmp_path, monkeypatch
 
 
 def test_a_repo_with_priority_labels_is_satisfied(tmp_path):
-    rows = json.dumps([{"name": "priority-high"}, {"name": "priority-low"}, {"name": "bug"}])
+    rows = json.dumps(
+        [{"name": "priority-high"}, {"name": "priority-low"}, {"name": "bug"}]
+    )
     state, payload = doctor.label_vocabulary_state(
         tmp_path, config={"repo": "owner/name"}, run=_fake_run(stdout=rows)
     )
@@ -250,13 +276,17 @@ def test_a_repo_with_no_priority_labels_is_a_named_gap(tmp_path):
 
 def test_gh_unavailable_is_could_not_tell_not_missing(tmp_path, monkeypatch):
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
-    state, payload = doctor.label_vocabulary_state(tmp_path, config={"repo": "owner/name"})
+    state, payload = doctor.label_vocabulary_state(
+        tmp_path, config={"repo": "owner/name"}
+    )
     assert state == "could-not-tell"
     assert "gh is not on PATH" in payload
 
 
 def test_no_repo_and_no_origin_is_could_not_tell(tmp_path):
-    state, payload = doctor.label_vocabulary_state(tmp_path, config=None, run=_fake_run())
+    state, payload = doctor.label_vocabulary_state(
+        tmp_path, config=None, run=_fake_run()
+    )
     assert state == "could-not-tell"
 
 
@@ -321,7 +351,8 @@ def test_owned_files_are_not_checked_without_a_config(tmp_path, monkeypatch):
     )
     doctor.run_install_audit(tmp_path, plugin_root=REPO_ROOT)
     assert any(
-        state == "WARN" and "owned files: not checked" in msg for state, msg in doctor.FINDINGS
+        state == "WARN" and "owned files: not checked" in msg
+        for state, msg in doctor.FINDINGS
     )
 
 
@@ -332,8 +363,11 @@ def test_owned_files_report_when_a_config_is_present(tmp_path, monkeypatch):
     )
     (tmp_path / ".oss.json").write_text(json.dumps(_config()), encoding="utf-8")
     doctor.run_install_audit(tmp_path, plugin_root=REPO_ROOT)
-    detail = [msg for state, msg in doctor.FINDINGS if "owned file" in msg or msg.startswith((
-        ".oss/", ".github/"))]
+    detail = [
+        msg
+        for state, msg in doctor.FINDINGS
+        if "owned file" in msg or msg.startswith((".oss/", ".github/"))
+    ]
     assert detail, "owned_drift never ran with a config in hand"
 
 
@@ -359,7 +393,9 @@ def test_run_install_audit_prints_one_verdict_line(tmp_path, monkeypatch, capsys
     assert len(verdicts) == 1
 
 
-def test_a_fresh_install_with_nothing_configured_is_gaps_not_broken(tmp_path, monkeypatch, capsys):
+def test_a_fresh_install_with_nothing_configured_is_gaps_not_broken(
+    tmp_path, monkeypatch, capsys
+):
     """The state #287 is FOR: no .oss.json, no history, nothing the loop normally
     reads. That must never render as `install incomplete` -- nothing here is FAIL.
     """

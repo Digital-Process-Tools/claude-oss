@@ -64,6 +64,6 @@ def test_the_coauthor_check_fires_when_the_key_is_absent():
     assert _declared_coauthor({}) != EXPECTED_COAUTHOR
     assert _declared_coauthor({"ops": {}}) != EXPECTED_COAUTHOR
     assert _declared_coauthor({"ops": {"git-commit": {}}}) != EXPECTED_COAUTHOR
-    assert _declared_coauthor({"ops": {"git-commit": {"coauthor": "Max <noreply>"}}}) != (
-        EXPECTED_COAUTHOR
-    )
+    assert _declared_coauthor(
+        {"ops": {"git-commit": {"coauthor": "Max <noreply>"}}}
+    ) != (EXPECTED_COAUTHOR)

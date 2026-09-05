@@ -129,8 +129,19 @@ THE_JOB_AS_IT_WAS_AT_7EA64C9 = """jobs:
 #: Anything that reaches a package mirror or a release host from inside the job. Not a
 #: list of forbidden words: each of these is a network round trip whose latency would be
 #: charged to `timeout-minutes`, which is the whole of #303.
-FETCHERS = ("apt-get", "apt ", "aptitude", "yum ", "dnf ", "brew install",
-            "choco install", "curl ", "wget ", "pip install", "npm install")
+FETCHERS = (
+    "apt-get",
+    "apt ",
+    "aptitude",
+    "yum ",
+    "dnf ",
+    "brew install",
+    "choco install",
+    "curl ",
+    "wget ",
+    "pip install",
+    "npm install",
+)
 
 
 def _fetches(text):
@@ -178,6 +189,7 @@ def test_the_job_still_carries_a_wall_clock_cap():
 
 # --------------------------------------------------------- what the step actually does
 
+
 def _bash():
     found = shutil.which("bash")
     if not found:
@@ -204,7 +216,9 @@ def _resolves(env, name):
     """
     done = subprocess.run(
         [_bash(), "-c", "command -v " + name],
-        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     return done.stdout.decode("utf-8", "replace").strip()
 
@@ -260,8 +274,10 @@ def _run_step(tmp_path, body, files, stub_shellcheck=None):
 
     return subprocess.run(
         [_bash(), "-e", "-c", body],
-        cwd=str(work), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        cwd=str(work),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
 
 
@@ -269,15 +285,11 @@ ONE_FILE = {"a.sh": "#!/bin/sh\ntrue\n"}
 TWO_FILES = {"a.sh": "#!/bin/sh\ntrue\n", "b.sh": "#!/bin/sh\ntrue\n"}
 
 #: Records every argument it was handed, then reports whatever the fixture asked for.
-STUB_OK = (
-    "#!/bin/sh\n"
-    "for a in \"$@\"; do echo \"$a\" >> \"$PWD/seen\"; done\n"
-    "exit 0\n"
-)
+STUB_OK = '#!/bin/sh\nfor a in "$@"; do echo "$a" >> "$PWD/seen"; done\nexit 0\n'
 STUB_FAILS_ON_B = (
     "#!/bin/sh\n"
-    "for a in \"$@\"; do echo \"$a\" >> \"$PWD/seen\"; done\n"
-    "case \"$*\" in *b.sh*) exit 1 ;; esac\n"
+    'for a in "$@"; do echo "$a" >> "$PWD/seen"; done\n'
+    'case "$*" in *b.sh*) exit 1 ;; esac\n'
     "exit 0\n"
 )
 
@@ -323,8 +335,8 @@ def test_every_file_is_linted_even_after_one_fails(tmp_path):
     """The `fail=1` flag, not `|| exit 1`: a first failure must not hide the rest."""
     body = _step(_shell_job(), "shellcheck")["run"]
     done = _run_step(tmp_path, body, TWO_FILES, STUB_FAILS_ON_B)
-    assert done.returncode == 1, (
-        "a failing file did not fail the step: {} {!r}".format(done.returncode, done.stderr)
+    assert done.returncode == 1, "a failing file did not fail the step: {} {!r}".format(
+        done.returncode, done.stderr
     )
     assert _linted(tmp_path) == ["a.sh", "b.sh"], (
         "the step stopped early: it linted {!r}, so a file after the first failure is "

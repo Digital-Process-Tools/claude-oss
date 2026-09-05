@@ -82,9 +82,7 @@ def _body_errors(body):
 
 def _at_lines(captured):
     return [
-        line.strip()
-        for line in captured.splitlines()
-        if line.strip().startswith("at:")
+        line.strip() for line in captured.splitlines() if line.strip().startswith("at:")
     ]
 
 
@@ -165,8 +163,10 @@ def test_a_code_span_is_a_working_remedy_rather_than_an_unreachable_one():
         "the control did not fire, so the pair below proves nothing"
     )
 
-    spanned = "One line of prose mentioning `{n}` `{n}` `{n}` inside code spans.".format(
-        n=BACKSLASH_N
+    spanned = (
+        "One line of prose mentioning `{n}` `{n}` `{n}` inside code spans.".format(
+            n=BACKSLASH_N
+        )
     )
     assert _body_errors(spanned) == []
 
@@ -209,7 +209,9 @@ def test_the_verdict_names_the_absolute_path_it_actually_read(tmp_path, capsys):
         assert report_schema.main([str(path)]) == 0
         lines.append(_at_lines(capsys.readouterr().out))
 
-    assert lines[0] and lines[1], "no `at:` receipt was printed at all: {}".format(lines)
+    assert lines[0] and lines[1], "no `at:` receipt was printed at all: {}".format(
+        lines
+    )
     assert lines[0] != lines[1], (
         "two reports in two directories produced the same receipt, which is the "
         "silence #685 is about: {}".format(lines)
@@ -224,7 +226,9 @@ def test_the_verdict_names_the_absolute_path_it_actually_read(tmp_path, capsys):
     # about -- but it makes a whole-string test brittle on a deep Windows temp
     # path for no gain.
     assert lines[0][0].endswith(os.sep.join(("wt", "reports", "report.json"))), lines[0]
-    assert lines[1][0].endswith(os.sep.join(("clone", "reports", "report.json"))), lines[1]
+    assert lines[1][0].endswith(os.sep.join(("clone", "reports", "report.json"))), (
+        lines[1]
+    )
 
 
 def test_an_invalid_report_also_names_where_it_looked(tmp_path, capsys):
@@ -237,7 +241,7 @@ def test_an_invalid_report_also_names_where_it_looked(tmp_path, capsys):
     assert report_schema.main([str(path)]) == 1
     lines = _at_lines(capsys.readouterr().out)
     assert lines, "no `at:` receipt under an INVALID verdict"
-    stated = lines[0][len("at:"):].strip()
+    stated = lines[0][len("at:") :].strip()
     assert os.path.isabs(stated), stated
     assert stated.endswith("report.json"), stated
 

@@ -162,6 +162,7 @@ def _changelog(root):
 # inserted-as-first-release
 # --------------------------------------------------------------------------
 
+
 def test_a_first_release_is_cut_rather_than_refused(tmp_path):
     root, script_path = _repo(tmp_path, FIRST)
     result = _assemble(root, script_path)
@@ -181,7 +182,7 @@ def test_the_first_release_lands_directly_below_unreleased(tmp_path):
     assert unreleased < release
     # Nothing but blank lines between them: the preamble stays above, the body
     # that was under `[Unreleased]` is folded into the release, not left behind.
-    assert not [line for line in lines[unreleased + 1:release] if line.strip()], lines
+    assert not [line for line in lines[unreleased + 1 : release] if line.strip()], lines
 
 
 def test_the_receipt_says_a_first_release_was_detected_not_assumed(tmp_path):
@@ -213,9 +214,18 @@ def test_the_link_refs_are_written_and_the_receipt_says_so(tmp_path):
     assert "[0.1.0]: https://github.com/o/r/releases/tag/v0.1.0" in text, text
     assert "links" in result.stdout and "0.1.0" in result.stdout
     audit = subprocess.run(
-        [sys.executable, str(script_path), "--check-links",
-         "--changelog", "CHANGELOG.md", "--dir", "changelog.d"],
-        cwd=str(root), capture_output=True, text=True,
+        [
+            sys.executable,
+            str(script_path),
+            "--check-links",
+            "--changelog",
+            "CHANGELOG.md",
+            "--dir",
+            "changelog.d",
+        ],
+        cwd=str(root),
+        capture_output=True,
+        text=True,
     )
     assert audit.stdout.startswith("assemble    : ok"), audit.stdout
 
@@ -235,9 +245,13 @@ def test_a_first_release_without_link_refs_still_cuts_and_says_what_it_did(tmp_p
 def test_a_link_ref_block_without_an_unreleased_definition_says_which_it_was(tmp_path):
     """Second of the three honest-failure branches: a block is there, but the
     one definition a base URL can come from is not."""
-    root, script_path = _repo(tmp_path, FIRST.replace(
-        "[Unreleased]: https://github.com/o/r/commits/HEAD",
-        "[Keep a Changelog]: https://keepachangelog.com/"))
+    root, script_path = _repo(
+        tmp_path,
+        FIRST.replace(
+            "[Unreleased]: https://github.com/o/r/commits/HEAD",
+            "[Keep a Changelog]: https://keepachangelog.com/",
+        ),
+    )
     result = _assemble(root, script_path)
     assert result.returncode == OK, result.stdout + result.stderr
     assert "## [0.1.0] - 2026-08-14" in _changelog(root)
@@ -248,8 +262,12 @@ def test_a_link_ref_block_without_an_unreleased_definition_says_which_it_was(tmp
 def test_an_unreleased_url_with_no_forge_segment_is_named_not_guessed(tmp_path):
     """Third branch: a definition is there and nothing in it says where the
     repository root ends, so no URL is invented from it."""
-    root, script_path = _repo(tmp_path, FIRST.replace(
-        "https://github.com/o/r/commits/HEAD", "https://example.invalid/somewhere"))
+    root, script_path = _repo(
+        tmp_path,
+        FIRST.replace(
+            "https://github.com/o/r/commits/HEAD", "https://example.invalid/somewhere"
+        ),
+    )
     result = _assemble(root, script_path)
     assert result.returncode == OK, result.stdout + result.stderr
     assert "https://example.invalid/somewhere" in result.stdout, result.stdout
@@ -279,12 +297,15 @@ def test_a_trailing_section_bounds_the_fold_and_stays_below(tmp_path):
 # inserted-at-anchor: the rule that must not have moved
 # --------------------------------------------------------------------------
 
+
 def test_an_existing_release_still_anchors_the_insert(tmp_path):
     root, script_path = _repo(tmp_path, HAS_RELEASE)
     result = _assemble(root, script_path, version="0.2.0")
     assert result.returncode == OK, result.stdout + result.stderr
     lines = _changelog(root).splitlines()
-    assert lines.index("## [0.2.0] - 2026-08-14") < lines.index("## [0.1.0] - 2026-01-01")
+    assert lines.index("## [0.2.0] - 2026-08-14") < lines.index(
+        "## [0.1.0] - 2026-01-01"
+    )
 
 
 def test_an_existing_release_is_not_reported_as_a_first_release(tmp_path):
@@ -293,12 +314,15 @@ def test_an_existing_release_is_not_reported_as_a_first_release(tmp_path):
     root, script_path = _repo(tmp_path, HAS_RELEASE)
     result = _assemble(root, script_path, version="0.2.0")
     assert "first release" not in result.stdout, result.stdout
-    assert "[Unreleased]: https://github.com/o/r/compare/v0.2.0...HEAD" in _changelog(root)
+    assert "[Unreleased]: https://github.com/o/r/compare/v0.2.0...HEAD" in _changelog(
+        root
+    )
 
 
 # --------------------------------------------------------------------------
 # refused-with-a-reason
 # --------------------------------------------------------------------------
+
 
 def test_no_unreleased_heading_is_refused_with_what_would_decide_it(tmp_path):
     root, script_path = _repo(tmp_path, NO_UNRELEASED)

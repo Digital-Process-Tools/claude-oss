@@ -121,8 +121,9 @@ class ManagerLoop:
         paths, unreadable = documents(self._root)
         if unreadable:
             raise RuntimeError(
-                "manager_docs: phases directory could not be listed: "
-                "{0}".format(unreadable)
+                "manager_docs: phases directory could not be listed: {0}".format(
+                    unreadable
+                )
             )
         return paths
 

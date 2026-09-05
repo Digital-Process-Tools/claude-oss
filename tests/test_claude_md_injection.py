@@ -180,9 +180,7 @@ def structure_problems(text, config):
     if headings != expected:
         problems.append(
             "headings are {} rather than {}: a value broke out of its span and "
-            "landed on something Markdown reads as a heading".format(
-                headings, expected
-            )
+            "landed on something Markdown reads as a heading".format(headings, expected)
         )
     return problems
 
@@ -281,9 +279,9 @@ def test_the_structure_check_sees_each_shape_of_the_corruption(injected, expecte
 def test_the_good_render_is_intact():
     """The other half of the control: the checker passes something real."""
     assert structure_problems(_render(), _config()) == []
-    assert structure_problems(
-        _render(test_command=None), _config(test_command=None)
-    ) == []
+    assert (
+        structure_problems(_render(test_command=None), _config(test_command=None)) == []
+    )
 
 
 @pytest.mark.parametrize("key", sorted(HOSTILE))
@@ -353,9 +351,7 @@ def test_a_line_break_in_test_command_is_refused(value):
 def test_the_maintainers_reproduction_is_refused():
     """#180's repro, run end to end: validate speaks, and the render refuses."""
     config = _config(test_command=HOSTILE["test_command"])
-    assert [
-        p for p in oss_config.validate(config) if p.startswith("test_command:")
-    ]
+    assert [p for p in oss_config.validate(config) if p.startswith("test_command:")]
     with pytest.raises(scaffold.ScaffoldError):
         scaffold.render("CLAUDE.md", config)
 
@@ -416,9 +412,7 @@ def test_a_backslash_in_default_branch_is_refused():
 
 def test_the_default_branch_repro_is_refused():
     config = _config(default_branch=HOSTILE["default_branch"])
-    assert [
-        p for p in oss_config.validate(config) if p.startswith("default_branch:")
-    ]
+    assert [p for p in oss_config.validate(config) if p.startswith("default_branch:")]
     with pytest.raises(scaffold.ScaffoldError):
         scaffold.render("CLAUDE.md", config)
 
@@ -484,10 +478,13 @@ def test_claude_md_has_no_unenumerated_placeholder():
     # `measurement_line` (#932) is enumerated here like the rest, and takes no
     # config value -- it is one of two scaffold-owned constants, chosen by a
     # predicate over `test_command`. The value itself never reaches the template.
-    assert placeholders == {"repo", "default_branch", "test_line", "measurement_line"}, (
-        "CLAUDE.md has a substitution site this test does not cover: {}".format(
-            sorted(placeholders)
-        )
+    assert placeholders == {
+        "repo",
+        "default_branch",
+        "test_line",
+        "measurement_line",
+    }, "CLAUDE.md has a substitution site this test does not cover: {}".format(
+        sorted(placeholders)
     )
 
 
@@ -512,7 +509,7 @@ def test_claude_md_has_no_unenumerated_placeholder():
         "pytest -k 'not slow' --maxfail=1",
         "pytest; echo $?",
         "env FOO=bar pytest | tee out.txt",
-        "sh -c \"pytest\"",
+        'sh -c "pytest"',
         "echo `date` && pytest",
         "pytest # the whole suite",
         "pytest\ttests",
@@ -633,15 +630,46 @@ DELIBERATELY_STRICTER = {
 #: limited to the characters somebody already suspected.
 REF_CORPUS = sorted(
     {
-        "main", "master", "develop", "trunk", "release/1.x", "v2-dev",
-        "feature/a.b_c-1", "ma`in", "`main`", "main\n", "\nmain", "main\r",
-        "main ", "ma in", "main^", "ma..in", "main.lock", "-main", "main/",
-        "/main", "ma//in", "main~1", "refs/heads/main:", "main?", "main*",
-        "ma[in", "main@{1}", "@", "main.", "", "main\t", "main\x01", "main\x7f",
-        "ma" + BACKSLASH + "in", "..main", ".main", "main.lock/x",
+        "main",
+        "master",
+        "develop",
+        "trunk",
+        "release/1.x",
+        "v2-dev",
+        "feature/a.b_c-1",
+        "ma`in",
+        "`main`",
+        "main\n",
+        "\nmain",
+        "main\r",
+        "main ",
+        "ma in",
+        "main^",
+        "ma..in",
+        "main.lock",
+        "-main",
+        "main/",
+        "/main",
+        "ma//in",
+        "main~1",
+        "refs/heads/main:",
+        "main?",
+        "main*",
+        "ma[in",
+        "main@{1}",
+        "@",
+        "main.",
+        "",
+        "main\t",
+        "main\x01",
+        "main\x7f",
+        "ma" + BACKSLASH + "in",
+        "..main",
+        ".main",
+        "main.lock/x",
     }
     | set(DELIBERATELY_STRICTER)
-    | {"ma" + chr(point) + "in" for point in range(0x21, 0x7f)}
+    | {"ma" + chr(point) + "in" for point in range(0x21, 0x7F)}
 )
 
 

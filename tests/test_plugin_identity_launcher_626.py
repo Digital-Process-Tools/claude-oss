@@ -136,8 +136,7 @@ def _child_env(tmp_path, *, home, xdg_cache_home, fake_identity, windows=None):
 #: Git Bash's `sh` can synthesize a home from the Windows profile, and that is
 #: a thing only the child can answer.
 _HOME_PROBE = (
-    'echo "HOME=${HOME:-<unset>}"\n'
-    'echo "XDG_CACHE_HOME=${XDG_CACHE_HOME:-<unset>}"\n'
+    'echo "HOME=${HOME:-<unset>}"\necho "XDG_CACHE_HOME=${XDG_CACHE_HOME:-<unset>}"\n'
 )
 
 
@@ -170,8 +169,15 @@ def _probe_child_home(tmp_path, env, name="home_probe.sh"):
     return resolved.get("HOME"), resolved.get("XDG_CACHE_HOME")
 
 
-def _run_block(tmp_path, *, python_bin=None, home=True, xdg_cache_home=None,
-                fake_identity="v1", plugin_root=None):
+def _run_block(
+    tmp_path,
+    *,
+    python_bin=None,
+    home=True,
+    xdg_cache_home=None,
+    fake_identity="v1",
+    plugin_root=None,
+):
     """Run the extracted block under `sh -eu`.
 
     `home`/`xdg_cache_home` control which of HOME / XDG_CACHE_HOME the child
@@ -245,7 +251,10 @@ def test_a_changed_identity_is_announced_loudly(tmp_path):
     _run_block(tmp_path, xdg_cache_home=str(cache), fake_identity="v1")
     result = _run_block(tmp_path, xdg_cache_home=str(cache), fake_identity="v2")
     assert result.returncode == 0, result.stderr
-    assert "the oss plugin changed since your last session here (v1 -> v2)" in result.stderr, result.stderr
+    assert (
+        "the oss plugin changed since your last session here (v1 -> v2)"
+        in result.stderr
+    ), result.stderr
     prior_file = cache / "oss-workspace" / "last-plugin-identity"
     assert prior_file.read_text(encoding="utf-8") == "v2"
 

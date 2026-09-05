@@ -205,8 +205,14 @@ def _bash_candidates():
     if git:
         home = Path(git).resolve().parent
         for base in (home, home.parent):
-            for rel in ("bash", "bash.exe", "bin/bash", "bin/bash.exe",
-                        "usr/bin/bash", "usr/bin/bash.exe"):
+            for rel in (
+                "bash",
+                "bash.exe",
+                "bin/bash",
+                "bin/bash.exe",
+                "usr/bin/bash",
+                "usr/bin/bash.exe",
+            ):
                 add(base / rel)
     return seen
 
@@ -260,6 +266,7 @@ def _pick_shell(attempts):
 
 BASH, BASH_REACHED = _pick_shell(_ATTEMPTS)
 
+
 # Named so the log says WHICH of the three states happened. A bare "no bash" fires
 # identically on a platform where this is genuinely untestable and on one where the
 # shell was merely looked for in the wrong place, and nobody could tell them apart.
@@ -272,8 +279,9 @@ def _shell_report(attempts):
                 shutil.which("git") or "(nowhere on PATH)"
             )
         )
-    return "no usable shell. Spawned each candidate and asked it to behave like one: " + (
-        "; ".join("{} -> {}".format(c, note) for c, (_tools, note) in attempts)
+    return (
+        "no usable shell. Spawned each candidate and asked it to behave like one: "
+        + ("; ".join("{} -> {}".format(c, note) for c, (_tools, note) in attempts))
     )
 
 
@@ -337,7 +345,9 @@ def _step_script(step, config=None):
     key rendered into the workflow (`user_visible_paths` in #996, for example) can
     pass one instead of reimplementing this extraction against its own config.
     """
-    body = scaffold.render_owned(GENERATED_WORKFLOW, config if config is not None else _config())
+    body = scaffold.render_owned(
+        GENERATED_WORKFLOW, config if config is not None else _config()
+    )
     lines = body.splitlines()
     starts = [i for i, line in enumerate(lines) if line.strip() == step]
     assert len(starts) == 1, "expected exactly one {!r} step, found {}".format(
@@ -349,7 +359,7 @@ def _step_script(step, config=None):
     head = runs[0]
     indent = len(lines[head]) - len(lines[head].lstrip())
     block = []
-    for line in lines[head + 1:]:
+    for line in lines[head + 1 :]:
         if not line.strip():
             block.append("")
             continue
@@ -370,7 +380,9 @@ def _git(repo, *args):
     # arrive as a spawn error from deep inside a fixture, which reads like the gate
     # crashing. Every fixture funnels through this one call.
     if shutil.which("git") is None:
-        pytest.skip("git is not on PATH, so there is no repository to run the gate over")
+        pytest.skip(
+            "git is not on PATH, so there is no repository to run the gate over"
+        )
     return subprocess.run(
         ["git", "-C", str(repo)] + list(args),
         stdout=subprocess.PIPE,
@@ -443,7 +455,9 @@ def _run_script(script, cwd, env):
     try:
         with os.fdopen(fd, "w", newline="\n", encoding="utf-8") as handle:
             handle.write(script)
-        os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        os.chmod(
+            path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+        )
         return subprocess.run(
             [BASH, path],
             cwd=str(cwd),
@@ -475,11 +489,9 @@ def _run_gate(repo):
 # Byte for byte what a GitHub Windows runner replied when `bash` resolved to WSL's
 # binary: UTF-16, read back through a text pipe, which is where the interleaved NULs
 # in the CI log came from.
-WSL_REFUSAL = (
-    "Windows Subsystem for Linux has no installed distributions.\n"
-    .encode("utf-16-le")
-    .decode("latin-1")
-)
+WSL_REFUSAL = "Windows Subsystem for Linux has no installed distributions.\n".encode(
+    "utf-16-le"
+).decode("latin-1")
 
 
 def test_the_probe_rejects_the_answer_a_windows_runner_actually_gave():
@@ -542,12 +554,15 @@ def test_the_probe_accepts_anything_this_test_independently_confirms_is_a_shell(
         confirmed.append(candidate)
         tools, note = _probe_shell(candidate)
         assert "shell" in tools, (
-            "{} runs shell scripts, and the probe rejected it: {}".format(candidate, note)
+            "{} runs shell scripts, and the probe rejected it: {}".format(
+                candidate, note
+            )
         )
     if not confirmed:
         pytest.skip("nothing on this machine behaves like a shell. " + SHELL_REPORT)
     assert BASH is not None, (
-        "a working shell was confirmed here and the file still chose none: " + SHELL_REPORT
+        "a working shell was confirmed here and the file still chose none: "
+        + SHELL_REPORT
     )
 
 
@@ -803,7 +818,9 @@ def test_the_workflow_re_dispatches_when_the_escape_label_is_applied():
     """
     body = scaffold.render_owned(GENERATED_WORKFLOW, _config())
     assert "no-changelog" in body, "the escape hatch is not named -- this is vacuous"
-    types = [line.strip() for line in body.splitlines() if line.strip().startswith("types:")]
+    types = [
+        line.strip() for line in body.splitlines() if line.strip().startswith("types:")
+    ]
     assert types, "`on: pull_request:` carries no `types:` -- " + body
     assert "labeled" in types[0], types
     assert "unlabeled" in types[0], types
@@ -849,10 +866,13 @@ STALE = """# Changelog
 - a thing.
 """
 
-AUDITED = STALE + """
+AUDITED = (
+    STALE
+    + """
 [Unreleased]: https://github.com/owner/name/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/owner/name/releases/tag/v1.0.0
 """
+)
 
 
 def test_a_stale_link_ref_table_is_a_finding(tmp_path):
@@ -870,7 +890,9 @@ def test_an_audited_link_ref_table_passes(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "changelog", [None, "# Changelog\n\n## [Unreleased]\n"], ids=["absent", "pre-release"]
+    "changelog",
+    [None, "# Changelog\n\n## [Unreleased]\n"],
+    ids=["absent", "pre-release"],
 )
 def test_a_repo_that_has_not_cut_a_release_is_skipped_not_red(tmp_path, changelog):
     """`check_links` returns SKIPPED (exit 1), not OK, when there is no `## [x.y.z]`

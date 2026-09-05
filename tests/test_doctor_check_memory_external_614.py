@@ -73,7 +73,9 @@ def _home(tmp_path):
 def _user_config(home, data_dir):
     cfg_dir = home / ".remember"
     cfg_dir.mkdir(parents=True, exist_ok=True)
-    (cfg_dir / "config.json").write_text(json.dumps({"data_dir": data_dir}), encoding="utf-8")
+    (cfg_dir / "config.json").write_text(
+        json.dumps({"data_dir": data_dir}), encoding="utf-8"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +162,9 @@ def test_local_install_never_consults_the_home_config(tmp_path):
     assert unresolved is None, unresolved
 
 
-def test_unresolvable_home_is_reported_unknown_not_silently_defaulted(tmp_path, monkeypatch):
+def test_unresolvable_home_is_reported_unknown_not_silently_defaulted(
+    tmp_path, monkeypatch
+):
     """The auditor's own finding on this fix: `Path.home()` raising RuntimeError (no
     HOME/USERPROFILE) used to fall straight back to the repo-local default with no
     `unresolved` reason at all -- indistinguishable from "checked, and this really is

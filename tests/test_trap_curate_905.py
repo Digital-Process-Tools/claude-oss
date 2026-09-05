@@ -77,7 +77,9 @@ def test_an_unreadable_directory_never_renders_as_zero(tmp_path):
             )
         r = trap_curate.waiting(tmp_path)
         assert r["state"] == "could-not-read"
-        assert r["count"] is None, "a count that could not be taken must never render as a number"
+        assert r["count"] is None, (
+            "a count that could not be taken must never render as a number"
+        )
     finally:
         os.chmod(d, 0o755)
 
@@ -89,7 +91,9 @@ def test_a_filename_that_does_not_parse_is_reported_not_ignored(tmp_path):
     _write(d, "no-issue-number.md")
     _write(d, "904.md")
     r = trap_curate.waiting(tmp_path)
-    assert r["count"] == 3, "a malformed name is still a logged trap and must not be dropped"
+    assert r["count"] == 3, (
+        "a malformed name is still a logged trap and must not be dropped"
+    )
     bad = sorted(f["name"] for f in r["fragments"] if not f["parses"])
     assert bad == ["904.md", "no-issue-number.md"]
     good = [f for f in r["fragments"] if f["parses"]]
@@ -137,10 +141,10 @@ def test_every_fragment_in_this_repository_parses_as_issue_dot_slug_dot_md():
 # logged on Friday. That makes this line the whole forcing function, so it is tested rather than
 # assumed, and tested in the state that matters most -- the one where nothing could be read.
 
-import io                                                     # noqa: E402
-import contextlib                                             # noqa: E402
+import io  # noqa: E402
+import contextlib  # noqa: E402
 
-import doctor                                                 # noqa: E402
+import doctor  # noqa: E402
 
 
 def _doctor_line(root):

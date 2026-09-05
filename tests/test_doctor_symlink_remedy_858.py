@@ -27,7 +27,9 @@ def test_the_remedy_never_recommends_a_symlink_replacement(tmp_path):
     doctor.check_supertool_entry_point(project, cache_root=str(tmp_path / "no-cache"))
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
-    assert "symlink" not in message.lower() or "is not a symlink" in message.lower(), message
+    assert "symlink" not in message.lower() or "is not a symlink" in message.lower(), (
+        message
+    )
     assert "replace it with the plugin" not in message, message
     assert "plugin's own symlink" not in message, message
 

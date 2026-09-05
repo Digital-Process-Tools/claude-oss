@@ -93,7 +93,10 @@ def test_no_supported_language_names_existing_shellcheck_workflow(tmp_path):
     says so rather than recommending one that is already there."""
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True)
-    (workflows / "ci.yml").write_text("jobs:\n  lint:\n    steps:\n      - run: shellcheck script.sh\n", encoding="utf-8")
+    (workflows / "ci.yml").write_text(
+        "jobs:\n  lint:\n    steps:\n      - run: shellcheck script.sh\n",
+        encoding="utf-8",
+    )
     run = _languages_run({"Shell": 1000})
     state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
     assert state == "no-supported-language"
@@ -166,7 +169,9 @@ def test_jit_context_01_oss_directory_is_treated_as_owned(tmp_path):
     it is nested three levels deep rather than at the top."""
     owned_nested = tmp_path / ".claude" / "jit-context" / "tools" / "01-oss"
     owned_nested.mkdir(parents=True)
-    (owned_nested / "helper.py").write_text("# vendored rule tooling\n", encoding="utf-8")
+    (owned_nested / "helper.py").write_text(
+        "# vendored rule tooling\n", encoding="utf-8"
+    )
     run = _languages_run({"Python": 500})
     state, _detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
     assert state == "owned-only"
@@ -179,17 +184,24 @@ def test_workflow_files_mention_true_when_needle_present(tmp_path):
     workflows = tmp_path / ".github" / "workflows"
     workflows.mkdir(parents=True)
     (workflows / "ci.yml").write_text("run: shellcheck script.sh\n", encoding="utf-8")
-    assert doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck") is True
+    assert (
+        doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck") is True
+    )
 
 
 def test_workflow_files_mention_false_when_directory_absent(tmp_path):
     """Must-not-fire pair for the could-not-read case below: a directory that
     genuinely does not exist is False, not None -- there is nothing to search,
     which is a real, confident answer."""
-    assert doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck") is False
+    assert (
+        doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck")
+        is False
+    )
 
 
-def test_workflow_files_mention_none_when_directory_could_not_be_listed(tmp_path, monkeypatch):
+def test_workflow_files_mention_none_when_directory_could_not_be_listed(
+    tmp_path, monkeypatch
+):
     """Self-review finding: a workflows directory that exists but could not
     be listed (a permission error, not absence) must render as `None` --
     unknown -- never silently as `False`, the same "an absence produced by
@@ -202,7 +214,9 @@ def test_workflow_files_mention_none_when_directory_could_not_be_listed(tmp_path
         raise PermissionError(13, "Permission denied", str(path))
 
     monkeypatch.setattr(doctor_check_codeql_scan.os, "listdir", broken_listdir)
-    assert doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck") is None
+    assert (
+        doctor_check_codeql_scan._workflow_files_mention(tmp_path, "shellcheck") is None
+    )
 
 
 def test_no_supported_language_detail_carries_the_stale_table_caveat(tmp_path):
@@ -215,7 +229,9 @@ def test_no_supported_language_detail_carries_the_stale_table_caveat(tmp_path):
     assert "hardcoded snapshot" in detail
 
 
-def test_no_supported_language_names_could_not_tell_when_workflows_unreadable(tmp_path, monkeypatch):
+def test_no_supported_language_names_could_not_tell_when_workflows_unreadable(
+    tmp_path, monkeypatch
+):
     """Must-fire pair for the existing-shellcheck-workflow test above: when
     the workflows directory cannot be read at all, the detail must say so
     rather than silently reading as "no shellcheck workflow was found"."""
@@ -283,10 +299,14 @@ def _routed_run(languages_dict, default_setup=None):
         path = cmd[-1]
         if path.endswith("/default-setup"):
             if default_setup is None:
-                raise AssertionError("default-setup was called and the test declared none")
+                raise AssertionError(
+                    "default-setup was called and the test declared none"
+                )
             rc, out, err = default_setup
             return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr=err)
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(languages_dict), stderr="")
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps(languages_dict), stderr=""
+        )
 
     run.calls = calls
     return run
@@ -305,7 +325,11 @@ def test_default_setup_covering_the_local_families_is_not_a_warning(tmp_path):
     _repo_with_python_outside_owned(tmp_path)
     run = _routed_run(
         {"Python": 154452},
-        default_setup=(0, json.dumps({"state": "configured", "languages": ["actions", "python"]}), ""),
+        default_setup=(
+            0,
+            json.dumps({"state": "configured", "languages": ["actions", "python"]}),
+            "",
+        ),
     )
     state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
     assert state == "default-setup-covers"
@@ -320,7 +344,11 @@ def test_default_setup_not_covering_every_local_family_still_warns(tmp_path):
     (tmp_path / "app.go").write_text("package main\n", encoding="utf-8")
     run = _routed_run(
         {"Python": 154452, "Go": 4000},
-        default_setup=(0, json.dumps({"state": "configured", "languages": ["python"]}), ""),
+        default_setup=(
+            0,
+            json.dumps({"state": "configured", "languages": ["python"]}),
+            "",
+        ),
     )
     state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
     assert state == "uncovered-outside-owned"
@@ -386,7 +414,11 @@ def test_check_codeql_scan_reports_ok_for_default_setup_coverage(tmp_path, capsy
     _repo_with_python_outside_owned(tmp_path)
     run = _routed_run(
         {"Python": 154452},
-        default_setup=(0, json.dumps({"state": "configured", "languages": ["python"]}), ""),
+        default_setup=(
+            0,
+            json.dumps({"state": "configured", "languages": ["python"]}),
+            "",
+        ),
     )
     doctor.check_codeql_scan(tmp_path, config=_config(), run=run)
     out = capsys.readouterr().out

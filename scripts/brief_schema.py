@@ -130,7 +130,7 @@ def _clause_window(text, anchor, width=400):
     at = text.lower().find(anchor)
     if at < 0:
         return None
-    return text[at:at + width]
+    return text[at : at + width]
 
 
 def _outside_supertool(text):
@@ -364,7 +364,10 @@ def receipt(payload):
         mark = "ok " if row["state"] == "found" else "MISS"
         lines.append(
             "  {0}  {1:<14} [{2}]  {3}".format(
-                mark, row["element"], row["checked"], row.get("why") or row.get("note") or ""
+                mark,
+                row["element"],
+                row["checked"],
+                row.get("why") or row.get("note") or "",
             ).rstrip()
         )
     structural = sum(1 for row in payload["elements"] if row["checked"] == STRUCTURAL)

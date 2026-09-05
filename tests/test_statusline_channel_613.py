@@ -29,8 +29,12 @@ def test_expected_watch_name_matches_oss_configs_own_derivation():
     rule for `test_command_problem`/`watch_name_problem`, and the failure mode
     #570 named for the supertool rule body sitting in two places at once).
     """
-    for repo in ("Digital-Process-Tools/claude-oss", "owner/name.with.dots",
-                 "a_b/c-d", "Owner/Repo_Name"):
+    for repo in (
+        "Digital-Process-Tools/claude-oss",
+        "owner/name.with.dots",
+        "a_b/c-d",
+        "Owner/Repo_Name",
+    ):
         expected, problem = oss_config.watch_channel_name(repo)
         assert problem is None, repo
         assert statusline._expected_watch_name(repo) == expected
@@ -47,7 +51,9 @@ def test_expected_watch_name_is_none_without_a_usable_repo():
 
 def test_parse_channel_report_reads_each_of_the_five_states():
     for label, state in statusline.CHANNEL_STATES.items():
-        text = "--- channel:health ---\nFAIL (0.05s)\nchannel: {}\n  detail\n".format(label)
+        text = "--- channel:health ---\nFAIL (0.05s)\nchannel: {}\n  detail\n".format(
+            label
+        )
         assert statusline.parse_channel_report(text) == state
 
 
@@ -67,7 +73,9 @@ def test_parse_channel_report_the_must_not_fire_control_an_unavailable_op():
 def test_parse_channel_report_the_must_not_fire_control_empty_and_garbage():
     assert statusline.parse_channel_report("") is None
     assert statusline.parse_channel_report(None) is None
-    assert statusline.parse_channel_report("channel: SOMETHING NOBODY WROTE DOWN") is None
+    assert (
+        statusline.parse_channel_report("channel: SOMETHING NOBODY WROTE DOWN") is None
+    )
 
 
 # -------------------------------------------------------------- channel_status
@@ -116,14 +124,19 @@ def test_channel_status_the_must_not_fire_control_a_fresh_reading_is_real():
     the staleness guard cannot and does not claim to catch that, on purpose."""
     now = 1_000.0
     result = statusline.channel_status(
-        "not_delivering", "derivation", now - (statusline.CHANNEL_REFRESH_AFTER - 5), now
+        "not_delivering",
+        "derivation",
+        now - (statusline.CHANNEL_REFRESH_AFTER - 5),
+        now,
     )
     assert result["state"] == "not_delivering"
 
 
 def test_channel_status_an_unrecognized_raw_state_is_cannot_determine():
     now = 1_000.0
-    result = statusline.channel_status("something_nobody_wrote_down", "derivation", now - 1, now)
+    result = statusline.channel_status(
+        "something_nobody_wrote_down", "derivation", now - 1, now
+    )
     assert result["state"] == "cannot_determine"
     assert result["reason"] == "unrecognized"
 
@@ -166,8 +179,12 @@ def test_render_the_must_fire_control_shows_the_channel_block_when_enabled():
 
 def test_contradicted_renders_uncoloured_matching_the_issues_own_table():
     symbols = statusline._symbols(True)
-    plain = statusline._channel_field({"state": "contradicted", "reason": None}, symbols, color=False)
-    coloured = statusline._channel_field({"state": "contradicted", "reason": None}, symbols, color=True)
+    plain = statusline._channel_field(
+        {"state": "contradicted", "reason": None}, symbols, color=False
+    )
+    coloured = statusline._channel_field(
+        {"state": "contradicted", "reason": None}, symbols, color=True
+    )
     assert plain == "ch!"
     assert coloured == "ch!"  # no shade applied, matching the issue's blank cell
 
@@ -185,7 +202,9 @@ def _rig(monkeypatch, tmp_path, watch_channel=None):
     monkeypatch.setattr(statusline, "_fork_refresh", lambda root, repo: None)
     monkeypatch.setattr(statusline, "branch_name", lambda root: "main")
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.13.0")
-    monkeypatch.setattr(statusline, "git_release_progress", lambda root: {"state": "unknown"})
+    monkeypatch.setattr(
+        statusline, "git_release_progress", lambda root: {"state": "unknown"}
+    )
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
 
 
@@ -237,7 +256,9 @@ def test_gather_reports_no_channel_field_when_off_in_config(tmp_path, monkeypatc
     assert facts["channel"] is None
 
 
-def test_gather_the_must_fire_control_on_by_default_with_no_key_at_all(tmp_path, monkeypatch):
+def test_gather_the_must_fire_control_on_by_default_with_no_key_at_all(
+    tmp_path, monkeypatch
+):
     """Positive control for the test above: absence of the key is `on`, matching
     the issue's own "on by default, not opt-in" instruction."""
     _rig(monkeypatch, tmp_path)  # no watch_channel key in the config at all
@@ -252,7 +273,9 @@ def test_gather_the_must_fire_control_on_by_default_with_no_key_at_all(tmp_path,
     assert facts["channel"]["state"] == "forwarding"
 
 
-def test_gather_never_asked_is_cannot_determine_distinct_from_not_delivering(tmp_path, monkeypatch):
+def test_gather_never_asked_is_cannot_determine_distinct_from_not_delivering(
+    tmp_path, monkeypatch
+):
     """The not-asked path renders `?`, distinct from `NOT DELIVERING` -- the
     issue's own test list, last item."""
     _rig(monkeypatch, tmp_path)
@@ -306,7 +329,9 @@ def test_gather_the_must_not_fire_control_a_new_shape_cache_renders_the_real_sta
 # ---------------------------------------------------------------------- refresh
 
 
-def test_watch_preset_not_declared_is_cannot_determine_and_spawns_nothing(tmp_path, monkeypatch):
+def test_watch_preset_not_declared_is_cannot_determine_and_spawns_nothing(
+    tmp_path, monkeypatch
+):
     """`.supertool.json` present but without `watch` in `presets`: no subprocess
     is spawned at all -- the cost this field is not allowed to pay when there is
     nothing configured to ask about."""
@@ -315,7 +340,9 @@ def test_watch_preset_not_declared_is_cannot_determine_and_spawns_nothing(tmp_pa
     )
     called = []
     monkeypatch.setattr(
-        statusline, "_run_channel_health", lambda timeout=30: called.append(1) or "unused"
+        statusline,
+        "_run_channel_health",
+        lambda timeout=30: called.append(1) or "unused",
     )
     raw_state, attributable = statusline._channel_reading(
         tmp_path, {"repo": "owner/repo"}
@@ -340,7 +367,8 @@ def test_watch_preset_declared_runs_the_health_check(tmp_path, monkeypatch):
         json.dumps({"presets": ["git", "watch"]}), encoding="utf-8"
     )
     monkeypatch.setattr(
-        statusline, "_run_channel_health",
+        statusline,
+        "_run_channel_health",
         lambda timeout=30: "--- channel:health ---\nFAIL\nchannel: FORWARDING\n",
     )
     raw_state, _ = statusline._channel_reading(tmp_path, {"repo": "owner/repo"})
@@ -353,7 +381,9 @@ def test_attribution_is_derivation_only_when_the_env_name_matches_this_repos_own
     (tmp_path / ".supertool.json").write_text(
         json.dumps({"presets": ["watch"]}), encoding="utf-8"
     )
-    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    monkeypatch.setattr(
+        statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n"
+    )
     config = {"repo": "owner/repo"}
     expected = statusline._expected_watch_name("owner/repo")
 
@@ -381,10 +411,17 @@ def test_attribution_is_declaration_when_a_short_declared_name_matches_the_env(
     so a name THIS repo's own tracked .supertool.json declares, that also matches
     what is actually exported, is attributable by a second, independent route."""
     (tmp_path / ".supertool.json").write_text(
-        json.dumps({"presets": ["watch"], "ops": {"radar": {"watch_name": "dpt-claude-jit-context"}}}),
+        json.dumps(
+            {
+                "presets": ["watch"],
+                "ops": {"radar": {"watch_name": "dpt-claude-jit-context"}},
+            }
+        ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    monkeypatch.setattr(
+        statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n"
+    )
     # A repo/name combination whose derivation genuinely does not fit -- so the only
     # way this test can pass through "derivation" is if the fix leaked into the wrong
     # branch, which is exactly what a must-fire control for a SEPARATE route needs.
@@ -401,10 +438,17 @@ def test_attribution_the_must_not_fire_control_declared_name_not_exported_stays_
     not be attributed -- declaration is evidence only when it matches reality, the
     same as doctor.py's own "agree" check requires."""
     (tmp_path / ".supertool.json").write_text(
-        json.dumps({"presets": ["watch"], "ops": {"radar": {"watch_name": "dpt-claude-jit-context"}}}),
+        json.dumps(
+            {
+                "presets": ["watch"],
+                "ops": {"radar": {"watch_name": "dpt-claude-jit-context"}},
+            }
+        ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    monkeypatch.setattr(
+        statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n"
+    )
     config = {"repo": "Digital-Process-Tools/claude-jit-context"}
     monkeypatch.setenv(statusline.WATCH_NAME_ENV, "some-other-projects-fleet")
     _, attribution = statusline._channel_reading(tmp_path, config)
@@ -418,16 +462,20 @@ def test_attribution_the_must_not_fire_control_two_declared_names_stays_not_attr
     name is not a single fact to attribute against, even if one of them happens
     to match what is exported."""
     (tmp_path / ".supertool.json").write_text(
-        json.dumps({
-            "presets": ["watch"],
-            "ops": {
-                "radar": {"watch_name": "dpt-claude-jit-context"},
-                "other": {"watch_name": "a-second-name"},
-            },
-        }),
+        json.dumps(
+            {
+                "presets": ["watch"],
+                "ops": {
+                    "radar": {"watch_name": "dpt-claude-jit-context"},
+                    "other": {"watch_name": "a-second-name"},
+                },
+            }
+        ),
         encoding="utf-8",
     )
-    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    monkeypatch.setattr(
+        statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n"
+    )
     config = {"repo": "Digital-Process-Tools/claude-jit-context"}
     monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
     _, attribution = statusline._channel_reading(tmp_path, config)
@@ -442,7 +490,9 @@ def test_attribution_is_declaration_unreadable_when_supertool_json_cannot_be_par
     someone else's fleet -- this repo's own defect class, reproduced in the fix
     for it, is precisely what this test guards against."""
     (tmp_path / ".supertool.json").write_text("not json{{{", encoding="utf-8")
-    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    monkeypatch.setattr(
+        statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n"
+    )
     config = {"repo": "Digital-Process-Tools/claude-jit-context"}
     monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
     _, attribution = statusline._channel_reading(tmp_path, config)
@@ -453,7 +503,9 @@ def test_attribution_is_declaration_unreadable_when_supertool_json_is_not_an_obj
     tmp_path, monkeypatch
 ):
     (tmp_path / ".supertool.json").write_text("[1, 2, 3]", encoding="utf-8")
-    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    monkeypatch.setattr(
+        statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n"
+    )
     config = {"repo": "Digital-Process-Tools/claude-jit-context"}
     monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
     _, attribution = statusline._channel_reading(tmp_path, config)
@@ -466,7 +518,9 @@ def test_attribution_the_must_not_fire_control_no_supertool_json_is_not_attribut
     """Absence is a real, common answer (no file at all) and must stay distinct
     from a file that is there and broken -- folding the two together would send
     a maintainer chasing a permissions problem that does not exist."""
-    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    monkeypatch.setattr(
+        statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n"
+    )
     config = {"repo": "Digital-Process-Tools/claude-jit-context"}
     monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
     _, attribution = statusline._channel_reading(tmp_path, config)
@@ -519,7 +573,9 @@ def test_declared_watch_names_a_present_but_wrongly_shaped_ops_is_malformed(tmp_
         assert problem == "malformed", broken
 
 
-def test_declared_watch_names_the_must_not_fire_control_ops_absent_is_not_a_problem(tmp_path):
+def test_declared_watch_names_the_must_not_fire_control_ops_absent_is_not_a_problem(
+    tmp_path,
+):
     """The positive control the branch above needs: `ops` MISSING ENTIRELY is a
     repo that declares nothing, which is a real state and must stay `None` --
     if this also reported `malformed`, the split above would be a check that
@@ -537,7 +593,9 @@ def test_declared_watch_names_drops_an_empty_declared_name(tmp_path):
     block declaring `""` count toward the len(declared) == 1 test and push a
     file that DOES declare one real name to `not-attributable`."""
     (tmp_path / ".supertool.json").write_text(
-        json.dumps({"ops": {"a": {"watch_name": ""}, "b": {"watch_name": "real-name"}}}),
+        json.dumps(
+            {"ops": {"a": {"watch_name": ""}, "b": {"watch_name": "real-name"}}}
+        ),
         encoding="utf-8",
     )
     names, problem = statusline._declared_watch_names(tmp_path)
@@ -552,7 +610,9 @@ def test_attribution_is_declaration_unreadable_when_ops_is_present_and_broken(
     (tmp_path / ".supertool.json").write_text(
         json.dumps({"presets": ["watch"], "ops": [1, 2, 3]}), encoding="utf-8"
     )
-    monkeypatch.setattr(statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n")
+    monkeypatch.setattr(
+        statusline, "_run_channel_health", lambda timeout=30: "channel: FORWARDING\n"
+    )
     config = {"repo": "Digital-Process-Tools/claude-jit-context"}
     monkeypatch.setenv(statusline.WATCH_NAME_ENV, "dpt-claude-jit-context")
     _, attribution = statusline._channel_reading(tmp_path, config)
@@ -575,18 +635,24 @@ def test_channel_status_declaration_unreadable_is_its_own_reason_not_not_attribu
     answer, not folded into `not-attributable` -- this repo's own defect class,
     landing in the fix written for a bug about exactly that class."""
     now = 1_000.0
-    result = statusline.channel_status("forwarding", "declaration-unreadable", now - 10, now)
+    result = statusline.channel_status(
+        "forwarding", "declaration-unreadable", now - 10, now
+    )
     assert result["state"] == "cannot_determine"
     assert result["reason"] == "declaration-unreadable"
     assert result["reason"] != "not-attributable"
 
 
-def test_refresh_carries_the_channel_reading_forward_when_not_due(tmp_path, monkeypatch):
+def test_refresh_carries_the_channel_reading_forward_when_not_due(
+    tmp_path, monkeypatch
+):
     """Same shape as `latest`'s own carry-forward (#515/#550): re-stamping `now`
     would make an old reading indistinguishable from a fresh one."""
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(
-        statusline, "repo_config", lambda root: {"repo": "owner/repo", "default_branch": "main"}
+        statusline,
+        "repo_config",
+        lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
     monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
@@ -594,7 +660,8 @@ def test_refresh_carries_the_channel_reading_forward_when_not_due(tmp_path, monk
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     called = []
     monkeypatch.setattr(
-        statusline, "_channel_reading",
+        statusline,
+        "_channel_reading",
         lambda root, config: (called.append(1), ("forwarding", True))[1],
     )
     now = 1_000.0
@@ -604,7 +671,9 @@ def test_refresh_carries_the_channel_reading_forward_when_not_due(tmp_path, monk
         "channel_fetched_at": now - 5,  # well inside CHANNEL_REFRESH_AFTER
     }
     statusline.cache_path("owner/repo").parent.mkdir(parents=True, exist_ok=True)
-    statusline.cache_path("owner/repo").write_text(json.dumps(previous), encoding="utf-8")
+    statusline.cache_path("owner/repo").write_text(
+        json.dumps(previous), encoding="utf-8"
+    )
     document = statusline.refresh(str(tmp_path), now=now)
     assert called == []  # not due: no subprocess attempt at all
     assert document["channel"] == previous["channel"]
@@ -614,8 +683,13 @@ def test_refresh_carries_the_channel_reading_forward_when_not_due(tmp_path, monk
 def test_refresh_does_not_ask_when_watch_channel_is_off(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(
-        statusline, "repo_config",
-        lambda root: {"repo": "owner/repo", "default_branch": "main", "watch_channel": False},
+        statusline,
+        "repo_config",
+        lambda root: {
+            "repo": "owner/repo",
+            "default_branch": "main",
+            "watch_channel": False,
+        },
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
     monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
@@ -623,7 +697,8 @@ def test_refresh_does_not_ask_when_watch_channel_is_off(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     called = []
     monkeypatch.setattr(
-        statusline, "_channel_reading",
+        statusline,
+        "_channel_reading",
         lambda root, config: called.append(1),
     )
     document = statusline.refresh(str(tmp_path), now=1_000.0)
@@ -637,10 +712,18 @@ def test_refresh_does_not_ask_when_watch_channel_is_off(tmp_path, monkeypatch):
 
 def test_watch_channel_must_be_a_bool():
     config = {
-        "repo": "owner/name", "default_branch": "main", "clone": "/c", "worktree_root": "/w",
-        "branch_pattern": "fix/{issue}", "test_command": "pytest", "version_sites": [],
-        "changelog_dir": None, "docs_targets": [], "labels": {"priority": [], "lanes": []},
-        "state_file": ".max/x.json", "watch_channel": "yes",
+        "repo": "owner/name",
+        "default_branch": "main",
+        "clone": "/c",
+        "worktree_root": "/w",
+        "branch_pattern": "fix/{issue}",
+        "test_command": "pytest",
+        "version_sites": [],
+        "changelog_dir": None,
+        "docs_targets": [],
+        "labels": {"priority": [], "lanes": []},
+        "state_file": ".max/x.json",
+        "watch_channel": "yes",
     }
     problems = oss_config.validate(config)
     assert any("watch_channel" in p for p in problems)
@@ -648,9 +731,16 @@ def test_watch_channel_must_be_a_bool():
 
 def test_watch_channel_true_and_false_and_absent_are_all_fine():
     base = {
-        "repo": "owner/name", "default_branch": "main", "clone": "/c", "worktree_root": "/w",
-        "branch_pattern": "fix/{issue}", "test_command": "pytest", "version_sites": [],
-        "changelog_dir": None, "docs_targets": [], "labels": {"priority": [], "lanes": []},
+        "repo": "owner/name",
+        "default_branch": "main",
+        "clone": "/c",
+        "worktree_root": "/w",
+        "branch_pattern": "fix/{issue}",
+        "test_command": "pytest",
+        "version_sites": [],
+        "changelog_dir": None,
+        "docs_targets": [],
+        "labels": {"priority": [], "lanes": []},
         "state_file": ".max/x.json",
     }
     for value in (True, False, None):
@@ -664,7 +754,9 @@ def test_watch_channel_enabled_default_on():
     assert oss_config.watch_channel_enabled({}) is True
     assert oss_config.watch_channel_enabled({"watch_channel": True}) is True
     assert oss_config.watch_channel_enabled({"watch_channel": False}) is False
-    assert oss_config.watch_channel_enabled({"watch_channel": "off"}) is True  # not a bool: not off
+    assert (
+        oss_config.watch_channel_enabled({"watch_channel": "off"}) is True
+    )  # not a bool: not off
 
 
 # --------------------------------------------------- #932: test_measurement_configured
@@ -672,10 +764,18 @@ def test_watch_channel_enabled_default_on():
 
 def test_test_measurement_configured_must_be_a_bool():
     config = {
-        "repo": "owner/name", "default_branch": "main", "clone": "/c", "worktree_root": "/w",
-        "branch_pattern": "fix/{issue}", "test_command": "pytest", "version_sites": [],
-        "changelog_dir": None, "docs_targets": [], "labels": {"priority": [], "lanes": []},
-        "state_file": ".max/x.json", "test_measurement_configured": "yes",
+        "repo": "owner/name",
+        "default_branch": "main",
+        "clone": "/c",
+        "worktree_root": "/w",
+        "branch_pattern": "fix/{issue}",
+        "test_command": "pytest",
+        "version_sites": [],
+        "changelog_dir": None,
+        "docs_targets": [],
+        "labels": {"priority": [], "lanes": []},
+        "state_file": ".max/x.json",
+        "test_measurement_configured": "yes",
     }
     problems = oss_config.validate(config)
     assert any("test_measurement_configured" in p for p in problems)
@@ -683,9 +783,16 @@ def test_test_measurement_configured_must_be_a_bool():
 
 def test_test_measurement_configured_true_and_false_and_absent_are_all_fine():
     base = {
-        "repo": "owner/name", "default_branch": "main", "clone": "/c", "worktree_root": "/w",
-        "branch_pattern": "fix/{issue}", "test_command": "pytest", "version_sites": [],
-        "changelog_dir": None, "docs_targets": [], "labels": {"priority": [], "lanes": []},
+        "repo": "owner/name",
+        "default_branch": "main",
+        "clone": "/c",
+        "worktree_root": "/w",
+        "branch_pattern": "fix/{issue}",
+        "test_command": "pytest",
+        "version_sites": [],
+        "changelog_dir": None,
+        "docs_targets": [],
+        "labels": {"priority": [], "lanes": []},
         "state_file": ".max/x.json",
     }
     for value in (True, False, None):
@@ -706,8 +813,12 @@ def test_statusline_gate_matches_this_accessor():
     every config shape the other tests in this file exercise for the key.
     """
     for config in (
-        {}, {"watch_channel": True}, {"watch_channel": False},
-        {"watch_channel": "off"}, {"watch_channel": None}, {"watch_channel": 0},
+        {},
+        {"watch_channel": True},
+        {"watch_channel": False},
+        {"watch_channel": "off"},
+        {"watch_channel": None},
+        {"watch_channel": 0},
     ):
         # `statusline.py`'s own inline gate, both call sites (refresh/gather),
         # reproduced here rather than imported -- reproducing the CHECK, the

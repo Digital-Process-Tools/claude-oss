@@ -255,7 +255,9 @@ def test_the_refusal_a_reader_receives_carries_the_discriminator(tmp_path):
         bash, hook, project, {"tool_name": "Read", "tool_input": {"file_path": "a.py"}}
     )
     if problem is not None:
-        pytest.skip("the hook did not answer, so nothing was measured: {}".format(problem))
+        pytest.skip(
+            "the hook did not answer, so nothing was measured: {}".format(problem)
+        )
     assert RULE in refused, "the rule did not fire at all against {}".format(version)
     for probe in (ENTRY_POINT_PROBE, PATH_PROBE):
         assert probe in refused, (

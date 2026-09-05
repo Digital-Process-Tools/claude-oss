@@ -84,7 +84,9 @@ def test_gitattributes_pin_keeps_checkout_under_budget_675(tmp_path):
         f"pinned checkout measured {size}B, expected the LF size {LF_SIZE}B "
         "-- .gitattributes did not normalize the checkout to LF"
     )
-    assert size <= BUDGET, f"{size}B checkout exceeds budget {BUDGET}B even with the pin"
+    assert size <= BUDGET, (
+        f"{size}B checkout exceeds budget {BUDGET}B even with the pin"
+    )
 
 
 def test_no_pin_reproduces_the_original_bug_675(tmp_path):

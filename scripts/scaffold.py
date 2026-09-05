@@ -343,6 +343,7 @@ def _render_supertool_json(config):
         raise ScaffoldError(problem)
     return SUPERTOOL_JSON.replace("__WATCH_NAME__", name)
 
+
 DEPENDABOT_YML = """version: 2
 updates:
   - package-ecosystem: github-actions
@@ -686,7 +687,8 @@ def untagged_declaration(config):
         "`releases/tag/v...` link is expected for {}. A link written for one would "
         "be a 404 that renders as a working link, which is the failure this "
         "declaration exists to prevent.".format(
-            ", ".join(value), "them" if len(value) > 1 else "it")
+            ", ".join(value), "them" if len(value) > 1 else "it"
+        )
     )
 
 
@@ -874,7 +876,9 @@ def render(name, config):
     templates = templates_for(config)
     if name not in templates:
         raise ScaffoldError(
-            "unknown template: {!r}. Known: {}".format(name, ", ".join(sorted(templates)))
+            "unknown template: {!r}. Known: {}".format(
+                name, ", ".join(sorted(templates))
+            )
         )
     return templates[name](config)
 
@@ -887,13 +891,17 @@ def render_to(repo_root, relative_path, body):
     """
     root = Path(repo_root).resolve()
     if os.path.isabs(relative_path):
-        raise ScaffoldError("{!r} is absolute; template paths are relative".format(relative_path))
+        raise ScaffoldError(
+            "{!r} is absolute; template paths are relative".format(relative_path)
+        )
     resolved = (root / relative_path).resolve()
     try:
         resolved.relative_to(root)
     except ValueError:
         raise ScaffoldError(
-            "{!r} resolves to {} which is outside {}".format(relative_path, resolved, root)
+            "{!r} resolves to {} which is outside {}".format(
+                relative_path, resolved, root
+            )
         )
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(body, encoding="utf-8")
@@ -1363,8 +1371,10 @@ def _owned_workflow(config, plugin_root):
         # sentence nobody reads. The comment is here because the flag alone cannot
         # say it -- an absent `--untagged` is exactly what "declared nothing" and
         # "this template predates the key" both look like.
-        .replace("# __UNTAGGED_NOTE__",
-                 "\n        ".join("# " + line for line in _wrap(note, 72)))
+        .replace(
+            "# __UNTAGGED_NOTE__",
+            "\n        ".join("# " + line for line in _wrap(note, 72)),
+        )
     )
     return _note_comment() + body
 
@@ -1375,7 +1385,9 @@ def _owned_assembler(config, plugin_root):
     Not duplicated into a template string: two copies of 1164 lines drift, and only one
     of them is the copy anybody runs tests against.
     """
-    body = (Path(plugin_root) / "scripts" / "assemble_changelog.py").read_text(encoding="utf-8")
+    body = (Path(plugin_root) / "scripts" / "assemble_changelog.py").read_text(
+        encoding="utf-8"
+    )
     shebang = ""
     if body.startswith("#!"):
         shebang, _, body = body.partition("\n")
@@ -1500,7 +1512,9 @@ def plan(repo_root, config, force_owned=False):
                     "path": name,
                     "action": "replace",
                     "reason": (
-                        _FORCED_OVER_GATE if gate_state == "found" else _FORCED_OVER_UNKNOWN
+                        _FORCED_OVER_GATE
+                        if gate_state == "found"
+                        else _FORCED_OVER_UNKNOWN
                     ).format(gate_detail),
                 }
             )
@@ -1524,7 +1538,9 @@ def plan(repo_root, config, force_owned=False):
                     "action": "decline",
                     "reason": (
                         "a changelog gate already runs under a different name ({}); "
-                        "not written. Pass --force-owned to override.".format(gate_detail)
+                        "not written. Pass --force-owned to override.".format(
+                            gate_detail
+                        )
                     ),
                 }
             )
@@ -1716,7 +1732,9 @@ def _settings_preview(repo_root):
     """
     entry = settings_plan(repo_root)
     if entry["action"] == "create":
-        return "create", json.dumps({"statusLine": dict(STATUSLINE_SETTING)}, indent=2) + "\n"
+        return "create", json.dumps(
+            {"statusLine": dict(STATUSLINE_SETTING)}, indent=2
+        ) + "\n"
     if entry["action"] == "extend":
         document = dict(entry["document"])
         document["statusLine"] = dict(STATUSLINE_SETTING)
@@ -1778,7 +1796,11 @@ def apply(repo_root, config, plugin_root=None, force_owned=False):
             render_to(repo_root, entry["path"], render(entry["path"], config))
             created.append(entry["path"])
         elif entry["action"] == "replace":
-            render_to(repo_root, entry["path"], render_owned(entry["path"], config, plugin_root))
+            render_to(
+                repo_root,
+                entry["path"],
+                render_owned(entry["path"], config, plugin_root),
+            )
             replaced.append(entry["path"])
         elif entry["action"] == "decline":
             declined.append(entry["path"])
@@ -1803,7 +1825,9 @@ def apply(repo_root, config, plugin_root=None, force_owned=False):
     }
 
 
-def show(repo_root, config, path=None, plugin_root=None, force_owned=False, rules_plan=None):
+def show(
+    repo_root, config, path=None, plugin_root=None, force_owned=False, rules_plan=None
+):
     """Render generated file contents for review, without writing anything.
 
     ``/oss:scaffold`` promises to relay what a generated file would contain before
@@ -1890,7 +1914,9 @@ def show(repo_root, config, path=None, plugin_root=None, force_owned=False, rule
         raise ScaffoldError(
             "{!r} is not a known template, owned file or rule. Known: {}".format(
                 path,
-                ", ".join(sorted(set(templates) | set(OWNED) | set(rule_layer_paths()))),
+                ", ".join(
+                    sorted(set(templates) | set(OWNED) | set(rule_layer_paths()))
+                ),
             )
         )
     shown = []
@@ -1899,7 +1925,11 @@ def show(repo_root, config, path=None, plugin_root=None, force_owned=False, rule
             shown.append((entry["path"], "create", render(entry["path"], config)))
         elif entry["action"] == "replace":
             shown.append(
-                (entry["path"], "replace", render_owned(entry["path"], config, plugin_root))
+                (
+                    entry["path"],
+                    "replace",
+                    render_owned(entry["path"], config, plugin_root),
+                )
             )
     settings_body = _settings_preview(repo_root)
     if settings_body is not None:
@@ -1970,7 +2000,9 @@ def _layer_scan(repo_root, dimensions):
     for dimension in sorted(dimensions):
         relative = "{}/{}/{}".format(RULES_LAYER_DIR, dimension, oss_rules.LAYER)
         try:
-            names = os.listdir(str(root / RULES_LAYER_DIR / dimension / oss_rules.LAYER))
+            names = os.listdir(
+                str(root / RULES_LAYER_DIR / dimension / oss_rules.LAYER)
+            )
         except (FileNotFoundError, NotADirectoryError):
             continue
         except OSError:
@@ -2169,7 +2201,9 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
     if entries is None:
         entries = plan(repo_root, config, force_owned=force_owned)
 
-    gate, gate_state, gate_detail = _rules_gate(repo_root, config, force_owned=force_owned)
+    gate, gate_state, gate_detail = _rules_gate(
+        repo_root, config, force_owned=force_owned
+    )
     assembler_owned = OWNED_DIR + "/assemble_changelog.py"
     owned_action = dict(
         (entry["path"], entry["action"]) for entry in entries if entry["path"] in OWNED
@@ -2201,9 +2235,7 @@ def plan_rules(repo_root, config, force_owned=False, entries=None):
                 "why it is missing is answered from the changelog-gate state {!r} ({}), "
                 "read before the writes -- the same answer --apply reads after them, "
                 "because the scan excludes this plugin's own oss-changelog.yml and {}/ "
-                "by name.".format(
-                    gate_state, gate_detail or "no detail", OWNED_DIR
-                )
+                "by name.".format(gate_state, gate_detail or "no detail", OWNED_DIR)
             )
 
     try:
@@ -2345,7 +2377,9 @@ def rules_summary_clause(rules_plan):
         return ", rule layer not previewed (see the 'layer' lines above)"
     replaced = sum(1 for entry in rules_plan["entries"] if entry["action"] == "replace")
     removed = sum(1 for entry in rules_plan["entries"] if entry["action"] == "remove")
-    clause = ", {} rule file(s) replaced in the {} layer".format(replaced, oss_rules.LAYER)
+    clause = ", {} rule file(s) replaced in the {} layer".format(
+        replaced, oss_rules.LAYER
+    )
     if removed:
         clause += " and {} removed from it".format(removed)
     if rules_plan["unreadable"]:
@@ -2555,7 +2589,7 @@ def _radar_merged_document(doc):
 
 
 def _radar_merged_note(doc):
-    """" The whole file, corrected: {...}" or "" when `_radar_merged_document`
+    """ " The whole file, corrected: {...}" or "" when `_radar_merged_document`
     declined -- appended to a finding's `detail`, never on its own line, so the
     "every detail is flattened" invariant `_print_findings` documents still
     holds: `json.dumps` with no `indent` contains no newline to flatten.
@@ -2818,7 +2852,9 @@ def _forge_label_names(repo_root, config):
     if shutil.which("gh") is None:
         return None, "gh is not on PATH, so the forge could not be asked"
 
-    ok, origin, detail = _run(["git", "-C", str(repo_root), "remote", "get-url", "origin"])
+    ok, origin, detail = _run(
+        ["git", "-C", str(repo_root), "remote", "get-url", "origin"]
+    )
     if not ok:
         return None, (
             "{} has no readable origin remote ({}), so it was not assumed to be {}".format(
@@ -2840,7 +2876,17 @@ def _forge_label_names(repo_root, config):
         )
 
     ok, out, detail = _run(
-        ["gh", "label", "list", "--repo", repo, "--limit", str(_LABEL_PAGE), "--json", "name"]
+        [
+            "gh",
+            "label",
+            "list",
+            "--repo",
+            repo,
+            "--limit",
+            str(_LABEL_PAGE),
+            "--json",
+            "name",
+        ]
     )
     if not ok:
         return None, "{} (gh unavailable or unauthenticated)".format(detail)
@@ -2849,7 +2895,9 @@ def _forge_label_names(repo_root, config):
     except ValueError as exc:
         return None, "gh label list did not return JSON ({})".format(type(exc).__name__)
     if not isinstance(parsed, list):
-        return None, "gh label list returned {}, not a list".format(type(parsed).__name__)
+        return None, "gh label list returned {}, not a list".format(
+            type(parsed).__name__
+        )
     if len(parsed) >= _LABEL_PAGE:
         # A full page is not a complete list. Reporting `missing` off a truncated read
         # would be this module's own defect class: the label may be on the page nobody
@@ -2872,20 +2920,30 @@ def _run(command):
             timeout=20,
         )
     except OSError as exc:
-        return False, "", "{} would not start ({})".format(command[0], type(exc).__name__)
+        return (
+            False,
+            "",
+            "{} would not start ({})".format(command[0], type(exc).__name__),
+        )
     except subprocess.TimeoutExpired:
         return False, "", "{} did not answer within 20s".format(command[0])
     except UnicodeDecodeError:
         # Not an OSError, so it would otherwise escape and take the whole run with it.
         # Every caller here is contracted to degrade to a reason, never to a traceback.
-        return False, "", "{} produced output this locale could not decode".format(command[0])
+        return (
+            False,
+            "",
+            "{} produced output this locale could not decode".format(command[0]),
+        )
     if done.returncode != 0:
         lines = (done.stderr or "").strip().splitlines()
         return (
             False,
             "",
             "{} exited {}: {}".format(
-                " ".join(command[:3]), done.returncode, lines[-1] if lines else "no output"
+                " ".join(command[:3]),
+                done.returncode,
+                lines[-1] if lines else "no output",
             ),
         )
     return True, done.stdout, ""
@@ -3296,7 +3354,19 @@ def check_changelog_gate(repo_root, config, force_owned=False):
 # Tokens that say how something is run rather than what is run. Skipped when looking
 # for the part of a test command a workflow would have to mention.
 _COMMAND_WRAPPERS = frozenset(
-    ("python", "python3", "py", "npx", "sh", "bash", "uv", "poetry", "pipenv", "run", "exec")
+    (
+        "python",
+        "python3",
+        "py",
+        "npx",
+        "sh",
+        "bash",
+        "uv",
+        "poetry",
+        "pipenv",
+        "run",
+        "exec",
+    )
 )
 
 # A separated-form long option (`--extra dev`, never `--extra=dev`) whose value is
@@ -3308,7 +3378,19 @@ _COMMAND_WRAPPERS = frozenset(
 # principle: the token being misclassified is an ARGUMENT, not a runner, so a longer
 # list of runner names answers a different question than the one this list answers.
 _SEPARATED_VALUE_FLAGS = frozenset(
-    ("extra", "group", "only", "with", "directory", "project", "workspace", "python", "config", "cd", "C")
+    (
+        "extra",
+        "group",
+        "only",
+        "with",
+        "directory",
+        "project",
+        "workspace",
+        "python",
+        "config",
+        "cd",
+        "C",
+    )
 )
 
 # `-m`/`--module`'s value is not skipped -- it IS the thing a workflow would mention
@@ -3425,7 +3507,11 @@ def check_test_ci(repo_root, config):
         return []
 
     token = _runner_token(command)
-    if token is not _AMBIGUOUS_RUNNER and token and any(token in text for text in texts):
+    if (
+        token is not _AMBIGUOUS_RUNNER
+        and token
+        and any(token in text for text in texts)
+    ):
         return [
             {
                 "state": "unclear",
@@ -3509,7 +3595,9 @@ def check_test_ci(repo_root, config):
                     "whether that value is the option's argument or the test runner. "
                     "Guessing either way risks a false claim about whether anything in "
                     "{dir}/ runs your tests, so nothing is reported enforced or "
-                    "unenforced here. Check by hand.".format(command=command, dir=WORKFLOW_DIR)
+                    "unenforced here. Check by hand.".format(
+                        command=command, dir=WORKFLOW_DIR
+                    )
                 ),
             }
         ]
@@ -3601,7 +3689,9 @@ def _main(argv=None):
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
 
-    parser = argparse.ArgumentParser(description="Scaffold repo furniture from .oss.json.")
+    parser = argparse.ArgumentParser(
+        description="Scaffold repo furniture from .oss.json."
+    )
     parser.add_argument("--config", default=".oss.json", help="path to .oss.json")
     parser.add_argument("--root", default=".", help="repo root to scaffold")
     parser.add_argument(
@@ -3650,7 +3740,9 @@ def _main(argv=None):
 
     if args.show is not None:
         if args.apply:
-            print("FAIL --show cannot be combined with --apply -- show first, then apply separately")
+            print(
+                "FAIL --show cannot be combined with --apply -- show first, then apply separately"
+            )
             return 1
         show_path = args.show or None
         # Computed once and handed in, so the notes below and the bodies printed after
@@ -3688,20 +3780,26 @@ def _main(argv=None):
             args.root, config, force_owned=args.force_owned, entries=entries
         )
         for entry in entries:
-            print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
+            print(
+                "{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"])
+            )
         # A key inside a file whose other keys are not ours, so it is printed here
         # rather than folded into `entries` -- `entries` is a claim about whole paths,
         # and this is a claim about one key inside one of them (#494).
         settings_entry = settings_plan(args.root)
         print(
             "{:<8} {}  ({})".format(
-                settings_entry["action"], settings_entry["path"], settings_entry["reason"]
+                settings_entry["action"],
+                settings_entry["path"],
+                settings_entry["reason"],
             )
         )
         # After the templates and the owned trio, because that is the order --apply
         # writes in: the layer is installed last, against the tree the rest just made.
         for entry in rules_plan["entries"]:
-            print("{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"]))
+            print(
+                "{:<8} {}  ({})".format(entry["action"], entry["path"], entry["reason"])
+            )
         for line in rules_notes(rules_plan):
             print("layer    {}".format(line))
         _print_findings(args.root, config, force_owned=args.force_owned)
@@ -3711,7 +3809,9 @@ def _main(argv=None):
             sum(1 for e in entries if e["action"] == "present"),
         )
         if declined_count:
-            summary += ", {} declined (already covered elsewhere)".format(declined_count)
+            summary += ", {} declined (already covered elsewhere)".format(
+                declined_count
+            )
         summary += rules_summary_clause(rules_plan)
         print(summary)
         return 0
@@ -3722,7 +3822,11 @@ def _main(argv=None):
     for path in result["replaced"]:
         print("ours     {}  (replaced)".format(path))
     for path in result["extended"]:
-        print("extended {}  (a key was added; the rest of the file was left as it is)".format(path))
+        print(
+            "extended {}  (a key was added; the rest of the file was left as it is)".format(
+                path
+            )
+        )
     for path in result["declined"]:
         print(
             "declined {}  (a changelog gate is already detected under a different "
@@ -3792,9 +3896,11 @@ def _main(argv=None):
     # about the repo as it now stands, which is the state the maintainer has to act on.
     _print_findings(args.root, config, force_owned=args.force_owned)
 
-    print("WROTE: {} template(s), replaced {} file(s) in the {} rule layer".format(
-        len(written), len(rules), oss_rules.LAYER
-    ))
+    print(
+        "WROTE: {} template(s), replaced {} file(s) in the {} rule layer".format(
+            len(written), len(rules), oss_rules.LAYER
+        )
+    )
     return 0
 
 

@@ -48,8 +48,12 @@ def _write_split(root):
     """The configured case: `/oss:setup` already ran here."""
     root.mkdir(parents=True, exist_ok=True)
     project, local = oss_config.split(_combined(root))
-    (root / oss_config.CONFIG_NAME).write_text(json.dumps(project, indent=2), encoding="utf-8")
-    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local, indent=2), encoding="utf-8")
+    (root / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project, indent=2), encoding="utf-8"
+    )
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local, indent=2), encoding="utf-8"
+    )
     return root
 
 
@@ -57,7 +61,9 @@ def _write_project_only(root):
     """The derived case: a fresh clone, `.oss.local.json` was never written here."""
     root.mkdir(parents=True, exist_ok=True)
     project, _local = oss_config.split(_combined(root))
-    (root / oss_config.CONFIG_NAME).write_text(json.dumps(project, indent=2), encoding="utf-8")
+    (root / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project, indent=2), encoding="utf-8"
+    )
     return root
 
 
@@ -93,10 +99,13 @@ def test_local_key_states_for_reports_configured_then_derived(tmp_path):
 # ------------------------------------------------------------------- check_directory
 
 
-def test_check_directory_annotates_a_derived_value_and_leaves_a_configured_one_alone(tmp_path):
+def test_check_directory_annotates_a_derived_value_and_leaves_a_configured_one_alone(
+    tmp_path,
+):
     configured_root = _write_split(tmp_path / "configured")
     doctor.check_directory(
-        "clone", str(configured_root),
+        "clone",
+        str(configured_root),
         origin=(oss_config.LOCAL_STATE_CONFIGURED, str(configured_root), None),
     )
     configured_state, configured_message = doctor.FINDINGS[-1]
@@ -107,7 +116,8 @@ def test_check_directory_annotates_a_derived_value_and_leaves_a_configured_one_a
     derived_root = tmp_path / "derived"
     derived_root.mkdir()
     doctor.check_directory(
-        "clone", str(derived_root),
+        "clone",
+        str(derived_root),
         origin=(oss_config.LOCAL_STATE_DERIVED, str(derived_root), None),
     )
     derived_state, derived_message = doctor.FINDINGS[-1]
@@ -123,7 +133,9 @@ def test_check_directory_annotates_a_derived_value_and_leaves_a_configured_one_a
 
 def test_check_directory_names_the_reason_when_a_value_could_not_be_derived(tmp_path):
     doctor.check_directory(
-        "clone", None, origin=(oss_config.LOCAL_STATE_COULD_NOT_DERIVE, None, "boom"),
+        "clone",
+        None,
+        origin=(oss_config.LOCAL_STATE_COULD_NOT_DERIVE, None, "boom"),
     )
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
@@ -140,12 +152,15 @@ def _state_file(root, body):
     (directory / "oss-watch.json").write_text(body, encoding="utf-8")
 
 
-def test_check_state_file_annotates_a_derived_value_and_leaves_a_configured_one_alone(tmp_path):
+def test_check_state_file_annotates_a_derived_value_and_leaves_a_configured_one_alone(
+    tmp_path,
+):
     configured_root = tmp_path / "configured"
     configured_root.mkdir()
     _state_file(configured_root, "[]")
     doctor.check_state_file(
-        configured_root, {"state_file": ".max/oss-watch.json"},
+        configured_root,
+        {"state_file": ".max/oss-watch.json"},
         origin=(oss_config.LOCAL_STATE_CONFIGURED, ".max/oss-watch.json", None),
     )
     configured_state, configured_message = doctor.FINDINGS[-1]
@@ -156,7 +171,8 @@ def test_check_state_file_annotates_a_derived_value_and_leaves_a_configured_one_
     derived_root.mkdir()
     _state_file(derived_root, "[]")
     doctor.check_state_file(
-        derived_root, {"state_file": ".max/oss-watch.json"},
+        derived_root,
+        {"state_file": ".max/oss-watch.json"},
         origin=(oss_config.LOCAL_STATE_DERIVED, ".max/oss-watch.json", None),
     )
     derived_state, derived_message = doctor.FINDINGS[-1]
@@ -183,7 +199,9 @@ def test_load_populates_derived_values_where_a_fresh_clone_used_to_fail(tmp_path
     assert configured_config["clone"] == str(configured_root)
 
     derived_root = _write_project_only(tmp_path / "derived")
-    derived_config, derived_problems = oss_config.load(derived_root / oss_config.CONFIG_NAME)
+    derived_config, derived_problems = oss_config.load(
+        derived_root / oss_config.CONFIG_NAME
+    )
     assert derived_problems == []
     assert derived_config["clone"] == str(derived_root.resolve())
     assert derived_config["worktree_root"] == "{}-wt".format(derived_root.resolve())
@@ -193,7 +211,9 @@ def test_load_populates_derived_values_where_a_fresh_clone_used_to_fail(tmp_path
 # --------------------------------------------------------------- lane_setup.derive_worktree
 
 
-def test_derive_worktree_reports_origin_and_a_fresh_clone_can_still_cut_a_lane(tmp_path):
+def test_derive_worktree_reports_origin_and_a_fresh_clone_can_still_cut_a_lane(
+    tmp_path,
+):
     """#608's other named consumer (`scripts/lane_setup.py`'s `worktree_occupancy`
     unknown-reporting arm, reached through `derive_worktree`): a fresh clone with no
     `.oss.local.json` must resolve a worktree path (so a lane CAN be cut) and must
@@ -201,7 +221,9 @@ def test_derive_worktree_reports_origin_and_a_fresh_clone_can_still_cut_a_lane(t
     """
     configured_root = _write_split(tmp_path / "configured")
     configured_config, _ = oss_config.load(configured_root / oss_config.CONFIG_NAME)
-    configured_states = oss_config.local_key_states(configured_root / oss_config.CONFIG_NAME)
+    configured_states = oss_config.local_key_states(
+        configured_root / oss_config.CONFIG_NAME
+    )
     configured_worktree = lane_setup.derive_worktree(
         configured_config, 999, origin=configured_states["worktree_root"]
     )

@@ -47,7 +47,9 @@ def _vendor(tmp_path):
     shutil.copy(OSS_CONFIG, script_dir / "oss_config.py")
     (root / "changelog.d").mkdir()
     subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=str(root), check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "t@example.com"], cwd=str(root), check=True
+    )
     subprocess.run(["git", "config", "user.name", "Test"], cwd=str(root), check=True)
     return root, script_dir / "rename_changelog_fragment.py"
 
@@ -56,7 +58,9 @@ def _commit_fragment(root, name, body):
     frag = root / "changelog.d" / name
     frag.write_text(body, encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=str(root), check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "add fragment"], cwd=str(root), check=True)
+    subprocess.run(
+        ["git", "commit", "-q", "-m", "add fragment"], cwd=str(root), check=True
+    )
     return frag
 
 
@@ -145,4 +149,6 @@ def test_rename_leaves_an_already_correct_fragment_alone(tmp_path):
     result = _rename(script_path, root, "changelog.d/425.fixed.md", 425)
     assert result.returncode == OK, (result.stdout, result.stderr)
     after_text = (root / "changelog.d" / "425.fixed.md").read_text(encoding="utf-8")
-    assert after_text == before_text, "an already-correct fragment must not be rewritten"
+    assert after_text == before_text, (
+        "an already-correct fragment must not be rewritten"
+    )

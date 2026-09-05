@@ -106,7 +106,11 @@ def test_glob_pattern_with_backslash_separators_still_matches(tmp_path):
     forward = lane_setup.resolve_lane(tmp_path, ["commands/*.md"])
     backslash = lane_setup.resolve_lane(tmp_path, ["commands\\*.md"])
     assert backslash["patterns"][0]["state"] == "glob-resolved"
-    assert backslash["files"] == forward["files"] == ["commands/release.md", "commands/tick.md"]
+    assert (
+        backslash["files"]
+        == forward["files"]
+        == ["commands/release.md", "commands/tick.md"]
+    )
 
 
 # --- _lane_pattern_problem: the absolute-path refusal must not depend on which
@@ -125,7 +129,9 @@ def test_glob_pattern_with_backslash_separators_still_matches(tmp_path):
 # because there is no live stdlib fact left to change under it. -----------------
 
 
-def test_absolute_pattern_refusal_does_not_depend_on_os_path_isabs(tmp_path, monkeypatch):
+def test_absolute_pattern_refusal_does_not_depend_on_os_path_isabs(
+    tmp_path, monkeypatch
+):
     """Review finding on #267, corrected after #435: the fix (a normalized
     string test replacing `os.path.isabs`) was right; the first version of this
     test pinned a *specific* `ntpath.isabs` answer as though it were a platform
@@ -230,7 +236,9 @@ def test_lane_overlap_fires_when_a_glob_and_a_path_name_the_same_file(tmp_path):
     import lane_setup  # noqa: E402
 
     _make_tree(tmp_path)
-    lane_a = lane_setup.resolve_lane(tmp_path, ["skills/manager/SKILL.md", "commands/tick.md"])
+    lane_a = lane_setup.resolve_lane(
+        tmp_path, ["skills/manager/SKILL.md", "commands/tick.md"]
+    )
     lane_b = lane_setup.resolve_lane(tmp_path, ["commands/*.md"])
     overlap = lane_setup.lane_overlap(lane_a["files"], lane_b["files"])
     assert overlap == ["commands/tick.md"]
@@ -298,7 +306,8 @@ def _cli(tmp_path, *extra_args):
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     return spawn_guard.run(
-        [sys.executable, str(SCRIPT), "267", "--repo", str(tmp_path), "--json"] + list(extra_args),
+        [sys.executable, str(SCRIPT), "267", "--repo", str(tmp_path), "--json"]
+        + list(extra_args),
         subject="the JSON payload lane_setup.py emits for this tree",
         capture_output=True,
         text=True,

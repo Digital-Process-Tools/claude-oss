@@ -79,7 +79,9 @@ def test_contributing_md_is_planned_as_create_on_an_empty_repo(tmp_path):
 
 
 def test_an_existing_contributing_md_is_never_overwritten(tmp_path):
-    (tmp_path / "CONTRIBUTING.md").write_text("the repo's own conventions\n", encoding="utf-8")
+    (tmp_path / "CONTRIBUTING.md").write_text(
+        "the repo's own conventions\n", encoding="utf-8"
+    )
     plan = scaffold.plan(tmp_path, _config())
     entry = next(e for e in plan if e["path"] == "CONTRIBUTING.md")
     assert entry["action"] == "present"
@@ -105,7 +107,9 @@ def test_repo_is_read_from_config_and_nothing_else_moves():
     assert "somebody-else/other-repo" not in base
     assert "owner/name" not in changed
     moved = _changed_lines(base, changed)
-    assert moved and all("somebody-else/other-repo" in changed.splitlines()[i] for i in moved)
+    assert moved and all(
+        "somebody-else/other-repo" in changed.splitlines()[i] for i in moved
+    )
 
 
 def test_default_branch_is_read_from_config_and_nothing_else_moves():
@@ -248,7 +252,9 @@ def test_a_branch_pattern_that_would_have_escaped_the_span_produces_no_new_headi
 
     def _pre_fix_render(config):
         command = scaffold.test_command(config)
-        test_line = scaffold._fenced(command) if command else scaffold.TEST_COMMAND_NOT_DETECTED
+        test_line = (
+            scaffold._fenced(command) if command else scaffold.TEST_COMMAND_NOT_DETECTED
+        )
         return scaffold.CONTRIBUTING_MD.format(
             repo=scaffold.repo_slug(config),
             default_branch=scaffold._code_span(scaffold.default_branch_name(config)),
@@ -284,8 +290,14 @@ def test_raw_template_carries_no_fact_about_any_particular_repo():
     into the literal rather than routed through a config funnel."""
     raw = scaffold.CONTRIBUTING_MD
     for spelling in (
-        "claude-oss", "Digital-Process-Tools", "claude-supertool", "claude-remember",
-        "/Users/", "pytest", "main\n", " main.",
+        "claude-oss",
+        "Digital-Process-Tools",
+        "claude-supertool",
+        "claude-remember",
+        "/Users/",
+        "pytest",
+        "main\n",
+        " main.",
     ):
         assert spelling not in raw, "the raw template hardcodes {!r}".format(spelling)
 

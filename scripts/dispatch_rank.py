@@ -385,9 +385,11 @@ def order(issues, declared):
     evidence of low value -- it is the absence of a reading -- and putting it
     at the front would let a configuration gap silently promote work.
     """
+
     def key(item):
-        answer = rank(item.get("labels") or [], declared,
-                       item.get("author_association"))
+        answer = rank(
+            item.get("labels") or [], declared, item.get("author_association")
+        )
         return answer["rank"] if answer["rank"] is not None else _UNRANKABLE_KEY
 
     return sorted(issues, key=key)
@@ -543,11 +545,13 @@ def main(argv=None):
 
     if args.lane is not None:
         answer = check_lane(args.lane, args.short_reason, candidates=args.candidates)
-        print("{}: {} issue(s){}".format(
-            answer["state"].upper(),
-            answer["size"],
-            "" if not answer["why"] else " -- " + answer["why"],
-        ))
+        print(
+            "{}: {} issue(s){}".format(
+                answer["state"].upper(),
+                answer["size"],
+                "" if not answer["why"] else " -- " + answer["why"],
+            )
+        )
         return 0 if answer["state"] == "ok" else 2
 
     # JSON is UTF-8 by spec (RFC 8259); decoding stdin with whatever the
@@ -566,8 +570,10 @@ def main(argv=None):
     # states. Check for `None` first and answer `COULD NOT READ`, the state
     # that already exists for exactly this (#405's fix, same class).
     if sys.stdin is None:
-        print("COULD NOT READ: stdin is not JSON (no readable stdin: the "
-              "process was handed a closed or unopenable standard input)")
+        print(
+            "COULD NOT READ: stdin is not JSON (no readable stdin: the "
+            "process was handed a closed or unopenable standard input)"
+        )
         return 2
 
     try:
@@ -592,11 +598,11 @@ def main(argv=None):
     unrankable = 0
     reserved_count = 0
     reserved_spelling = declared.get("reserved")
-    reserved_declared = bool(reserved_spelling) and isinstance(
-        reserved_spelling, str)
+    reserved_declared = bool(reserved_spelling) and isinstance(reserved_spelling, str)
     for item in ranked:
-        answer = rank(item.get("labels") or [], declared,
-                       item.get("author_association"))
+        answer = rank(
+            item.get("labels") or [], declared, item.get("author_association")
+        )
         is_reserved = reserved(item.get("labels") or [], declared)
         if is_reserved:
             reserved_count += 1
@@ -607,23 +613,37 @@ def main(argv=None):
         marker = "  [RESERVED]" if is_reserved else ""
         if answer["rank"] is None:
             unrankable += 1
-            print("  ?  #{}  could not rank -- {}{}".format(
-                item.get("number"), answer["why"], marker))
+            print(
+                "  ?  #{}  could not rank -- {}{}".format(
+                    item.get("number"), answer["why"], marker
+                )
+            )
         else:
             # `why` is non-None on a *ranked* issue only for #826's
             # unrecognised-priority case. Dropping it here would compute the
             # one signal #826 exists to surface and then render it
             # identically to silence -- which is the whole defect, moved one
             # layer out into the receipt a maintainer actually reads.
-            print("  {}  #{}  {} / {}{}{}".format(
-                answer["rank"], item.get("number"),
-                answer["author"], answer["band"],
-                "" if not answer["why"] else "  -- " + answer["why"], marker))
-    print("{} issue(s), {} unrankable, {}".format(
-        len(ranked), unrankable,
-        "{} reserved".format(reserved_count) if reserved_declared
-        else "labels.reserved is not declared, so reservation cannot be "
-             "read off the board"))
+            print(
+                "  {}  #{}  {} / {}{}{}".format(
+                    answer["rank"],
+                    item.get("number"),
+                    answer["author"],
+                    answer["band"],
+                    "" if not answer["why"] else "  -- " + answer["why"],
+                    marker,
+                )
+            )
+    print(
+        "{} issue(s), {} unrankable, {}".format(
+            len(ranked),
+            unrankable,
+            "{} reserved".format(reserved_count)
+            if reserved_declared
+            else "labels.reserved is not declared, so reservation cannot be "
+            "read off the board",
+        )
+    )
     return 0
 
 

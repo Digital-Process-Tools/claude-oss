@@ -4,6 +4,15 @@
     "github",
     "watch"
   ],
+  "formatters": {
+    "ruff-format": {
+      "cmd": "{python} {supertool_dir}/formatters/ruff-format/ruff-format.py {file}",
+      "match": "*.py",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": false,
+      "timeout": 30
+    }
+  },
   "validators": {
     "jsonlint": {
       "cmd": "{python} {supertool_dir}/validators/jsonlint/jsonlint.py {file}",

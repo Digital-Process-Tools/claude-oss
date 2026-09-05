@@ -62,8 +62,12 @@ def _combined(root):
 def _write_split(root):
     """The shape /oss:setup produces: two files, disjoint."""
     project, local = oss_config.split(_combined(root))
-    (root / oss_config.CONFIG_NAME).write_text(json.dumps(project, indent=2), encoding="utf-8")
-    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local, indent=2), encoding="utf-8")
+    (root / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project, indent=2), encoding="utf-8"
+    )
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local, indent=2), encoding="utf-8"
+    )
     return root / oss_config.CONFIG_NAME
 
 
@@ -154,7 +158,13 @@ def test_a_machine_key_left_in_the_committed_file_is_reported_by_name(tmp_path):
     assert config is not None
     assert config["clone"] == str(tmp_path / "clone")
     joined = "\n".join(problems)
-    for expected in ("clone", "worktree_root", "state_file", oss_config.LOCAL_CONFIG_NAME, "--split"):
+    for expected in (
+        "clone",
+        "worktree_root",
+        "state_file",
+        oss_config.LOCAL_CONFIG_NAME,
+        "--split",
+    ):
         assert expected in joined, expected
 
 
@@ -164,9 +174,13 @@ def test_the_project_half_wins_when_the_local_half_contradicts_it(tmp_path):
     the plugin, rather than discovered per laptop.
     """
     path = _write_split(tmp_path)
-    local = json.loads((tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8"))
+    local = json.loads(
+        (tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8")
+    )
     local["release"] = {"tag_pattern": "{version}"}
-    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
 
     config, problems = oss_config.load(path)
     assert config["release"]["tag_pattern"] == "v{version}"
@@ -250,7 +264,9 @@ def test_local_key_states_reports_a_mis_scoped_committed_key_as_configured_not_d
     """
     combined = _combined(tmp_path)
     mis_scoped_path = tmp_path / oss_config.CONFIG_NAME
-    mis_scoped_path.write_text(json.dumps(combined), encoding="utf-8")  # nothing split out
+    mis_scoped_path.write_text(
+        json.dumps(combined), encoding="utf-8"
+    )  # nothing split out
 
     config, _problems = oss_config.load(mis_scoped_path)
     states = oss_config.local_key_states(mis_scoped_path)
@@ -277,7 +293,9 @@ def test_local_key_states_reports_a_mis_scoped_committed_key_as_configured_not_d
         assert reason is None
 
 
-def test_an_unreadable_local_half_is_a_named_problem_not_a_silent_project_only_load(tmp_path):
+def test_an_unreadable_local_half_is_a_named_problem_not_a_silent_project_only_load(
+    tmp_path,
+):
     path = _write_split(tmp_path)
     (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text("{ broken", encoding="utf-8")
     config, problems = oss_config.load(path)
@@ -292,11 +310,15 @@ def test_an_unreadable_local_half_is_a_named_problem_not_a_silent_project_only_l
 def _git_repo(tmp_path):
     info = tmp_path / ".git" / "info"
     info.mkdir(parents=True)
-    (info / "exclude").write_text("# git ls-files --others\n.oss.json\n", encoding="utf-8")
+    (info / "exclude").write_text(
+        "# git ls-files --others\n.oss.json\n", encoding="utf-8"
+    )
     return info / "exclude"
 
 
-def test_split_cli_writes_both_halves_and_leaves_the_project_half_tracked(tmp_path, capsys):
+def test_split_cli_writes_both_halves_and_leaves_the_project_half_tracked(
+    tmp_path, capsys
+):
     exclude = _git_repo(tmp_path)
     path = tmp_path / oss_config.CONFIG_NAME
     path.write_text(json.dumps(_combined(tmp_path), indent=2), encoding="utf-8")
@@ -304,7 +326,9 @@ def test_split_cli_writes_both_halves_and_leaves_the_project_half_tracked(tmp_pa
     assert oss_config._main(["--split", str(path)]) == 0
 
     project = json.loads(path.read_text(encoding="utf-8"))
-    local = json.loads((tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8"))
+    local = json.loads(
+        (tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8")
+    )
     assert set(local) == oss_config.LOCAL_KEYS
     assert not (set(project) & oss_config.LOCAL_KEYS)
 
@@ -336,8 +360,13 @@ def test_split_cli_is_idempotent(tmp_path):
     local_first = (tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8")
 
     assert oss_config._main(["--split", str(path)]) == 0
-    assert (path.read_text(encoding="utf-8"), exclude.read_text(encoding="utf-8")) == first
-    assert (tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8") == local_first
+    assert (
+        path.read_text(encoding="utf-8"),
+        exclude.read_text(encoding="utf-8"),
+    ) == first
+    assert (tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(
+        encoding="utf-8"
+    ) == local_first
 
 
 def _project_only(root):
@@ -358,7 +387,9 @@ def test_split_cli_derives_when_no_machine_keys_anywhere_but_still_moves_them_wh
     with_keys = tmp_path / "with_keys"
     _git_repo(with_keys)
     combined_path = with_keys / oss_config.CONFIG_NAME
-    combined_path.write_text(json.dumps(_combined(with_keys), indent=2), encoding="utf-8")
+    combined_path.write_text(
+        json.dumps(_combined(with_keys), indent=2), encoding="utf-8"
+    )
 
     assert oss_config._main(["--split", str(combined_path)]) == 0
     moved_project = json.loads(combined_path.read_text(encoding="utf-8"))
@@ -407,7 +438,9 @@ def test_split_cli_derives_when_no_machine_keys_anywhere_but_still_moves_them_wh
     assert "already split; no key moved" in capsys.readouterr().out
 
 
-def test_split_cli_derives_a_fallback_state_file_when_repo_is_not_a_string(tmp_path, capsys):
+def test_split_cli_derives_a_fallback_state_file_when_repo_is_not_a_string(
+    tmp_path, capsys
+):
     """`_derive_local_config` copies `build()`'s ``(document.get("repo") or "/").split("/")``
     pattern, but `build()` only ever runs on a probe `probe_problems` has already confirmed
     carries a string `repo` -- `split_config_file` has no such gate, so a hand-edited or
@@ -423,7 +456,9 @@ def test_split_cli_derives_a_fallback_state_file_when_repo_is_not_a_string(tmp_p
 
     assert oss_config._main(["--split", str(path)]) == 0
 
-    local = json.loads((tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8"))
+    local = json.loads(
+        (tmp_path / oss_config.LOCAL_CONFIG_NAME).read_text(encoding="utf-8")
+    )
     assert local["state_file"] == ".max/oss-watch.json"
 
 
@@ -469,7 +504,9 @@ def _real_git_repo(tmp_path):
         universal_newlines=True,
     )
     if done.returncode != 0:
-        pytest.skip("git init failed here: {}".format(done.stderr.strip() or done.returncode))
+        pytest.skip(
+            "git init failed here: {}".format(done.stderr.strip() or done.returncode)
+        )
     (tmp_path / ".git" / "info").mkdir(parents=True, exist_ok=True)
     (tmp_path / ".git" / "info" / "exclude").write_text(
         "# git ls-files --others\n.oss.json\n", encoding="utf-8"
@@ -479,7 +516,9 @@ def _real_git_repo(tmp_path):
     return path
 
 
-def test_split_names_the_gitignore_rule_that_still_hides_the_project_half(tmp_path, capsys):
+def test_split_names_the_gitignore_rule_that_still_hides_the_project_half(
+    tmp_path, capsys
+):
     path = _real_git_repo(tmp_path)
     (tmp_path / ".gitignore").write_text("__pycache__/\n.oss.json\n", encoding="utf-8")
 
@@ -493,7 +532,9 @@ def test_split_names_the_gitignore_rule_that_still_hides_the_project_half(tmp_pa
     )
 
 
-def test_split_says_the_project_half_is_trackable_when_nothing_ignores_it(tmp_path, capsys):
+def test_split_says_the_project_half_is_trackable_when_nothing_ignores_it(
+    tmp_path, capsys
+):
     # The positive control for the assertion above: with no rule in the way the
     # trackable line must still appear, or that assertion also passes on a --split
     # that says nothing about tracking at all.
@@ -507,7 +548,9 @@ def test_split_says_the_project_half_is_trackable_when_nothing_ignores_it(tmp_pa
     assert ".gitignore:" not in out, out
 
 
-def test_split_says_it_could_not_ask_rather_than_claiming_the_file_is_trackable(tmp_path, capsys):
+def test_split_says_it_could_not_ask_rather_than_claiming_the_file_is_trackable(
+    tmp_path, capsys
+):
     # No git repository at all, so check-ignore cannot answer. `unknown` is not `clear`:
     # a file nobody could check is not a file nobody ignores.
     path = tmp_path / oss_config.CONFIG_NAME

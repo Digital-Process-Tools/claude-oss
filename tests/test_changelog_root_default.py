@@ -40,7 +40,9 @@ def _vendor(tmp_path, script_rel_dir, name="vendor", git_marker="dir"):
     if git_marker == "dir":
         (root / ".git").mkdir()
     elif git_marker == "file":
-        (root / ".git").write_text("gitdir: /somewhere/else/.git/worktrees/x\n", encoding="utf-8")
+        (root / ".git").write_text(
+            "gitdir: /somewhere/else/.git/worktrees/x\n", encoding="utf-8"
+        )
     (root / "changelog.d").mkdir()
     return root, script_path
 
@@ -94,11 +96,13 @@ def test_bare_check_derives_from_the_callers_cwd_not_the_scripts_own_location(tm
     live -- the reverse of what this file used to require."""
     vendor_root, script_path = _vendor(tmp_path, "scripts", name="vendor")
     (vendor_root / "changelog.d" / "1.added.md").write_text(
-        "- vendor-only fragment (#1)\n", encoding="utf-8")
+        "- vendor-only fragment (#1)\n", encoding="utf-8"
+    )
 
     caller_root, _ = _vendor(tmp_path, "scripts", name="caller")
     (caller_root / "changelog.d" / "2.fixed.md").write_text(
-        "- caller-owned fragment (#2)\n", encoding="utf-8")
+        "- caller-owned fragment (#2)\n", encoding="utf-8"
+    )
 
     result = _run(script_path, caller_root, "--check")
     combined = result.stdout + result.stderr

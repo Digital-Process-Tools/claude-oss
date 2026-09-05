@@ -87,13 +87,17 @@ def test_every_consumer_installs_before_it_runs(name):
     lines = [line.strip() for line in _text(name).splitlines()]
     for package in scaffold.ASSEMBLER_DEPENDENCIES.values():
         installs = [i for i, line in enumerate(lines) if package in line]
-        uses = [i for i, line in enumerate(lines)
-                if any(token in line for token in REACHES_ASSEMBLER) and package not in line]
+        uses = [
+            i
+            for i, line in enumerate(lines)
+            if any(token in line for token in REACHES_ASSEMBLER) and package not in line
+        ]
         assert installs, "{}: {} is never installed".format(name, package)
         assert uses, "{}: nothing in it reaches the assembler".format(name)
         assert min(installs) < max(uses), (
-            "{}: {} is installed at line {} but the assembler is reached at line {}"
-            .format(name, package, min(installs) + 1, max(uses) + 1)
+            "{}: {} is installed at line {} but the assembler is reached at line {}".format(
+                name, package, min(installs) + 1, max(uses) + 1
+            )
         )
 
 

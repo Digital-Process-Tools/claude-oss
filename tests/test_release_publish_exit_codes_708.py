@@ -43,7 +43,9 @@ DOCSTRING_ANCHOR = "Exit codes, because a shell reads those and never reads pros
 
 def _publish_lifecycle_exit_codes():
     """Every exit code `_exit_code` can return for a state this module actually emits."""
-    return {release_publish._exit_code(state) for state in release_publish.PUBLISH_STATES}
+    return {
+        release_publish._exit_code(state) for state in release_publish.PUBLISH_STATES
+    }
 
 
 def _outcomes_window(text):
@@ -145,7 +147,9 @@ def test_release_md_names_every_exit_code_release_publish_can_emit():
     missing = reachable - documented
     assert not missing, (
         "release_publish.py can exit with {0}, undocumented in commands/release.md's "
-        "outcomes section (documents {1}). #708.".format(sorted(missing), sorted(documented))
+        "outcomes section (documents {1}). #708.".format(
+            sorted(missing), sorted(documented)
+        )
     )
 
 
@@ -158,7 +162,9 @@ def test_release_md_does_not_document_an_exit_code_the_script_cannot_emit():
     extra = documented - reachable
     assert not extra, (
         "commands/release.md documents exit code(s) {0} that _exit_code() cannot "
-        "produce for any state in PUBLISH_STATES ({1})".format(sorted(extra), sorted(reachable))
+        "produce for any state in PUBLISH_STATES ({1})".format(
+            sorted(extra), sorted(reachable)
+        )
     )
 
 
@@ -177,7 +183,8 @@ def test_role_forbidden_is_distinguishable_from_every_other_state():
     """The trap check, run rather than argued: role-forbidden must not render
     identically to another state's exit code or its own `state` string."""
     codes_by_state = {
-        state: release_publish._exit_code(state) for state in release_publish.PUBLISH_STATES
+        state: release_publish._exit_code(state)
+        for state in release_publish.PUBLISH_STATES
     }
     assert codes_by_state[release_publish.STATE_ROLE_FORBIDDEN] == 5
     other_codes = {
@@ -187,5 +194,7 @@ def test_role_forbidden_is_distinguishable_from_every_other_state():
     }
     assert 5 not in other_codes
     assert release_publish.STATE_ROLE_FORBIDDEN not in (
-        s for s in release_publish.PUBLISH_STATES if s != release_publish.STATE_ROLE_FORBIDDEN
+        s
+        for s in release_publish.PUBLISH_STATES
+        if s != release_publish.STATE_ROLE_FORBIDDEN
     )

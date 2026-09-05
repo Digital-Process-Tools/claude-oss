@@ -333,7 +333,9 @@ def test_not_applicable_when_repo_ships_no_definitions_at_all(tmp_path):
     assert payload["repo_version"] == "9.9.5"
 
 
-def test_could_not_tell_when_repo_ships_definitions_but_its_manifest_is_unreadable(tmp_path):
+def test_could_not_tell_when_repo_ships_definitions_but_its_manifest_is_unreadable(
+    tmp_path,
+):
     """Positive control for the case above, in the same shape: here the repo
     genuinely *does* ship at least one of the checklist's own definition
     files (a real signal this is the shipping repo, e.g. claude-oss itself),
@@ -418,7 +420,14 @@ def test_cli_receipt_names_both_versions(tmp_path):
     _manifest(repo, "9.9.9")
 
     done = subprocess.run(
-        [sys.executable, str(SCRIPT), "--repo", str(repo), "--plugin-root", str(plugin_root)],
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--repo",
+            str(repo),
+            "--plugin-root",
+            str(plugin_root),
+        ],
         capture_output=True,
         text=True,
     )
@@ -506,7 +515,9 @@ def test_repo_copy_could_not_be_read_is_reported_separately_from_installed(tmp_p
     _manifest(repo, "9.9.9")
 
     (plugin_root / "agents").mkdir(parents=True)
-    (plugin_root / "agents" / "auditor.md").write_text("only on the installed side", encoding="utf-8")
+    (plugin_root / "agents" / "auditor.md").write_text(
+        "only on the installed side", encoding="utf-8"
+    )
     # repo/agents/auditor.md deliberately left unwritten
 
     checklist_skew = _module()

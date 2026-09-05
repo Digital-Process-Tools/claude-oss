@@ -85,7 +85,9 @@ def _which_finding(path="/usr/local/bin/supertool"):
 def _capture(monkeypatch):
     """Collect `(state, message)` pairs `doctor.report` emits, without printing."""
     seen = []
-    monkeypatch.setattr(doctor, "report", lambda state, message: seen.append((state, message)))
+    monkeypatch.setattr(
+        doctor, "report", lambda state, message: seen.append((state, message))
+    )
     return seen
 
 
@@ -107,7 +109,9 @@ def test_op_names_are_derived_from_the_shipped_command_and_skill_text(tmp_path):
     named, roots = ops_check.named_ops(root)
     assert set(named) == {"gh-prs", "gh-issues", "gh-branch", "radar", "edit"}, (
         "every op named by a call in the shipped text must be derived, including "
-        "the second and third argument of a multi-op call; got {!r}".format(sorted(named))
+        "the second and third argument of a multi-op call; got {!r}".format(
+            sorted(named)
+        )
     )
     assert {r[0] for r in roots} == set(ops_check.OP_TEXT_ROOTS)
     assert all(r[1] == "read" for r in roots), roots
@@ -279,8 +283,9 @@ def test_the_real_op_table_in_this_repository_now_derives_its_named_ops():
         "gh-pr-merge",
     ):
         assert op in named, (
-            "{!r} is a cell of the real op table and must be derived; got "
-            "{!r}".format(op, sorted(named))
+            "{!r} is a cell of the real op table and must be derived; got {!r}".format(
+                op, sorted(named)
+            )
         )
 
 
@@ -302,7 +307,9 @@ def test_an_unreadable_source_root_is_reported_as_unreadable_not_as_no_ops(tmp_p
     except OSError as exc:
         pytest.skip(
             "os.chmod would not set mode 000 ({}); what went untested is whether "
-            "an unreadable source root is reported rather than silently empty".format(exc)
+            "an unreadable source root is reported rather than silently empty".format(
+                exc
+            )
         )
     try:
         if os.access(str(denied), os.R_OK):
@@ -358,7 +365,9 @@ def test_roster_prose_is_not_parsed_as_op_names():
     """Positive control in the same fixture: the block of real names must still
     parse, or "no prose leaked in" is satisfied by parsing nothing at all."""
     parsed = ops_check.parse_roster(_roster_text(["gh-prs", "ops"]))
-    assert "unmarked" not in parsed and "shipped" not in parsed and "presets" not in parsed
+    assert (
+        "unmarked" not in parsed and "shipped" not in parsed and "presets" not in parsed
+    )
     assert parsed == {"gh-prs", "ops"}
 
 
@@ -453,8 +462,7 @@ def test_a_hyphen_before_the_command_is_not_a_call(tmp_path):
         tmp_path,
         {
             "commands/tick.md": (
-                "not-supertool 'fake-op' is a decoy\n"
-                "supertool 'gh-prs'\n"
+                "not-supertool 'fake-op' is a decoy\nsupertool 'gh-prs'\n"
             ),
         },
     )
@@ -478,7 +486,9 @@ def test_a_roster_call_that_will_not_run_is_could_not_ask():
     def run(argv, **kwargs):
         raise OSError("Exec format error")
 
-    state, _available, detail = ops_check.supertool_roster(run=run, which=_which_finding())
+    state, _available, detail = ops_check.supertool_roster(
+        run=run, which=_which_finding()
+    )
     assert state == "could-not-ask"
     assert "Exec format error" in detail
 
@@ -609,14 +619,18 @@ def test_the_check_reports_one_line_in_every_state(tmp_path, monkeypatch):
         "code -- #582's own acceptance criterion"
     )
     assert "unknown" in unknown_line, (
-        "the could-not-ask line has to say the answer is unknown; got {!r}".format(unknown_line)
+        "the could-not-ask line has to say the answer is unknown; got {!r}".format(
+            unknown_line
+        )
     )
     assert "unknown" not in missing_line, (
         "positive control: a real gap must not be worded as an unknown one"
     )
 
 
-def test_the_check_never_raises_when_the_plugin_root_is_not_there(tmp_path, monkeypatch):
+def test_the_check_never_raises_when_the_plugin_root_is_not_there(
+    tmp_path, monkeypatch
+):
     """doctor.py's contract is exit 0 always. A check that raises out of `main()`
     takes the VERDICT line with it."""
     seen = _capture(monkeypatch)
@@ -710,9 +724,14 @@ def test_a_drifted_heading_with_the_table_shape_intact_is_could_not_ask(tmp_path
             ),
         },
     )
-    assert ops_check.ops_in_op_table(
-        (root / "skills/manager/SKILL.md").read_text(encoding="utf-8")
-    ) == [], "fixture check: a reworded heading must still derive nothing via the heading-anchored path"
+    assert (
+        ops_check.ops_in_op_table(
+            (root / "skills/manager/SKILL.md").read_text(encoding="utf-8")
+        )
+        == []
+    ), (
+        "fixture check: a reworded heading must still derive nothing via the heading-anchored path"
+    )
     drifted = ops_check.op_table_heading_drift(root)
     assert drifted == ["skills/manager/SKILL.md"], drifted
 

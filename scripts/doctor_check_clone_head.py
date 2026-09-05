@@ -80,7 +80,10 @@ def clone_head_state(project_dir, config, run=None):
     if default_branch is not None and not isinstance(default_branch, str):
         return "could-not-tell", "the default_branch value in .oss.json is not a string"
     if not default_branch:
-        return "could-not-tell", "no default_branch configured, so there is nothing to compare against"
+        return (
+            "could-not-tell",
+            "no default_branch configured, so there is nothing to compare against",
+        )
 
     # `git symbolic-ref --short HEAD` rather than `rev-parse --abbrev-ref HEAD`:
     # the latter FAILS on an unborn branch (a repo with no commits yet -- "fatal:
@@ -92,10 +95,16 @@ def clone_head_state(project_dir, config, run=None):
     # case this function needs to name rather than lump in with "git failed".
     rc, out, err, exc = _git_run(project_dir, ["symbolic-ref", "--short", "HEAD"], run)
     if exc is not None:
-        return "could-not-tell", "git symbolic-ref --short HEAD did not run ({})".format(exc)
+        return (
+            "could-not-tell",
+            "git symbolic-ref --short HEAD did not run ({})".format(exc),
+        )
     if rc != 0:
         if "not a symbolic ref" in (err or ""):
-            return "could-not-tell", "HEAD is detached, so there is no branch to compare"
+            return (
+                "could-not-tell",
+                "HEAD is detached, so there is no branch to compare",
+            )
         return "could-not-tell", "git symbolic-ref --short HEAD failed -- {}".format(
             (err or out).strip()[:200] or "not a git repository"
         )
@@ -106,7 +115,9 @@ def clone_head_state(project_dir, config, run=None):
     if branch == default_branch:
         ahead, behind = None, None
         rc_u, out_u, _err_u, exc_u = _git_run(
-            project_dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], run
+            project_dir,
+            ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+            run,
         )
         if exc_u is None and rc_u == 0 and out_u.strip():
             upstream = out_u.strip()
@@ -170,7 +181,9 @@ def check_clone_head(project_dir, config, run=None):
             return
         doctor.report(
             "OK",
-            "clone HEAD: on {}, up to date ({} ahead, {} behind)".format(branch, ahead, behind),
+            "clone HEAD: on {}, up to date ({} ahead, {} behind)".format(
+                branch, ahead, behind
+            ),
         )
         return
     if state == "on-other":
@@ -180,7 +193,9 @@ def check_clone_head(project_dir, config, run=None):
                 "WARN",
                 "clone HEAD: on {} (not {}) -- its remote ref is gone, which very "
                 "likely means the branch's pull request already merged and this "
-                "clone was never moved back".format(branch, config.get("default_branch")),
+                "clone was never moved back".format(
+                    branch, config.get("default_branch")
+                ),
             )
             return
         doctor.report(
@@ -191,4 +206,3 @@ def check_clone_head(project_dir, config, run=None):
         )
         return
     doctor.report("WARN", "clone HEAD: could not tell -- {}".format(detail))
-

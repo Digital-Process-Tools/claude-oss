@@ -49,7 +49,9 @@ def _table_rows():
 
 def test_command_budget_table_names_exactly_the_files_command_budgets_declares():
     rows = _table_rows()
-    assert rows, "no rows matched under the command budget table header -- the parser or table moved"
+    assert rows, (
+        "no rows matched under the command budget table header -- the parser or table moved"
+    )
     table_paths = {path for path, _, _ in rows}
     assert table_paths == set(command_budgets.BUDGETS), (
         "CLAUDE.md's command budget table and command_budgets.BUDGETS name a different set "
@@ -62,12 +64,16 @@ def test_command_budget_table_names_exactly_the_files_command_budgets_declares()
 
 def test_command_budget_table_numbers_match_command_budgets_exactly():
     rows = _table_rows()
-    assert rows, "no rows matched under the command budget table header -- the parser or table moved"
+    assert rows, (
+        "no rows matched under the command budget table header -- the parser or table moved"
+    )
     mismatches = []
     for path, table_baseline, table_budget in rows:
         real_baseline, real_budget = command_budgets.BUDGETS.get(path, (None, None))
         if (table_baseline, table_budget) != (real_baseline, real_budget):
-            mismatches.append((path, (table_baseline, table_budget), (real_baseline, real_budget)))
+            mismatches.append(
+                (path, (table_baseline, table_budget), (real_baseline, real_budget))
+            )
     assert not mismatches, (
         "CLAUDE.md's command budget table disagrees with command_budgets.BUDGETS (table vs. real): "
         + ", ".join(f"{p}: {t} != {r}" for p, t, r in mismatches)

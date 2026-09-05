@@ -63,9 +63,21 @@ SPINE = "agents/developer.md"
 #: repo-relative path (POSIX) -> (bytes measured when the budget was set,
 #: budget bytes incl. ~10% headroom, what the file governs).
 DOCUMENTS: dict[str, tuple[int, int, str]] = {
-    "agents/developer/review.md": (12806, 14100, "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions"),
-    "agents/developer/review-return.md": (15440, 17000, "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails"),
-    "agents/developer/report.md": (20665, 22700, "the note, the JSON report and its validator, the pull request payload"),
+    "agents/developer/review.md": (
+        12806,
+        14100,
+        "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
+    ),
+    "agents/developer/review-return.md": (
+        15440,
+        17000,
+        "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails",
+    ),
+    "agents/developer/report.md": (
+        20665,
+        22700,
+        "the note, the JSON report and its validator, the pull request payload",
+    ),
 }
 
 

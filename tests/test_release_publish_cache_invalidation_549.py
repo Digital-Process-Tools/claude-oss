@@ -43,7 +43,11 @@ All notable changes to this project are documented in this file.
 
 
 def _config(**release):
-    block = {"tag_pattern": "v{version}", "commit_subject": None, "merge_method": "squash"}
+    block = {
+        "tag_pattern": "v{version}",
+        "commit_subject": None,
+        "merge_method": "squash",
+    }
     block.update(release)
     return {"repo": "owner/name", "release": block}
 
@@ -100,11 +104,18 @@ def _fake_gh(tmp_path, exit_code=0):
 def test_a_created_release_invalidates_an_existing_cache(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     _write_cache(
-        "owner/name", {"fetched_at": 1.0, "latest_fetched_at": 1.0, "latest": {"owner/name": "0.12.0"}}
+        "owner/name",
+        {
+            "fetched_at": 1.0,
+            "latest_fetched_at": 1.0,
+            "latest": {"owner/name": "0.12.0"},
+        },
     )
     result = release_publish._invalidate_cache_after_publish("owner/name")
     assert result["state"] == "invalidated"
-    document = json.loads(statusline.cache_path("owner/name").read_text(encoding="utf-8"))
+    document = json.loads(
+        statusline.cache_path("owner/name").read_text(encoding="utf-8")
+    )
     # Emptied/re-stamped, not deleted -- a bare delete left the document reading
     # as a legacy pre-#515 cache, whose `latest_is_due` fallback compares against
     # the unrelated `fetched_at` board stamp and can read "recently fetched"
@@ -120,13 +131,17 @@ def test_a_created_release_invalidates_an_existing_cache(tmp_path, monkeypatch):
     assert statusline.latest_is_due(document, now=time.time())
 
 
-def test_the_must_not_fire_control_no_cache_is_nothing_to_invalidate(tmp_path, monkeypatch):
+def test_the_must_not_fire_control_no_cache_is_nothing_to_invalidate(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     result = release_publish._invalidate_cache_after_publish("owner/name")
     assert result["state"] == "nothing-to-invalidate"
 
 
-def test_an_unreadable_cache_is_could_not_invalidate_never_agreement(tmp_path, monkeypatch):
+def test_an_unreadable_cache_is_could_not_invalidate_never_agreement(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     _write_cache_raw("owner/name", "{not json")
     result = release_publish._invalidate_cache_after_publish("owner/name")
@@ -143,10 +158,17 @@ def test_a_missing_statusline_module_is_could_not_invalidate_not_a_crash(monkeyp
 
 
 @posix_only
-def test_a_successful_publish_reports_the_cache_was_invalidated(tmp_path, monkeypatch, capsys):
+def test_a_successful_publish_reports_the_cache_was_invalidated(
+    tmp_path, monkeypatch, capsys
+):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path / "cache")
     _write_cache(
-        "owner/name", {"fetched_at": 1.0, "latest_fetched_at": 1.0, "latest": {"owner/name": "0.12.0"}}
+        "owner/name",
+        {
+            "fetched_at": 1.0,
+            "latest_fetched_at": 1.0,
+            "latest": {"owner/name": "0.12.0"},
+        },
     )
     repo = _repo(tmp_path / "repo", create_release=True, draft=False, latest=True)
     gh = _fake_gh(tmp_path / "bin")
@@ -177,7 +199,12 @@ def test_a_failed_publish_never_touches_the_cache(tmp_path, monkeypatch, capsys)
     invalidate a cache that is still an accurate reading -- nothing was published."""
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path / "cache")
     _write_cache(
-        "owner/name", {"fetched_at": 1.0, "latest_fetched_at": 1.0, "latest": {"owner/name": "0.12.0"}}
+        "owner/name",
+        {
+            "fetched_at": 1.0,
+            "latest_fetched_at": 1.0,
+            "latest": {"owner/name": "0.12.0"},
+        },
     )
     repo = _repo(tmp_path / "repo", create_release=True, draft=False, latest=True)
     gh = _fake_gh(tmp_path / "bin", exit_code=1)
@@ -199,7 +226,9 @@ def test_a_failed_publish_never_touches_the_cache(tmp_path, monkeypatch, capsys)
     payload = json.loads(out)
     assert payload["state"] == release_publish.STATE_COULD_NOT_CREATE, payload
     assert "cache_invalidation" not in payload
-    document = json.loads(statusline.cache_path("owner/name").read_text(encoding="utf-8"))
+    document = json.loads(
+        statusline.cache_path("owner/name").read_text(encoding="utf-8")
+    )
     assert document["latest"] == {"owner/name": "0.12.0"}
 
 
@@ -208,7 +237,12 @@ def test_a_dry_run_never_touches_the_cache(tmp_path, monkeypatch, capsys):
     published, so nothing may be invalidated."""
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path / "cache")
     _write_cache(
-        "owner/name", {"fetched_at": 1.0, "latest_fetched_at": 1.0, "latest": {"owner/name": "0.12.0"}}
+        "owner/name",
+        {
+            "fetched_at": 1.0,
+            "latest_fetched_at": 1.0,
+            "latest": {"owner/name": "0.12.0"},
+        },
     )
     repo = _repo(tmp_path / "repo", create_release=True, draft=False, latest=True)
     release_publish.main(
@@ -228,14 +262,21 @@ def test_a_dry_run_never_touches_the_cache(tmp_path, monkeypatch, capsys):
     payload = json.loads(out)
     assert payload["state"] == release_publish.STATE_CREATE
     assert "cache_invalidation" not in payload
-    document = json.loads(statusline.cache_path("owner/name").read_text(encoding="utf-8"))
+    document = json.loads(
+        statusline.cache_path("owner/name").read_text(encoding="utf-8")
+    )
     assert document["latest"] == {"owner/name": "0.12.0"}
 
 
 def test_a_skipped_release_never_touches_the_cache(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path / "cache")
     _write_cache(
-        "owner/name", {"fetched_at": 1.0, "latest_fetched_at": 1.0, "latest": {"owner/name": "0.12.0"}}
+        "owner/name",
+        {
+            "fetched_at": 1.0,
+            "latest_fetched_at": 1.0,
+            "latest": {"owner/name": "0.12.0"},
+        },
     )
     repo = _repo(tmp_path / "repo", create_release=False)
     release_publish.main(

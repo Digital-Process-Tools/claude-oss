@@ -36,7 +36,9 @@ def _valid(root):
     project, local = oss_config.split(config)
     path = root / oss_config.CONFIG_NAME
     path.write_text(json.dumps(project), encoding="utf-8")
-    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
     return path
 
 
@@ -174,7 +176,9 @@ def test_build_emits_no_leg_count_and_no_note_standing_in_for_one(monkeypatch, c
     assert "worktree_root" in captured.err
 
 
-def test_build_flags_worktree_root_as_a_naming_guess_not_a_measurement(monkeypatch, capsys):
+def test_build_flags_worktree_root_as_a_naming_guess_not_a_measurement(
+    monkeypatch, capsys
+):
     """#85: the emitted `<clone>-wt` guess did not exist on the repo it was filed
     against; the real worktree root was named differently and was one `ls` away.
     """
@@ -186,7 +190,9 @@ def test_build_flags_worktree_root_as_a_naming_guess_not_a_measurement(monkeypat
     assert "guess" in captured.err
 
 
-def test_build_flags_state_file_as_a_naming_guess_not_a_measurement(monkeypatch, capsys):
+def test_build_flags_state_file_as_a_naming_guess_not_a_measurement(
+    monkeypatch, capsys
+):
     """#85: the emitted `.max/<repo>-watch.json` guess had never existed on the repo
     it was filed against; the real state file was named differently.
     """
@@ -212,8 +218,12 @@ def test_help_states_the_probe_schema(capsys):
 GIT = shutil.which("git")
 
 
-@pytest.mark.skipif(GIT is None, reason="git is not on PATH, so there is no repo to probe")
-def test_probe_mode_emits_a_probe_that_build_mode_accepts(tmp_path, monkeypatch, capsys):
+@pytest.mark.skipif(
+    GIT is None, reason="git is not on PATH, so there is no repo to probe"
+)
+def test_probe_mode_emits_a_probe_that_build_mode_accepts(
+    tmp_path, monkeypatch, capsys
+):
     subprocess.run([GIT, "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "README.md").write_text("# thing\n", encoding="utf-8")
     subprocess.run([GIT, "-C", str(tmp_path), "add", "-A"], check=True)

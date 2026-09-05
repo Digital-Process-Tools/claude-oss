@@ -89,7 +89,9 @@ def test_known_guards_status_mirrors_guards_for_files(tmp_path):
     known = lane_setup.known_guards(repo=repo)
     entry = next(e for e in known if e["test"] == "tests/test_content_invariants.py")
     assert entry["status"] == "exists"
-    absent_entry = next(e for e in known if e["test"] == "tests/test_python_floor_410.py")
+    absent_entry = next(
+        e for e in known if e["test"] == "tests/test_python_floor_410.py"
+    )
     assert absent_entry["status"] == "absent"
 
 

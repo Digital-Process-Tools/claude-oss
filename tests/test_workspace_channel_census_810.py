@@ -109,7 +109,9 @@ def test_a_failed_census_disarms_the_flag_and_says_unknown(tmp_path):
     assert "unknown" in done.stderr.lower() or "UNKNOWN" in done.stderr
 
 
-def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twice(tmp_path):
+def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twice(
+    tmp_path,
+):
     """Review finding on #810: `bin/oss-workspace` runs the census, then shells
     out to `doctor.sh`, which runs `check_channel_consumer_census()` again --
     the identical shape #629 already fixed once for the registration check.
@@ -125,7 +127,9 @@ def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twic
         env_extra=_NO_AUTO_UPDATE,
     )
     assert any("development-channels" in a for a in argv), (argv, done.stderr)
-    list_calls = [call for call in _mcp_calls(repo) if len(call) > 1 and call[1] == "list"]
+    list_calls = [
+        call for call in _mcp_calls(repo) if len(call) > 1 and call[1] == "list"
+    ]
     assert len(list_calls) == 1, (list_calls, done.stderr)
 
 

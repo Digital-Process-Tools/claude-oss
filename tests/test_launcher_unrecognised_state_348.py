@@ -45,7 +45,9 @@ def _plugin_root(tmp_path):
     return root
 
 
-def test_a_currently_unreachable_state_would_not_crash_the_reporter(tmp_path, monkeypatch):
+def test_a_currently_unreachable_state_would_not_crash_the_reporter(
+    tmp_path, monkeypatch
+):
     """The must-fire half. A seventh state -- one that does not exist in the
     real producer today, constructed the way the release audit did -- reaching
     the bare `else`'s `resolved, their_version, our_version = detail` unpack

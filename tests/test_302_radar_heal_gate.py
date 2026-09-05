@@ -37,7 +37,9 @@ def _text():
 
 def test_tick_md_exists():
     """A missing file would make every assertion below vacuous."""
-    assert TICK_MD.is_file(), "commands/tick.md not found -- checks below would pass on nothing"
+    assert TICK_MD.is_file(), (
+        "commands/tick.md not found -- checks below would pass on nothing"
+    )
 
 
 def test_tick_md_records_the_302_measurement():
@@ -58,7 +60,9 @@ def test_a_document_missing_the_finding_fails_the_same_check():
     """
     unrelated = "This document says nothing about board coverage or probes."
     missing = [phrase for phrase in REQUIRED_PHRASES if phrase not in unrelated]
-    assert missing, "the phrase list matched a document that says nothing -- it checks nothing"
+    assert missing, (
+        "the phrase list matched a document that says nothing -- it checks nothing"
+    )
 
 
 def test_step_4_rule_is_still_unconditional_on_the_event():
@@ -122,4 +126,6 @@ def test_a_narrowed_rewrite_of_the_same_bullet_is_caught():
         merged_bullet.group(0),
         flags=re.IGNORECASE,
     )
-    assert conditional_words, "the check did not fire on prose shaped like a narrowing edit"
+    assert conditional_words, (
+        "the check did not fire on prose shaped like a narrowing edit"
+    )

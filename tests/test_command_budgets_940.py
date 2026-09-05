@@ -19,8 +19,7 @@ def test_every_budgeted_command_is_at_or_under_its_budget():
     results = command_budgets.check()
     over = [r for r in results if r["state"] == "over"]
     assert not over, "over budget (#940), replace-don't-append: " + ", ".join(
-        f"{r['path']} is {r['size']}B against a budget of {r['budget']}B"
-        for r in over
+        f"{r['path']} is {r['size']}B against a budget of {r['budget']}B" for r in over
     )
 
 

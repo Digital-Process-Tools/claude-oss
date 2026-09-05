@@ -106,9 +106,7 @@ def test_two_reason_lines_refuse():
 
 
 def test_a_single_reason_line_still_classifies_normally():
-    verdict = tick_handback.classify(
-        "TICK: could-not-run\nREASON: spawn refused\n"
-    )
+    verdict = tick_handback.classify("TICK: could-not-run\nREASON: spawn refused\n")
     assert verdict["state"] == "could-not-run"
     assert verdict["detail"] == "spawn refused"
 

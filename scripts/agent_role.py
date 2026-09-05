@@ -230,7 +230,9 @@ def _marker_path(root: str = ".") -> Path | None:
     return git_dir / MARKER_NAME
 
 
-def write_role_marker(role: str, root: str = ".", written_at: float | None = None) -> bool:
+def write_role_marker(
+    role: str, root: str = ".", written_at: float | None = None
+) -> bool:
     """Write `role` to the marker file for the repository at `root`.
 
     `written_at` is an epoch-seconds override, exposed for tests that need

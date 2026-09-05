@@ -239,6 +239,7 @@ CONSUMER_IDS = frozenset(_consumer_unmet("A release command that says none of it
 
 # ------------------------------------------------------------ the must-not-fire
 
+
 def test_the_two_documents_exist():
     """Without them every check below fails for the wrong reason."""
     assert RELEASE_AUDITOR.is_file(), "agents/release-auditor.md is missing"
@@ -405,8 +406,7 @@ def test_every_registered_term_carries_its_sentence():
     thin = {term: why for term, why in registered if len(why.split()) < 12}
     assert not thin, (
         "these terms are registered with no argument for why they are separate, "
-        "which is the one thing this registry exists to carry: "
-        + repr(sorted(thin))
+        "which is the one thing this registry exists to carry: " + repr(sorted(thin))
     )
 
 

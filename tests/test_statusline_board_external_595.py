@@ -66,11 +66,14 @@ def test_the_must_fire_control_a_genuine_zero_is_a_measurement():
 def test_a_board_dict_with_no_key_at_all_is_the_absent_case():
     """A cache written before this field existed carries no `issues_external` key at
     all -- the same absence as a live read that failed, not a fresh zero."""
-    field = statusline._board_field({"prs": 0, "issues": 14, "checks": None}, _symbols())
+    field = statusline._board_field(
+        {"prs": 0, "issues": 14, "checks": None}, _symbols()
+    )
     assert field == "0pr ? . 14is / ?eis"
 
 
 # ------------------------------------------------------------------------- the cache
+
 
 def test_a_cache_with_issues_but_no_external_count_leaves_it_none():
     """No `state` field to distinguish this any more (#597) -- `issues_external`
@@ -122,6 +125,7 @@ def test_a_null_association_makes_the_whole_count_unreliable(monkeypatch):
 def test_fewer_rows_than_the_known_total_is_unreliable_not_undercounted():
     """The paging hazard this guards against: a listing call that came back short of the
     total `_gh_count` already measured must not silently report a smaller number."""
+
     def _short(command, timeout=25):
         return "NONE"
 
@@ -165,7 +169,9 @@ def test_zero_open_issues_is_a_genuine_zero_not_unreliable():
         sl._run = orig
 
 
-def test_the_argument_vector_never_asks_for_the_field_gh_issue_list_does_not_have(monkeypatch):
+def test_the_argument_vector_never_asks_for_the_field_gh_issue_list_does_not_have(
+    monkeypatch,
+):
     """#620's whole finding: `gh issue list --json authorAssociation` requests a field
     that command has never had -- `Unknown JSON field: "authorAssociation"`, exit 1,
     every invocation. Every fixture above monkeypatches `_run`'s return value and none

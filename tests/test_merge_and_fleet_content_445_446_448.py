@@ -49,6 +49,7 @@ def _collapse(text):
 # #445 -- the merge call's invocation spelling
 # ---------------------------------------------------------------------------
 
+
 def test_the_skill_names_the_bare_supertool_spelling_for_merging():
     text = _skill_text()
     assert "supertool 'gh-pr-merge" in text or 'supertool "gh-pr-merge' in text, (
@@ -99,6 +100,7 @@ def test_pre_445_text_is_still_present_as_context():
 # ---------------------------------------------------------------------------
 # #446 -- cleanup defaults to the op's own `|cleanup` token
 # ---------------------------------------------------------------------------
+
 
 def test_the_skill_documents_cleanup_as_the_pipe_cleanup_token():
     assert "|cleanup" in _skill_text(), (
@@ -162,6 +164,7 @@ def test_tick_md_merge_step_names_cleanup_as_the_ops_own_token():
 # ---------------------------------------------------------------------------
 # #448 -- fleet size is a floor, not only a ceiling
 # ---------------------------------------------------------------------------
+
 
 def test_the_fleet_section_states_the_three_floor_states():
     collapsed = _collapse(_skill_text())

@@ -64,8 +64,12 @@ def test_filled_is_defined_on_both_axes():
 
 def test_under_filled_names_the_blocking_file_and_queued_issues():
     section = _fleet_section()
-    assert re.search(r"under-filled", section), "the under-filled state must still be named"
-    assert re.search(r"shared file|blocking file|already-claimed", section, re.IGNORECASE), (
+    assert re.search(r"under-filled", section), (
+        "the under-filled state must still be named"
+    )
+    assert re.search(
+        r"shared file|blocking file|already-claimed", section, re.IGNORECASE
+    ), (
         "an under-filled lane's receipt must name the shared/already-claimed file that "
         "blocked a further issue from joining it (#520)"
     )
@@ -100,5 +104,9 @@ def test_positive_control_old_wording_fails_the_axis_check():
         "lane; `under-filled` -- with the count and the reason; and `could-not-tell`."
     )
     assert not re.search(
-        r"every further open issue|further issue|second issue", old_wording, re.IGNORECASE
-    ), "the positive control itself must fail -- otherwise the check above verifies nothing"
+        r"every further open issue|further issue|second issue",
+        old_wording,
+        re.IGNORECASE,
+    ), (
+        "the positive control itself must fail -- otherwise the check above verifies nothing"
+    )

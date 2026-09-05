@@ -46,7 +46,9 @@ def _only():
     fix that printed two would otherwise be graded on whichever one happened to be
     last."""
     lines = list(doctor.FINDINGS)
-    assert len(lines) == 1, "check_memory must print exactly one line, got {!r}".format(lines)
+    assert len(lines) == 1, "check_memory must print exactly one line, got {!r}".format(
+        lines
+    )
     return lines[0]
 
 
@@ -64,7 +66,9 @@ def _stray(root):
     it goes, and no data dir yet because nothing has saved."""
     config_dir = root / ".claude" / "remember"
     config_dir.mkdir(parents=True)
-    (config_dir / "identity.md").write_text("I am nobody in particular.\n", encoding="utf-8")
+    (config_dir / "identity.md").write_text(
+        "I am nobody in particular.\n", encoding="utf-8"
+    )
     assert not (root / ".remember").exists()
     return config_dir
 
@@ -168,13 +172,16 @@ def test_an_unreadable_data_dir_is_not_reported_as_an_absent_identity(tmp_path):
         if not_denied:
             pytest.skip(
                 "cannot establish an unreadable directory here ({}); what went untested "
-                "is doctor's unreadable-store branch, not its absent branch".format(not_denied)
+                "is doctor's unreadable-store branch, not its absent branch".format(
+                    not_denied
+                )
             )
         doctor.check_memory(tmp_path, home=_home(tmp_path))
         state, message = _only()
         assert state == "WARN"
         assert "no identity.md" not in message, (
-            "an unreadable directory was reported as a read one that held nothing: " + message
+            "an unreadable directory was reported as a read one that held nothing: "
+            + message
         )
         assert "unknown" in message or "could not" in message, message
     finally:

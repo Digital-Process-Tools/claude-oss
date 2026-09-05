@@ -118,12 +118,16 @@ def test_step_uses_pwsh_and_excludes_workspace_and_runner_temp():
     step = _find_step(job, STEP_NAME)
     assert step is not None
     assert step.get("shell") == "pwsh", (
-        "Add-MpPreference is a PowerShell cmdlet; got shell: {!r}".format(step.get("shell"))
+        "Add-MpPreference is a PowerShell cmdlet; got shell: {!r}".format(
+            step.get("shell")
+        )
     )
     run = step.get("run", "")
     assert "Add-MpPreference" in run
     assert "github.workspace" in run, "the checkout itself must be excluded"
-    assert "RUNNER_TEMP" in run, "the runner temp dir must be excluded too -- that is where mktemp fixtures land"
+    assert "RUNNER_TEMP" in run, (
+        "the runner temp dir must be excluded too -- that is where mktemp fixtures land"
+    )
 
 
 @needs_yaml

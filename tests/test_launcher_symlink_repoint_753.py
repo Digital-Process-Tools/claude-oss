@@ -40,14 +40,18 @@ SCRIPT = _extract()
 def _run(link_path, resolved_root):
     return subprocess.run(
         [sys.executable, "-c", SCRIPT, str(link_path), str(resolved_root)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
     )
 
 
 def _install(root, version):
     install = root / "cache" / "dpt-plugins" / "oss" / version
     (install / "bin").mkdir(parents=True)
-    (install / "bin" / "oss-workspace").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (install / "bin" / "oss-workspace").write_text(
+        "#!/bin/sh\nexit 0\n", encoding="utf-8"
+    )
     return install
 
 

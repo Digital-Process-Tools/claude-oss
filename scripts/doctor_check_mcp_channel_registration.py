@@ -122,7 +122,9 @@ def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
     which = shutil.which if which is None else which
     run = subprocess.run if run is None else run
 
-    precomputed = server == CHANNEL_SERVER and env.get("OSS_WORKSPACE_MCP_CHECKED") == "1"
+    precomputed = (
+        server == CHANNEL_SERVER and env.get("OSS_WORKSPACE_MCP_CHECKED") == "1"
+    )
     returncode = None
     if precomputed:
         try:
@@ -150,10 +152,16 @@ def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
                 timeout=20,
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            return "could-not-ask", "`claude mcp get {}` did not run ({})".format(server, exc)
+            return "could-not-ask", "`claude mcp get {}` did not run ({})".format(
+                server, exc
+            )
         returncode = completed.returncode
         stdout = completed.stdout
-        text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+        text = (
+            stdout.decode("utf-8", "replace")
+            if isinstance(stdout, bytes)
+            else str(stdout or "")
+        )
 
     if returncode != 0:
         return "not-registered", ""
@@ -178,14 +186,20 @@ def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
         # output, which reflects `~/.claude.json`; that file is JSON, and JSON can
         # spell a null. This must not raise: doctor.py's whole contract is exit 0,
         # one VERDICT line, never a traceback out of a malformed registration.
-        return "could-not-ask", "the registered path could not be checked (embedded null byte)"
+        return (
+            "could-not-ask",
+            "the registered path could not be checked (embedded null byte)",
+        )
     except OSError as exc:
-        return "target-unreadable", "{} ({})".format(target, exc.strerror or exc.__class__.__name__)
+        return "target-unreadable", "{} ({})".format(
+            target, exc.strerror or exc.__class__.__name__
+        )
     return "registered", target
 
 
-
-def check_mcp_channel_registration(server=None, run=None, which=None, env=None, precomputed=None):
+def check_mcp_channel_registration(
+    server=None, run=None, which=None, env=None, precomputed=None
+):
     """One line, in every state -- see `mcp_channel_registration_state`.
 
     OK here never means "the board is live". This reads a registration and, when
@@ -206,8 +220,11 @@ def check_mcp_channel_registration(server=None, run=None, which=None, env=None, 
     check with no arguments, and each reads the registration independently.
     """
     state, detail = (
-        precomputed if precomputed is not None
-        else doctor.mcp_channel_registration_state(server=server, run=run, which=which, env=env)
+        precomputed
+        if precomputed is not None
+        else doctor.mcp_channel_registration_state(
+            server=server, run=run, which=which, env=env
+        )
     )
     label = server or CHANNEL_SERVER
     if state == "could-not-ask":
@@ -215,9 +232,7 @@ def check_mcp_channel_registration(server=None, run=None, which=None, env=None, 
             "WARN",
             "channel MCP registration: {} ({}), so whether {} is registered is "
             "unknown -- not answered as unregistered, which would send you to "
-            "register a server that may already be there.".format(
-                detail, label, label
-            ),
+            "register a server that may already be there.".format(detail, label, label),
         )
         return
     if state == "not-registered":
@@ -268,6 +283,7 @@ def check_mcp_channel_registration(server=None, run=None, which=None, env=None, 
         "consumer starts, that bun is on PATH, or that anything is listening on "
         "the socket.".format(label, detail),
     )
+
 
 # --- pre-launch channel-consumer census (#810) --------------------------------
 #
@@ -410,9 +426,15 @@ def channel_consumer_census_state(run=None, which=None, env=None):
     except (OSError, subprocess.SubprocessError) as exc:
         return "could-not-ask", "`claude mcp list` did not run ({})".format(exc)
     if completed.returncode != 0:
-        return "could-not-ask", "`claude mcp list` exited {}".format(completed.returncode)
+        return "could-not-ask", "`claude mcp list` exited {}".format(
+            completed.returncode
+        )
     stdout = completed.stdout
-    text = stdout.decode("utf-8", "replace") if isinstance(stdout, bytes) else str(stdout or "")
+    text = (
+        stdout.decode("utf-8", "replace")
+        if isinstance(stdout, bytes)
+        else str(stdout or "")
+    )
     names = channel_consumer_names(text)
     if len(names) >= 2:
         return "collision", names
@@ -463,4 +485,3 @@ def check_channel_consumer_census(run=None, which=None, env=None):
         "notifiers/claude-channel/channel.ts, so no socket collision to "
         "declare.".format(1 if state == "single" else 0),
     )
-

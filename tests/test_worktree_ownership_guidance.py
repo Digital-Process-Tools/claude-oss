@@ -77,7 +77,11 @@ def _bullet(text, opener):
     when the real finding is that this reader stopped matching the file.
     """
     lines = text.splitlines()
-    starts = [i for i, line in enumerate(lines) if line.startswith("- ") and opener in line.lower()]
+    starts = [
+        i
+        for i, line in enumerate(lines)
+        if line.startswith("- ") and opener in line.lower()
+    ]
     if len(starts) != 1:
         raise AssertionError(
             "expected exactly one bullet opening with %r, found %d -- "
@@ -85,7 +89,9 @@ def _bullet(text, opener):
         )
     start = starts[0]
     end = start + 1
-    while end < len(lines) and not (lines[end].startswith("- ") or lines[end].startswith("#")):
+    while end < len(lines) and not (
+        lines[end].startswith("- ") or lines[end].startswith("#")
+    ):
         end += 1
     return "\n".join(lines[start:end])
 

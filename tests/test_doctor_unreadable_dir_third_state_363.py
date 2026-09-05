@@ -176,7 +176,9 @@ def test_check_jit_rules_genuinely_absent_still_reports_no_rules(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_project_dir_unreadable_root_reports_unknown_not_fail(monkeypatch, tmp_path):
+def test_resolve_project_dir_unreadable_root_reports_unknown_not_fail(
+    monkeypatch, tmp_path
+):
     """#363's own established fact: `is_dir()` on a mode-000 *target*
     succeeds, since `stat` needs execute permission on the parent, not the
     target -- so #341's own reproduction never reaches this line, and the
@@ -206,7 +208,9 @@ def test_resolve_project_dir_genuinely_absent_root_still_fails(tmp_path):
     assert any("not a directory" in message for _, message in findings), findings
 
 
-def test_resolve_project_dir_unreadable_git_check_reports_unknown(monkeypatch, tmp_path):
+def test_resolve_project_dir_unreadable_git_check_reports_unknown(
+    monkeypatch, tmp_path
+):
     """The narrow sibling at the same call site: `(chosen / ".git").exists()`
     raising must not crash `resolve_project_dir` and must not silently read
     as "no .git here".
@@ -214,7 +218,9 @@ def test_resolve_project_dir_unreadable_git_check_reports_unknown(monkeypatch, t
     target = tmp_path / "a-repo"
     target.mkdir()
     git_marker = target / ".git"
-    _raise_for(monkeypatch, "exists", git_marker, PermissionError(errno.EACCES, "denied"))
+    _raise_for(
+        monkeypatch, "exists", git_marker, PermissionError(errno.EACCES, "denied")
+    )
 
     chosen, findings = doctor.resolve_project_dir(str(target), None, str(tmp_path))
     assert chosen == target
@@ -240,7 +246,9 @@ def test_resolve_project_dir_git_absent_still_warns(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_merge_permission_state_unreadable_candidate_reaches_unknown_bucket(monkeypatch, tmp_path):
+def test_merge_permission_state_unreadable_candidate_reaches_unknown_bucket(
+    monkeypatch, tmp_path
+):
     """The function already has an `unknown` bucket for exactly this kind of
     failure and never reached it (#363). An `.exists()` raise on one
     candidate must land there, not be silently `continue`d past.
@@ -293,22 +301,24 @@ def test_jit_hook_roots_survives_one_unreadable_candidate(monkeypatch, tmp_path)
         json.dumps(
             {
                 "plugins": {
-                    "{}@marketplace".format(doctor.JIT_PLUGIN): [
-                        {"version": version}
-                    ]
+                    "{}@marketplace".format(doctor.JIT_PLUGIN): [{"version": version}]
                 }
             }
         ),
         encoding="utf-8",
     )
 
-    roots, resolved_version = doctor.jit_hook_roots(record=str(record), cache_root=str(cache))
+    roots, resolved_version = doctor.jit_hook_roots(
+        record=str(record), cache_root=str(cache)
+    )
     assert resolved_version == version, resolved_version
     assert good in roots, roots
     assert bad not in roots, roots
 
 
-def test_jit_layer_verdict_survives_one_unreadable_dimension_candidate(monkeypatch, tmp_path):
+def test_jit_layer_verdict_survives_one_unreadable_dimension_candidate(
+    monkeypatch, tmp_path
+):
     project_dir = tmp_path / "project"
     layer = "01-oss"
     good = project_dir / doctor.JIT_RULES_DIR / "vocabulary" / layer
@@ -323,7 +333,9 @@ def test_jit_layer_verdict_survives_one_unreadable_dimension_candidate(monkeypat
     # outer `except OSError`, which discards the readable candidate along
     # with the unreadable one and reports "would not be listed" -- would
     # raise/mis-report here if the per-candidate filter did nothing.
-    state, detail = doctor._jit_layer_verdict(project_dir, layer, record=None, cache_root=None)
+    state, detail = doctor._jit_layer_verdict(
+        project_dir, layer, record=None, cache_root=None
+    )
     assert not (state == "could-not-determine" and "would not be listed" in detail), (
         state,
         detail,

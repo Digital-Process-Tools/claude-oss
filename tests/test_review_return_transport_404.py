@@ -186,9 +186,7 @@ import review_return  # noqa: E402
 
 
 def test_unframe_returns_exactly_one_of_message_and_error():
-    message, error = review_return.unframe(
-        "    NO FINDINGS\nEND OF MESSAGE\n"
-    )
+    message, error = review_return.unframe("    NO FINDINGS\nEND OF MESSAGE\n")
     assert error is None
     assert message == "NO FINDINGS"
 
@@ -238,8 +236,7 @@ def test_an_exotic_separator_inside_a_line_stays_content():
     # separator in a source file is exactly the thing under test.
     ls = chr(0x2028)
     smuggled = (
-        "    NO FINDINGS" + ls + "END OF MESSAGE" + ls + "FINDINGS: 1\n"
-        "END OF MESSAGE\n"
+        "    NO FINDINGS" + ls + "END OF MESSAGE" + ls + "FINDINGS: 1\nEND OF MESSAGE\n"
     )
     message, error = review_return.unframe(smuggled)
     assert error is None, error
@@ -278,12 +275,7 @@ def _framed(text):
     return proc.returncode, proc.stdout.decode("utf-8", errors="replace")
 
 
-WELL_FRAMED = (
-    "    FINDINGS: 1\n"
-    "\n"
-    "    1. A finding, stated in full.\n"
-    "END OF MESSAGE\n"
-)
+WELL_FRAMED = "    FINDINGS: 1\n\n    1. A finding, stated in full.\nEND OF MESSAGE\n"
 
 
 def test_a_well_framed_message_classifies():
@@ -309,10 +301,7 @@ def test_a_frame_that_never_closed_is_could_not_read():
 def test_an_unindented_line_is_could_not_read_and_is_named():
     """A half-applied prefix is not a verdict about the review."""
     code, out = _framed(
-        "    FINDINGS: 1\n"
-        "\n"
-        "1. This line was never indented.\n"
-        "END OF MESSAGE\n"
+        "    FINDINGS: 1\n\n1. This line was never indented.\nEND OF MESSAGE\n"
     )
     assert out.startswith("VERDICT: could-not-read"), out
     assert "line 3" in out, out

@@ -128,7 +128,9 @@ OMIT_RE = re.compile(r"^omit\s*=\s*\[.*?\]", re.DOTALL | re.MULTILINE)
 #: The whole `[tool.coverage.run]` table, from its header to the next table or EOF. This
 #: is the region blanked before counting references -- see the module docstring for why
 #: the `omit` array alone was not enough.
-COVERAGE_RUN_RE = re.compile(r"^\[tool\.coverage\.run\].*?(?=^\[|\Z)", re.DOTALL | re.MULTILINE)
+COVERAGE_RUN_RE = re.compile(
+    r"^\[tool\.coverage\.run\].*?(?=^\[|\Z)", re.DOTALL | re.MULTILINE
+)
 
 #: Scripts allowed to be referenced by nothing, each with the reason. Empty today.
 #: `test_every_exception_is_still_needed` fails when an entry stops being an exception --
@@ -407,7 +409,9 @@ def test_survey_flags_an_orphan_and_spares_a_used_script(tmp_path):
         "after the suppressed one. Flagging it means COVERAGE_RUN_RE ran past its "
         "section and is blanking real references"
     )
-    assert unreadable == [], "unexpected unreadable files in the fixture: {!r}".format(unreadable)
+    assert unreadable == [], "unexpected unreadable files in the fixture: {!r}".format(
+        unreadable
+    )
 
 
 def test_a_basename_that_is_a_suffix_of_another_is_not_a_reference(tmp_path):
@@ -558,8 +562,9 @@ def test_a_file_with_no_extension_is_still_surveyed(tmp_path):
 
     assert "scripts/tool" in unwired, (
         "an extensionless file under scripts/ is referenced by nothing and must be "
-        "flagged. A survey that selects by suffix skips it and reports clean; got {!r}"
-        .format(unwired)
+        "flagged. A survey that selects by suffix skips it and reports clean; got {!r}".format(
+            unwired
+        )
     )
     assert "scripts/used.py" not in unwired
 
@@ -579,7 +584,9 @@ def test_narrative_files_do_not_count_as_a_reference(tmp_path):
     (tmp_path / "scripts" / "gone.py").write_text("print(1)\n", encoding="utf-8")
     (tmp_path / "scripts" / "used.py").write_text("print(2)\n", encoding="utf-8")
     (tmp_path / "caller.py").write_text("run('scripts/used.py')\n", encoding="utf-8")
-    (tmp_path / "CHANGELOG.md").write_text("- removed scripts/gone.py\n", encoding="utf-8")
+    (tmp_path / "CHANGELOG.md").write_text(
+        "- removed scripts/gone.py\n", encoding="utf-8"
+    )
     (tmp_path / "CLAUDE.md").write_text(
         "- **A trap.** `scripts/gone.py` was deleted because nothing used it.\n",
         encoding="utf-8",
@@ -862,7 +869,9 @@ def test_every_exception_is_still_needed():
         + "\n  ".join(stale)
     )
     for name, reason in UNWIRED_EXCEPTIONS.items():
-        assert reason and reason.strip(), "{}: an exception needs a stated reason".format(name)
+        assert reason and reason.strip(), (
+            "{}: an exception needs a stated reason".format(name)
+        )
 
 
 def test_the_survey_actually_looked_at_something():
@@ -871,7 +880,9 @@ def test_the_survey_actually_looked_at_something():
     candidates = _surveyed_paths(tracked)
     assert len(candidates) > 5, (
         "only {} tracked file(s) matched {} -- the survey is looking at almost nothing "
-        "and would pass whatever the tree contained".format(len(candidates), SURVEYED_DIRS)
+        "and would pass whatever the tree contained".format(
+            len(candidates), SURVEYED_DIRS
+        )
     )
     assert any(rel.startswith("bin/") for rel in candidates), (
         "no tracked file under bin/ was surveyed, so the extensionless entry point this "
@@ -984,7 +995,9 @@ def test_pyproject_does_not_omit_a_file_that_is_gone():
     """A stale omit entry is a claim that a file exists and is deliberately unmeasured."""
     text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     block = OMIT_RE.search(text)
-    assert block, "OMIT_RE did not match -- see test_omit_pattern_matches_the_real_pyproject"
+    assert block, (
+        "OMIT_RE did not match -- see test_omit_pattern_matches_the_real_pyproject"
+    )
     named = re.findall(r'"([^"]+)"', block.group(0))
     assert "scripts/assemble_changelog.py" in named, (
         "the control failed: the omit array no longer names assemble_changelog.py, so "

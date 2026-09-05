@@ -72,7 +72,9 @@ def _table_rows(text):
         if line.startswith("| --- "):
             continue
         rows.append(line)
-    assert rows, "table anchor found but no data rows followed -- table moved or was renamed"
+    assert rows, (
+        "table anchor found but no data rows followed -- table moved or was renamed"
+    )
     return rows
 
 
@@ -90,7 +92,9 @@ def _git_mode(rel_path):
         capture_output=True,
         text=True,
     ).stdout.strip()
-    assert out, "git ls-files -s returned nothing for {0} -- not tracked?".format(rel_path)
+    assert out, "git ls-files -s returned nothing for {0} -- not tracked?".format(
+        rel_path
+    )
     return out.split()[0]
 
 
@@ -112,7 +116,7 @@ def test_unquoted_plugin_root_is_detected_when_present():
     the wrong reason forever.
     """
     offending_row = (
-        '| dispatching | `${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py '
+        "| dispatching | `${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py "
         '<primary> <issue1,issue2,...> "<phrase>"` |'
     )
     assert _UNQUOTED_ROOT.search(offending_row), (
@@ -148,7 +152,9 @@ def test_script_invocations_match_their_own_executable_bit():
         executable = mode == "100755"
         if invoked_directly and not executable:
             mismatches.append(
-                "{0} is invoked directly but is mode {1} (not executable)".format(rel, mode)
+                "{0} is invoked directly but is mode {1} (not executable)".format(
+                    rel, mode
+                )
             )
     assert not mismatches, "; ".join(mismatches)
 
@@ -165,7 +171,9 @@ def test_fleet_label_row_matches_dispatch_md_invocation():
 
     dispatch_text = DISPATCH_MD.read_text(encoding="utf-8")
     dispatch_calls = [
-        m for m in _SCRIPT_CALL.finditer(dispatch_text) if m.group(2) == "fleet_label.py"
+        m
+        for m in _SCRIPT_CALL.finditer(dispatch_text)
+        if m.group(2) == "fleet_label.py"
     ]
     assert dispatch_calls, "no fleet_label.py invocation found in dispatch.md"
     dispatch_call = dispatch_calls[0]
@@ -208,7 +216,9 @@ def _unquoted_plugin_root_script_refs(text):
 
 def test_dispatch_md_quotes_every_plugin_root_script_reference():
     """Must-not-fire: no unquoted ${CLAUDE_PLUGIN_ROOT}/scripts/... left in dispatch.md."""
-    offenders = _unquoted_plugin_root_script_refs(DISPATCH_MD.read_text(encoding="utf-8"))
+    offenders = _unquoted_plugin_root_script_refs(
+        DISPATCH_MD.read_text(encoding="utf-8")
+    )
     assert not offenders, (
         "unquoted ${{CLAUDE_PLUGIN_ROOT}}/scripts/... in dispatch.md -- word-splits "
         "on a plugin root containing a space: {0}".format(offenders)

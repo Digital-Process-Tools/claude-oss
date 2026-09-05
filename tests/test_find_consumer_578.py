@@ -41,10 +41,10 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
 
-ACQUIRE_START = "channel_script=\"\"\n"
-ACQUIRE_GUARD = "if [ -n \"$python_bin\" ]; then"
+ACQUIRE_START = 'channel_script=""\n'
+ACQUIRE_GUARD = 'if [ -n "$python_bin" ]; then'
 DECIDE_START = "channel_ready=0\n"
-DECIDE_GUARD = "if [ \"$find_consumer_status\" -ne 0 ]; then"
+DECIDE_GUARD = 'if [ "$find_consumer_status" -ne 0 ]; then'
 
 
 def _extract_block(start_marker, guard_line, launcher):
@@ -56,8 +56,7 @@ def _extract_block(start_marker, guard_line, launcher):
     if start == -1:
         pytest.fail(
             "bin/oss-workspace no longer contains the expected marker %r -- a "
-            "block that went unchecked must not read as one that agreed"
-            % start_marker
+            "block that went unchecked must not read as one that agreed" % start_marker
         )
     guard_pos = launcher.find(guard_line, start)
     if guard_pos == -1:
@@ -152,8 +151,8 @@ def _run_acquire_block(tmp_path, registry_content, python_bin=None):
         "set -eu\n"
         "python_bin=%s\n"
         "%s\n"
-        "echo \"CHANNEL_SCRIPT:[$channel_script]\"\n"
-        "echo \"FIND_CONSUMER_STATUS:[$find_consumer_status]\"\n"
+        'echo "CHANNEL_SCRIPT:[$channel_script]"\n'
+        'echo "FIND_CONSUMER_STATUS:[$find_consumer_status]"\n'
         % (_sh_single_quote(python_bin), _extract_acquire_block()),
         encoding="utf-8",
     )
@@ -163,18 +162,25 @@ def _run_acquire_block(tmp_path, registry_content, python_bin=None):
     env["HOMEDRIVE"] = ""
     env["HOMEPATH"] = str(home)
     verify = subprocess.run(
-        [sys.executable, "-c", "import os,sys; sys.stdout.write(os.path.expanduser(chr(126)))"],
+        [
+            sys.executable,
+            "-c",
+            "import os,sys; sys.stdout.write(os.path.expanduser(chr(126)))",
+        ],
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
         universal_newlines=True,
     )
     resolved = verify.stdout
-    if os.path.normcase(os.path.normpath(resolved)) != os.path.normcase(os.path.normpath(str(home))):
+    if os.path.normcase(os.path.normpath(resolved)) != os.path.normcase(
+        os.path.normpath(str(home))
+    ):
         pytest.skip(
             "os.path.expanduser resolved to %r instead of the fixture's %r "
             "on this platform (python %s) -- the HOME/USERPROFILE redirect did "
-            "not take, so this shape is untested here" % (resolved, str(home), sys.version.split()[0])
+            "not take, so this shape is untested here"
+            % (resolved, str(home), sys.version.split()[0])
         )
     return subprocess.run(
         ["sh", str(script)],
@@ -217,9 +223,9 @@ def test_a_well_formed_registry_with_the_consumer_present_is_found(tmp_path):
     consumer_dir.mkdir(parents=True)
     consumer_path = consumer_dir / "channel.ts"
     consumer_path.write_text("// stub\n", encoding="utf-8")
-    registry = json.dumps({
-        "plugins": {"supertool@example": [{"installPath": str(install_dir)}]}
-    })
+    registry = json.dumps(
+        {"plugins": {"supertool@example": [{"installPath": str(install_dir)}]}}
+    )
     done = _run_acquire_block(tmp_path, registry)
     assert done.returncode == 0, (done.returncode, done.stdout, done.stderr)
     assert "FIND_CONSUMER_STATUS:[0]" in done.stdout, done.stdout
@@ -238,8 +244,8 @@ def _run_decide_block(find_consumer_status, channel_script="", channel_registere
         "find_consumer_status=%s\n"
         "channel_script=%s\n"
         "channel_registered=%s\n"
-        "registered_command=\"\"\n"
-        "registered_args=\"\"\n"
+        'registered_command=""\n'
+        'registered_args=""\n'
         "%s\n"
         % (
             _sh_single_quote("oss-channel"),
@@ -274,7 +280,9 @@ def test_a_genuine_absence_still_reports_not_found(tmp_path):
     that simply found nothing must still get the ORIGINAL "was not found"
     sentence, unaffected by the new branch above it.
     """
-    done = _run_decide_block(find_consumer_status=0, channel_script="", channel_registered=0)
+    done = _run_decide_block(
+        find_consumer_status=0, channel_script="", channel_registered=0
+    )
     assert done.returncode == 0, (done.returncode, done.stdout, done.stderr)
     assert "was not found in" in done.stderr, done.stderr
     assert "UNKNOWN" not in done.stderr, done.stderr

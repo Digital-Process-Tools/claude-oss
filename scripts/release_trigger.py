@@ -194,7 +194,9 @@ def merged_prs_condition(repo, threshold, delta=None):
         return _condition(
             "merged_prs",
             COULD_NOT_EVALUATE,
-            detail="release_delta: {0}".format(payload.get("reason") or "could not run"),
+            detail="release_delta: {0}".format(
+                payload.get("reason") or "could not run"
+            ),
         )
     if payload["state"] == release_delta.STATE_FIRST_RELEASE:
         return _condition(
@@ -257,7 +259,9 @@ def user_visible_soak_condition(repo, soak_hours, fragment_dir, now=None):
     """
     if soak_hours is None:
         return _condition(
-            "user_visible_soak", NOT_MET, detail="no release.triggers.soak_hours declared"
+            "user_visible_soak",
+            NOT_MET,
+            detail="no release.triggers.soak_hours declared",
         )
     rows, detail = _fragment_sections(fragment_dir)
     if rows is None:
@@ -307,7 +311,9 @@ def user_visible_soak_condition(repo, soak_hours, fragment_dir, now=None):
             continue
         when = _parse_stamp(stamp)
         if when is None:
-            unreadable.append("{0}: unparseable commit date {1!r}".format(path.name, stamp))
+            unreadable.append(
+                "{0}: unparseable commit date {1!r}".format(path.name, stamp)
+            )
             continue
         if oldest is None or when < oldest[1]:
             oldest = (path, when, section)
@@ -433,7 +439,9 @@ def receipt(payload):
             )
         )
     elif payload["state"] == STATE_FIRED:
-        lines.append("verdict          : FIRED on {0}".format(", ".join(payload["fired"])))
+        lines.append(
+            "verdict          : FIRED on {0}".format(", ".join(payload["fired"]))
+        )
         if payload["unevaluated"]:
             lines.append(
                 "note             : {0} went unread; the release proceeds on the "

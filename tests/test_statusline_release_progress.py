@@ -62,7 +62,7 @@ def test_the_typical_size_is_the_median_of_the_recent_gaps():
     commits = _commits(60)
     tags = {
         commits[3]: ["v0.4.0"],
-        commits[8]: ["v0.3.0"],   # gap 5
+        commits[8]: ["v0.3.0"],  # gap 5
         commits[28]: ["v0.2.0"],  # gap 20
         commits[38]: ["v0.1.0"],  # gap 10
     }
@@ -140,8 +140,14 @@ def test_the_field_renders_both_numbers():
 
 
 def test_the_field_marks_each_unknown_half_separately():
-    assert statusline._release_field({"state": "partial", "since": 4, "typical": None}) == "rel 4/?"
-    assert statusline._release_field({"state": "unknown", "since": None, "typical": None}) == "rel ?/?"
+    assert (
+        statusline._release_field({"state": "partial", "since": 4, "typical": None})
+        == "rel 4/?"
+    )
+    assert (
+        statusline._release_field({"state": "unknown", "since": None, "typical": None})
+        == "rel ?/?"
+    )
     assert statusline._release_field(None) == "rel ?/?"
 
 

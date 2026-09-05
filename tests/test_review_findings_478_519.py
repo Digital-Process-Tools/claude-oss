@@ -89,7 +89,8 @@ def test_doctor_check_config_survives_an_unhashable_authority(tmp_path):
     # Would raise TypeError here if the code did nothing.
     config = doctor.check_config(str(tmp_path))
     assert any(
-        state == "FAIL" and "release.authority" in message for state, message in doctor.FINDINGS
+        state == "FAIL" and "release.authority" in message
+        for state, message in doctor.FINDINGS
     ), doctor.FINDINGS
 
 
@@ -121,12 +122,16 @@ def test_matched_elsewhere_does_not_fire_when_our_own_version_is_unreadable(tmp_
     plugin_root = _plugin_root_no_manifest(tmp_path, content=b"same bytes\n")
     path_dir, _target = _stale_cache_entry(tmp_path, b"same bytes\n", version="0.7.0")
 
-    state, detail = doctor.oss_workspace_launcher_state(plugin_root=plugin_root, path=path_dir)
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=path_dir
+    )
 
     assert state != "matched-elsewhere", (state, detail)
 
 
-def test_check_oss_workspace_launcher_does_not_claim_a_different_install_when_unknown(tmp_path):
+def test_check_oss_workspace_launcher_does_not_claim_a_different_install_when_unknown(
+    tmp_path,
+):
     plugin_root = _plugin_root_no_manifest(tmp_path, content=b"same bytes\n")
     path_dir, _target = _stale_cache_entry(tmp_path, b"same bytes\n", version="0.7.0")
 

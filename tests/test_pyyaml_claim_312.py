@@ -65,7 +65,9 @@ def test_the_scan_catches_a_planted_claim():
     Without this, a scan that matched nothing could mean either 'the claim is gone' or
     'the pattern is wrong' -- the same rendering this repository is named after.
     """
-    planted = "Deliberately not a YAML parse -- pyyaml is not a dependency of this repo."
+    planted = (
+        "Deliberately not a YAML parse -- pyyaml is not a dependency of this repo."
+    )
     assert STALE_CLAIM.search(planted), "the control string itself should match"
 
 

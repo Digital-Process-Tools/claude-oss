@@ -112,7 +112,9 @@ def test_check_auto_update_updated_message_names_reload_plugins(tmp_path, monkey
     receipt's `detail`) must also name `/reload-plugins`, since this is the surface a
     maintainer reads on every session start (#81's own bill)."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(
         plugin_update,
         "read_receipt",
@@ -128,12 +130,16 @@ def test_check_auto_update_updated_message_names_reload_plugins(tmp_path, monkey
     assert "restart" in message, message
 
 
-def test_check_auto_update_updated_message_still_requires_a_restart(tmp_path, monkeypatch):
+def test_check_auto_update_updated_message_still_requires_a_restart(
+    tmp_path, monkeypatch
+):
     """The must-not-fire control: the message must not read as though
     `/reload-plugins` alone closes the loop -- it must still say a restart is needed
     for what a reload cannot reach (command text already injected into the turn)."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(
         plugin_update,
         "read_receipt",

@@ -44,7 +44,9 @@ def test_referenced_scripts_exist():
             target = match.group(1)
             references.append((path.name, target))
             if not (REPO_ROOT / target).exists():
-                missing.append("{}: references {} which does not exist".format(path.name, target))
+                missing.append(
+                    "{}: references {} which does not exist".format(path.name, target)
+                )
 
     assert references, (
         "no ${CLAUDE_PLUGIN_ROOT}/... references found in commands/. Either the commands "
@@ -65,7 +67,8 @@ def test_commands_use_the_plugin_root_variable_for_scripts():
             if "${CLAUDE_PLUGIN_ROOT}" not in stripped:
                 offenders.append("{}:{}: {}".format(path.name, number, stripped))
     assert not offenders, (
-        "script invocations must be rooted at ${CLAUDE_PLUGIN_ROOT}:\n  " + "\n  ".join(offenders)
+        "script invocations must be rooted at ${CLAUDE_PLUGIN_ROOT}:\n  "
+        + "\n  ".join(offenders)
     )
 
 
@@ -233,12 +236,16 @@ def _writing_scaffold_invocations(name, text):
             tokens = shlex.split(line, comments=True)
         except ValueError as error:
             offenders.append(
-                "{}:{}: unparseable arguments ({}): {}".format(name, number, error, line)
+                "{}:{}: unparseable arguments ({}): {}".format(
+                    name, number, error, line
+                )
             )
             continue
         hit = [flag for flag in WRITING_FLAGS if flag in tokens]
         if hit:
-            offenders.append("{}:{}: passes {}: {}".format(name, number, " and ".join(hit), line))
+            offenders.append(
+                "{}:{}: passes {}: {}".format(name, number, " and ".join(hit), line)
+            )
     return offenders
 
 
@@ -473,7 +480,9 @@ def _forbids_a_direct_push_to_main_with_no_exception(text):
     push to the default branch the loop's own call -- and no content is exempt,
     `trap.d/` fragments included."""
     return bool(
-        re.search(r"[Cc]ommitting anything to the default branch outside a pull request", text)
+        re.search(
+            r"[Cc]ommitting anything to the default branch outside a pull request", text
+        )
     ) and bool(re.search(r"no content exception, `trap\.d/` fragments included", text))
 
 
@@ -508,9 +517,9 @@ def _enumerates_both_sides_of_the_boundary(text):
         return False
     ours = text.split(LOOP_LIST_LEAD, 1)[1].split(STOP_LIST_LEAD, 1)[0]
     theirs = text.split(STOP_LIST_LEAD, 1)[1]
-    return all(act in ours and act not in theirs for act in ACTS_THE_LOOP_TAKES) and all(
-        act in theirs and act not in ours for act in ACTS_THAT_STOP
-    )
+    return all(
+        act in ours and act not in theirs for act in ACTS_THE_LOOP_TAKES
+    ) and all(act in theirs and act not in ours for act in ACTS_THAT_STOP)
 
 
 def _says_a_gate_is_not_a_question(text):
@@ -527,9 +536,10 @@ def _says_deciding_replaces_asking(text):
 
 
 def _bounds_when_a_question_is_right(text):
-    return bool(
-        re.search(r"genuinely not in the repository and the two branches", text)
-    ) and "tag_pattern: null" in text
+    return (
+        bool(re.search(r"genuinely not in the repository and the two branches", text))
+        and "tag_pattern: null" in text
+    )
 
 
 def _says_deferring_is_a_stall(text):
@@ -540,9 +550,9 @@ def _says_deferring_is_a_stall(text):
 
 def _says_undetermined_is_not_declined(text):
     """The third state, pointed at the loop's own authority."""
-    return bool(re.search(r"could not determine whether this was mine to decide", text)) and bool(
-        re.search(r"must never render as", text, re.I)
-    )
+    return bool(
+        re.search(r"could not determine whether this was mine to decide", text)
+    ) and bool(re.search(r"must never render as", text, re.I))
 
 
 def _names_the_readonly_watcher_probe(text):
@@ -608,9 +618,9 @@ def _says_the_middle_state_adds_no_coverage(text):
 
 
 def _requires_the_report_to_name_the_middle_state(text):
-    return bool(re.search(r"[Nn]ame the middle state in the release report", text)) and bool(
-        re.search(r"where its coverage did come from", text)
-    )
+    return bool(
+        re.search(r"[Nn]ame the middle state in the release report", text)
+    ) and bool(re.search(r"where its coverage did come from", text))
 
 
 def _forbids_remembering_the_trigger_verdict(text):
@@ -620,9 +630,9 @@ def _forbids_remembering_the_trigger_verdict(text):
     blocking one with nothing announcing it, so a verdict carried forward from
     the last release waves through the exact case the gate exists for.
     """
-    return bool(re.search(r"[Rr]e-read it from the op on every release", text)) and bool(
-        re.search(r"never carry the verdict forward", text)
-    )
+    return bool(
+        re.search(r"[Rr]e-read it from the op on every release", text)
+    ) and bool(re.search(r"never carry the verdict forward", text))
 
 
 def _reads_the_branch_op_in_three_states(text):
@@ -666,22 +676,48 @@ COMPATIBILITY_BULLET = "- Compatibility: breaking|compatible - <reason>"
 def _sources_the_compatibility_syntax_without_promising_a_readme(text):
     if FRAGMENTS_README_PATH_RE.search(text):
         return False
-    return COMPATIBILITY_BULLET in text and bool(re.search(r"may not document it at all", text))
+    return COMPATIBILITY_BULLET in text and bool(
+        re.search(r"may not document it at all", text)
+    )
 
 
 # (label, predicate, pattern whose lines carry the fact)
 SETUP_FACTS = [
-    ("identity.md describes the agent", _names_the_agent_as_identity_subject, r"who the agent is"),
-    ("an identity example is pointed at", _points_at_an_identity_example, r"identity\.example\.md"),
-    ("scaffold is the next step", _names_scaffold_as_the_next_step, r"/oss:scaffold|tracked file"),
+    (
+        "identity.md describes the agent",
+        _names_the_agent_as_identity_subject,
+        r"who the agent is",
+    ),
+    (
+        "an identity example is pointed at",
+        _points_at_an_identity_example,
+        r"identity\.example\.md",
+    ),
+    (
+        "scaffold is the next step",
+        _names_scaffold_as_the_next_step,
+        r"/oss:scaffold|tracked file",
+    ),
     (
         "the merge rule's file is named",
         _names_the_settings_file_for_the_merge_rule,
         r"settings\.local\.json",
     ),
-    ("both path spellings are covered", _covers_both_path_spellings, r"\./supertool|absolute path"),
-    ("the two merge strings differ", _says_the_two_merge_strings_differ, r"different .{0,40}string"),
-    ("the harness gate is the fourth", _says_the_harness_gate_is_a_fourth_one, r"fourth"),
+    (
+        "both path spellings are covered",
+        _covers_both_path_spellings,
+        r"\./supertool|absolute path",
+    ),
+    (
+        "the two merge strings differ",
+        _says_the_two_merge_strings_differ,
+        r"different .{0,40}string",
+    ),
+    (
+        "the harness gate is the fourth",
+        _says_the_harness_gate_is_a_fourth_one,
+        r"fourth",
+    ),
     ("the scaffold plan is run, not named", _runs_the_scaffold_plan, r"scaffold\.py"),
     (
         "a plan that could not run is not a failed setup",
@@ -696,7 +732,11 @@ SETUP_FACTS = [
 ]
 
 SCAFFOLD_FACTS = [
-    ("tick is the next step", _names_tick_as_the_next_step, r"/oss:tick|furniture is in place"),
+    (
+        "tick is the next step",
+        _names_tick_as_the_next_step,
+        r"/oss:tick|furniture is in place",
+    ),
     (
         "the tick seam cannot be previewed",
         _says_the_tick_seam_cannot_be_previewed,
@@ -705,13 +745,21 @@ SCAFFOLD_FACTS = [
 ]
 
 TICK_FACTS = [
-    ("the watcher probe is run, not named", _orders_the_watcher_probe, r"radar:--state"),
+    (
+        "the watcher probe is run, not named",
+        _orders_the_watcher_probe,
+        r"radar:--state",
+    ),
     (
         "an unread channel is not a quiet one",
         _says_an_unread_channel_is_not_a_quiet_one,
         r"not a quiet channel|forwarded is not delivered",
     ),
-    ("the bare heal is run, not named", _orders_the_bare_radar_heal, r"supertool 'radar'"),
+    (
+        "the bare heal is run, not named",
+        _orders_the_bare_radar_heal,
+        r"supertool 'radar'",
+    ),
     (
         "the bare run has its own three outcomes",
         _carries_the_bare_radar_outcomes,
@@ -727,7 +775,11 @@ TICK_FACTS = [
         _says_an_empty_poller_list_is_not_an_absent_fleet,
         r"pollers\s*:\s*none|the second answer, not the first",
     ),
-    ("the worktree board is run, not named", _orders_the_worktree_board, r"git-worktrees"),
+    (
+        "the worktree board is run, not named",
+        _orders_the_worktree_board,
+        r"git-worktrees",
+    ),
     (
         "the worktree verdicts are read in three states",
         _carries_the_three_state_worktree_rule,
@@ -840,7 +892,11 @@ DEVELOPER_FACTS = [
 ]
 
 README_FACTS = [
-    ("scaffold is in the launcher path", _names_scaffold_as_the_next_step, r"/oss:scaffold|tracked file"),
+    (
+        "scaffold is in the launcher path",
+        _names_scaffold_as_the_next_step,
+        r"/oss:scaffold|tracked file",
+    ),
 ]
 
 RELEASE_FACTS = [
@@ -893,8 +949,13 @@ RELEASE_GATE_FACTS = [
 RELEASE_FACTS = RELEASE_FACTS + RELEASE_GATE_FACTS
 
 ALL_FACTS = (
-    SETUP_FACTS + SCAFFOLD_FACTS + TICK_FACTS + SKILL_FACTS
-    + DEVELOPER_FACTS + README_FACTS + RELEASE_FACTS
+    SETUP_FACTS
+    + SCAFFOLD_FACTS
+    + TICK_FACTS
+    + SKILL_FACTS
+    + DEVELOPER_FACTS
+    + README_FACTS
+    + RELEASE_FACTS
 )
 
 # (file, label, predicate, pattern whose lines carry the fact) for every carried fact,
@@ -913,14 +974,20 @@ CARRIED_IDS = ["{}: {}".format(entry[0].name, entry[1]) for entry in CARRIED]
 
 @pytest.mark.parametrize("path,label,predicate,_pattern", CARRIED, ids=CARRIED_IDS)
 def test_the_surface_carries_the_fact(path, label, predicate, _pattern):
-    assert predicate(path.read_text(encoding="utf-8")), "{}: {}".format(path.name, label)
+    assert predicate(path.read_text(encoding="utf-8")), "{}: {}".format(
+        path.name, label
+    )
 
 
-@pytest.mark.parametrize("label,predicate,_pattern", ALL_FACTS, ids=[f[0] for f in ALL_FACTS])
+@pytest.mark.parametrize(
+    "label,predicate,_pattern", ALL_FACTS, ids=[f[0] for f in ALL_FACTS]
+)
 def test_a_silent_file_fails_every_prose_predicate(label, predicate, _pattern):
     """The negative control. Without it, every assertion above also passes on a
     file that says nothing about the subject at all."""
-    assert not predicate(SILENT), "{}: predicate passes on a file that says nothing".format(label)
+    assert not predicate(SILENT), (
+        "{}: predicate passes on a file that says nothing".format(label)
+    )
 
 
 # A file that names both ops -- and only to warn about them. SILENT cannot catch
@@ -948,7 +1015,9 @@ def test_the_cautioning_fixture_actually_names_both_ops():
     assert "git-worktrees" in CAUTIONING
 
 
-@pytest.mark.parametrize("label,predicate,_pattern", TICK_FACTS, ids=[f[0] for f in TICK_FACTS])
+@pytest.mark.parametrize(
+    "label,predicate,_pattern", TICK_FACTS, ids=[f[0] for f in TICK_FACTS]
+)
 def test_a_cautioning_file_fails_every_tick_predicate(label, predicate, _pattern):
     """Mentioning an op is not ordering it. `skills/manager/SKILL.md` cautions
     against assuming `radar`, correctly, and the loop read that as licence to skip
@@ -1018,9 +1087,9 @@ def test_a_boundary_stated_the_wrong_way_round_is_caught():
     for act in ACTS_THE_LOOP_TAKES + ACTS_THAT_STOP:
         assert act in REVERSED_BOUNDARY, act
 
-    membership_only = all(act in REVERSED_BOUNDARY for act in ACTS_THE_LOOP_TAKES) and all(
-        act in REVERSED_BOUNDARY for act in ACTS_THAT_STOP
-    )
+    membership_only = all(
+        act in REVERSED_BOUNDARY for act in ACTS_THE_LOOP_TAKES
+    ) and all(act in REVERSED_BOUNDARY for act in ACTS_THAT_STOP)
     assert membership_only, "the fixture is not the one the old predicate accepted"
 
     assert not _enumerates_both_sides_of_the_boundary(REVERSED_BOUNDARY)
@@ -1056,7 +1125,9 @@ def test_the_authority_controls_actually_name_their_subjects():
 
 
 @pytest.mark.parametrize(
-    "label,predicate,_pattern", SKILL_AUTHORITY_FACTS, ids=[f[0] for f in SKILL_AUTHORITY_FACTS]
+    "label,predicate,_pattern",
+    SKILL_AUTHORITY_FACTS,
+    ids=[f[0] for f in SKILL_AUTHORITY_FACTS],
 )
 def test_a_proposing_file_fails_every_authority_predicate(label, predicate, _pattern):
     """Sounding decisive is not stating a boundary.
@@ -1083,6 +1154,7 @@ def test_a_cautioning_file_fails_the_probe_predicate():
     assert _names_the_readonly_watcher_probe(
         PROBELESS_CAUTION + "\n```bash\nsupertool 'radar:--state'\n```\n"
     )
+
 
 # A file that names every subject of RELEASE_FACTS and settles none of them.
 # SILENT cannot catch what #186 was made of: the old release.md was not silent
@@ -1183,24 +1255,33 @@ def test_the_gate_controls_actually_name_their_subjects():
 
 
 @pytest.mark.parametrize(
-    "label,predicate,_pattern", GATE_CONTROL_FACTS, ids=[f[0] for f in GATE_CONTROL_FACTS]
+    "label,predicate,_pattern",
+    GATE_CONTROL_FACTS,
+    ids=[f[0] for f in GATE_CONTROL_FACTS],
 )
-def test_the_superseded_two_state_gate_fails_every_gate_predicate(label, predicate, _pattern):
+def test_the_superseded_two_state_gate_fails_every_gate_predicate(
+    label, predicate, _pattern
+):
     """Precise about two states is what the defect looked like.
 
     A predicate satisfied by the sentence #229 was filed against would certify
     exactly the state being fixed.
     """
     assert not predicate(TWO_STATE_GATE), (
-        "{}: predicate passes on the two-state sentence #229 was filed "
-        "against.".format(label)
+        "{}: predicate passes on the two-state sentence #229 was filed against.".format(
+            label
+        )
     )
 
 
 @pytest.mark.parametrize(
-    "label,predicate,_pattern", GATE_CONTROL_FACTS, ids=[f[0] for f in GATE_CONTROL_FACTS]
+    "label,predicate,_pattern",
+    GATE_CONTROL_FACTS,
+    ids=[f[0] for f in GATE_CONTROL_FACTS],
 )
-def test_a_waved_through_middle_state_fails_every_gate_predicate(label, predicate, _pattern):
+def test_a_waved_through_middle_state_fails_every_gate_predicate(
+    label, predicate, _pattern
+):
     """Naming the middle state is not separating it.
 
     The other half of the discrimination: this fixture says the middle arm's own
@@ -1224,7 +1305,9 @@ def test_pointing_at_a_repos_own_readme_fails_the_compatibility_predicate():
     # And the must-not-fire half, same fixture with the path taken out.
     without_the_path = PROMISING.replace(", documented in `changelog.d/README.md`", "")
     assert not FRAGMENTS_README_PATH_RE.search(without_the_path)
-    assert _sources_the_compatibility_syntax_without_promising_a_readme(without_the_path)
+    assert _sources_the_compatibility_syntax_without_promising_a_readme(
+        without_the_path
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1244,7 +1327,12 @@ CHAIN = [
     # /oss:doctor, not /oss:scaffold, and has no furniture step to name; it hands off
     # to /oss:tick directly, worded for that path rather than reusing the scaffold
     # predicate above.
-    ("/oss:doctor", DOCTOR_MD, "/oss:tick", _names_tick_as_the_reopened_session_next_step),
+    (
+        "/oss:doctor",
+        DOCTOR_MD,
+        "/oss:tick",
+        _names_tick_as_the_reopened_session_next_step,
+    ),
 ]
 
 
@@ -1258,7 +1346,9 @@ def _broken_links(texts):
 
 
 def _chain_texts():
-    return {source: path.read_text(encoding="utf-8") for source, path, _target, _p in CHAIN}
+    return {
+        source: path.read_text(encoding="utf-8") for source, path, _target, _p in CHAIN
+    }
 
 
 def test_the_chain_is_wired_end_to_end():
@@ -1280,7 +1370,9 @@ def test_a_chain_with_a_missing_link_is_caught():
 
     partial = _chain_texts()
     partial["/oss:scaffold"] = SILENT
-    assert _broken_links(partial) == ["/oss:scaffold does not name /oss:tick as the next step"]
+    assert _broken_links(partial) == [
+        "/oss:scaffold does not name /oss:tick as the next step"
+    ]
 
 
 # A count of agents written out in prose is a fact about the filesystem, duplicated.
@@ -1308,7 +1400,9 @@ def _stated_agent_counts(text):
 def test_the_agent_count_detector_reads_words_and_digits():
     """The detector before the assertion that leans on it. A regex matching nothing
     would turn the check below into a check that never looked."""
-    assert _stated_agent_counts("one skill, two agents and both agents, plus 3 agents") == [2, 2, 3]
+    assert _stated_agent_counts(
+        "one skill, two agents and both agents, plus 3 agents"
+    ) == [2, 2, 3]
     assert _stated_agent_counts("the loop, its agents, the config layer") == []
 
 
@@ -1407,7 +1501,9 @@ def _rootless_assembler_invocations(name, text):
         missing = _missing_assembler_flags(line)
         if missing:
             offenders.append(
-                "{}:{}: missing {}: {}".format(name, number, " and ".join(missing), line)
+                "{}:{}: missing {}: {}".format(
+                    name, number, " and ".join(missing), line
+                )
             )
     return offenders
 
@@ -1417,9 +1513,14 @@ def test_the_assembler_detector_sees_an_invocation_and_its_flags():
     turns the sweep below into a sweep that never looked, and a flag check that never
     fires turns it into one that looked and could not report."""
     good = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --check --dir d --changelog CHANGELOG.md'
-    bad = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z'
+    bad = (
+        'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/assemble_changelog.py" --version X.Y.Z'
+    )
     assert len(_assembler_invocations(good + "\n" + bad)) == 2
-    assert _assembler_invocations("this paragraph mentions assemble_changelog.py in prose") == []
+    assert (
+        _assembler_invocations("this paragraph mentions assemble_changelog.py in prose")
+        == []
+    )
 
     # The must-fire half: the flagless fold is reported, and located.
     offenders = _rootless_assembler_invocations("fixture.md", good + "\n" + bad)
@@ -1435,13 +1536,18 @@ def test_the_assembler_detector_sees_an_invocation_and_its_flags():
     assert _missing_assembler_flags(talked_out_of_it) == ["--dir", "--changelog"]
 
     # `--dir=X` is passing --dir.
-    assert _missing_assembler_flags(
-        "python3 a/assemble_changelog.py --version 1.0.0 --dir=d --changelog=CHANGELOG.md"
-    ) == []
+    assert (
+        _missing_assembler_flags(
+            "python3 a/assemble_changelog.py --version 1.0.0 --dir=d --changelog=CHANGELOG.md"
+        )
+        == []
+    )
 
     # The third state. An argument list that would not tokenise is reported, not
     # waved through -- a line nobody could read has not been checked.
-    unreadable = _missing_assembler_flags('python3 a/assemble_changelog.py --dir "unclosed')
+    unreadable = _missing_assembler_flags(
+        'python3 a/assemble_changelog.py --dir "unclosed'
+    )
     assert len(unreadable) == 1 and unreadable[0].startswith("unparseable arguments ")
 
 
@@ -1488,7 +1594,10 @@ def test_the_scaffold_detector_sees_an_invocation_and_its_flags():
     assert _writing_scaffold_invocations("fixture.md", plan) == []
 
     # A comment naming the flag is not passing the flag.
-    assert _writing_scaffold_invocations("fixture.md", plan + "  # never --apply here") == []
+    assert (
+        _writing_scaffold_invocations("fixture.md", plan + "  # never --apply here")
+        == []
+    )
 
     # The third state. An argument list that would not tokenise is reported, not
     # waved through -- a line nobody could read has not been checked.
@@ -1527,11 +1636,16 @@ def test_setup_never_documents_a_writing_scaffold_invocation():
 
 
 @pytest.mark.parametrize("path,label,predicate,pattern", CARRIED, ids=CARRIED_IDS)
-def test_deleting_the_carrying_lines_fails_the_predicate(path, label, predicate, pattern):
+def test_deleting_the_carrying_lines_fails_the_predicate(
+    path, label, predicate, pattern
+):
     """The targeted control: the real file minus the lines carrying the fact. A
     predicate still passing here is matching something incidental."""
     mutated = _without_lines_matching(path.read_text(encoding="utf-8"), pattern)
-    assert not predicate(mutated), "{}: predicate passes with its own lines deleted".format(label)
+    assert not predicate(mutated), (
+        "{}: predicate passes with its own lines deleted".format(label)
+    )
+
 
 # --------------------------------------------------------------------------- #
 # A flag the script accepts and the command file never mentions.
@@ -1575,8 +1689,9 @@ UNDOCUMENTED_BY_DECISION = {
 
 def _assembler_flags():
     """Every long flag the assembler's parser accepts, read off the source."""
-    return sorted(set(ADD_ARGUMENT_RE.findall(
-        ASSEMBLER_SCRIPT.read_text(encoding="utf-8"))))
+    return sorted(
+        set(ADD_ARGUMENT_RE.findall(ASSEMBLER_SCRIPT.read_text(encoding="utf-8")))
+    )
 
 
 def test_the_flag_detector_reads_the_parser():
@@ -1590,7 +1705,10 @@ def test_the_flag_detector_reads_the_parser():
         assert known in flags, known
     # The must-not-fire half, same fixture: prose mentioning a flag is not a
     # parser accepting one.
-    assert ADD_ARGUMENT_RE.findall("the --nonesuch flag, as in add_argument, is prose") == []
+    assert (
+        ADD_ARGUMENT_RE.findall("the --nonesuch flag, as in add_argument, is prose")
+        == []
+    )
     # And every exemption names a flag that exists. An exemption for a flag
     # that was renamed is a silence nobody is accountable for any more.
     assert not set(UNDOCUMENTED_BY_DECISION) - set(flags), (
@@ -1603,14 +1721,18 @@ def test_every_assembler_flag_is_documented_or_exempt_with_a_reason():
     text = CHANGELOG_MD.read_text(encoding="utf-8")
     assert text.strip(), CHANGELOG_MD.name + " is empty -- nothing was checked"
 
-    undocumented = [flag for flag in _assembler_flags()
-                    if flag not in text and flag not in UNDOCUMENTED_BY_DECISION]
+    undocumented = [
+        flag
+        for flag in _assembler_flags()
+        if flag not in text and flag not in UNDOCUMENTED_BY_DECISION
+    ]
     assert not undocumented, (
         "{} accepts these flags and {} never names them: {}. Document them, or "
         "add each to UNDOCUMENTED_BY_DECISION with the reason it stays out -- "
         "a flag that changes the verdict and appears on no surface a maintainer "
         "reads is the shape #101 was filed about.".format(
-            ASSEMBLER_SCRIPT.name, CHANGELOG_MD.name, ", ".join(undocumented))
+            ASSEMBLER_SCRIPT.name, CHANGELOG_MD.name, ", ".join(undocumented)
+        )
     )
     for flag, reason in sorted(UNDOCUMENTED_BY_DECISION.items()):
         assert reason.strip(), flag + ": exempt with no reason recorded"

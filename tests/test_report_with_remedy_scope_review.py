@@ -73,6 +73,7 @@ def test_emit_does_not_crash_on_an_unregistered_stdout_encoding(monkeypatch):
     `_emit`'s own defensive fallback -- that would be the crash this
     fallback exists to prevent, one exception type over.
     """
+
     class _FakeStdout:
         encoding = "not-a-real-codec-xyz"
 

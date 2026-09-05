@@ -57,7 +57,9 @@ def contract_findings(source):
     if "report_with_remedy" not in flat:
         out.append("the module contract never names report_with_remedy")
     if "exempt" not in flat.lower():
-        out.append("the module contract never says any fragment is exempt from the fold")
+        out.append(
+            "the module contract never says any fragment is exempt from the fold"
+        )
     if "remedy" not in flat:
         out.append("the module contract never names the exempt argument")
     return out

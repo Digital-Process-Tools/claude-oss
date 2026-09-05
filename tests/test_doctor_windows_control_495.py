@@ -47,7 +47,9 @@ def test_no_receipt_and_no_sh_on_path_is_a_warn_not_an_ok(tmp_path, monkeypatch)
     that would write a receipt can never have run -- this is the permanent
     state, not the ordinary pre-first-run one, and the row must say so."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(plugin_update, "read_receipt", lambda: None)
     doctor.check_auto_update(str(tmp_path), sh_available=False)
     assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
@@ -61,7 +63,9 @@ def test_no_receipt_and_sh_on_path_stays_the_ordinary_ok_495(tmp_path, monkeypat
     resolvable (every observed machine so far), this stays the existing
     ordinary pre-first-run OK -- #495 must not regress #480's own coverage."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(plugin_update, "read_receipt", lambda: None)
     doctor.check_auto_update(str(tmp_path), sh_available=True)
     assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
@@ -77,7 +81,9 @@ def test_sh_available_defaults_to_a_real_measurement(tmp_path, monkeypatch):
     import shutil
 
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(plugin_update, "read_receipt", lambda: None)
     doctor.check_auto_update(str(tmp_path))
     assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
@@ -92,7 +98,9 @@ def test_broken_receipt_arm_is_unaffected_by_sh_availability(tmp_path, monkeypat
     at some point, so `sh` was clearly resolvable then, and that arm must
     keep reporting exactly as #484 established regardless of this."""
     _reset()
-    monkeypatch.setattr(plugin_update, "opt_out", lambda root=None, env=None: ("on", None))
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
     monkeypatch.setattr(
         plugin_update, "read_receipt", lambda: plugin_update.ReceiptUnreadable("boom")
     )
@@ -110,7 +118,7 @@ def test_posix_syntax_on_windows_with_no_sh_available_still_fires():
     """The must-fire half, unchanged from #487: on a Windows machine with no
     POSIX-capable shell resolvable, the gap is real and must still be named."""
     found = doctor._statusline_windows_gap(
-        "sh \"$CLAUDE_PROJECT_DIR\"/x.sh", windows=True, sh_available=False
+        'sh "$CLAUDE_PROJECT_DIR"/x.sh', windows=True, sh_available=False
     )
     assert found.startswith("$")
 
@@ -122,7 +130,7 @@ def test_posix_syntax_on_windows_with_sh_available_does_not_fire_495():
     function's own docstring says a diagnostic must not produce about a
     status line that works."""
     found = doctor._statusline_windows_gap(
-        "sh \"$CLAUDE_PROJECT_DIR\"/x.sh", windows=True, sh_available=True
+        'sh "$CLAUDE_PROJECT_DIR"/x.sh', windows=True, sh_available=True
     )
     assert found == ""
 

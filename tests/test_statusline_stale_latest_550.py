@@ -34,9 +34,15 @@ import statusline  # noqa: E402
 
 
 def test_a_stale_comparison_is_unknown_regardless_of_what_it_would_otherwise_say():
-    assert statusline.version_status("0.9.0", "0.10.0", stale=True)["state"] == "unknown"
-    assert statusline.version_status("0.11.0", "0.10.0", stale=True)["state"] == "unknown"
-    assert statusline.version_status("0.10.0", "0.10.0", stale=True)["state"] == "unknown"
+    assert (
+        statusline.version_status("0.9.0", "0.10.0", stale=True)["state"] == "unknown"
+    )
+    assert (
+        statusline.version_status("0.11.0", "0.10.0", stale=True)["state"] == "unknown"
+    )
+    assert (
+        statusline.version_status("0.10.0", "0.10.0", stale=True)["state"] == "unknown"
+    )
 
 
 def test_the_must_fire_control_a_fresh_comparison_is_unaffected():
@@ -44,7 +50,9 @@ def test_the_must_fire_control_a_fresh_comparison_is_unaffected():
     keep deciding the comparison normally, or the parameter is not doing anything."""
     assert statusline.version_status("0.9.0", "0.10.0")["state"] == "behind"
     assert statusline.version_status("0.10.0", "0.10.0")["state"] == "current"
-    assert statusline.version_status("0.9.0", "0.10.0", stale=False)["state"] == "behind"
+    assert (
+        statusline.version_status("0.9.0", "0.10.0", stale=False)["state"] == "behind"
+    )
 
 
 def test_plugin_facts_threads_stale_down_to_every_plugin():
@@ -68,13 +76,17 @@ def test_plugin_facts_threads_stale_down_to_every_plugin():
 def _rig(monkeypatch, tmp_path, installed_version="0.13.0"):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(
-        statusline, "repo_config", lambda root: {"repo": "owner/repo", "default_branch": "main"}
+        statusline,
+        "repo_config",
+        lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "board_is_due", lambda cache, now: False)
     monkeypatch.setattr(statusline, "_fork_refresh", lambda root, repo: None)
     monkeypatch.setattr(statusline, "branch_name", lambda root: "main")
     monkeypatch.setattr(statusline, "repo_version", lambda root: installed_version)
-    monkeypatch.setattr(statusline, "git_release_progress", lambda root: {"state": "unknown"})
+    monkeypatch.setattr(
+        statusline, "git_release_progress", lambda root: {"state": "unknown"}
+    )
     monkeypatch.setattr(
         statusline,
         "installed_plugins",
@@ -88,7 +100,9 @@ def _rig(monkeypatch, tmp_path, installed_version="0.13.0"):
     )
 
 
-def test_gather_marks_a_comparison_stale_once_its_own_interval_has_passed(tmp_path, monkeypatch):
+def test_gather_marks_a_comparison_stale_once_its_own_interval_has_passed(
+    tmp_path, monkeypatch
+):
     """Must-fire: a `latest` reading well past `LATEST_REFRESH_AFTER` renders `?`
     rather than a false `behind`/`ahead`."""
     _rig(monkeypatch, tmp_path, installed_version="0.13.0")
@@ -103,7 +117,9 @@ def test_gather_marks_a_comparison_stale_once_its_own_interval_has_passed(tmp_pa
     assert facts["plugins"][0][1]["state"] == "unknown"
 
 
-def test_the_incident_itself_is_a_fresh_reading_that_is_simply_wrong(tmp_path, monkeypatch):
+def test_the_incident_itself_is_a_fresh_reading_that_is_simply_wrong(
+    tmp_path, monkeypatch
+):
     """Must-not-fire control, and the whole point of pairing this file with #549:
     a reading 52 minutes old against a 60 minute interval is NOT due, so it still
     renders as a real -- and, in the incident, wrong -- comparison rather than `?`.
@@ -166,13 +182,19 @@ def test_invalidating_leaves_the_cache_immediately_due_again(tmp_path, monkeypat
     statusline.cache_path("owner/name").parent.mkdir(parents=True, exist_ok=True)
     statusline.cache_path("owner/name").write_text(
         json.dumps(
-            {"fetched_at": 1000.0, "latest_fetched_at": 1000.0, "latest": {"owner/name": "0.12.0"}}
+            {
+                "fetched_at": 1000.0,
+                "latest_fetched_at": 1000.0,
+                "latest": {"owner/name": "0.12.0"},
+            }
         ),
         encoding="utf-8",
     )
     result = statusline.invalidate_latest_cache("owner/name", now=1000.0)
     assert result["state"] == "invalidated"
-    document = json.loads(statusline.cache_path("owner/name").read_text(encoding="utf-8"))
+    document = json.loads(
+        statusline.cache_path("owner/name").read_text(encoding="utf-8")
+    )
     # Board refresh keeps bumping `fetched_at` on every render, close to `now` --
     # the exact condition that hid the bug: a stale-looking key set is read as
     # "recently fetched" through the legacy fallback if the age check keys on the
@@ -182,7 +204,9 @@ def test_invalidating_leaves_the_cache_immediately_due_again(tmp_path, monkeypat
         "immediately after invalidation the cache must still read as due, or the "
         "invalidation silently un-does its own purpose"
     )
-    assert statusline.latest_is_due(document, now=1000.0 + statusline.REFRESH_AFTER * 5), (
+    assert statusline.latest_is_due(
+        document, now=1000.0 + statusline.REFRESH_AFTER * 5
+    ), (
         "still due many board-refresh cycles later, with fetched_at kept fresh the "
         "whole time -- the failure mode this pins is permanent, not merely delayed"
     )
@@ -192,5 +216,9 @@ def test_the_must_not_fire_control_an_uninvalidated_cache_is_not_due_early():
     """Positive control: a cache that was never invalidated, freshly fetched, is
     NOT due -- so the assertion above is testing invalidation's effect and not
     `latest_is_due` being permanently true."""
-    cache = {"fetched_at": 1000.0, "latest_fetched_at": 1000.0, "latest": {"owner/name": "0.12.0"}}
+    cache = {
+        "fetched_at": 1000.0,
+        "latest_fetched_at": 1000.0,
+        "latest": {"owner/name": "0.12.0"},
+    }
     assert not statusline.latest_is_due(cache, now=1010.0)

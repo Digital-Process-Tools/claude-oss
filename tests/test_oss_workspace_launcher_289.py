@@ -112,7 +112,7 @@ def _names_the_path(message, path):
         if found < 0:
             return False
         before = haystack[found - 1] if found else ""
-        after = haystack[found + len(needle):found + len(needle) + 1]
+        after = haystack[found + len(needle) : found + len(needle) + 1]
         if not _is_path_char(before) and not _is_path_char(after):
             return True
         start = found + 1
@@ -226,7 +226,9 @@ def test_the_plugins_own_bin_directory_is_not_a_reachable_install_617(tmp_path):
     )
     assert state == "not-resolvable", (state, detail)
 
-    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(plugin_root / "bin"))
+    doctor.check_oss_workspace_launcher(
+        plugin_root=plugin_root, path=str(plugin_root / "bin")
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN"
     assert "not on PATH" in message, message
@@ -259,7 +261,9 @@ def test_matched_by_content_a_separate_copy_with_identical_bytes(tmp_path):
     and not the path shape."""
     plugin_root = _plugin_root(tmp_path, content=b"same bytes\n")
     path_dir, _ = _path_entry(tmp_path, "on-path", b"same bytes\n")
-    state, detail = doctor.oss_workspace_launcher_state(plugin_root=plugin_root, path=path_dir)
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=path_dir
+    )
     assert state == "matched", (state, detail)
 
 
@@ -357,7 +361,9 @@ def test_the_location_check_does_not_match_a_wrong_directory_by_suffix():
     a component boundary and the claim is pinned here rather than asserted there.
     """
     message = 'Run it from this install: sh "/home/dev/checkouts/other-plugin/bin/oss-workspace"'
-    assert _names_the_path(message, "/home/dev/checkouts/other-plugin/bin/oss-workspace")
+    assert _names_the_path(
+        message, "/home/dev/checkouts/other-plugin/bin/oss-workspace"
+    )
     # The must-not-fire that the first version got wrong.
     assert not _names_the_path(message, "plugin/bin/oss-workspace")
     # Same shape from the other end: a longer wrong path is not matched either.
@@ -381,7 +387,9 @@ def test_mismatched_content_with_an_unrecognised_target_shape_does_not_invent_a_
     target.write_bytes(b"old content\n")
     os.chmod(str(target), 0o755)
 
-    state, detail = doctor.oss_workspace_launcher_state(plugin_root=plugin_root, path=str(flat))
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=str(flat)
+    )
     assert state == "mismatched", (state, detail)
     resolved, theirs_version, ours_version = detail
     assert theirs_version is None, detail
@@ -402,7 +410,9 @@ def test_own_copy_unreadable_is_unknown_not_matched_and_not_mismatched(tmp_path)
     (plugin_root / "bin" / "oss-workspace").mkdir()
     path_dir, _ = _path_entry(tmp_path, "on-path", b"whatever\n")
 
-    state, detail = doctor.oss_workspace_launcher_state(plugin_root=plugin_root, path=path_dir)
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=path_dir
+    )
     assert state == "own-copy-unreadable", (state, detail)
 
     doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=path_dir)
@@ -498,14 +508,33 @@ def test_version_segment_parses_the_documented_cache_shape():
     # is what the guard in `tests/test_no_test_pins_the_current_version_350.py`
     # cannot tell apart from the assertion that reddened the release.
     resolved = str(
-        Path("home", "x", ".claude", "plugins", "cache", "dpt-plugins", "oss", "9.9.9", "bin", "oss-workspace")
+        Path(
+            "home",
+            "x",
+            ".claude",
+            "plugins",
+            "cache",
+            "dpt-plugins",
+            "oss",
+            "9.9.9",
+            "bin",
+            "oss-workspace",
+        )
     )
     assert doctor._oss_workspace_version_segment(resolved) == "9.9.9"
 
 
 def test_version_segment_is_none_for_an_unrecognised_shape():
-    assert doctor._oss_workspace_version_segment(str(Path("home", "x", "oss-workspace"))) is None
-    assert doctor._oss_workspace_version_segment(str(Path("home", "x", "bin", "oss-workspace"))) is None
+    assert (
+        doctor._oss_workspace_version_segment(str(Path("home", "x", "oss-workspace")))
+        is None
+    )
+    assert (
+        doctor._oss_workspace_version_segment(
+            str(Path("home", "x", "bin", "oss-workspace"))
+        )
+        is None
+    )
 
 
 # --- #350: the version label must describe the plugin_root that was handed in ---

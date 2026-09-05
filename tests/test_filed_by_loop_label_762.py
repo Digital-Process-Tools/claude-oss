@@ -67,7 +67,9 @@ def test_a_non_label_value_is_refused(value):
     config = _valid()
     config["labels"]["filed_by_loop"] = value
     problems = oss_config.validate(config)
-    assert problems, "labels.filed_by_loop={!r} validated with no problems".format(value)
+    assert problems, "labels.filed_by_loop={!r} validated with no problems".format(
+        value
+    )
     assert any("filed_by_loop" in problem for problem in problems), problems
 
 

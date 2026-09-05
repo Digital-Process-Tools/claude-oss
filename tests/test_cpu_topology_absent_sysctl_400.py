@@ -149,7 +149,12 @@ def test_a_present_nperflevels_is_untouched_by_any_of_this(monkeypatch):
     logical, perf, eff, split = doctor.cpu_topology(system="Darwin")
     _require_injection(seen)
 
-    assert (logical, perf, eff, split) == (8, 5, 3, "split"), (logical, perf, eff, split)
+    assert (logical, perf, eff, split) == (8, 5, 3, "split"), (
+        logical,
+        perf,
+        eff,
+        split,
+    )
 
 
 def test_one_performance_level_reported_as_a_number_is_still_no_split(monkeypatch):

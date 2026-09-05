@@ -49,7 +49,9 @@ def _write_config(root, **overrides):
     project, local = oss_config.split(config)
     path = root / oss_config.CONFIG_NAME
     path.write_text(json.dumps(project), encoding="utf-8")
-    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
     return path
 
 
@@ -71,8 +73,9 @@ def test_show_with_no_path_names_settings_json_when_it_would_be_extended(tmp_pat
     config = _write_config(tmp_path)
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}),
-                        encoding="utf-8")
+    settings.write_text(
+        json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}), encoding="utf-8"
+    )
     shown = scaffold.show(str(tmp_path), oss_config.load_from(str(config))[0])
     settings_entry = next(e for e in shown if e[0] == scaffold.SETTINGS_PATH)
     assert settings_entry[1] == "extend"
@@ -87,7 +90,9 @@ def test_show_omits_settings_json_when_nothing_would_be_written(tmp_path):
     config = _write_config(tmp_path)
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8")
+    settings.write_text(
+        json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8"
+    )
     shown = scaffold.show(str(tmp_path), oss_config.load_from(str(config))[0])
     paths = [entry[0] for entry in shown]
     assert scaffold.SETTINGS_PATH not in paths
@@ -119,9 +124,13 @@ def test_apply_receipt_prints_the_extended_bucket(tmp_path, capsys):
     config = _write_config(tmp_path)
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}),
-                        encoding="utf-8")
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"]) == 0
+    settings.write_text(
+        json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}), encoding="utf-8"
+    )
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--apply"])
+        == 0
+    )
     out = capsys.readouterr().out
     assert scaffold.SETTINGS_PATH in out, (
         "the --apply receipt never printed .claude/settings.json even though it was "
@@ -139,16 +148,23 @@ def test_show_cli_labels_an_extend_as_extend_not_replace(tmp_path, capsys):
     config = _write_config(tmp_path)
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}),
-                        encoding="utf-8")
-    assert scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"]) == 0
+    settings.write_text(
+        json.dumps({"enabledPlugins": {"oss@dpt-plugins": True}}), encoding="utf-8"
+    )
+    assert (
+        scaffold._main(["--root", str(tmp_path), "--config", str(config), "--show"])
+        == 0
+    )
     out = capsys.readouterr().out
     assert "would extend" in out, (
-        "an extend action printed something other than an extend label: {!r}".format(out)
+        "an extend action printed something other than an extend label: {!r}".format(
+            out
+        )
     )
-    assert "would replace (rewritten every run)" not in out.split(
-        scaffold.SETTINGS_PATH
-    )[1].split("-----")[0], "the settings.json entry itself was still labelled 'replace'"
+    assert (
+        "would replace (rewritten every run)"
+        not in out.split(scaffold.SETTINGS_PATH)[1].split("-----")[0]
+    ), "the settings.json entry itself was still labelled 'replace'"
 
 
 def test_show_a_single_named_settings_path_still_answers_when_already_present(tmp_path):
@@ -159,7 +175,9 @@ def test_show_a_single_named_settings_path_still_answers_when_already_present(tm
     config = _write_config(tmp_path)
     settings = tmp_path / ".claude" / "settings.json"
     settings.parent.mkdir(parents=True)
-    settings.write_text(json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8")
+    settings.write_text(
+        json.dumps({"statusLine": {"command": "mine"}}), encoding="utf-8"
+    )
     shown = scaffold.show(
         str(tmp_path), oss_config.load_from(str(config))[0], path=scaffold.SETTINGS_PATH
     )

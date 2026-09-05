@@ -203,9 +203,7 @@ def scan(sources):
                 if not (_JQ.search(text) and _LENGTH.search(text)):
                     continue
                 number, line = next(
-                    (number, line)
-                    for number, line in command
-                    if _PAGINATE.search(line)
+                    (number, line) for number, line in command if _PAGINATE.search(line)
                 )
                 findings.append((label, number, line.strip()))
 
@@ -322,9 +320,7 @@ def test_the_scanner_flags_its_own_bad_fixture():
     )
     lines = source.splitlines()
     bad_line = next(
-        number
-        for number, line in enumerate(lines, 1)
-        if line.startswith("BAD = ")
+        number for number, line in enumerate(lines, 1) if line.startswith("BAD = ")
     )
     flagged = {number for _, number, _ in scan({"self.py": source})["findings"]}
     assert bad_line in flagged, "the BAD fixture at line {} escaped".format(bad_line)
@@ -475,6 +471,7 @@ def test_an_unspawnable_git_reaches_the_skip_rather_than_a_traceback(monkeypatch
     Both arms: the raising spawn skips, and a spawn that merely exits non-zero still
     returns `None` rather than an empty scan that would read as clean.
     """
+
     def raises(*args, **kwargs):
         raise FileNotFoundError(2, "No such file or directory: 'git'")
 
@@ -493,7 +490,8 @@ def _git_repo(path):
     path.mkdir(parents=True, exist_ok=True)
     done = subprocess.run(
         ["git", "init", "-q", str(path)],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     if done.returncode != 0:
         pytest.skip("git init failed here: {!r}".format(done.stderr[-200:]))
@@ -507,9 +505,7 @@ def test_a_tracked_path_deleted_from_the_working_tree_is_enumerated_as_absent(tm
     repo = _git_repo(tmp_path / "folded")
     (repo / "kept.md").write_text("kept\n", encoding="utf-8")
     (repo / "folded.md").write_text("folded away\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "-C", str(repo), "add", "kept.md", "folded.md"], check=True
-    )
+    subprocess.run(["git", "-C", str(repo), "add", "kept.md", "folded.md"], check=True)
     (repo / "folded.md").unlink()
 
     sources = _tracked_sources(repo)
@@ -537,9 +533,7 @@ def test_a_tracked_path_that_will_not_read_still_enumerates_as_unreadable(tmp_pa
     (repo / "kept.md").write_text("kept\n", encoding="utf-8")
     secret = repo / "secret.md"
     secret.write_text("unreadable\n", encoding="utf-8")
-    subprocess.run(
-        ["git", "-C", str(repo), "add", "kept.md", "secret.md"], check=True
-    )
+    subprocess.run(["git", "-C", str(repo), "add", "kept.md", "secret.md"], check=True)
     try:
         secret.chmod(0)
         try:
@@ -597,8 +591,5 @@ def test_every_exemption_still_covers_something(swept):
 
 
 def test_no_shipped_command_aggregates_a_count_per_page(swept):
-    unexpected = [
-        finding for finding in swept["findings"] if finding[0] not in EXEMPT
-    ]
+    unexpected = [finding for finding in swept["findings"] if finding[0] not in EXEMPT]
     assert unexpected == [], "per-page aggregation: {}".format(unexpected)
-

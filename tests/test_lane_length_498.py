@@ -19,9 +19,15 @@ def _assistant(model="claude-sonnet-5", content=None, usage=None, attribution=No
         "type": "assistant",
         "message": {
             "model": model,
-            "content": content if content is not None else [{"type": "text", "text": "hi"}],
+            "content": content
+            if content is not None
+            else [{"type": "text", "text": "hi"}],
             "usage": usage
-            or {"cache_read_input_tokens": 1, "cache_creation_input_tokens": 1, "output_tokens": 1},
+            or {
+                "cache_read_input_tokens": 1,
+                "cache_creation_input_tokens": 1,
+                "output_tokens": 1,
+            },
         },
     }
     if attribution is not None:
@@ -39,7 +45,9 @@ def _tool_use_turn(command, attribution="oss:developer"):
 def _user_tool_result(text):
     return {
         "type": "user",
-        "message": {"content": [{"type": "tool_result", "content": text, "is_error": False}]},
+        "message": {
+            "content": [{"type": "tool_result", "content": text, "is_error": False}]
+        },
     }
 
 
@@ -81,7 +89,9 @@ def test_tool_result_bytes_counts_utf8_bytes_not_characters(tmp_path):
     _write_jsonl(path, _lane(1, [0]))
     lines = path.read_text(encoding="utf-8").splitlines()
     record = json.loads(lines[1])
-    record["message"]["content"][0]["content"] = chr(233) * 5  # 5 chars, 10 bytes in utf-8
+    record["message"]["content"][0]["content"] = (
+        chr(233) * 5
+    )  # 5 chars, 10 bytes in utf-8
     lines[1] = json.dumps(record)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

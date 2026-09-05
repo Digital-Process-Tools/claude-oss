@@ -64,7 +64,7 @@ def test_gate_4_accepts_by_default_and_never_treats_the_key_as_a_grant():
     mentions = [m.start() for m in re.finditer(r"release\.authority", block)]
     assert mentions, "gate 4 must say explicitly that it does not read the key"
     for start in mentions:
-        window = block[max(0, start - 20):start]
+        window = block[max(0, start - 20) : start]
         assert "not read" in window or "does not read" in window, (
             "gate 4 mentions release.authority outside the explicit disclaimer -- "
             "that is the leak this test exists to catch"
@@ -73,7 +73,9 @@ def test_gate_4_accepts_by_default_and_never_treats_the_key_as_a_grant():
 
 def test_gate_4_states_the_decoupling_reason():
     text = _skill_text()
-    assert "does not read this key" in text or "does not read `release.authority`" in text
+    assert (
+        "does not read this key" in text or "does not read `release.authority`" in text
+    )
 
 
 def test_release_command_reads_authority_before_tag_and_publish():

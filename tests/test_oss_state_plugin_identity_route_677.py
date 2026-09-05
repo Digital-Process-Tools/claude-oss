@@ -15,6 +15,7 @@ routes are not the same measurement, so comparing them is its own state
 throughout with the positive control -- two readings via the SAME route really
 do compare as changed/unchanged, exactly as before #677.
 """
+
 import json
 import sys
 from pathlib import Path
@@ -33,8 +34,10 @@ def test_same_route_unchanged_must_fire():
     """MUST FIRE (positive control): two readings via the same route, same
     string, compare as unchanged -- routing must not break the ordinary case."""
     record = oss_state.plugin_identity_check(
-        IDENTITY_A, IDENTITY_A,
-        current_route="resolved-install", prior_route="resolved-install",
+        IDENTITY_A,
+        IDENTITY_A,
+        current_route="resolved-install",
+        prior_route="resolved-install",
     )
     assert record["state"] == oss_state.PLUGIN_UNCHANGED
 
@@ -43,8 +46,10 @@ def test_same_route_changed_must_fire():
     """MUST FIRE: two readings via the same route, differing strings, compare
     as changed -- a real version move is still detected once routed."""
     record = oss_state.plugin_identity_check(
-        IDENTITY_B, IDENTITY_A,
-        current_route="resolved-install", prior_route="resolved-install",
+        IDENTITY_B,
+        IDENTITY_A,
+        current_route="resolved-install",
+        prior_route="resolved-install",
     )
     assert record["state"] == oss_state.PLUGIN_CHANGED
 
@@ -54,8 +59,10 @@ def test_different_routes_is_route_mismatch_not_changed():
     and a current reading taken by another must not render as `changed` (nor
     `unchanged`), because the comparison describes nothing that occurred."""
     record = oss_state.plugin_identity_check(
-        IDENTITY_A, IDENTITY_B,
-        current_route="resolved-install", prior_route="pinned-root",
+        IDENTITY_A,
+        IDENTITY_B,
+        current_route="resolved-install",
+        prior_route="pinned-root",
     )
     assert record["state"] == oss_state.PLUGIN_ROUTE_MISMATCH
     assert record["state"] != oss_state.PLUGIN_CHANGED
@@ -71,8 +78,10 @@ def test_new_route_against_an_unrouted_prior_is_also_a_mismatch():
     exactly the false-changed the #677 comment warned a naive fix would
     produce on its very first tick."""
     record = oss_state.plugin_identity_check(
-        IDENTITY_A, IDENTITY_A,
-        current_route="resolved-install", prior_route=None,
+        IDENTITY_A,
+        IDENTITY_A,
+        current_route="resolved-install",
+        prior_route=None,
     )
     assert record["state"] == oss_state.PLUGIN_ROUTE_MISMATCH
 
@@ -91,15 +100,19 @@ def test_could_not_tell_takes_priority_over_route_when_there_is_no_prior_at_all(
     """No prior recorded at all outranks a route question -- there is nothing
     to have a route mismatch WITH."""
     record = oss_state.plugin_identity_check(
-        IDENTITY_A, None, current_route="resolved-install",
+        IDENTITY_A,
+        None,
+        current_route="resolved-install",
     )
     assert record["state"] == oss_state.PLUGIN_COULD_NOT_TELL
 
 
 def test_plugin_identity_line_renders_route_mismatch():
     record = oss_state.plugin_identity_check(
-        IDENTITY_A, IDENTITY_B,
-        current_route="resolved-install", prior_route="pinned-root",
+        IDENTITY_A,
+        IDENTITY_B,
+        current_route="resolved-install",
+        prior_route="pinned-root",
     )
     line = oss_state.plugin_identity_line(record)
     assert "route mismatch" in line
@@ -109,7 +122,9 @@ def test_plugin_identity_line_renders_route_mismatch():
 def test_last_plugin_identity_carries_the_recorded_route(tmp_path):
     state_path = tmp_path / "state.json"
     oss_state.append(
-        str(state_path), STAMP, "first tick",
+        str(state_path),
+        STAMP,
+        "first tick",
         detail={
             "plugin_identity": IDENTITY_A,
             "plugin_identity_route": "resolved-install",
@@ -125,17 +140,30 @@ def test_cli_records_and_compares_a_route_end_to_end(tmp_path, capsys):
     then check the next tick's reading against it via the SAME route."""
     path = tmp_path / "state.json"
     rc = oss_state._main(
-        [str(path), "--decision", "first tick", "--at", STAMP,
-         "--plugin-identity", IDENTITY_A,
-         "--plugin-identity-route", "resolved-install"]
+        [
+            str(path),
+            "--decision",
+            "first tick",
+            "--at",
+            STAMP,
+            "--plugin-identity",
+            IDENTITY_A,
+            "--plugin-identity-route",
+            "resolved-install",
+        ]
     )
     assert rc == 0
     entry = json.loads(capsys.readouterr().out)
     assert entry["detail"]["plugin_identity_route"] == "resolved-install"
 
     rc = oss_state._main(
-        [str(path), "--check-plugin-identity", IDENTITY_A,
-         "--plugin-identity-route", "resolved-install"]
+        [
+            str(path),
+            "--check-plugin-identity",
+            IDENTITY_A,
+            "--plugin-identity-route",
+            "resolved-install",
+        ]
     )
     assert rc == 0
     record = json.loads(capsys.readouterr().out)
@@ -149,13 +177,27 @@ def test_cli_a_route_change_is_reported_as_mismatch_not_changed(tmp_path, capsys
     as `changed`."""
     path = tmp_path / "state.json"
     oss_state._main(
-        [str(path), "--decision", "first tick", "--at", STAMP,
-         "--plugin-identity", IDENTITY_A, "--plugin-identity-route", "pinned-root"]
+        [
+            str(path),
+            "--decision",
+            "first tick",
+            "--at",
+            STAMP,
+            "--plugin-identity",
+            IDENTITY_A,
+            "--plugin-identity-route",
+            "pinned-root",
+        ]
     )
     capsys.readouterr()
     rc = oss_state._main(
-        [str(path), "--check-plugin-identity", IDENTITY_A,
-         "--plugin-identity-route", "resolved-install"]
+        [
+            str(path),
+            "--check-plugin-identity",
+            IDENTITY_A,
+            "--plugin-identity-route",
+            "resolved-install",
+        ]
     )
     assert rc == 0
     record = json.loads(capsys.readouterr().out)

@@ -204,5 +204,7 @@ def test_a_full_lane_with_no_count_is_still_recorded():
         [{"primary": 845, "count": dispatch_rank.MAX_LANE}], window="this tick"
     )
     assert record["lanes"][0] == {
-        "primary": 845, "count": dispatch_rank.MAX_LANE, "reason": None,
+        "primary": 845,
+        "count": dispatch_rank.MAX_LANE,
+        "reason": None,
     }

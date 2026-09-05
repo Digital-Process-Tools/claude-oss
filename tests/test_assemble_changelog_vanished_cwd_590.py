@@ -62,13 +62,17 @@ def test_a_vanished_cwd_reports_skipped_rather_than_crashing():
     reachable, why = _vanished_cwd_reachable()
     if not reachable:
         import pytest
-        pytest.skip("could not remove this process's own cwd on this platform "
-                    "({0}) -- what went untested: a deleted-cwd module import "
-                    "on this OS".format(why))
+
+        pytest.skip(
+            "could not remove this process's own cwd on this platform "
+            "({0}) -- what went untested: a deleted-cwd module import "
+            "on this OS".format(why)
+        )
 
     result = subprocess.run(
         [sys.executable, "-c", _REPRO.format(str(SCRIPT))],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     # Before the guard: an unhandled FileNotFoundError killed the import,
     # exit 1, nothing at all on stdout -- indistinguishable from a shell

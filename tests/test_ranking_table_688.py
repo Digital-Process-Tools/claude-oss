@@ -86,7 +86,9 @@ def test_the_declared_sources_are_the_files_that_could_hold_the_table():
     holders = []
     for rel in mod.SOURCES:
         path = REPO_ROOT.joinpath(*rel.split("/"))
-        assert path.is_file(), "{0} is declared as a source and is not on disk".format(rel)
+        assert path.is_file(), "{0} is declared as a source and is not on disk".format(
+            rel
+        )
         state, _, _ = mod.extract_ranking_table(path.read_text(encoding="utf-8"))
         if state == FOUND:
             holders.append(rel)
@@ -182,7 +184,10 @@ def test_cli_prints_table_verbatim_and_exits_zero(tmp_path):
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert "| Class | Blocks a release? | Embargo when reported upstream? |" in result.stdout
+    assert (
+        "| Class | Blocks a release? | Embargo when reported upstream? |"
+        in result.stdout
+    )
     assert "`destroys`" in result.stdout
 
 

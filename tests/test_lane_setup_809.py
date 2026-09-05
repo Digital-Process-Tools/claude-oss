@@ -39,7 +39,12 @@ def _make_tree(root):
 
 
 def _derived_held(held):
-    return {"state": "resolved", "held": held, "lanes": {"stale_pruned": []}, "detail": ""}
+    return {
+        "state": "resolved",
+        "held": held,
+        "lanes": {"stale_pruned": []},
+        "detail": "",
+    }
 
 
 # --- 1. bare directory literal expands ------------------------------------------
@@ -150,7 +155,11 @@ def test_comma_separated_lane_resolves_each_member_independently():
     )
     resolved_repeated = lane_setup.resolve_lane(
         REPO_ROOT,
-        ["commands/tick.md", "skills/manager/phases/dispatch.md", "scripts/lane_setup.py"],
+        [
+            "commands/tick.md",
+            "skills/manager/phases/dispatch.md",
+            "scripts/lane_setup.py",
+        ],
     )
     assert resolved_comma["files"] == resolved_repeated["files"]
     assert "scripts/lane_setup.py" in resolved_comma["files"]
@@ -256,14 +265,14 @@ def test_836_control_not_yet_existing_comma_joined_member_stays_literal(tmp_path
     rule does not touch the filesystem at all, so this is unaffected by
     whether either half exists."""
     (tmp_path / "a.md").write_text("x\n")
-    resolved = lane_setup.resolve_lane(
-        tmp_path, ["a.md,changelog.d/835.fixed.md"]
-    )
+    resolved = lane_setup.resolve_lane(tmp_path, ["a.md,changelog.d/835.fixed.md"])
     assert len(resolved["patterns"]) == 2
     by_pattern = {e["pattern"]: e for e in resolved["patterns"]}
     assert by_pattern["a.md"]["state"] == "literal"
     assert by_pattern["changelog.d/835.fixed.md"]["state"] == "literal"
-    assert by_pattern["changelog.d/835.fixed.md"]["files"] == ["changelog.d/835.fixed.md"]
+    assert by_pattern["changelog.d/835.fixed.md"]["files"] == [
+        "changelog.d/835.fixed.md"
+    ]
 
 
 # --- plain --against mode also distinguishes resolved-to-nothing from a real disjoint pair ---
@@ -271,7 +280,9 @@ def test_836_control_not_yet_existing_comma_joined_member_stays_literal(tmp_path
 
 def test_plain_against_mode_glob_no_match_reports_resolved_to_nothing(tmp_path):
     _make_tree(tmp_path)
-    report = lane_setup.lane_report(tmp_path, ["formatters/**/*.py"], ["scripts/lane_setup.py"])
+    report = lane_setup.lane_report(
+        tmp_path, ["formatters/**/*.py"], ["scripts/lane_setup.py"]
+    )
     assert report["overlap_state"] == "resolved-to-nothing"
 
 
@@ -279,7 +290,9 @@ def test_control_plain_against_mode_real_disjoint_pair_still_reads_resolved(tmp_
     """Control: an ordinary, well-formed, genuinely disjoint pair in plain
     --against mode is unaffected by the new state."""
     _make_tree(tmp_path)
-    report = lane_setup.lane_report(tmp_path, ["commands/tick.md"], ["scripts/lane_setup.py"])
+    report = lane_setup.lane_report(
+        tmp_path, ["commands/tick.md"], ["scripts/lane_setup.py"]
+    )
     assert report["overlap_state"] == "resolved"
     assert report["overlap"] == []
 
@@ -299,6 +312,7 @@ def test_expand_directory_raises_rather_than_swallowing_an_unreadable_subtree(tm
     (root / "guarded" / "denied").mkdir()
     (root / "guarded" / "denied" / "secret.py").write_text("x\n")
     import os as _os
+
     _os.chmod(root / "guarded" / "denied", 0)
     try:
         st = (root / "guarded" / "denied" / "secret.py").stat if False else None
@@ -315,6 +329,7 @@ def test_expand_directory_raises_rather_than_swallowing_an_unreadable_subtree(tm
             took = False
         if not took:
             import pytest
+
             pytest.skip(
                 "chmod 0 did not deny listing on this platform/filesystem/user -- "
                 "cannot measure the swallow here"
@@ -332,12 +347,16 @@ def test_expand_directory_raises_rather_than_swallowing_an_unreadable_subtree(tm
         _os.chmod(root / "guarded" / "denied", 0o755)
 
 
-def test_plain_against_mode_broken_against_pattern_also_reports_resolved_to_nothing(tmp_path):
+def test_plain_against_mode_broken_against_pattern_also_reports_resolved_to_nothing(
+    tmp_path,
+):
     """Review-round finding: the fix above only checked the `--lane` side (a);
     the identical false negative existed, unfixed, on the `--against` side
     (b) -- a maintainer-typed `--against PATTERN` (dispatch.md's own
     documented fallback) that resolves to zero files must not read
     `overlap: none` as if genuinely checked and disjoint either."""
     _make_tree(tmp_path)
-    report = lane_setup.lane_report(tmp_path, ["scripts/lane_setup.py"], ["formatters/**/*.py"])
+    report = lane_setup.lane_report(
+        tmp_path, ["scripts/lane_setup.py"], ["formatters/**/*.py"]
+    )
     assert report["overlap_state"] == "resolved-to-nothing"

@@ -90,8 +90,7 @@ def test_the_rule_says_the_field_is_now_honoured():
         "undone what is now live"
     )
     assert (
-        "No shipped `claude-jit-context` release reads a `requires:` field"
-        not in body
+        "No shipped `claude-jit-context` release reads a `requires:` field" not in body
     ), (
         "still carries the retired #524 sentence claiming nothing reads "
         "requires: -- that became false the moment 0.6.0 shipped the reader (#570)"

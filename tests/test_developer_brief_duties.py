@@ -412,9 +412,7 @@ def test_the_pr_payload_control_is_the_text_that_was_actually_on_disk():
     # have caught it. Without this, a constant that had been emptied or truncated
     # to whitespace would satisfy the `in` and report as a faithful transcription.
     elided = (
-        passage.replace(FENCE_OPEN, "")
-        .replace(FENCE_CLOSE, "")
-        .replace("…", "...")
+        passage.replace(FENCE_OPEN, "").replace(FENCE_CLOSE, "").replace("…", "...")
     )
     assert elided != passage, (
         "the elision this control reproduces no longer changes the constant, so the "
@@ -667,7 +665,9 @@ def test_the_platform_rules_about_the_fix_land_inside_section_four():
     """
     text = DEVELOPER.read_text(encoding="utf-8")
     start = text.find("4. **Cross-platform is not your machine.**")
-    assert start != -1, "section 4 no longer opens with the wording the review section cites"
+    assert start != -1, (
+        "section 4 no longer opens with the wording the review section cites"
+    )
     assert text.count("\n5. **") == 1, (
         "more than one `5. **` marker: the slice below would bound section 4 at the "
         "wrong one and truncate it, and this test would then fail without naming why"
@@ -686,10 +686,13 @@ def test_the_review_section_still_hands_section_four_over_verbatim():
     auditor's source is ever deleted. Then the join it guards would be gone and
     the guard would not say so.
     """
-    assert _unmet(
-        DEVELOPER.read_text(encoding="utf-8"),
-        ["hand it §4 of the spine's *how you work*", "verbatim in the brief"],
-    ) == []
+    assert (
+        _unmet(
+            DEVELOPER.read_text(encoding="utf-8"),
+            ["hand it §4 of the spine's *how you work*", "verbatim in the brief"],
+        )
+        == []
+    )
 
 
 def test_the_validation_step_still_names_the_plugin_rooted_command():
@@ -729,7 +732,9 @@ def _accessor_states(tmp_path):
     )
     silent = tmp_path / "silent"
     (silent / ".claude-plugin").mkdir(parents=True)
-    (silent / ".claude-plugin" / "plugin.json").write_text('{"name": "x"}', encoding="utf-8")
+    (silent / ".claude-plugin" / "plugin.json").write_text(
+        '{"name": "x"}', encoding="utf-8"
+    )
     return [
         doctor.loop_repository(plugin_root=said),
         doctor.loop_repository(plugin_root=silent),
@@ -833,7 +838,7 @@ def _review_section(text):
         if s == -1:
             continue
         nxt = re.compile(r"\n# [A-Z][^\n]*?:").search(text, s + 1)
-        parts.append(text[s:] if nxt is None else text[s:nxt.start()])
+        parts.append(text[s:] if nxt is None else text[s : nxt.start()])
     return "\n".join(parts)
 
 
@@ -857,10 +862,12 @@ def test_the_referred_anchors_were_red_against_the_empty_return_subsection():
     assert _unmet(PRIOR_EMPTY_RETURN_SORT, LIVE_BEFORE_EMPTY_RETURN) == [], (
         "PRIOR_EMPTY_RETURN_SORT is not the pre-#275 subsection"
     )
-    assert _unmet(DEVELOPER.read_text(encoding="utf-8"), LIVE_BEFORE_EMPTY_RETURN) == [], (
-        "the live document lost wording this control depends on"
-    )
-    matched = [a for a in REFERRED_BUT_UNSTATED if a in _flatten(PRIOR_EMPTY_RETURN_SORT)]
+    assert (
+        _unmet(DEVELOPER.read_text(encoding="utf-8"), LIVE_BEFORE_EMPTY_RETURN) == []
+    ), "the live document lost wording this control depends on"
+    matched = [
+        a for a in REFERRED_BUT_UNSTATED if a in _flatten(PRIOR_EMPTY_RETURN_SORT)
+    ]
     assert matched == [], f"toothless anchors, already on disk: {matched}"
 
 
@@ -992,7 +999,10 @@ def test_the_gesturing_arm_maps_to_the_state_the_schema_actually_has():
     )
     token = tokens.pop()
 
-    assert _gesture_arm_missing_the_state(DEVELOPER.read_text(encoding="utf-8"), token) == set(), (
+    assert (
+        _gesture_arm_missing_the_state(DEVELOPER.read_text(encoding="utf-8"), token)
+        == set()
+    ), (
         "the brief states the gesturing-return arm without routing it to the state "
         "the schema has for it, or does not state the arm at all"
     )
@@ -1012,7 +1022,10 @@ def test_the_gesturing_arm_check_fires_on_a_document_that_is_missing_either_half
         "Spawn two agents.\n\n"
         "## Untrusted input\n"
     )
-    assert _gesture_arm_missing_the_state(both, token) == {"no-gesture-arm", "no-state-token"}
+    assert _gesture_arm_missing_the_state(both, token) == {
+        "no-gesture-arm",
+        "no-state-token",
+    }
 
     arm_only = (
         "## Review your own diff before you hand it back\n\n"
@@ -1028,7 +1041,9 @@ def test_the_gesturing_arm_check_fires_on_a_document_that_is_missing_either_half
     )
     assert _gesture_arm_missing_the_state(state_only, token) == {"no-gesture-arm"}
 
-    assert _gesture_arm_missing_the_state("nothing here", token) == {"no-review-section"}
+    assert _gesture_arm_missing_the_state("nothing here", token) == {
+        "no-review-section"
+    }
 
 
 def test_the_adjacent_policy_matches_the_vocabulary_the_schema_enforces():
@@ -1044,7 +1059,11 @@ def test_the_adjacent_policy_matches_the_vocabulary_the_schema_enforces():
         (REPO_ROOT / "schemas" / "agent-report.schema.json").read_text(encoding="utf-8")
     )
     adjacent = schema["$defs"]["adjacent"]["properties"]
-    assert set(adjacent["action"]["enum"]) == {"fixed", "report-for-filing", "below-bar"}
+    assert set(adjacent["action"]["enum"]) == {
+        "fixed",
+        "report-for-filing",
+        "below-bar",
+    }
     assert "in_blast_radius" in adjacent
 
     brief = _developer()

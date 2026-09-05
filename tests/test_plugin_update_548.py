@@ -64,7 +64,9 @@ def _fold(monkeypatch, target):
 
     def fake_iterdir(self, *args, **kwargs):
         if _key(self) == wanted:
-            raise FileNotFoundError(errno.ENOENT, "No such file or directory", str(self))
+            raise FileNotFoundError(
+                errno.ENOENT, "No such file or directory", str(self)
+            )
         return real_iterdir(self, *args, **kwargs)
 
     monkeypatch.setattr(Path, "iterdir", fake_iterdir)

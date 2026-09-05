@@ -68,17 +68,17 @@ All notable changes to this project are documented in this file.
 #: this repository was in: released twice, never had a link-ref table. There is
 #: no `[Unreleased]` definition to take a repository URL from, so the fold can
 #: write nothing -- and must say so as a refusal rather than as `ok`.
-NO_BLOCK = RELEASED[:RELEASED.index("[Unreleased]: ")].rstrip("\n") + "\n"
+NO_BLOCK = RELEASED[: RELEASED.index("[Unreleased]: ")].rstrip("\n") + "\n"
 
 #: A block with definitions but no `[Unreleased]` one to advance.
 NO_UNRELEASED_DEFINITION = RELEASED.replace(
-    "[Unreleased]: https://github.com/o/r/compare/v0.2.0...HEAD\n", "")
+    "[Unreleased]: https://github.com/o/r/compare/v0.2.0...HEAD\n", ""
+)
 
 #: `[Unreleased]` compares from a tag one release behind. The link resolves, it
 #: returns a real diff, and it shows shipped work as pending -- the failure that
 #: an "a definition exists" check cannot see.
-STALE_UNRELEASED = RELEASED.replace("compare/v0.2.0...HEAD",
-                                    "compare/v0.1.0...HEAD")
+STALE_UNRELEASED = RELEASED.replace("compare/v0.2.0...HEAD", "compare/v0.1.0...HEAD")
 
 #: CRLF throughout, as a checkout on Windows without `core.autocrlf` holds it.
 CRLF = RELEASED.replace("\n", "\r\n")
@@ -106,18 +106,38 @@ def _repo(tmp_path, changelog_text, name="repo"):
 def _run(root, script_path, *args):
     return subprocess.run(
         [sys.executable, str(script_path), *args],
-        cwd=str(root), capture_output=True, text=True,
+        cwd=str(root),
+        capture_output=True,
+        text=True,
     )
 
 
 def _fold(root, script_path, *extra, version="0.3.0"):
-    return _run(root, script_path, "--version", version, "--date", "2026-08-14",
-                "--dir", "changelog.d", "--changelog", "CHANGELOG.md", *extra)
+    return _run(
+        root,
+        script_path,
+        "--version",
+        version,
+        "--date",
+        "2026-08-14",
+        "--dir",
+        "changelog.d",
+        "--changelog",
+        "CHANGELOG.md",
+        *extra,
+    )
 
 
 def _check_links(root, script_path):
-    return _run(root, script_path, "--check-links",
-                "--dir", "changelog.d", "--changelog", "CHANGELOG.md")
+    return _run(
+        root,
+        script_path,
+        "--check-links",
+        "--dir",
+        "changelog.d",
+        "--changelog",
+        "CHANGELOG.md",
+    )
 
 
 def _changelog(root):
@@ -127,6 +147,7 @@ def _changelog(root):
 # ---------------------------------------------------------------------------
 # This repository's own file
 # ---------------------------------------------------------------------------
+
 
 def _workflow_check_links_arguments():
     """The `--check-links` invocation CI runs, taken out of the workflow.
@@ -154,7 +175,8 @@ def test_the_pull_request_gate_invokes_check_links():
     callers = _workflow_check_links_arguments()
     assert callers, (
         "no workflow in .github/workflows runs `--check-links` on this "
-        "repository's CHANGELOG.md: " + ", ".join(names))
+        "repository's CHANGELOG.md: " + ", ".join(names)
+    )
 
 
 def test_this_repositorys_changelog_passes_the_check_ci_runs():
@@ -164,7 +186,9 @@ def test_this_repositorys_changelog_passes_the_check_ci_runs():
     for name, arguments in _workflow_check_links_arguments():
         result = subprocess.run(
             [sys.executable, str(SCRIPT), *arguments],
-            cwd=str(REPO_ROOT), capture_output=True, text=True,
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == OK, name + ": " + result.stdout + result.stderr
         assert result.stdout.startswith("assemble    : ok"), result.stdout
@@ -175,9 +199,18 @@ def test_the_untagged_declaration_is_what_makes_it_pass():
     on 0.1.0 -- so `ok` above is the declaration being honoured, not the audit
     finding nothing to say about a version that was never tagged."""
     result = subprocess.run(
-        [sys.executable, str(SCRIPT), "--check-links",
-         "--dir", "changelog.d", "--changelog", "CHANGELOG.md"],
-        cwd=str(REPO_ROOT), capture_output=True, text=True,
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--check-links",
+            "--dir",
+            "changelog.d",
+            "--changelog",
+            "CHANGELOG.md",
+        ],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
     )
     assert result.returncode == REFUSED, result.stdout + result.stderr
     assert "`## [0.1.0]` has no link ref" in result.stdout, result.stdout
@@ -189,8 +222,17 @@ def test_an_untagged_version_that_is_not_x_y_z_is_refused_not_dropped(tmp_path):
     """A typo in the declaration must not read as a version that was declared:
     the audit would report a finding the maintainer has already answered."""
     root, script_path = _repo(tmp_path, RELEASED)
-    result = _run(root, script_path, "--check-links", "--untagged", "0.1",
-                  "--dir", "changelog.d", "--changelog", "CHANGELOG.md")
+    result = _run(
+        root,
+        script_path,
+        "--check-links",
+        "--untagged",
+        "0.1",
+        "--dir",
+        "changelog.d",
+        "--changelog",
+        "CHANGELOG.md",
+    )
     assert result.returncode == REFUSED, result.stdout + result.stderr
     assert "is not x.y.z" in result.stdout, result.stdout
 
@@ -203,8 +245,9 @@ def test_untagged_is_refused_by_the_modes_that_do_not_read_it(tmp_path):
     folded = _fold(root, script_path, "--untagged", "0.1.0", "--dry-run")
     assert folded.returncode == REFUSED, folded.stdout + folded.stderr
     assert "--check-links" in folded.stdout, folded.stdout
-    counted = _run(root, script_path, "--count", "--untagged", "0.1.0",
-                   "--dir", "changelog.d")
+    counted = _run(
+        root, script_path, "--count", "--untagged", "0.1.0", "--dir", "changelog.d"
+    )
     assert counted.returncode == REFUSED, counted.stdout + counted.stderr
     # The positive control: the same two runs without the flag do their job.
     assert _fold(root, script_path, "--dry-run").returncode == OK
@@ -216,9 +259,13 @@ def test_the_refusal_says_replace_when_a_definition_is_already_there(tmp_path):
     """A second `[Unreleased]:` definition beside the first is not an error any
     parse reports: the reference resolves to whichever is read first, so the
     file carries two answers and shows one. The remedy has to say which."""
-    root, script_path = _repo(tmp_path, RELEASED.replace(
-        "[Unreleased]: https://github.com/o/r/compare/v0.2.0...HEAD",
-        "[Unreleased]: https://github.com/o/r/commits/HEAD"))
+    root, script_path = _repo(
+        tmp_path,
+        RELEASED.replace(
+            "[Unreleased]: https://github.com/o/r/compare/v0.2.0...HEAD",
+            "[Unreleased]: https://github.com/o/r/commits/HEAD",
+        ),
+    )
     result = _fold(root, script_path)
     assert result.returncode == REFUSED, result.stdout + result.stderr
     assert "replace" in result.stdout, result.stdout
@@ -234,8 +281,17 @@ def test_a_declaration_for_a_version_that_has_a_link_ref_is_a_finding(tmp_path):
     untagged that carries a `releases/tag/v...` link is two statements that
     cannot both be true, and the link is the one that 404s."""
     root, script_path = _repo(tmp_path, RELEASED)
-    result = _run(root, script_path, "--check-links", "--untagged", "0.2.0",
-                  "--dir", "changelog.d", "--changelog", "CHANGELOG.md")
+    result = _run(
+        root,
+        script_path,
+        "--check-links",
+        "--untagged",
+        "0.2.0",
+        "--dir",
+        "changelog.d",
+        "--changelog",
+        "CHANGELOG.md",
+    )
     assert result.returncode == REFUSED, result.stdout + result.stderr
     assert "declared as never tagged but has a link ref" in result.stdout, result.stdout
 
@@ -243,6 +299,7 @@ def test_a_declaration_for_a_version_that_has_a_link_ref_is_a_finding(tmp_path):
 # ---------------------------------------------------------------------------
 # What the fold does to the table
 # ---------------------------------------------------------------------------
+
 
 def test_the_fold_writes_the_new_releases_link_ref_and_advances_unreleased(tmp_path):
     """Asserted on the folded file, not on the receipt: a receipt line saying
@@ -290,7 +347,8 @@ def test_the_refusal_names_which_of_the_states_it_found(tmp_path):
     maintainer fixes each of them differently."""
     no_block, block_script = _repo(tmp_path, NO_BLOCK, name="a")
     no_definition, definition_script = _repo(
-        tmp_path, NO_UNRELEASED_DEFINITION, name="b")
+        tmp_path, NO_UNRELEASED_DEFINITION, name="b"
+    )
 
     first = _fold(no_block, block_script).stdout
     second = _fold(no_definition, definition_script).stdout
@@ -309,6 +367,7 @@ def test_the_dry_run_refuses_on_the_same_file_the_fold_would(tmp_path):
 # ---------------------------------------------------------------------------
 # What the check can and cannot see
 # ---------------------------------------------------------------------------
+
 
 def test_check_links_sees_an_unreleased_that_is_a_release_behind(tmp_path):
     """The interesting half. `[Unreleased]` here has a definition, it resolves,
@@ -333,6 +392,7 @@ def test_check_links_passes_the_same_fixture_once_unreleased_is_current(tmp_path
 # Line endings
 # ---------------------------------------------------------------------------
 
+
 def test_the_fold_keeps_the_line_endings_it_found(tmp_path):
     """A whole-file ending flip is a diff of every line, and it is invisible in
     review. `read_text` normalises CRLF to LF on the way in, so the fold rewrote
@@ -347,8 +407,10 @@ def test_the_fold_keeps_the_line_endings_it_found(tmp_path):
     crlf_bytes = (crlf_root / "CHANGELOG.md").read_bytes()
     lf_bytes = (lf_root / "CHANGELOG.md").read_bytes()
     assert b"0.3.0" in crlf_bytes and b"0.3.0" in lf_bytes, (
-        "neither file was folded -- this test can see nothing")
+        "neither file was folded -- this test can see nothing"
+    )
     assert b"\r\n" in crlf_bytes, "a CRLF changelog was rewritten with LF endings"
     assert crlf_bytes.count(b"\n") == crlf_bytes.count(b"\r\n"), (
-        "the CRLF changelog came back with mixed endings")
+        "the CRLF changelog came back with mixed endings"
+    )
     assert b"\r" not in lf_bytes, "an LF changelog was rewritten with CRLF endings"

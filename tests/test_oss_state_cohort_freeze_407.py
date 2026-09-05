@@ -118,7 +118,9 @@ def test_a_single_route_without_a_why_raises():
 
 def test_no_routes_counted_at_all_also_needs_a_why():
     with pytest.raises(oss_state.StateError):
-        oss_state.cohort_freeze(COHORT, {"filtered_query": None, "per_issue_read": None})
+        oss_state.cohort_freeze(
+            COHORT, {"filtered_query": None, "per_issue_read": None}
+        )
 
 
 # ------------------------------------------------------------------------- refusals
@@ -162,7 +164,9 @@ def test_a_non_integer_count_is_refused():
 def test_cohort_freeze_line_renders_each_state_distinctly():
     measured = oss_state.cohort_freeze(COHORT, {"a": 22, "b": 22})
     unknown = oss_state.cohort_freeze(COHORT, {"a": 19, "b": 22})
-    could_not = oss_state.cohort_freeze(COHORT, {"a": 19}, why="only one route answered")
+    could_not = oss_state.cohort_freeze(
+        COHORT, {"a": 19}, why="only one route answered"
+    )
 
     measured_line = oss_state.cohort_freeze_line(measured)
     unknown_line = oss_state.cohort_freeze_line(unknown)
@@ -171,7 +175,10 @@ def test_cohort_freeze_line_renders_each_state_distinctly():
     assert "22" in measured_line
     assert "unknown" in unknown_line.lower()
     assert "19" not in unknown_line.split("(")[0]  # the headline never states a number
-    assert "could not count" in could_not_line.lower() or "could-not-count" in could_not_line.lower()
+    assert (
+        "could not count" in could_not_line.lower()
+        or "could-not-count" in could_not_line.lower()
+    )
     # The three renders must be distinguishable from one another.
     assert len({measured_line, unknown_line, could_not_line}) == 3
 
@@ -236,9 +243,7 @@ def test_cli_refuses_a_repeated_route_rather_than_silently_collapsing_it(tmp_pat
 
 def test_repeated_route_names_are_refused_before_dict_collapse():
     with pytest.raises(oss_state.StateError):
-        oss_state.cohort_freeze_from_pairs(
-            COHORT, [("a", 19), ("a", 22), ("b", 22)]
-        )
+        oss_state.cohort_freeze_from_pairs(COHORT, [("a", 19), ("a", 22), ("b", 22)])
 
 
 def test_cli_disagreeing_routes_records_unknown_not_a_number(tmp_path):

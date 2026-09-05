@@ -49,7 +49,9 @@ def _table_rows():
 
 def test_budget_table_names_exactly_the_files_agent_budgets_declares():
     rows = _table_rows()
-    assert rows, "no rows matched under the budget table header -- the parser or the table moved"
+    assert rows, (
+        "no rows matched under the budget table header -- the parser or the table moved"
+    )
     table_paths = {path for path, _, _ in rows}
     assert table_paths == set(agent_budgets.BUDGETS), (
         "CLAUDE.md's budget table and agent_budgets.BUDGETS name a different set of "
@@ -62,12 +64,16 @@ def test_budget_table_names_exactly_the_files_agent_budgets_declares():
 
 def test_budget_table_numbers_match_agent_budgets_exactly():
     rows = _table_rows()
-    assert rows, "no rows matched under the budget table header -- the parser or the table moved"
+    assert rows, (
+        "no rows matched under the budget table header -- the parser or the table moved"
+    )
     mismatches = []
     for path, table_baseline, table_budget in rows:
         real_baseline, real_budget = agent_budgets.BUDGETS.get(path, (None, None))
         if (table_baseline, table_budget) != (real_baseline, real_budget):
-            mismatches.append((path, (table_baseline, table_budget), (real_baseline, real_budget)))
+            mismatches.append(
+                (path, (table_baseline, table_budget), (real_baseline, real_budget))
+            )
     assert not mismatches, (
         "CLAUDE.md's budget table disagrees with agent_budgets.BUDGETS (table vs. real): "
         + ", ".join(f"{p}: {t} != {r}" for p, t, r in mismatches)

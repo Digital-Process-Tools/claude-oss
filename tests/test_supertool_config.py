@@ -146,8 +146,9 @@ def _derived_watch_name():
     doc = _load(OSS_CONFIG)
     name, problem = oss_config.watch_channel_name(doc.get("repo"))
     assert not problem, (
-        "this repository's own .oss.json repo value is not derivable: "
-        "{}".format(problem)
+        "this repository's own .oss.json repo value is not derivable: {}".format(
+            problem
+        )
     )
     return name
 
@@ -240,9 +241,7 @@ def test_a_mismatched_or_partial_declaration_is_what_that_reader_catches():
     # Declared on an op OUTSIDE WATCH_OPS -- a typo or a stray key on an
     # unrelated op. The equality check above never reads it (it only iterates
     # WATCH_OPS), so this is what the `stray` assertion exists to catch.
-    stray = _watch_names(
-        {"ops": {"git-commit": {"watch_name": expected}}}
-    )
+    stray = _watch_names({"ops": {"git-commit": {"watch_name": expected}}})
     assert set(stray) - set(WATCH_OPS) == {"git-commit"}
 
     assert _watch_names({}) == {}

@@ -212,7 +212,9 @@ def _fold(monkeypatch, target):
         except (OSError, ValueError, TypeError):
             key = None
         if key == wanted:
-            raise FileNotFoundError(errno.ENOENT, "No such file or directory", str(value))
+            raise FileNotFoundError(
+                errno.ENOENT, "No such file or directory", str(value)
+            )
         return real_os_stat(value, *args, **kwargs)
 
     def fake_path_stat(self, *args, **kwargs):
@@ -221,7 +223,9 @@ def _fold(monkeypatch, target):
         except (OSError, ValueError, TypeError):
             key = None
         if key == wanted:
-            raise FileNotFoundError(errno.ENOENT, "No such file or directory", str(self))
+            raise FileNotFoundError(
+                errno.ENOENT, "No such file or directory", str(self)
+            )
         return real_path_stat(self, *args, **kwargs)
 
     monkeypatch.setattr(os, "stat", fake_os_stat)

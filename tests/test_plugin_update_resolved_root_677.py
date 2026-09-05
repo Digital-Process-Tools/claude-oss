@@ -10,6 +10,7 @@ together name -- returning `None`, never a guessed path, whenever any piece of
 that is unavailable. `None` here is a caller's cue to fall back to the pinned
 path and say so (route "pinned-root"), not a value to paper over.
 """
+
 import json
 import os
 import sys
@@ -50,7 +51,9 @@ def _set_home(monkeypatch, home):
             "os.path.expanduser('~') resolved to {!r}, not the fixture's {!r}, "
             "after setting both HOME and USERPROFILE -- what goes untested here "
             "is this test's own home-directory fixture on whatever platform "
-            "produced this, not the production resolver".format(str(resolved), str(home))
+            "produced this, not the production resolver".format(
+                str(resolved), str(home)
+            )
         )
 
 
@@ -142,13 +145,12 @@ def test_cli_print_resolved_root_prints_the_path(tmp_path, capsys, monkeypatch):
     home_plugins = tmp_path / ".claude" / "plugins"
     home_plugins.parent.mkdir(parents=True, exist_ok=True)
     import shutil
+
     shutil.copytree(plugins_root, home_plugins)
 
     project = tmp_path / "project"
     project.mkdir(parents=True, exist_ok=True)
-    rc = plugin_update.main(
-        ["--root", str(project), "--print-resolved-root"]
-    )
+    rc = plugin_update.main(["--root", str(project), "--print-resolved-root"])
     assert rc == 0
     out = capsys.readouterr().out
     # .as_posix() on BOTH sides, not str() -- the consumer decides this, not
@@ -171,7 +173,9 @@ def test_cli_print_resolved_root_prints_the_path(tmp_path, capsys, monkeypatch):
     assert out == (home_plugins / "cache" / "dpt-plugins" / "oss" / "9.9.9").as_posix()
 
 
-def test_cli_print_resolved_root_prints_posix_separators_on_a_windows_path(monkeypatch, capsys):
+def test_cli_print_resolved_root_prints_posix_separators_on_a_windows_path(
+    monkeypatch, capsys
+):
     """Self-review finding: the printed path is consumed by a bash snippet in
     commands/tick.md that runs inside Git Bash on Windows, where a native
     WindowsPath prints backslashes. `scripts/doctor.py`'s own `_launcher_remedy`
@@ -196,7 +200,9 @@ def test_cli_print_resolved_root_prints_posix_separators_on_a_windows_path(monke
     assert out == "C:/Users/x/.claude/plugins/cache/dpt-plugins/oss/9.9.9"
 
 
-def test_cli_print_resolved_root_fails_loudly_when_it_cannot_resolve(tmp_path, capsys, monkeypatch):
+def test_cli_print_resolved_root_fails_loudly_when_it_cannot_resolve(
+    tmp_path, capsys, monkeypatch
+):
     plugin_dir = tmp_path / "plugin"
     (plugin_dir / ".claude-plugin").mkdir(parents=True, exist_ok=True)
     (plugin_dir / ".claude-plugin" / "plugin.json").write_text(

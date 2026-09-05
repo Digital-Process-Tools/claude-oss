@@ -33,7 +33,9 @@ def test_the_board_is_due_on_the_short_clock():
 def test_the_published_versions_are_due_on_the_long_one():
     cache = {"fetched_at": 100.0, "latest_fetched_at": 100.0}
     assert not statusline.latest_is_due(cache, now=100.0 + statusline.REFRESH_AFTER + 1)
-    assert statusline.latest_is_due(cache, now=100.0 + statusline.LATEST_REFRESH_AFTER + 1)
+    assert statusline.latest_is_due(
+        cache, now=100.0 + statusline.LATEST_REFRESH_AFTER + 1
+    )
 
 
 def test_the_short_clock_is_shorter_than_the_long_one():
@@ -54,7 +56,9 @@ def test_a_cache_from_before_the_split_is_due_for_versions_rather_than_assumed_f
     column for an hour on every upgrade; reading it as the one stamp that IS there is the
     honest answer -- that is when those versions were fetched."""
     cache = {"fetched_at": 100.0, "latest": {"owner/repo": "1.0.0"}}
-    assert statusline.latest_is_due(cache, now=100.0 + statusline.LATEST_REFRESH_AFTER + 1)
+    assert statusline.latest_is_due(
+        cache, now=100.0 + statusline.LATEST_REFRESH_AFTER + 1
+    )
     assert not statusline.latest_is_due(cache, now=100.0 + 1)
 
 
@@ -65,13 +69,18 @@ def _refresh(tmp_path, monkeypatch, answers, cache=None):
     """Run a real `refresh` against a fake forge and a cache directory of our own."""
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(statusline, "repo_config", lambda root: {"repo": "owner/repo"})
-    monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: answers["counts"][kind])
     monkeypatch.setattr(
-        statusline, "_gh_external_issue_count", lambda repo, total: answers.get("external", 0)
+        statusline, "_gh_count", lambda repo, kind: answers["counts"][kind]
+    )
+    monkeypatch.setattr(
+        statusline,
+        "_gh_external_issue_count",
+        lambda repo, total: answers.get("external", 0),
     )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: answers["rollups"])
     monkeypatch.setattr(
-        statusline, "installed_plugins",
+        statusline,
+        "installed_plugins",
         lambda project_root, plugins_root=None: {
             "oss": {"version": "0.1.0", "repository": "https://github.com/owner/repo"}
         },
@@ -84,15 +93,24 @@ def _refresh(tmp_path, monkeypatch, answers, cache=None):
 
     monkeypatch.setattr(statusline, "_latest_release", latest)
     if cache is not None:
-        statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
+        statusline.cache_path("owner/repo").write_text(
+            json.dumps(cache), encoding="utf-8"
+        )
     document = statusline.refresh(".", now=answers["now"])
     return document, asked
 
 
-ANSWERS = {"counts": {"pr": 0, "issue": 20}, "rollups": [], "latest": "2.0.0", "now": 1_000.0}
+ANSWERS = {
+    "counts": {"pr": 0, "issue": 20},
+    "rollups": [],
+    "latest": "2.0.0",
+    "now": 1_000.0,
+}
 
 
-def test_a_board_refresh_carries_the_versions_forward_without_asking_again(tmp_path, monkeypatch):
+def test_a_board_refresh_carries_the_versions_forward_without_asking_again(
+    tmp_path, monkeypatch
+):
     cache = {
         "fetched_at": 1.0,
         "latest_fetched_at": ANSWERS["now"] - 10,
@@ -100,14 +118,18 @@ def test_a_board_refresh_carries_the_versions_forward_without_asking_again(tmp_p
     }
     document, asked = _refresh(tmp_path, monkeypatch, ANSWERS, cache)
     assert document["prs"] == 0 and document["issues"] == 20
-    assert asked == [], "the published version was fetched again inside its own interval"
+    assert asked == [], (
+        "the published version was fetched again inside its own interval"
+    )
     assert document["latest"] == {"owner/repo": "1.0.0"}
     assert document["latest_fetched_at"] == cache["latest_fetched_at"], (
         "carrying a value forward must carry its age with it, or it reads as freshly measured"
     )
 
 
-def test_the_must_fire_control_an_expired_version_stamp_is_asked_again(tmp_path, monkeypatch):
+def test_the_must_fire_control_an_expired_version_stamp_is_asked_again(
+    tmp_path, monkeypatch
+):
     cache = {
         "fetched_at": 1.0,
         "latest_fetched_at": ANSWERS["now"] - statusline.LATEST_REFRESH_AFTER - 1,
@@ -125,7 +147,9 @@ def test_the_board_stamp_moves_on_every_refresh(tmp_path, monkeypatch):
     assert document["fetched_at"] == ANSWERS["now"]
 
 
-def test_a_version_lookup_that_fails_does_not_erase_the_one_being_carried(tmp_path, monkeypatch):
+def test_a_version_lookup_that_fails_does_not_erase_the_one_being_carried(
+    tmp_path, monkeypatch
+):
     """A network that answered once and cannot now is not a plugin with no published
     version. The old reading is kept, with its own old stamp, so the next render still has
     a comparison to make."""

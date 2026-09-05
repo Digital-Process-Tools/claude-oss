@@ -73,7 +73,9 @@ def check_auto_update(project_dir, sh_available=None):
     run gets.
     """
     if doctor.plugin_update is None:
-        doctor.unmeasured("auto-update", "scripts/plugin_update.py could not be imported")
+        doctor.unmeasured(
+            "auto-update", "scripts/plugin_update.py could not be imported"
+        )
         return
     status, where = doctor.plugin_update.opt_out(project_dir)
     receipt = doctor.plugin_update.read_receipt()
@@ -95,7 +97,9 @@ def check_auto_update(project_dir, sh_available=None):
             "WARN",
             "auto-update: receipt at {} exists and could not be read ({}) -- this is "
             "not the ordinary before-the-next-session state; something was written "
-            "and is now broken.".format(doctor.plugin_update.receipt_path(), receipt.detail),
+            "and is now broken.".format(
+                doctor.plugin_update.receipt_path(), receipt.detail
+            ),
         )
         return
     if not isinstance(receipt, dict):
@@ -168,11 +172,14 @@ def _report_plugin(receipt, state, partial, stamp):
             doctor.report(
                 "WARN",
                 "auto-update: {} reports current{} -- but not every scope updated "
-                "cleanly: {}".format(receipt.get("plugin"), stamp, receipt.get("detail")),
+                "cleanly: {}".format(
+                    receipt.get("plugin"), stamp, receipt.get("detail")
+                ),
             )
             return
         doctor.report(
-            "OK", "auto-update: {} already current{}".format(receipt.get("plugin"), stamp)
+            "OK",
+            "auto-update: {} already current{}".format(receipt.get("plugin"), stamp),
         )
         return
     doctor.report(
@@ -180,6 +187,7 @@ def _report_plugin(receipt, state, partial, stamp):
         "auto-update: could not check{} -- {}. This is not a statement that the plugin "
         "is current.".format(stamp, receipt.get("detail")),
     )
+
 
 #: A dependency state the updater records that is not a gap in what the updater did.
 #: `not-installed` is named in the row anyway -- "nothing was updated" and "nothing needed
@@ -237,7 +245,9 @@ def _report_dependencies(receipt):
         name = entry.get("name")
         state = entry.get("state")
         if state == "updated":
-            return "{} updated {} to {}".format(name, entry.get("from"), entry.get("to"))
+            return "{} updated {} to {}".format(
+                name, entry.get("from"), entry.get("to")
+            )
         if state == "not-installed":
             return "{} not installed for this project".format(name)
         if state == "current":

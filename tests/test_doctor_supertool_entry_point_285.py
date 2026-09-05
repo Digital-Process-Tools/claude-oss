@@ -118,7 +118,9 @@ def test_the_plugins_own_link_is_the_passing_state(tmp_path):
     )
     assert state == "ok", (state, detail)
 
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     assert doctor.FINDINGS[-1][0] == "OK"
 
 
@@ -200,10 +202,14 @@ def test_the_comparison_is_identity_and_not_string_equality(tmp_path):
     alias = tmp_path / "alias-supertool.py"
     refused = _hardlink(alias, entry)
     if refused:
-        pytest.skip(refused + "; what went untested is whether the comparison is identity")
+        pytest.skip(
+            refused + "; what went untested is whether the comparison is identity"
+        )
     refused = _link(project / "supertool", alias)
     if refused:
-        pytest.skip(refused + "; what went untested is whether the comparison is identity")
+        pytest.skip(
+            refused + "; what went untested is whether the comparison is identity"
+        )
 
     assert os.path.realpath(str(alias)) != os.path.realpath(str(entry)), (
         "the fixture did not produce two spellings -- realpath collapsed them, so this "
@@ -271,7 +277,9 @@ def test_a_link_to_something_else_is_distinct_from_absent(tmp_path):
     assert state == "other-target", (state, detail)
     assert "elsewhere.py" in detail, detail
 
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     level, message = doctor.FINDINGS[-1]
     # #756: named, not judged -- the two states this cannot tell apart (a
     # deliberate local checkout, a stale link) are indistinguishable in
@@ -297,7 +305,9 @@ def test_an_undeterminable_plugin_path_is_not_reported_as_a_wrong_target(tmp_pat
     if refused:
         pytest.skip(refused + "; what went untested is the unknown-plugin-path arm")
     state, detail = doctor.supertool_entry_point(
-        project, cache_root=str(tmp_path / "no-cache"), record=str(tmp_path / "no-record")
+        project,
+        cache_root=str(tmp_path / "no-cache"),
+        record=str(tmp_path / "no-record"),
     )
     assert state == "unknown-plugin-path", (state, detail)
 
@@ -365,8 +375,8 @@ def test_a_regular_file_is_never_executed_790(tmp_path):
     _marker_script(
         script,
         marker,
-        "#!/bin/sh\necho \"PWNED: doctor executed me with args: $*\" >> {}\n"
-        "echo \"supertool {}\"\n".format(marker, VERSION),
+        '#!/bin/sh\necho "PWNED: doctor executed me with args: $*" >> {}\n'
+        'echo "supertool {}"\n'.format(marker, VERSION),
     )
     refused = _fixture_is_runnable(script, marker)
     if refused:
@@ -376,20 +386,25 @@ def test_a_regular_file_is_never_executed_790(tmp_path):
     (state, detail), _ = _state(project, tmp_path)
     assert state == "not-a-symlink", (state, detail)
     assert not marker.exists(), (
-        "doctor executed a file the inspected repository supplied: " + marker.read_text()
+        "doctor executed a file the inspected repository supplied: "
+        + marker.read_text()
         if marker.exists()
         else "unreachable"
     )
 
     doctor.FINDINGS.clear()
     home, record, _ = _cache(tmp_path)
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     assert not marker.exists(), "check_supertool_entry_point executed the file"
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
 
 
-def test_a_regular_file_that_self_reports_the_installed_version_still_warns_793(tmp_path):
+def test_a_regular_file_that_self_reports_the_installed_version_still_warns_793(
+    tmp_path,
+):
     """#793: the OK state this branch used to return believed a version string the
     file itself printed, established only by running it -- a self-report, not a
     measurement of identity. Now that the file is never run, a script that would
@@ -401,17 +416,23 @@ def test_a_regular_file_that_self_reports_the_installed_version_still_warns_793(
     project.mkdir()
     script = project / "supertool"
     _marker_script(
-        script, tmp_path / "unused-marker", "#!/bin/sh\necho \"supertool {}\"\n".format(VERSION)
+        script,
+        tmp_path / "unused-marker",
+        '#!/bin/sh\necho "supertool {}"\n'.format(VERSION),
     )
     (state, detail), _ = _state(project, tmp_path)
     assert state == "not-a-symlink", (state, detail)
 
     doctor.FINDINGS.clear()
     home, record, _ = _cache(tmp_path)
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
-    assert "op calls through it reach the tool the briefs mean is unknown" in message, message
+    assert "op calls through it reach the tool the briefs mean is unknown" in message, (
+        message
+    )
     assert "reach the tool the briefs mean." not in message, (
         "the old OK sentence's unqualified claim must not survive: " + message
     )
@@ -429,7 +450,9 @@ def test_a_regular_file_with_unparseable_content_is_the_same_state(tmp_path):
 
     doctor.FINDINGS.clear()
     home, record, _ = _cache(tmp_path)
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
 
@@ -475,7 +498,9 @@ def test_a_supertool_checkout_is_not_told_to_create_a_wrapper(tmp_path):
     assert not os.path.isabs(detail), detail
 
     home, record, _ = _cache(tmp_path)
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "OK", message
     assert "supertool.py" in message, message
@@ -505,7 +530,9 @@ def test_a_wrapper_inside_a_supertool_checkout_is_its_own_state(tmp_path):
     )
     assert state == "own-tree-stranger", (state, detail)
 
-    doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(home), record=str(record)
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
     assert "supertool.py" in message, message
@@ -528,7 +555,9 @@ def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
             (project / ".supertool.json").write_text("{}\n", encoding="utf-8")
             (project / "supertool.py").write_text("x\n", encoding="utf-8")
         doctor.FINDINGS.clear()
-        doctor.check_supertool_entry_point(project, cache_root=str(home), record=str(record))
+        doctor.check_supertool_entry_point(
+            project, cache_root=str(home), record=str(record)
+        )
         assert len(doctor.FINDINGS) == 1, (name, doctor.FINDINGS)
         seen.add(name)
     assert seen == {"absent", "not-a-symlink", "own-tree"}

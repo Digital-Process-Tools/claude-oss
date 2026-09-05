@@ -56,14 +56,19 @@ PROSE = SKILLS + AGENTS
 #: The phase files are prose the loop executes, so the sweeps below have to
 #: reach them. They are deliberately NOT in `PROSE`: that list is also what
 #: the frontmatter check iterates, and a phase file is not a skill.
-EXECUTABLE_PROSE = SKILLS + SKILL_PHASES + AGENTS + DEVELOPER_PHASES + COMMANDS + SCHEMAS
+EXECUTABLE_PROSE = (
+    SKILLS + SKILL_PHASES + AGENTS + DEVELOPER_PHASES + COMMANDS + SCHEMAS
+)
 
 # Spellings that would make a document true of exactly one repository.
 HARDCODED = [
     (r"Digital-Process-Tools/claude-\w+", "a specific repo slug"),
     (r"~/Documents/(?:st|jit|rm)-wt", "a specific worktree root"),
     (r"~/Documents/claude-\w+", "a specific local clone"),
-    (r"\bclaude-(?:supertool|remember|jit-context|5h-window-spread)\b", "a sibling repo name"),
+    (
+        r"\bclaude-(?:supertool|remember|jit-context|5h-window-spread)\b",
+        "a sibling repo name",
+    ),
     (r"\bfdaviddpt\b", "a specific GitHub handle"),
 ]
 
@@ -85,7 +90,9 @@ def _fact_bearing_documents():
 
 def test_prose_files_exist():
     """A suite that silently found no documents would pass every check below."""
-    assert SKILLS, "no skills/**/SKILL.md found -- the checks below would vacuously pass"
+    assert SKILLS, (
+        "no skills/**/SKILL.md found -- the checks below would vacuously pass"
+    )
     assert AGENTS, "no agents/*.md found -- the checks below would vacuously pass"
 
 
@@ -96,7 +103,9 @@ def test_no_repo_specific_spellings_in_prose():
             for match in re.finditer(pattern, text):
                 line = text[: match.start()].count("\n") + 1
                 rel = path.relative_to(REPO_ROOT)
-                offenders.append("{}:{}: {} ({!r})".format(rel, line, what, match.group(0)))
+                offenders.append(
+                    "{}:{}: {} ({!r})".format(rel, line, what, match.group(0))
+                )
     assert not offenders, (
         "Repo-specific values belong in .oss.json, not in prose. A fact about one repo "
         "asserted here reaches a brief with the same authority as a re-derived one:\n  "
@@ -115,7 +124,11 @@ def test_skill_and_agents_declare_frontmatter():
 
 
 def _granted_tools(agent_name):
-    block = (REPO_ROOT / "agents" / agent_name).read_text(encoding="utf-8").split("\n---\n", 1)[0]
+    block = (
+        (REPO_ROOT / "agents" / agent_name)
+        .read_text(encoding="utf-8")
+        .split("\n---\n", 1)[0]
+    )
     tools = re.search(r"^tools:\s*(.+)$", block, re.MULTILINE)
     assert tools is not None, "{} declares no tools: line".format(agent_name)
     return {t.strip() for t in tools.group(1).split(",")}
@@ -172,7 +185,9 @@ def test_developer_narration_vs_report_314():
     vacuously.
     """
     text = DEVELOPER.read_text(encoding="utf-8")
-    assert "#314" in text, "developer.md does not cite #314's narration-vs-report finding"
+    assert "#314" in text, (
+        "developer.md does not cite #314's narration-vs-report finding"
+    )
     assert "argued-down" in text, (
         "developer.md no longer keeps the report-for-filing disposition guidance the #314 "
         "instruction argues for preserving -- positive control failed"
@@ -245,14 +260,18 @@ def test_setup_probes_the_repo_without_preset_only_ops():
     already configured, so a preset op there has its precondition met.
     """
     text = (REPO_ROOT / "commands" / "setup.md").read_text(encoding="utf-8")
-    offenders = ["setup.md:{}: {!r}".format(line, op) for line, op in _preset_ops_called(text)]
+    offenders = [
+        "setup.md:{}: {!r}".format(line, op) for line, op in _preset_ops_called(text)
+    ]
     assert not offenders, (
         "/oss:setup runs before .supertool.json exists, so preset ops are not loaded "
         "and these calls cannot run:\n  " + "\n  ".join(offenders)
     )
 
 
-IDENTITY_PATH_RE = re.compile(r"((?:<repo>/|\.)[A-Za-z0-9_./<>-]*remember/identity[A-Za-z.]*\.md)")
+IDENTITY_PATH_RE = re.compile(
+    r"((?:<repo>/|\.)[A-Za-z0-9_./<>-]*remember/identity[A-Za-z.]*\.md)"
+)
 
 
 def test_every_document_names_the_same_identity_file():
@@ -309,7 +328,8 @@ def test_scaffold_documents_every_file_it_writes():
     missing = [name for name in written if name not in text]
     assert not missing, (
         "scaffold.py writes these into the repo and commands/scaffold.md never names "
-        "them, so nobody reviewing the plan knows they arrived:\n  " + "\n  ".join(missing)
+        "them, so nobody reviewing the plan knows they arrived:\n  "
+        + "\n  ".join(missing)
     )
 
 
@@ -376,6 +396,8 @@ def test_developer_notes_convention_is_pinned():
         "developer.md must ask the agent to state what the note/report split cost -- "
         "otherwise the saving this convention exists for is never checked"
     )
+
+
 # ------------------------------------------------------------------- config scope (#34)
 
 
@@ -399,7 +421,9 @@ def test_setup_writes_both_halves_and_excludes_only_the_local_one():
         "setup.md must name the machine-scoped half; without it the maintainer writes "
         "one file again"
     )
-    assert "--split" in text, "setup.md must invoke the split; a manual split is per-maintainer"
+    assert "--split" in text, (
+        "setup.md must invoke the split; a manual split is per-maintainer"
+    )
 
 
 def test_no_document_asks_for_the_project_config_to_be_git_excluded():
@@ -412,9 +436,14 @@ def test_no_document_asks_for_the_project_config_to_be_git_excluded():
         for number, line in enumerate(text.splitlines(), 1):
             if "exclude" not in line:
                 continue
-            if oss_config.CONFIG_NAME in line and oss_config.LOCAL_CONFIG_NAME not in line:
+            if (
+                oss_config.CONFIG_NAME in line
+                and oss_config.LOCAL_CONFIG_NAME not in line
+            ):
                 offenders.append(
-                    "{}:{}: {}".format(path.relative_to(REPO_ROOT), number, line.strip())
+                    "{}:{}: {}".format(
+                        path.relative_to(REPO_ROOT), number, line.strip()
+                    )
                 )
     assert not offenders, (
         "the project half of the config is meant to be committed; excluding it is how "
@@ -446,7 +475,9 @@ def test_documents_that_enumerate_the_config_keys_name_both_files():
                 rel, oss_config.LOCAL_CONFIG_NAME
             )
         )
-    assert named, "no document enumerates the config keys -- this check would vacuously pass"
+    assert named, (
+        "no document enumerates the config keys -- this check would vacuously pass"
+    )
 
 
 def test_release_states_what_to_do_for_every_nullable_release_key():
@@ -638,8 +669,8 @@ def _wiring_unmet(text):
 
 def test_developer_spawns_the_auditor():
     unmet = _wiring_unmet(DEVELOPER.read_text(encoding="utf-8"))
-    assert not unmet, (
-        "agents/developer.md does not wire the auditor in: " + repr(sorted(unmet))
+    assert not unmet, "agents/developer.md does not wire the auditor in: " + repr(
+        sorted(unmet)
     )
 
 
@@ -648,7 +679,7 @@ def test_the_wiring_check_fires_on_a_developer_that_spawns_only_the_reviewer():
     auditor -- must be reported as unwired, or the check above passes on it.
     """
     only_the_reviewer = (
-        'After you commit, spawn one Sonnet reviewer:\n\n'
+        "After you commit, spawn one Sonnet reviewer:\n\n"
         'Agent(subagent_type: "general-purpose", model: "sonnet")\n'
     )
     unmet = _wiring_unmet(only_the_reviewer)
@@ -671,7 +702,9 @@ def test_the_wiring_check_fires_on_the_sentence_that_predates_this_change():
     """
     text = DEVELOPER.read_text(encoding="utf-8")
     without_the_new_sentence = text.replace("did not run", "ran")
-    assert "a-spawn-that-did-not-run-is-reported" in _wiring_unmet(without_the_new_sentence), (
+    assert "a-spawn-that-did-not-run-is-reported" in _wiring_unmet(
+        without_the_new_sentence
+    ), (
         "the wiring check is satisfied by prose that predates this change, so it says "
         "nothing about whether the auditor's non-run is reported"
     )
@@ -768,8 +801,7 @@ def test_the_release_auditor_contracts_fire_on_an_agent_that_says_nothing():
     expected = {name for name, _ in RELEASE_AUDITOR_CONTRACTS}
     assert unmet == expected, (
         "the contract checks do not fire on an agent file that says nothing, so "
-        "they would also pass on one. Not firing: "
-        + repr(sorted(expected - unmet))
+        "they would also pass on one. Not firing: " + repr(sorted(expected - unmet))
     )
 
 
@@ -938,10 +970,8 @@ def test_both_copies_carry_the_console_encoding_item():
     for path in CONSOLE_ENCODING_SOURCES:
         assert path.is_file(), "{} is missing".format(path.relative_to(REPO_ROOT))
         unmet = _console_encoding_anchors_unmet(path.read_text(encoding="utf-8"))
-        assert not unmet, (
-            "{} does not carry the console-encoding shape: {}".format(
-                path.relative_to(REPO_ROOT), sorted(unmet)
-            )
+        assert not unmet, "{} does not carry the console-encoding shape: {}".format(
+            path.relative_to(REPO_ROOT), sorted(unmet)
         )
 
 
@@ -1003,7 +1033,8 @@ def test_developer_spawns_explore_not_general_purpose():
     text = DEVELOPER.read_text(encoding="utf-8")
     unmet = _explore_reviewer_unmet(text)
     assert not unmet, (
-        "agents/developer.md does not carry the Explore-reviewer fix: " + repr(sorted(unmet))
+        "agents/developer.md does not carry the Explore-reviewer fix: "
+        + repr(sorted(unmet))
     )
 
 
@@ -1014,7 +1045,7 @@ def test_the_explore_reviewer_check_fires_on_the_general_purpose_spawn_it_replac
     """
     before = (
         'Agent(subagent_type: "general-purpose", model: "sonnet", run_in_background: false)\n\n'
-        'Tell it explicitly that it must not edit anything. It has Edit and Write.\n'
+        "Tell it explicitly that it must not edit anything. It has Edit and Write.\n"
     )
     unmet = _explore_reviewer_unmet(before)
     assert unmet == {
@@ -1054,7 +1085,8 @@ def test_developer_states_the_reviewer_return_contract():
     text = DEVELOPER.read_text(encoding="utf-8")
     unmet = _reviewer_return_unmet(text)
     assert not unmet, (
-        "agents/developer.md does not carry the reviewer-return contract: " + repr(sorted(unmet))
+        "agents/developer.md does not carry the reviewer-return contract: "
+        + repr(sorted(unmet))
     )
 
 
@@ -1105,7 +1137,10 @@ def test_the_reviewer_return_check_fires_on_a_brief_that_never_states_it():
 #     fits) from `could not rank` (the table never reached me);
 #   - the two-round cap does not quietly outrank the table.
 
-AUDIT_AGENTS = [REPO_ROOT / "agents" / "auditor.md", REPO_ROOT / "agents" / "release-auditor.md"]
+AUDIT_AGENTS = [
+    REPO_ROOT / "agents" / "auditor.md",
+    REPO_ROOT / "agents" / "release-auditor.md",
+]
 
 RANKING_BLOCKS = "yes, unconditionally"
 RANKING_FILES_IT = "can ship behind a filed issue"
@@ -1136,7 +1171,7 @@ def _ranking_table():
     if start is None:
         return None
     rows = []
-    for line in lines[start + 2:]:
+    for line in lines[start + 2 :]:
         stripped = line.strip()
         if not stripped.startswith("|"):
             break
@@ -1173,7 +1208,7 @@ def _release_trigger_enumerations(text=None):
     if at < 0:
         return None
     while at >= 0:
-        tail = text[at + len(TRIGGER_MARKER):]
+        tail = text[at + len(TRIGGER_MARKER) :]
         stop = tail.find("\n\n")
         segment = tail if stop < 0 else tail[:stop]
         names = [m.group(1) for m in re.finditer(r"`([^`]+)`", segment)]
@@ -1196,9 +1231,13 @@ def test_the_ranking_table_is_findable_and_named():
         "no {!r} table anywhere in the manager loop's prose -- every ranking check "
         "below would pass vacuously".format(RANKING_HEADER)
     )
-    assert len(rows) >= 5, "ranking table has {} rows, which is fewer than it had".format(len(rows))
+    assert len(rows) >= 5, (
+        "ranking table has {} rows, which is fewer than it had".format(len(rows))
+    )
     unnamed = [verdict for name, verdict in rows if name is None]
-    assert not unnamed, "ranking rows with no `backticked` class name: {!r}".format(unnamed)
+    assert not unnamed, "ranking rows with no `backticked` class name: {!r}".format(
+        unnamed
+    )
     names = [name for name, _ in rows]
     assert len(names) == len(set(names)), "duplicate ranking rows: {!r}".format(names)
 
@@ -1210,10 +1249,14 @@ def test_every_ranking_row_states_whether_it_blocks():
     """
     rows = _ranking_table()
     assert rows is not None
-    unruled = [(name, verdict) for name, verdict in rows if verdict not in RANKING_VERDICTS]
+    unruled = [
+        (name, verdict) for name, verdict in rows if verdict not in RANKING_VERDICTS
+    ]
     assert not unruled, (
         "these ranking rows carry a verdict that is neither {!r} nor {!r}, so nothing "
-        "can tell whether they block: {!r}".format(RANKING_BLOCKS, RANKING_FILES_IT, unruled)
+        "can tell whether they block: {!r}".format(
+            RANKING_BLOCKS, RANKING_FILES_IT, unruled
+        )
     )
 
 
@@ -1283,9 +1326,12 @@ def test_the_trigger_enumeration_reader_skips_references_and_reads_every_list():
     # is gone" and "the trigger enumerates nothing" are different answers.
     assert _release_trigger_enumerations("no marker here at all") is None
     # A marker with only a path reference is an empty result, not None.
-    assert _release_trigger_enumerations(
-        "the table in `skills/manager/phases/findings.md` marks blocking**.\n"
-    ) == []
+    assert (
+        _release_trigger_enumerations(
+            "the table in `skills/manager/phases/findings.md` marks blocking**.\n"
+        )
+        == []
+    )
 
 
 def test_the_trigger_join_fires_when_the_two_disagree():
@@ -1299,17 +1345,17 @@ def test_the_trigger_join_fires_when_the_two_disagree():
         ("misreports", RANKING_FILES_IT),
     ]
     assert _trigger_join_mismatch(rows, ["destroys"]) == ("ships-local-state",)
-    assert _trigger_join_mismatch(rows, ["destroys", "ships-local-state", "misreports"]) == (
-        "misreports",
-    )
+    assert _trigger_join_mismatch(
+        rows, ["destroys", "ships-local-state", "misreports"]
+    ) == ("misreports",)
     assert _trigger_join_mismatch(rows, ["destroys", "ships-local-state"]) == ()
     assert _trigger_join_mismatch(None, ["destroys"]) == ("no ranking table",)
     assert _trigger_join_mismatch(rows, None) == ("no release trigger enumeration",)
     # Both parsers finding nothing must not read as the two halves agreeing.
     assert _trigger_join_mismatch([], []) == ("no blocking rows on either side",)
-    assert _trigger_join_mismatch(
-        [("misreports", RANKING_FILES_IT)], []
-    ) == ("no blocking rows on either side",)
+    assert _trigger_join_mismatch([("misreports", RANKING_FILES_IT)], []) == (
+        "no blocking rows on either side",
+    )
 
 
 def test_both_audit_agents_reference_the_ranking_table():
@@ -1543,8 +1589,10 @@ def test_the_dispatching_documents_exist():
     pass by never running, which is the state they exist to make impossible.
     """
     for path, _ in DISPATCHING_DOCUMENTS:
-        assert path.is_file(), "{} is gone -- the checks below would vacuously pass".format(
-            path.relative_to(REPO_ROOT)
+        assert path.is_file(), (
+            "{} is gone -- the checks below would vacuously pass".format(
+                path.relative_to(REPO_ROOT)
+            )
         )
 
 
@@ -1555,7 +1603,9 @@ def test_every_dispatching_document_handles_a_name_that_does_not_resolve():
     """
     gaps = {}
     for path, definition_file in DISPATCHING_DOCUMENTS:
-        unmet = _unresolvable_spawn_unmet(path.read_text(encoding="utf-8"), definition_file)
+        unmet = _unresolvable_spawn_unmet(
+            path.read_text(encoding="utf-8"), definition_file
+        )
         if unmet:
             gaps[str(path.relative_to(REPO_ROOT))] = sorted(unmet)
     assert not gaps, (
@@ -1594,7 +1644,9 @@ def test_the_unresolvable_spawn_check_fires_on_the_spawn_as_it_was_stated_before
     )
     assert _unresolvable_spawn_unmet(release_before, "agents/release-auditor.md") == (
         ALL_UNRESOLVABLE_SPAWN_ANCHORS - {"an-unresolvable-spawn-is-could-not-run"}
-    ), repr(sorted(_unresolvable_spawn_unmet(release_before, "agents/release-auditor.md")))
+    ), repr(
+        sorted(_unresolvable_spawn_unmet(release_before, "agents/release-auditor.md"))
+    )
 
 
 def test_the_unresolvable_spawn_check_passes_on_prose_that_states_the_whole_contract():
@@ -1611,7 +1663,10 @@ def test_the_unresolvable_spawn_check_passes_on_prose_that_states_the_whole_cont
         "general-purpose with a pointer to agents/auditor.md.\n"
     )
     assert _unresolvable_spawn_unmet(complete, "agents/auditor.md") == set()
-    assert _unresolvable_spawn_unmet("", "agents/auditor.md") == ALL_UNRESOLVABLE_SPAWN_ANCHORS
+    assert (
+        _unresolvable_spawn_unmet("", "agents/auditor.md")
+        == ALL_UNRESOLVABLE_SPAWN_ANCHORS
+    )
 
 
 # ------------------------------------- every dispatched name ships a definition (#81)
@@ -1665,7 +1720,9 @@ def test_every_dispatched_agent_name_ships_a_definition_file():
     """
     shipped = {path.stem for path in AGENTS}
     dispatched = _dispatched_agent_names(_executable_documents())
-    missing = {name: sorted(where) for name, where in dispatched.items() if name not in shipped}
+    missing = {
+        name: sorted(where) for name, where in dispatched.items() if name not in shipped
+    }
     assert not missing, "dispatched with no agents/<name>.md: {}".format(missing)
 
 
@@ -1715,7 +1772,10 @@ def test_the_install_step_names_the_reload():
     doc = INSTALL_DOC
     assert doc.is_file(), "docs/install.md is gone -- this check would vacuously pass"
     unmet = _reload_unmet(doc.read_text(encoding="utf-8"))
-    assert not unmet, "docs/install.md's install step does not carry the reload: " + repr(sorted(unmet))
+    assert not unmet, (
+        "docs/install.md's install step does not carry the reload: "
+        + repr(sorted(unmet))
+    )
 
 
 RELOAD_BLOCK_START = "**Then run `/reload-plugins`"
@@ -1767,7 +1827,10 @@ UPSTREAM_FILING_ANCHORS = [
     # Not "deliberately not": the skill already contains that string, in "deliberately
     # not one list", so it passed against the unchanged file -- a green tick over a
     # sentence nobody had written. Caught by running the guard before the prose.
-    ("deliberately-not-reported-is-a-decision-with-a-reason", ("is a decision with a reason",)),
+    (
+        "deliberately-not-reported-is-a-decision-with-a-reason",
+        ("is a decision with a reason",),
+    ),
 ]
 
 UPSTREAM_FILING_DOCUMENTS = [
@@ -1823,7 +1886,9 @@ def test_the_manager_separates_could_not_file_from_did_not_file():
 # that receives an already-resolved one, a real tracker is recorded as no tracker
 # and the developer's half lands nowhere. Two individually correct documents
 # composing into an unroutable item is the defect neither diff review can see.
-MANAGER_RECEIVES_A_TOOLING_ITEM = "one board sits outside that set and is not outside the duty"
+MANAGER_RECEIVES_A_TOOLING_ITEM = (
+    "one board sits outside that set and is not outside the duty"
+)
 
 # The bound paragraph as it stood before #290. Every anchor asserted below is
 # asserted absent from it, so an anchor that already matched shipped prose is a
@@ -1878,7 +1943,9 @@ def test_the_manager_can_receive_a_tooling_item_it_cannot_derive():
         "the live skill lost the wording the control depends on"
     )
     for anchor in (MANAGER_RECEIVES_A_TOOLING_ITEM, "loop_repository"):
-        assert anchor not in prior, "toothless anchor, already on disk: {!r}".format(anchor)
+        assert anchor not in prior, "toothless anchor, already on disk: {!r}".format(
+            anchor
+        )
 
 
 def test_the_developer_says_the_tooling_has_no_manifest_name():
@@ -1922,7 +1989,9 @@ def test_the_upstream_filing_check_fires_on_the_refusal_it_replaces():
         "-- filing there is a decision about somebody else's roadmap and belongs to "
         "whoever owns that board."
     )
-    assert _upstream_filing_unmet(refusal) == {name for name, _ in UPSTREAM_FILING_ANCHORS}
+    assert _upstream_filing_unmet(refusal) == {
+        name for name, _ in UPSTREAM_FILING_ANCHORS
+    }
     # Must-fire half: prose carrying every anchor comes back clean, so the assertion
     # above is about the text rather than about a matcher that never matches.
     carries_it = (
@@ -2159,7 +2228,10 @@ FRICTION_BAR_ANCHORS = [
 
 REACHABILITY_ANCHORS = [
     ("the-class-must-be-reachable", ("the class is reachable",)),
-    ("an-unreachable-class-is-not-a-filing", ("a class you cannot reach is not a filing",)),
+    (
+        "an-unreachable-class-is-not-a-filing",
+        ("a class you cannot reach is not a filing",),
+    ),
     ("it-goes-in-the-pull-request", ("say it in the pull request",)),
 ]
 
@@ -2167,7 +2239,10 @@ REACHABILITY_ANCHORS = [
 # sentence is gone also passes against a document that lost the whole paragraph, and
 # asserting only that the replacement arrived also passes against one carrying both.
 METER_MUST_CARRY = [
-    ("raising-the-bar-is-not-throttling", "raising the bar on what counts as a finding is not throttling"),
+    (
+        "raising-the-bar-is-not-throttling",
+        "raising the bar on what counts as a finding is not throttling",
+    ),
     ("the-number-is-not-inert", "the number is not a target and it is not inert"),
     ("the-two-render-identically", "render identically in the count"),
 ]
@@ -2176,7 +2251,10 @@ METER_MUST_NOT_CARRY = [
 ]
 # The anti-throttle rule is not what changed and must survive the edit.
 METER_KEEPS = [
-    ("discovery-is-still-not-throttled", "must not be throttled to make this number look better"),
+    (
+        "discovery-is-still-not-throttled",
+        "must not be throttled to make this number look better",
+    ),
 ]
 
 
@@ -2191,7 +2269,9 @@ def _unmet(text, anchors):
 
 def _meter_unmet(text):
     folded = _flatten(text)
-    unmet = {name for name, phrase in METER_MUST_CARRY + METER_KEEPS if phrase not in folded}
+    unmet = {
+        name for name, phrase in METER_MUST_CARRY + METER_KEEPS if phrase not in folded
+    }
     unmet |= {name for name, phrase in METER_MUST_NOT_CARRY if phrase in folded}
     return unmet
 
@@ -2218,7 +2298,9 @@ def test_the_friction_bar_check_fires_on_the_duty_without_the_bar():
         "returned, an error naming what is wrong but not what to do. If you hit no friction, "
         "that is checked with no tooling: items, which is a claim."
     )
-    assert _unmet(before, FRICTION_BAR_ANCHORS) == {name for name, _ in FRICTION_BAR_ANCHORS}
+    assert _unmet(before, FRICTION_BAR_ANCHORS) == {
+        name for name, _ in FRICTION_BAR_ANCHORS
+    }
 
 
 def test_the_class_clause_requires_a_reachable_class():
@@ -2239,7 +2321,9 @@ def test_the_reachability_check_fires_on_the_bare_class_clause():
         "make; it would double the diff; or what you are holding is the class rather than "
         "the instance."
     )
-    assert _unmet(before, REACHABILITY_ANCHORS) == {name for name, _ in REACHABILITY_ANCHORS}
+    assert _unmet(before, REACHABILITY_ANCHORS) == {
+        name for name, _ in REACHABILITY_ANCHORS
+    }
 
 
 ISSUE_BODY_ANCHORS = [
@@ -2267,7 +2351,9 @@ def test_the_issue_body_check_fires_on_a_skill_that_only_says_where_to_file():
     body -- the shape the skill carried before this rule.
     """
     before = "Filing goes through gh-issue-create:@FILE, which reads the repo from its payload."
-    assert _unmet(before, ISSUE_BODY_ANCHORS) == {name for name, _ in ISSUE_BODY_ANCHORS}
+    assert _unmet(before, ISSUE_BODY_ANCHORS) == {
+        name for name, _ in ISSUE_BODY_ANCHORS
+    }
 
 
 def test_the_intake_meter_is_not_disarmed():
@@ -2275,9 +2361,7 @@ def test_the_intake_meter_is_not_disarmed():
     as do not act on it. Both halves are checked: the licence is gone, and the rule it
     was attached to -- do not throttle discovery -- survived.
     """
-    unmet = _meter_unmet(
-        MANAGER_SKILL.read_text(encoding="utf-8")
-    )
+    unmet = _meter_unmet(MANAGER_SKILL.read_text(encoding="utf-8"))
     assert not unmet, "skills/manager/SKILL.md: {}".format(sorted(unmet))
 
 
@@ -2312,7 +2396,10 @@ def test_the_meter_check_fires_in_both_directions():
 # was wrong on its own, which is why a rule about the pair has to be written down.
 
 DOCTOR_CONVENTION_ANCHORS = [
-    ("the-diagnostic-has-to-report-the-new-convention", ("reports the new convention",)),
+    (
+        "the-diagnostic-has-to-report-the-new-convention",
+        ("reports the new convention",),
+    ),
 ]
 
 DOCTOR_CONVENTION_DOCUMENTS = [
@@ -2337,7 +2424,7 @@ def test_both_documents_tie_a_convention_change_to_the_diagnostic():
 
 
 def test_the_developer_separates_an_edit_from_a_derivation_that_already_covers_it():
-    """"Always edit doctor.py" would be the wrong rule: a key that flows through a
+    """ "Always edit doctor.py" would be the wrong rule: a key that flows through a
     derivation the diagnostic already consumes is reported without a line being added.
     Which of the two happened is the part a maintainer cannot re-derive from the diff,
     so the report has to say it and name the derivation.
@@ -2380,7 +2467,9 @@ def test_the_developer_states_what_to_do_when_another_lane_holds_the_file():
 # that an unreadable payload is a third state, and that a maintainer's verification is
 # a different voice from the agent's claims.
 
-PR_PAYLOAD_PRODUCER = DEVELOPER  # the whole brief: the example lives in agents/developer/report.md (#939)
+PR_PAYLOAD_PRODUCER = (
+    DEVELOPER  # the whole brief: the example lives in agents/developer/report.md (#939)
+)
 PR_PAYLOAD_SCHEMA = REPO_ROOT / "schemas" / "agent-report.schema.json"
 PR_PAYLOAD_CONSUMER_HEADING = "## Opening the pull request"
 
@@ -2462,9 +2551,9 @@ def _payload_consumer_section():
         at = text.find(PR_PAYLOAD_CONSUMER_HEADING)
         if at < 0:
             continue
-        tail = text[at + len(PR_PAYLOAD_CONSUMER_HEADING):]
+        tail = text[at + len(PR_PAYLOAD_CONSUMER_HEADING) :]
         stop = re.search(r"^## ", tail, re.M)
-        return tail if stop is None else tail[:stop.start()]
+        return tail if stop is None else tail[: stop.start()]
     return None
 
 
@@ -2500,7 +2589,9 @@ def test_the_payload_contract_and_its_consumer_section_are_both_findable():
     section = _payload_consumer_section()
     assert section is not None, (
         "no {!r} section in skills/manager/SKILL.md -- the loop's own document has "
-        "nowhere the payload contract could be stated".format(PR_PAYLOAD_CONSUMER_HEADING)
+        "nowhere the payload contract could be stated".format(
+            PR_PAYLOAD_CONSUMER_HEADING
+        )
     )
     # Truncation guard. A `##` heading written inside this section -- which is one
     # unbackticked edit away, since the section tells maintainers to write exactly
@@ -2543,7 +2634,9 @@ def test_the_consumer_names_every_field_the_payload_contract_requires():
     instead would compare two copies and stay green while both drifted off the
     schema.
     """
-    mismatch = _payload_join_mismatch(_schema_payload_required(), _payload_consumer_section())
+    mismatch = _payload_join_mismatch(
+        _schema_payload_required(), _payload_consumer_section()
+    )
     assert not mismatch, (
         "the schema requires these payload fields and skills/manager/SKILL.md never "
         "names them, so nothing tells the maintainer they arrive filled in: "
@@ -2663,9 +2756,12 @@ def test_the_payload_anchors_fire_on_the_documents_as_they_were():
     assert PR_AUTOLINK_ANCHOR not in _flatten(before)
     # And the join was unmet against it too: the section named none of the four,
     # `body` included -- it discussed "the body" in prose and never as the field.
-    assert _payload_join_mismatch(
-        ["base", "body", "head", "title"], before
-    ) == ("base", "body", "head", "title")
+    assert _payload_join_mismatch(["base", "body", "head", "title"], before) == (
+        "base",
+        "body",
+        "head",
+        "title",
+    )
     # Must-fire half, so a passing anchor set is reachable rather than merely absent.
     assert (
         _payload_anchors_unmet(
@@ -2689,7 +2785,9 @@ def test_the_doctor_convention_check_fires_on_the_documents_as_they_were():
         "shipped. If the repo uses changelog fragments, add one; do not hand-edit the "
         "assembled file."
     )
-    assert _doctor_convention_unmet(before) == {name for name, _ in DOCTOR_CONVENTION_ANCHORS}
+    assert _doctor_convention_unmet(before) == {
+        name for name, _ in DOCTOR_CONVENTION_ANCHORS
+    }
     assert "name the derivation" not in _flatten(before)
     assert "held by another lane" not in _flatten(before)
     # Must-fire half.
@@ -2758,7 +2856,7 @@ def _verification_section(text=None):
     at = text.find(VERIFICATION_HEADING)
     if at < 0:
         return None
-    tail = text[at + len(VERIFICATION_HEADING):]
+    tail = text[at + len(VERIFICATION_HEADING) :]
     stop = tail.find("\n## ")
     return tail if stop < 0 else tail[:stop]
 
@@ -2848,7 +2946,9 @@ def test_no_raw_body_write_is_fenced_ahead_of_the_verified_op():
     """
     section = _verification_section()
     ahead = _raw_writes_ahead_of_the_op(section)
-    assert ahead is not None, "nothing fenced; the findability guard should have caught this"
+    assert ahead is not None, (
+        "nothing fenced; the findability guard should have caught this"
+    )
     assert ahead == (), (
         "the verification section fences {!r} before {!r}, so the route with no "
         "read-back reads as the mechanism".format(ahead, VERIFIED_WRITE_CALL)
@@ -3236,8 +3336,12 @@ def test_a_blockquote_wrap_does_not_read_as_a_missing_payload_field():
     )
 
     # Must-fire, same fixture: the payload fields taken back out.
-    vague = WRAPPED_INSIDE_A_BLOCKQUOTE.replace("`path` and\n   > `content`", "a payload")
-    assert _write_route_unmet(vague) == {"the-creating-op-s-payload-fields-are-not-named"}
+    vague = WRAPPED_INSIDE_A_BLOCKQUOTE.replace(
+        "`path` and\n   > `content`", "a payload"
+    )
+    assert _write_route_unmet(vague) == {
+        "the-creating-op-s-payload-fields-are-not-named"
+    }
 
 
 def test_a_document_naming_neither_op_is_still_reported():
@@ -3306,7 +3410,15 @@ _SUPERTOOL_OP_RE = re.compile(r"\A((?:gh|git)-[a-z0-9-]+)")
 #: an op name is a spelling the dependency owns. The control below asserts this
 #: set still classifies the writes the table carries, so an op renamed out of
 #: the set fails there rather than quietly reclassifying itself as a read.
-WRITE_VERB_SUFFIXES = ("create", "edit", "merge", "close", "delete", "comment", "update")
+WRITE_VERB_SUFFIXES = (
+    "create",
+    "edit",
+    "merge",
+    "close",
+    "delete",
+    "comment",
+    "update",
+)
 
 
 def _sections(text):
@@ -3315,7 +3427,7 @@ def _sections(text):
     sections = []
     for index, heading in enumerate(headings):
         end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
-        sections.append((heading.group(2), text[heading.end():end]))
+        sections.append((heading.group(2), text[heading.end() : end]))
     return sections
 
 
@@ -3333,7 +3445,9 @@ def _routes_in_rows(body):
             if not op:
                 continue
             name = op.group(1)
-            klass = "writes" if name.rsplit("-", 1)[-1] in WRITE_VERB_SUFFIXES else "reads"
+            klass = (
+                "writes" if name.rsplit("-", 1)[-1] in WRITE_VERB_SUFFIXES else "reads"
+            )
             observed.setdefault(klass, set()).add("supertool")
     return observed
 
@@ -3383,7 +3497,9 @@ def _op_table_heading_unmet(text):
 
 
 def test_the_op_table_heading_does_not_route_a_class_the_rows_contradict():
-    findings = sorted(_op_table_heading_unmet(MANAGER_SKILL.read_text(encoding="utf-8")))
+    findings = sorted(
+        _op_table_heading_unmet(MANAGER_SKILL.read_text(encoding="utf-8"))
+    )
     assert not findings, (
         "the manager skill's op table is introduced by a heading that hands a whole "
         "class of operations to one route, while the rows under it answer per row -- "
@@ -3440,7 +3556,10 @@ def test_dispatch_claims_the_issue_before_the_spawn():
         "the claim has to happen before the spawn, not after -- a spawn that dies on "
         "its first call must not leave an unclaimed issue with a worktree attached"
     )
-    assert "could not read the assignees" in body.lower() or "could-not-read" in body.lower(), (
+    assert (
+        "could not read the assignees" in body.lower()
+        or "could-not-read" in body.lower()
+    ), (
         "selection needs its own third state: an issue whose claim state could not be "
         "read must never render as free (#461)"
     )
@@ -3598,7 +3717,9 @@ def test_a_crlf_document_is_read_the_same_as_an_lf_one():
     assert "\r" in crlf and crlf != lf
 
     assert _op_table_heading_unmet(lf) == _op_table_heading_unmet(crlf)
-    assert len(_op_table_heading_unmet(crlf)) == 2, sorted(_op_table_heading_unmet(crlf))
+    assert len(_op_table_heading_unmet(crlf)) == 2, sorted(
+        _op_table_heading_unmet(crlf)
+    )
     assert _routes_in_rows(_sections(crlf)[0][1]) == {
         "reads": {"supertool"},
         "writes": {"supertool"},
@@ -3632,7 +3753,10 @@ TICK_ENDING_DOCUMENTS = (
     # #1037: "What ends a tick" moved out of commands/tick.md into its own
     # phase file, read by a sub-manager rather than injected into the
     # scheduler on every tick.
-    (REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md", r"what ends a tick"),
+    (
+        REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md",
+        r"what ends a tick",
+    ),
 )
 
 #: Each key is a way the ending can render as an absence. The naming and
@@ -3678,8 +3802,7 @@ def _tick_ending_unmet(text, heading_pattern):
         return {"the-tick-ending-section-is-absent"}
     collapsed = _collapse(body).lower()
     return {
-        key for key, pattern in TICK_ENDING_ANCHORS
-        if not re.search(pattern, collapsed)
+        key for key, pattern in TICK_ENDING_ANCHORS if not re.search(pattern, collapsed)
     }
 
 
@@ -4018,13 +4141,16 @@ def _numbered_step_from(text, start_pattern):
     start = re.search(start_pattern, text)
     if start is None:
         return None
-    rest = text[start.end():]
+    rest = text[start.end() :]
     ends = [
         match.start()
-        for match in (_ANY_NUMBERED_STEP_RE.search(rest), _ANY_ATX_HEADING_RE.search(rest))
+        for match in (
+            _ANY_NUMBERED_STEP_RE.search(rest),
+            _ANY_ATX_HEADING_RE.search(rest),
+        )
         if match is not None
     ]
-    return rest[:min(ends)] if ends else rest
+    return rest[: min(ends)] if ends else rest
 
 
 def _named_section(text, heading_pattern):
@@ -4051,7 +4177,10 @@ STOP_DOCTRINE_ANCHORS = (
     ),
     ("the-alternative-to-stopping-is-not-named", r"arms? a wakeup instead"),
     ("the-asymmetry-that-argues-the-doctrine-is-lost", r"never armed"),
-    ("a-tick-ending-is-not-distinguished-from-a-loop-stop", r"none of them stops the loop"),
+    (
+        "a-tick-ending-is-not-distinguished-from-a-loop-stop",
+        r"none of them stops the loop",
+    ),
     (
         "a-recorded-wait-is-not-required-to-be-re-checkable",
         r"a later turn can re-read|a form that can be re-read",
@@ -4084,7 +4213,8 @@ def _stop_doctrine_unmet(body):
         return {"the-region-that-decides-when-to-stop-is-absent"}
     collapsed = _collapse(body).lower()
     unmet = {
-        key for key, pattern in STOP_DOCTRINE_ANCHORS
+        key
+        for key, pattern in STOP_DOCTRINE_ANCHORS
         if not re.search(pattern, collapsed)
     }
     if _STOP_TRUE_INSTRUCTION_RE.search(collapsed):
@@ -4095,9 +4225,11 @@ def _stop_doctrine_unmet(body):
 def test_every_region_that_can_stop_the_loop_states_the_doctrine():
     findings = {}
     for label, locate in STOP_DOCTRINE_REGIONS:
-        unmet = sorted(_stop_doctrine_unmet(locate(
-            (REPO_ROOT / label).read_text(encoding="utf-8")
-        )))
+        unmet = sorted(
+            _stop_doctrine_unmet(
+                locate((REPO_ROOT / label).read_text(encoding="utf-8"))
+            )
+        )
         if unmet:
             findings[label] = unmet
     assert not findings, (
@@ -4111,7 +4243,8 @@ def test_both_stop_doctrine_regions_still_resolve():
     heading renamed or a step renumbered would report both documents clean.
     """
     unresolved = [
-        label for label, locate in STOP_DOCTRINE_REGIONS
+        label
+        for label, locate in STOP_DOCTRINE_REGIONS
         if locate((REPO_ROOT / label).read_text(encoding="utf-8")) is None
     ]
     assert not unresolved, (
@@ -4174,7 +4307,9 @@ def test_the_half_of_the_sentence_that_stayed_is_not_reported_as_missing():
 
 def test_the_headline_without_its_argument_is_reported():
     """The way this goes quiet: the doctrine quoted and then not carried."""
-    headline_only = "There is no good reason to stop the loop, except if asked directly."
+    headline_only = (
+        "There is no good reason to stop the loop, except if asked directly."
+    )
     assert _stop_doctrine_unmet(headline_only) == {
         "the-alternative-to-stopping-is-not-named",
         "the-asymmetry-that-argues-the-doctrine-is-lost",
@@ -4232,7 +4367,10 @@ GATE_THREE_REGIONS = ("commands/release.md", "skills/manager/phases/release.md")
 _GATE_THREE_OPENER = r"(?m)^3\. \*\*A security audit of the delta"
 
 GATE_THREE_ANCHORS = (
-    ("stopping-the-tag-is-not-distinguished-from-stopping-the-loop", r"stop the tag, not the loop"),
+    (
+        "stopping-the-tag-is-not-distinguished-from-stopping-the-loop",
+        r"stop the tag, not the loop",
+    ),
     ("the-round-one-findings-arm-hands-the-work-to-nobody", r"in the same tick"),
     ("the-blocking-fix-is-not-put-on-the-release-s-critical-path", r"critical path"),
     ("the-could-not-run-arm-has-no-continuation", r"diagnos\w+ why"),
@@ -4251,8 +4389,7 @@ def _gate_three_unmet(body):
         return {"the-gate-three-paragraph-is-absent"}
     collapsed = _collapse(body).lower()
     unmet = {
-        key for key, pattern in GATE_THREE_ANCHORS
-        if not re.search(pattern, collapsed)
+        key for key, pattern in GATE_THREE_ANCHORS if not re.search(pattern, collapsed)
     }
     if _RESTATED_DOCTRINE_RE.search(collapsed):
         unmet.add("the-stop-doctrine-is-restated-here-instead-of-pointed-at")
@@ -4278,10 +4415,12 @@ def test_every_gate_that_stops_a_tag_says_what_happens_next():
 def test_both_gate_three_paragraphs_still_resolve():
     """Vacuity guard for the check above, and the must-fire for its absent arm."""
     unresolved = [
-        label for label in GATE_THREE_REGIONS
+        label
+        for label in GATE_THREE_REGIONS
         if _numbered_step_from(
             (REPO_ROOT / label).read_text(encoding="utf-8"), _GATE_THREE_OPENER
-        ) is None
+        )
+        is None
     ]
     assert not unresolved, (
         "the gate-3 paragraph no longer resolves, so the check above is "
@@ -4442,7 +4581,9 @@ def _claim_windows(text):
     claims = []
     for unit in _prose_units(text):
         collapsed = _collapse(unit)
-        if _CREATE_OP_RE.search(collapsed) and _CLOSING_SUBJECT_RE.search(collapsed.lower()):
+        if _CREATE_OP_RE.search(collapsed) and _CLOSING_SUBJECT_RE.search(
+            collapsed.lower()
+        ):
             claims.append(collapsed)
     return claims
 
@@ -4486,7 +4627,8 @@ def _claimed_guarantee_unmet(text):
     for window in _claim_windows(text):
         lowered = window.lower()
         unmet.update(
-            key for key, pattern in _CREATE_REFUSES_ANCHORS
+            key
+            for key, pattern in _CREATE_REFUSES_ANCHORS
             if not re.search(pattern, lowered)
         )
         if _CREATE_REPORTS_AND_EXITS_ZERO_RE.search(lowered):
@@ -4556,9 +4698,12 @@ def test_reverting_the_schema_to_its_pre_783_wording_is_caught_by_the_sweep():
         "which REPORTS and does not refuse, exit 0 -- after the agent's "
         "session had ended.",
     )
-    assert reverted != original, "the sentence this test reverts is no longer in the schema"
-    assert "the-op-is-said-to-report-and-exit-0-when-it-now-refuses" in _claimed_guarantee_unmet(
-        reverted
+    assert reverted != original, (
+        "the sentence this test reverts is no longer in the schema"
+    )
+    assert (
+        "the-op-is-said-to-report-and-exit-0-when-it-now-refuses"
+        in _claimed_guarantee_unmet(reverted)
     )
     assert schema_path in EXECUTABLE_PROSE, (
         "schemas/agent-report.schema.json is not in the swept population -- the "
@@ -4617,7 +4762,9 @@ def test_a_neighbouring_list_item_cannot_cover_for_this_one(monkeypatch):
         "**Surfaced, not caught: the pull request is opened and the op exits 0**, "
         "and the error names the remedy",
     )
-    assert reverted != handback, "the sentence this test reverts is no longer in handback.md"
+    assert reverted != handback, (
+        "the sentence this test reverts is no longer in handback.md"
+    )
 
     # The regression this guards against: caught now (per-item windows).
     assert "the-op-is-not-said-to-refuse" in _claimed_guarantee_unmet(reverted)
@@ -4714,13 +4861,17 @@ def test_a_neighbouring_exit_zero_claim_is_not_swept_in():
     adjacent = both.replace(
         "some other step in this pipeline exits 0", "`gh-pr-create` exits 0"
     )
-    assert "the-op-is-said-to-report-and-exit-0-when-it-now-refuses" in _claimed_guarantee_unmet(
-        adjacent
+    assert (
+        "the-op-is-said-to-report-and-exit-0-when-it-now-refuses"
+        in _claimed_guarantee_unmet(adjacent)
     )
 
 
 def test_prose_that_never_names_the_op_is_not_reported():
-    assert _claimed_guarantee_unmet("Push the branch, then open the pull request.") == set()
+    assert (
+        _claimed_guarantee_unmet("Push the branch, then open the pull request.")
+        == set()
+    )
 
 
 # ------------------- a lesson learned on resume must not live only there (#353)
@@ -4758,7 +4909,8 @@ ANTI_BACKGROUND_ANCHORS = (
 def _anti_background_unmet(text):
     collapsed = _collapse(text).lower()
     return {
-        key for key, pattern in ANTI_BACKGROUND_ANCHORS
+        key
+        for key, pattern in ANTI_BACKGROUND_ANCHORS
         if not re.search(pattern, collapsed)
     }
 
@@ -4855,8 +5007,8 @@ def _unlabelled_measurements(text):
             continue
         for match in matches:
             window = collapsed[
-                max(0, match.start() - MEASUREMENT_LABEL_WINDOW):
-                match.end() + MEASUREMENT_LABEL_WINDOW
+                max(0, match.start() - MEASUREMENT_LABEL_WINDOW) : match.end()
+                + MEASUREMENT_LABEL_WINDOW
             ]
             if not MEASUREMENT_LABEL_PATTERN.search(window):
                 unlabelled.add(key)
@@ -4907,8 +5059,8 @@ def test_a_scoped_measurement_is_not_reported():
         "On this repository's own trial (#316), 27m36s was the measured wall clock. "
         "Most turns one model ran beyond the other were turns making no tool call at all, "
         "again this repository's own trial. "
-        + filler +
-        " Single-op reads ran well above what a brief asks for, again this project's "
+        + filler
+        + " Single-op reads ran well above what a brief asks for, again this project's "
         "own trial (#316)."
     )
     assert _unlabelled_measurements(stated) == set()
@@ -4929,8 +5081,8 @@ def test_a_second_unlabelled_mention_of_a_scoped_anchor_is_still_caught():
     filler = " ".join(["filler"] * 80)
     doc = (
         "On this repository's own trial (#316), 27m36s was the measured wall clock. "
-        + filler +
-        " Elsewhere in this same document, 27m36s was the measured wall clock again, "
+        + filler
+        + " Elsewhere in this same document, 27m36s was the measured wall clock again, "
         "stated as a bare fact with no scoping label nearby."
     )
     assert _unlabelled_measurements(doc) == {"wall-clock-not-scoped"}
@@ -5046,7 +5198,10 @@ def test_the_pre_360_wording_would_have_been_read_as_triggering():
 def test_a_document_naming_the_script_is_not_reported():
     """The must-not-fire half: a document that names live worktrees and the
     script together is clean."""
-    fixed = PRIOR_LANE_SETUP_WORDING + " Run scripts/lane_setup.py <issue> from the clone first."
+    fixed = (
+        PRIOR_LANE_SETUP_WORDING
+        + " Run scripts/lane_setup.py <issue> from the clone first."
+    )
     assert _lane_setup_unmet(fixed) == set()
 
 
@@ -5148,7 +5303,10 @@ def test_the_closed_unmerged_gap_is_named_not_silently_solved():
     rule has to say so rather than implying full coverage.
     """
     body = _manager_section(_HANDBACK_SECTION_HEADING)
-    assert "closed by someone else" in body.lower() or "outside a tick this loop ran" in body.lower(), (
+    assert (
+        "closed by someone else" in body.lower()
+        or "outside a tick this loop ran" in body.lower()
+    ), (
         "the closed-unmerged release rule no longer names the gap it does not "
         "cover -- a pull request closed by an event this loop did not see (#465)"
     )

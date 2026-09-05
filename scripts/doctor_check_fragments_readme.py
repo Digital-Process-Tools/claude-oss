@@ -165,5 +165,7 @@ def check_fragments_readme(project_dir, config):
         "`scripts/release_version.py` requires on a `removed` fragment. "
         "/oss:scaffold will not fix it -- the file is a default and is never "
         "replaced once it exists. Paste the section by hand from "
-        "`scripts/scaffold.py --show {}`.".format(path, COMPATIBILITY_BULLET, shown_path),
+        "`scripts/scaffold.py --show {}`.".format(
+            path, COMPATIBILITY_BULLET, shown_path
+        ),
     )

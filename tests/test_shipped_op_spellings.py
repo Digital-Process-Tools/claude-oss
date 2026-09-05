@@ -157,18 +157,32 @@ def shipped_documents():
         "{}".format(manager_unreadable)
     )
     for path in manager_paths:
-        documents.append((path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8")))
+        documents.append(
+            (path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8"))
+        )
     for pattern in ("agents/*.md", "commands/*.md", ".claude/jit-context/*/*/*.md"):
         for path in sorted(REPO_ROOT.glob(pattern)):
-            documents.append((path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8")))
+            documents.append(
+                (
+                    path.relative_to(REPO_ROOT).as_posix(),
+                    path.read_text(encoding="utf-8"),
+                )
+            )
     entry_points = [REPO_ROOT / "bin" / "oss-workspace"]
     entry_points.extend(sorted((REPO_ROOT / "scripts").glob("doctor*.py")))
     for path in entry_points:
         if path.is_file():
-            documents.append((path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8")))
+            documents.append(
+                (
+                    path.relative_to(REPO_ROOT).as_posix(),
+                    path.read_text(encoding="utf-8"),
+                )
+            )
     for dimension, bodies in oss_rules.rules(repo_root=REPO_ROOT).items():
         for filename, body in sorted(bodies.items()):
-            documents.append(("oss_rules.rules()[{}][{}]".format(dimension, filename), body))
+            documents.append(
+                ("oss_rules.rules()[{}][{}]".format(dimension, filename), body)
+            )
     return documents
 
 
@@ -217,7 +231,9 @@ def loaded_ops():
             if match and match.group(0) == bare:
                 ops.add(bare)
     if not ops:
-        return None, "supertool ops:roster named no ops (exit {})".format(completed.returncode)
+        return None, "supertool ops:roster named no ops (exit {})".format(
+            completed.returncode
+        )
     return ops, None
 
 
@@ -233,7 +249,9 @@ def test_bin_and_doctor_entry_points_are_swept():
     labels = {label for label, _ in shipped_documents()}
     assert "bin/oss-workspace" in labels, sorted(labels)
     assert "scripts/doctor.py" in labels, sorted(labels)
-    assert any(label.startswith("scripts/doctor_check_") for label in labels), sorted(labels)
+    assert any(label.startswith("scripts/doctor_check_") for label in labels), sorted(
+        labels
+    )
 
 
 def test_an_illustrative_example_is_not_swept():
@@ -279,9 +297,9 @@ def test_the_extractor_flags_a_bad_spelling_and_spares_a_good_one():
 def test_the_extractor_reads_every_argument_of_a_batched_call():
     text = "supertool 'read:a.md' 'grep:x:b.md' \"map:c.md\""
     assert op_spellings(text) == [("read", 1), ("grep", 1), ("map", 1)]
-    assert undeclared_spellings([("f", "supertool 'read:a' 'nosuchop:b'")], OP_INVENTORY) == [
-        "f:1: supertool 'nosuchop' is not a declared op"
-    ]
+    assert undeclared_spellings(
+        [("f", "supertool 'read:a' 'nosuchop:b'")], OP_INVENTORY
+    ) == ["f:1: supertool 'nosuchop' is not a declared op"]
 
 
 def test_a_heredoc_delimiter_is_not_read_as_an_op():
@@ -352,7 +370,14 @@ def test_phase_files_are_in_the_swept_population():
     """
     labels = {label for label, _ in shipped_documents()}
     assert "skills/manager/SKILL.md" in labels, sorted(labels)
-    for phase in ("dispatch.md", "handback.md", "merge.md", "release.md", "review.md", "accounting.md"):
+    for phase in (
+        "dispatch.md",
+        "handback.md",
+        "merge.md",
+        "release.md",
+        "review.md",
+        "accounting.md",
+    ):
         label = "skills/manager/phases/{}".format(phase)
         assert label in labels, sorted(labels)
 
@@ -366,7 +391,9 @@ def test_a_planted_bad_spelling_in_a_phase_file_is_caught():
     phase file is swept under is one `undeclared_spellings` actually acts on.
     """
     documents = shipped_documents()
-    phase_labels = [label for label, _ in documents if label.startswith("skills/manager/phases/")]
+    phase_labels = [
+        label for label, _ in documents if label.startswith("skills/manager/phases/")
+    ]
     assert phase_labels, "no phase files found in the swept population"
     planted = [(phase_labels[0], "supertool 'totally-fake-op:1'\n")]
     findings = undeclared_spellings(planted, OP_INVENTORY)

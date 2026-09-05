@@ -21,7 +21,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 def test_this_repos_own_statusline_does_not_point_at_the_gitignored_copy():
-    settings = json.loads((REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    settings = json.loads(
+        (REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8")
+    )
     command = settings["statusLine"]["command"]
     assert ".oss/statusline.py" not in command, (
         "command names a path this repo's own .gitignore excludes: " + command
@@ -32,7 +34,9 @@ def test_the_command_names_a_path_this_repo_actually_tracks():
     """The must-fire control: the path now named is genuinely checked in, not just
     a string that happens to avoid the gitignored one.
     """
-    settings = json.loads((REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    settings = json.loads(
+        (REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8")
+    )
     command = settings["statusLine"]["command"]
     assert "scripts/statusline.py" in command
 

@@ -35,7 +35,9 @@ def test_matched_reports_the_matching_file_and_line(tmp_path):
 
 def test_not_matched_is_a_clean_search_that_found_nothing(tmp_path):
     (tmp_path / "commands").mkdir()
-    (tmp_path / "commands" / "release.md").write_text("nothing relevant here\n", encoding="utf-8")
+    (tmp_path / "commands" / "release.md").write_text(
+        "nothing relevant here\n", encoding="utf-8"
+    )
 
     result = pc.search("could not run", [tmp_path])
     assert result["state"] == "not-matched"
@@ -208,7 +210,9 @@ def test_a_missing_root_result_also_names_its_roots(tmp_path):
     assert result["roots"] == [str(missing)]
 
 
-def test_one_missing_root_among_several_is_could_not_search_even_with_a_clean_miss_elsewhere(tmp_path):
+def test_one_missing_root_among_several_is_could_not_search_even_with_a_clean_miss_elsewhere(
+    tmp_path,
+):
     """#457's own multi-part/bundle use passes several --path roots in one
     call. If one candidate's path was mistyped or moved, that must not be
     masked by another root searching cleanly and finding nothing."""
@@ -318,7 +322,9 @@ def test_skipped_files_key_is_always_present_even_when_empty(tmp_path):
 # does contain one) and absent from ordinary non-UTF-8 text.
 
 
-def test_non_utf8_text_with_no_null_byte_is_ambiguous_and_forces_could_not_search(tmp_path):
+def test_non_utf8_text_with_no_null_byte_is_ambiguous_and_forces_could_not_search(
+    tmp_path,
+):
     """The must-fire half of the review finding: Latin-1 text with a real
     match must not silently downgrade to not-matched just because it isn't
     UTF-8 -- there is no NUL byte here, so this could be real text, and the

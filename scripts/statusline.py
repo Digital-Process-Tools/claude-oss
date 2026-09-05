@@ -305,11 +305,13 @@ def parse_channel_report(text):
         # indentation, which relied on the report's own composition order
         # rather than on this parser's own anchor.
         if line.startswith("channel: "):
-            return CHANNEL_STATES.get(line[len("channel: "):].strip())
+            return CHANNEL_STATES.get(line[len("channel: ") :].strip())
     return None
 
 
-def channel_status(raw_state, attribution, fetched_at, now, interval=CHANNEL_REFRESH_AFTER):
+def channel_status(
+    raw_state, attribution, fetched_at, now, interval=CHANNEL_REFRESH_AFTER
+):
     """Fold a raw `channel:health` reading, its own age and its attribution into
     the state `render` actually shows (#613, widened by #754).
 
@@ -400,7 +402,10 @@ def board_from_cache(cache, now=None):
     checks = cache.get("pr_checks")
     if not (
         isinstance(checks, dict)
-        and all(isinstance(checks.get(key), int) for key in ("green", "red", "running", "unknown"))
+        and all(
+            isinstance(checks.get(key), int)
+            for key in ("green", "red", "running", "unknown")
+        )
     ):
         # A cache written before this field existed, or by a refresh whose rollup call did
         # not answer. Neither is "every pull request is green".
@@ -410,8 +415,11 @@ def board_from_cache(cache, now=None):
     if isinstance(fetched, (int, float)):
         age = max(0.0, (time.time() if now is None else now) - fetched)
     return {
-        "prs": prs, "issues": issues, "issues_external": issues_external,
-        "checks": checks, "age": age,
+        "prs": prs,
+        "issues": issues,
+        "issues_external": issues_external,
+        "checks": checks,
+        "age": age,
     }
 
 
@@ -481,8 +489,16 @@ def git_release_progress(root, window=RELEASE_WINDOW):
     not the commit's: ``*objectname`` dereferences it, and is empty for a lightweight tag,
     so one format string covers both without a second call to tell them apart.
     """
-    refs = _run(["git", "-C", str(root), "for-each-ref",
-                 "--format=%(objectname) %(*objectname) %(refname:short)", "refs/tags"])
+    refs = _run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "for-each-ref",
+            "--format=%(objectname) %(*objectname) %(refname:short)",
+            "refs/tags",
+        ]
+    )
     log = _run(["git", "-C", str(root), "rev-list", "-n", str(window), "HEAD"])
     if refs is None or log is None:
         # Not a git repository, or git could not answer. Nothing was measured, and the
@@ -507,7 +523,14 @@ def git_release_progress(root, window=RELEASE_WINDOW):
 #: `ACTION_REQUIRED` are in here rather than in the group below because a leg that ran out
 #: of time is a leg that failed to answer.
 ROLLUP_RED = ("FAILURE", "ERROR", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE")
-ROLLUP_RUNNING = ("PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED")
+ROLLUP_RUNNING = (
+    "PENDING",
+    "EXPECTED",
+    "QUEUED",
+    "IN_PROGRESS",
+    "WAITING",
+    "REQUESTED",
+)
 ROLLUP_GREEN = ("SUCCESS",)
 
 
@@ -587,7 +610,9 @@ def cache_dir():
     if os.name == "nt":
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         return Path(base) / "oss-statusline"
-    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(os.path.expanduser("~"), ".cache")
+    base = os.environ.get("XDG_CACHE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".cache"
+    )
     return Path(base) / "oss-statusline"
 
 
@@ -637,7 +662,9 @@ def latest_is_due(cache, now):
     from. Reading a missing stamp as "just now" would freeze the version column for a whole
     interval on every upgrade, which is the quiet direction to be wrong in.
     """
-    if isinstance(cache, dict) and not isinstance(cache.get("latest_fetched_at"), (int, float)):
+    if isinstance(cache, dict) and not isinstance(
+        cache.get("latest_fetched_at"), (int, float)
+    ):
         return _is_due(cache, "fetched_at", LATEST_REFRESH_AFTER, now)
     return _is_due(cache, "latest_fetched_at", LATEST_REFRESH_AFTER, now)
 
@@ -676,7 +703,9 @@ def _wakeup_input(record):
     for block in content:
         if not isinstance(block, dict):
             continue
-        if block.get("name") == "ScheduleWakeup" and isinstance(block.get("input"), dict):
+        if block.get("name") == "ScheduleWakeup" and isinstance(
+            block.get("input"), dict
+        ):
             return block["input"]
     return None
 
@@ -1004,7 +1033,7 @@ def _short_name(name):
     """
     text = _one_line(str(name or ""))
     if text.startswith("claude-"):
-        text = text[len("claude-"):]
+        text = text[len("claude-") :]
     # Trimmed after the cut, not before it: a four-character cap lands mid-word as
     # often as not, and `jit-` reads as a truncation artefact rather than as a name.
     return text[:4].rstrip("-_.") or "?"
@@ -1039,10 +1068,14 @@ def _plugins_field(plugins, symbols, color=False):
             current += 1
             continue
         if state == "behind":
-            marker = symbols["behind"].strip() + (_short_version(status.get("latest")) or "?")
+            marker = symbols["behind"].strip() + (
+                _short_version(status.get("latest")) or "?"
+            )
             shade = YELLOW
         elif state == "ahead":
-            marker = symbols["ahead"].strip() + (_short_version(status.get("installed")) or "?")
+            marker = symbols["ahead"].strip() + (
+                _short_version(status.get("installed")) or "?"
+            )
             shade = GREEN
         else:
             unknown += 1
@@ -1169,7 +1202,9 @@ def render(facts, ascii_only=False, color=False):
     # this is one more glyph about the same subject rather than a fourth fact needing
     # its own width. `None` here means nothing rendered at all: see
     # `_default_branch_marker`'s own docstring for the two different reasons it can be.
-    branch_marker = _default_branch_marker(facts.get("default_branch_state"), symbols, color)
+    branch_marker = _default_branch_marker(
+        facts.get("default_branch_state"), symbols, color
+    )
     if branch_marker is not None:
         repo_name = repo_name + branch_marker
     # The branch only when it is not the declared default (#509): in the clone that field
@@ -1189,7 +1224,9 @@ def render(facts, ascii_only=False, color=False):
     # a branch that is the default. Both sides through the same funnel, and the property
     # test that treats every string-valued fact as untrusted then needs no exception here.
     branch = _one_line(facts["branch"]) if facts.get("branch") else "?"
-    default = _one_line(facts["default_branch"]) if facts.get("default_branch") else None
+    default = (
+        _one_line(facts["default_branch"]) if facts.get("default_branch") else None
+    )
     where = [repo_name]
     if default is None or branch != default:
         where.append(branch)
@@ -1354,9 +1391,9 @@ def installed_plugins(project_root, plugins_root=None):
             if install_path and not record["repository"]:
                 try:
                     manifest = json.loads(
-                        (Path(install_path) / ".claude-plugin" / "plugin.json").read_text(
-                            encoding="utf-8"
-                        )
+                        (
+                            Path(install_path) / ".claude-plugin" / "plugin.json"
+                        ).read_text(encoding="utf-8")
                     )
                 except (OSError, ValueError):
                     continue
@@ -1648,8 +1685,7 @@ def _gh_rollups(repo):
 #: `gh-branch`'s own `BENIGN_STATES` makes). Review found the omission of
 #: `startup_failure` on this same round (#914).
 _BAD_CHECK_RUN_CONCLUSIONS = frozenset(
-    {"failure", "timed_out", "action_required", "cancelled", "stale",
-     "startup_failure"}
+    {"failure", "timed_out", "action_required", "cancelled", "stale", "startup_failure"}
 )
 
 
@@ -1989,7 +2025,9 @@ def _channel_reading(root, config):
         declared, problem = _declared_watch_names(root)
         if problem:
             attribution = "declaration-unreadable"
-        elif actual is not None and len(declared) == 1 and next(iter(declared)) == actual:
+        elif (
+            actual is not None and len(declared) == 1 and next(iter(declared)) == actual
+        ):
             attribution = "declaration"
         else:
             attribution = "not-attributable"
@@ -2160,18 +2198,25 @@ def invalidate_latest_cache(repo, now=None):
         # miss and an unreadable path could otherwise fold into the same branch.
         # `FileNotFoundError` is the one exception this call can raise that means
         # "absent", unambiguously, on every supported version.
-        return {"state": "nothing-to-invalidate", "detail": "no cache file at {0}".format(path)}
+        return {
+            "state": "nothing-to-invalidate",
+            "detail": "no cache file at {0}".format(path),
+        }
     except OSError as exc:
         return {
             "state": "could-not-invalidate",
-            "detail": "{0} could not be read -- {1}: {2}".format(path, type(exc).__name__, exc),
+            "detail": "{0} could not be read -- {1}: {2}".format(
+                path, type(exc).__name__, exc
+            ),
         }
     try:
         document = json.loads(raw)
     except ValueError as exc:
         return {
             "state": "could-not-invalidate",
-            "detail": "{0} did not parse -- {1}: {2}".format(path, type(exc).__name__, exc),
+            "detail": "{0} did not parse -- {1}: {2}".format(
+                path, type(exc).__name__, exc
+            ),
         }
     if not isinstance(document, dict):
         return {
@@ -2220,9 +2265,14 @@ def invalidate_latest_cache(repo, now=None):
     except OSError as exc:
         return {
             "state": "could-not-invalidate",
-            "detail": "{0} could not be written -- {1}: {2}".format(path, type(exc).__name__, exc),
+            "detail": "{0} could not be written -- {1}: {2}".format(
+                path, type(exc).__name__, exc
+            ),
         }
-    return {"state": "invalidated", "detail": "cleared cached `latest` at {0}".format(path)}
+    return {
+        "state": "invalidated",
+        "detail": "cleared cached `latest` at {0}".format(path),
+    }
 
 
 def _lock_path(repo):
@@ -2245,7 +2295,13 @@ def _fork_refresh(root, repo):
         return
     try:
         subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__), "--refresh", "--root", str(root)],
+            [
+                sys.executable,
+                os.path.abspath(__file__),
+                "--refresh",
+                "--root",
+                str(root),
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
@@ -2317,14 +2373,17 @@ def gather(payload, root, now=None):
     # One tail read shared by both transcript-derived facts (#504) -- a render
     # happens on every message, so a second full scan would be a doubled,
     # unmeasured cost paid every time rather than an occasional one.
-    lines, truncated, error = _scan_transcript(payload.get("transcript_path"), DEFAULT_TAIL_BYTES)
+    lines, truncated, error = _scan_transcript(
+        payload.get("transcript_path"), DEFAULT_TAIL_BYTES
+    )
     if error is not None:
         tick = {"state": "unknown", "detail": error}
     else:
         tick = _next_tick_from_lines(lines, truncated, now=now)
 
     return {
-        "model": ((payload.get("model") or {}).get("display_name") or "").split(" ")[0] or None,
+        "model": ((payload.get("model") or {}).get("display_name") or "").split(" ")[0]
+        or None,
         "percent": (payload.get("context_window") or {}).get("used_percentage"),
         "repo_name": Path(root).name,
         "branch": branch_name(root),
@@ -2334,7 +2393,9 @@ def gather(payload, root, now=None):
         "release": git_release_progress(root),
         "tick": tick,
         "last": _render_stamp(now),
-        "plugins": plugin_facts(loop_name, installed_plugins(root), latest, stale=stale_latest),
+        "plugins": plugin_facts(
+            loop_name, installed_plugins(root), latest, stale=stale_latest
+        ),
         "channel": channel,
         "default_branch_state": default_branch_state,
     }
@@ -2401,7 +2462,9 @@ def main(argv=None):
         model = ((payload.get("model") or {}).get("display_name") or "?").split(" ")[0]
         percent = (payload.get("context_window") or {}).get("used_percentage")
         sys.stdout.write(
-            "{} {}".format(model, "?" if percent is None else "{}%".format(int(percent)))
+            "{} {}".format(
+                model, "?" if percent is None else "{}%".format(int(percent))
+            )
         )
         return 0
     line = render(gather(payload, root), ascii_only=_ascii_only(sys.stdout), color=True)

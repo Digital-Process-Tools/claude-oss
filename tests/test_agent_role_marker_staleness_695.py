@@ -60,7 +60,9 @@ def _init_repo(tmp_path):
     commit` that never returned leaves this file's subject exactly as unmeasured as
     one that returned the wrong thing.
     """
-    subject = "the role marker, in a git repository this fixture never finished creating"
+    subject = (
+        "the role marker, in a git repository this fixture never finished creating"
+    )
     spawn_guard.run(
         ["git", "init", "-q", str(tmp_path)], subject=subject, check=True, timeout=30
     )
@@ -78,7 +80,10 @@ def _init_repo(tmp_path):
     )
     (tmp_path / "README.md").write_text("x", encoding="utf-8")
     spawn_guard.run(
-        ["git", "-C", str(tmp_path), "add", "-A"], subject=subject, check=True, timeout=30
+        ["git", "-C", str(tmp_path), "add", "-A"],
+        subject=subject,
+        check=True,
+        timeout=30,
     )
     spawn_guard.run(
         ["git", "-C", str(tmp_path), "commit", "-q", "-m", "init"],
@@ -123,7 +128,9 @@ def test_a_marker_just_under_the_ttl_still_denies(tmp_path):
 # -- a marker that cannot be classified is its own state, not a silent None -
 
 
-def test_read_marker_reports_live_stale_malformed_absent_as_four_distinct_states(tmp_path):
+def test_read_marker_reports_live_stale_malformed_absent_as_four_distinct_states(
+    tmp_path,
+):
     _init_repo(tmp_path)
 
     absent = agent_role._read_marker(root=str(tmp_path))
@@ -183,7 +190,14 @@ def test_clear_role_marker_on_an_absent_marker_is_not_an_error(tmp_path):
 def test_cli_clear_removes_a_marker_written_by_a_separate_process(tmp_path):
     _init_repo(tmp_path)
     write = spawn_guard.run(
-        [sys.executable, str(SCRIPT), "--write", "sub-manager", "--root", str(tmp_path)],
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--write",
+            "sub-manager",
+            "--root",
+            str(tmp_path),
+        ],
         subject="the marker --clear is then asked to remove",
         capture_output=True,
         text=True,
@@ -201,10 +215,14 @@ def test_cli_clear_removes_a_marker_written_by_a_separate_process(tmp_path):
     assert clear.returncode == 0, clear.stdout + clear.stderr
 
     read_back = spawn_guard.run(
-        [sys.executable, "-c", (
-            "import sys; sys.path.insert(0, {0!r}); import agent_role; "
-            "print(agent_role.current_role(root={1!r}))"
-        ).format(str(REPO / "scripts"), str(tmp_path))],
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; sys.path.insert(0, {0!r}); import agent_role; "
+                "print(agent_role.current_role(root={1!r}))"
+            ).format(str(REPO / "scripts"), str(tmp_path)),
+        ],
         subject="what a separate process reads back after --clear",
         capture_output=True,
         text=True,

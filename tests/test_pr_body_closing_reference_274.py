@@ -92,7 +92,9 @@ def _on_disk(tmp_path, closes, body, head="fix/123"):
 def _errors(tmp_path, closes, body, head="fix/123"):
     report = _on_disk(tmp_path, closes, body, head=head)
     shape = report_schema.validate(report)
-    assert shape == [], "the fixture is malformed before the body is even read: {}".format(shape)
+    assert shape == [], (
+        "the fixture is malformed before the body is even read: {}".format(shape)
+    )
     return report_schema.validate_pr_body(report, base_dir=tmp_path)
 
 
@@ -155,8 +157,12 @@ def test_a_report_that_wrote_no_payload_owes_nothing_here():
 
 def test_the_omission_shape_is_refused(tmp_path):
     """PR #331, verbatim in shape: the number in prose, no keyword anywhere."""
-    errors = _errors(tmp_path, CLOSES_274, "This reworks the thing discussed in (#274).")
-    assert errors, "a body that closes nothing validated clean against a report saying it closes #274"
+    errors = _errors(
+        tmp_path, CLOSES_274, "This reworks the thing discussed in (#274)."
+    )
+    assert errors, (
+        "a body that closes nothing validated clean against a report saying it closes #274"
+    )
     assert "274" in " ".join(errors), errors
 
 
@@ -246,7 +252,11 @@ def test_closing_nothing_is_contradicted_by_a_body_that_closes_something(tmp_pat
 @pytest.mark.parametrize(
     "name,issues,body",
     [
-        ("PR #331, the omission", [321], "Rework of the thing (#321).\r\n\r\nMore prose."),
+        (
+            "PR #331, the omission",
+            [321],
+            "Rework of the thing (#321).\r\n\r\nMore prose.",
+        ),
         (
             "PR #332, the inert keyword",
             [275, 296],
@@ -274,7 +284,9 @@ def test_the_two_measured_instances_are_refused(tmp_path, name, issues, body):
 )
 def test_the_repair_that_was_applied_by_hand_is_accepted(tmp_path, body):
     """The positive control for the case above, under both line endings."""
-    assert _errors(tmp_path, {"state": "closes", "issues": [275, 296]}, body) == [], body
+    assert _errors(tmp_path, {"state": "closes", "issues": [275, 296]}, body) == [], (
+        body
+    )
 
 
 def test_negated_closing_keyword_still_binds_for_state_closes(tmp_path):
@@ -313,7 +325,7 @@ def test_the_matching_rule_is_recorded_beside_the_constant():
     """
     source = Path(report_schema.__file__).read_text(encoding="utf-8")
     marker = source.index("_CLOSING_KEYWORD = r")
-    nearby = source[max(0, marker - 1500):marker].lower()
+    nearby = source[max(0, marker - 1500) : marker].lower()
     assert "position" in nearby, nearby
     assert "#556" in nearby, nearby
 

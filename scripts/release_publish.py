@@ -153,7 +153,11 @@ def _headings(text):
                     # may not, which is the only thing keeping ```python from closing
                     # the block it opens.
                     fence = (marker[0], len(marker))
-                elif marker[0] == fence[0] and len(marker) >= fence[1] and not rest.strip():
+                elif (
+                    marker[0] == fence[0]
+                    and len(marker) >= fence[1]
+                    and not rest.strip()
+                ):
                     fence = None
                 offset += len(line)
                 continue
@@ -198,7 +202,11 @@ def notes_section(text, version):
     a file with exactly one section is the same case with no next heading.
     """
     if not text or not version:
-        return {"notes": "missing", "body": None, "reason": "no changelog text or no version"}
+        return {
+            "notes": "missing",
+            "body": None,
+            "reason": "no changelog text or no version",
+        }
 
     headings = _headings(text)
     for index, (label, start, _) in enumerate(headings):
@@ -219,7 +227,9 @@ def notes_section(text, version):
     return {
         "notes": "missing",
         "body": None,
-        "reason": "no `## [{}]` section in the changelog".format(_one_line(version, 60)),
+        "reason": "no `## [{}]` section in the changelog".format(
+            _one_line(version, 60)
+        ),
     }
 
 
@@ -307,7 +317,9 @@ def plan(config, tag, notes_path, gh, notes_len=None):
             "the release notes are {0} characters, over GitHub's {1}-character limit "
             "by {2} -- not sent to gh, so the call this would have made never runs. "
             "Trim changelog.d fragments for this version (or split the release) and "
-            "re-run.".format(notes_len, GITHUB_NOTES_LIMIT, notes_len - GITHUB_NOTES_LIMIT)
+            "re-run.".format(
+                notes_len, GITHUB_NOTES_LIMIT, notes_len - GITHUB_NOTES_LIMIT
+            )
         )
 
     slug = config.get("repo") if isinstance(config, dict) else None
@@ -495,10 +507,16 @@ def main(argv=None):
     )
     parser.add_argument("--repo", default=".", help="repository root (default: .)")
     parser.add_argument("--version", required=True, help="the version being released")
-    parser.add_argument("--tag", required=True, help="the tag, already pushed and verified")
-    parser.add_argument("--changelog", default=None, help="default: <repo>/CHANGELOG.md")
+    parser.add_argument(
+        "--tag", required=True, help="the tag, already pushed and verified"
+    )
+    parser.add_argument(
+        "--changelog", default=None, help="default: <repo>/CHANGELOG.md"
+    )
     parser.add_argument("--config", default=None, help="default: <repo>/.oss.json")
-    parser.add_argument("--notes-out", default=None, help="where to write the notes file")
+    parser.add_argument(
+        "--notes-out", default=None, help="where to write the notes file"
+    )
     parser.add_argument(
         "--gh", default=None, help="the gh executable (default: the one on PATH)"
     )
@@ -550,7 +568,9 @@ def main(argv=None):
     config, problem = _read_json(config_path)
     if problem:
         return _emit(
-            _could_not_run("could not read {0} -- {1}".format(config_path, _one_line(problem))),
+            _could_not_run(
+                "could not read {0} -- {1}".format(config_path, _one_line(problem))
+            ),
             args.as_json,
         )
 
@@ -579,7 +599,8 @@ def main(argv=None):
         return _emit(
             _could_not_run(
                 "could not read {0} -- {1}".format(
-                    changelog_path, _one_line("{0}: {1}".format(type(exc).__name__, exc))
+                    changelog_path,
+                    _one_line("{0}: {1}".format(type(exc).__name__, exc)),
                 )
             ),
             args.as_json,
@@ -589,7 +610,9 @@ def main(argv=None):
     if section["notes"] != "found":
         return _emit(
             _could_not_run(
-                "no release notes ({0}): {1}".format(section["notes"], section["reason"])
+                "no release notes ({0}): {1}".format(
+                    section["notes"], section["reason"]
+                )
             ),
             args.as_json,
         )
@@ -639,7 +662,9 @@ def main(argv=None):
         # The publish just made the cached `latest` reading false. Invalidated
         # here, immediately, rather than left for a refresh interval that has no
         # way to know this happened (#549).
-        result["cache_invalidation"] = _invalidate_cache_after_publish(config.get("repo"))
+        result["cache_invalidation"] = _invalidate_cache_after_publish(
+            config.get("repo")
+        )
     return _emit(result, args.as_json)
 
 

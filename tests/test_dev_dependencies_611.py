@@ -92,7 +92,9 @@ def test_workflow_installs_something():
     assert _workflow_installed_packages(), "could not find tests.yml's pip install line"
 
 
-def test_workflow_installed_packages_unions_every_pip_install_line(tmp_path, monkeypatch):
+def test_workflow_installed_packages_unions_every_pip_install_line(
+    tmp_path, monkeypatch
+):
     """#1040: a dependency declared only on a *later* job's install line must not be
     invisible to the sufficiency check. Construct a two-job workflow where the first
     job's pip install line does not carry a package that only the second job's line
@@ -147,7 +149,9 @@ def test_pytest_cov_is_declared():
 def test_declared_set_covers_everything_ci_actually_installs():
     """Sufficiency, not just presence: nothing CI found necessary is missing here."""
     declared = _declared_packages()
-    missing = sorted(pkg for pkg in _workflow_installed_packages() if pkg not in declared)
+    missing = sorted(
+        pkg for pkg in _workflow_installed_packages() if pkg not in declared
+    )
     assert not missing, (
         "tests.yml installs {} but requirements-dev.txt does not declare it -- a "
         "contributor following requirements-dev.txt alone would not reproduce a green "
@@ -162,7 +166,9 @@ def test_readme_states_the_install_line_beside_the_test_command():
     assert "requirements-dev.txt" in body
     install_at = body.index("requirements-dev.txt")
     command_at = body.index("python3 -m pytest tests/ -q")
-    assert abs(body.count("\n", 0, install_at) - body.count("\n", 0, command_at)) <= 5, (
+    assert (
+        abs(body.count("\n", 0, install_at) - body.count("\n", 0, command_at)) <= 5
+    ), (
         "the install line and the test command are not near each other in "
         "docs/development.md"
     )
@@ -173,17 +179,21 @@ def test_claude_md_states_the_install_line_beside_the_test_command():
     assert "requirements-dev.txt" in body
     install_at = body.index("requirements-dev.txt")
     command_at = body.index("python3 -m pytest tests/ -q")
-    assert abs(body.count("\n", 0, install_at) - body.count("\n", 0, command_at)) <= 3, (
-        "the install line and the test command are not near each other in CLAUDE.md"
-    )
+    assert (
+        abs(body.count("\n", 0, install_at) - body.count("\n", 0, command_at)) <= 3
+    ), "the install line and the test command are not near each other in CLAUDE.md"
 
 
 def test_a_command_naming_nothing_installed_would_pass_this_check_vacuously_never():
     """Negative control: a requirements-dev.txt that declared nothing must fail the
     sufficiency check above, proving it does not pass on an empty or missing file."""
     declared = set()
-    missing = sorted(pkg for pkg in _workflow_installed_packages() if pkg not in declared)
-    assert missing, "the sufficiency check has no teeth: it passed against an empty declared set"
+    missing = sorted(
+        pkg for pkg in _workflow_installed_packages() if pkg not in declared
+    )
+    assert missing, (
+        "the sufficiency check has no teeth: it passed against an empty declared set"
+    )
 
 
 if __name__ == "__main__":

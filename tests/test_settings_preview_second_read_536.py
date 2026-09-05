@@ -41,7 +41,9 @@ def _write_config(root, **overrides):
     project, local = oss_config.split(config)
     path = root / oss_config.CONFIG_NAME
     path.write_text(json.dumps(project), encoding="utf-8")
-    (root / oss_config.LOCAL_CONFIG_NAME).write_text(json.dumps(local), encoding="utf-8")
+    (root / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local), encoding="utf-8"
+    )
     return path
 
 
@@ -52,7 +54,9 @@ def _write_settings(root, document):
     return settings
 
 
-def test_settings_preview_survives_settings_json_erroring_after_the_first_read(tmp_path, monkeypatch):
+def test_settings_preview_survives_settings_json_erroring_after_the_first_read(
+    tmp_path, monkeypatch
+):
     """Mechanism, not tone: `Path.read_text` is wrapped (per CLAUDE.md'\''s trap, patching
     the method the code under test calls rather than an injected accessor) to succeed on
     the first call against settings.json -- the read `settings_plan` performs -- and
@@ -62,7 +66,9 @@ def test_settings_preview_survives_settings_json_erroring_after_the_first_read(t
     second read is ever attempted, so nothing raises.
     """
     _write_config(tmp_path)
-    settings_path = _write_settings(tmp_path, {"enabledPlugins": {"oss@dpt-plugins": True}})
+    settings_path = _write_settings(
+        tmp_path, {"enabledPlugins": {"oss@dpt-plugins": True}}
+    )
 
     calls = {"settings_reads": 0}
     real_read_text = Path.read_text
@@ -113,7 +119,9 @@ def test_apply_settings_extend_reads_settings_json_exactly_once(tmp_path, monkey
     the first call against settings.json and raise on any call after that; if
     `apply_settings` still re-reads, this fires and the write never completes."""
     _write_config(tmp_path)
-    settings_path = _write_settings(tmp_path, {"enabledPlugins": {"oss@dpt-plugins": True}})
+    settings_path = _write_settings(
+        tmp_path, {"enabledPlugins": {"oss@dpt-plugins": True}}
+    )
 
     calls = {"settings_reads": 0}
     real_read_text = Path.read_text

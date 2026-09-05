@@ -44,7 +44,7 @@ def test_dispatch_says_could_not_check_takes_a_different_response():
     idx = text.index("could-not-check")
     # The paragraph naming could-not-check must say it is not the same
     # fallback as could-not-derive-the-held-set's.
-    window = text[idx:idx + 1500]
+    window = text[idx : idx + 1500]
     assert "could-not-derive-the-held-set" in window, (
         "the could-not-check paragraph must contrast itself against "
         "could-not-derive-the-held-set, not stand alone with no relation "

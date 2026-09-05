@@ -86,15 +86,21 @@ def _commits(body):
 
 def test_the_documents_this_file_reads_are_present():
     """Both checks below read a file. Absent, they would pass by finding nothing to disagree with."""
-    assert CLAUDE_MD.is_file(), "CLAUDE.md is missing -- every check below would vacuously pass"
-    assert CHANGELOG.is_file(), "CHANGELOG.md is missing -- the release check would be unanchored"
+    assert CLAUDE_MD.is_file(), (
+        "CLAUDE.md is missing -- every check below would vacuously pass"
+    )
+    assert CHANGELOG.is_file(), (
+        "CHANGELOG.md is missing -- the release check would be unanchored"
+    )
 
 
 def test_the_section_is_present_and_not_empty():
     body = _section(CLAUDE_MD.read_text(encoding="utf-8"))
     assert body.strip(), (
         "CLAUDE.md has no non-empty '{}' section. That section is where this codebase says what it "
-        "has not demonstrated; deleting it does not make the claims true.".format(SECTION_HEADING)
+        "has not demonstrated; deleting it does not make the claims true.".format(
+            SECTION_HEADING
+        )
     )
 
 
@@ -103,8 +109,9 @@ def test_the_section_names_the_release_it_was_measured_against():
     assert _releases(body), (
         "The '{}' section names no release in backticks (`vX.Y.Z`). Without one a reader cannot "
         "tell whether it was re-derived against this tree or inherited from an older one -- and a "
-        "section that has gone stale reads exactly like one that was checked this morning."
-        .format(SECTION_HEADING)
+        "section that has gone stale reads exactly like one that was checked this morning.".format(
+            SECTION_HEADING
+        )
     )
 
 
@@ -114,7 +121,9 @@ def test_the_release_the_section_names_is_one_this_repo_actually_cut():
     missing = [v for v in _releases(body) if "## [{}]".format(v) not in changelog]
     assert not missing, (
         "The section names release(s) with no heading in CHANGELOG.md: {}. A marker naming a "
-        "release that was never cut is decoration, not a date.".format(", ".join(missing))
+        "release that was never cut is decoration, not a date.".format(
+            ", ".join(missing)
+        )
     )
 
 
@@ -122,8 +131,9 @@ def test_the_section_names_the_commit_it_was_measured_at():
     body = _section(CLAUDE_MD.read_text(encoding="utf-8"))
     assert _commits(body), (
         "The '{}' section names no commit in backticks. The release alone dates it only to the "
-        "last tag; the commit is what says how far past the tag the measurement reached."
-        .format(SECTION_HEADING)
+        "last tag; the commit is what says how far past the tag the measurement reached.".format(
+            SECTION_HEADING
+        )
     )
 
 
@@ -145,16 +155,26 @@ def test_the_detectors_see_a_marker_and_see_its_absence():
     marked = _section(MARKED)
     unmarked = _section(UNMARKED)
 
-    assert _releases(marked) == ["0.3.0"], "the release detector stopped matching a marked section"
-    assert _commits(marked) == ["c6b7bd4"], "the commit detector stopped matching a marked section"
+    assert _releases(marked) == ["0.3.0"], (
+        "the release detector stopped matching a marked section"
+    )
+    assert _commits(marked) == ["c6b7bd4"], (
+        "the commit detector stopped matching a marked section"
+    )
 
-    assert not _releases(unmarked), "the release detector matched prose carrying no marker"
-    assert not _commits(unmarked), "the commit detector matched prose carrying no marker"
+    assert not _releases(unmarked), (
+        "the release detector matched prose carrying no marker"
+    )
+    assert not _commits(unmarked), (
+        "the commit detector matched prose carrying no marker"
+    )
 
 
 def test_an_absent_heading_is_reported_as_empty_rather_than_as_a_match():
     """The other way this file could pass while checking nothing: a renamed heading."""
-    assert _section("## Something else\n\nMeasured at `c6b7bd4` after `v0.3.0`.\n") == ""
+    assert (
+        _section("## Something else\n\nMeasured at `c6b7bd4` after `v0.3.0`.\n") == ""
+    )
 
 
 # --- Is a release pending, and is the section current for it? (#206) ------------------------
@@ -262,14 +282,18 @@ def test_the_section_is_current_for_the_release_being_prepared():
         )
 
     cut = _changelog_releases(CHANGELOG.read_text(encoding="utf-8"))
-    assert cut, "CHANGELOG.md records no released version, so the marker cannot be keyed to one"
+    assert cut, (
+        "CHANGELOG.md records no released version, so the marker cannot be keyed to one"
+    )
     newest_cut = max(cut, key=_version_key)
 
     marker = _marker_paragraph(_section(CLAUDE_MD.read_text(encoding="utf-8")))
     named = _releases(marker)
     assert named, (
         "the marker paragraph -- the first paragraph of the '{}' section -- names no release in "
-        "backticks. A version cited later in the prose is not a marker.".format(SECTION_HEADING)
+        "backticks. A version cited later in the prose is not a marker.".format(
+            SECTION_HEADING
+        )
     )
     newest_named = max(named, key=_version_key)
 
@@ -286,8 +310,13 @@ def test_the_section_is_current_for_the_release_being_prepared():
 #: Controls for the check above. A stale section and a current one, both fabricated, so a detector
 #: that stopped matching anything fails here rather than passing quietly over the real file.
 STALE = SECTION_HEADING + "\n\nMeasured at `9aed28e`, after `v0.3.0`.\n"
-CURRENT = SECTION_HEADING + "\n\nMeasured at `35abbcf`, after `v0.4.0`, succeeding `v0.3.0`.\n"
-CHANGELOG_FIXTURE = "## [Unreleased]\n\n## [0.4.0] - 2026-08-15\n\n## [0.3.0] - 2026-08-15\n"
+CURRENT = (
+    SECTION_HEADING
+    + "\n\nMeasured at `35abbcf`, after `v0.4.0`, succeeding `v0.3.0`.\n"
+)
+CHANGELOG_FIXTURE = (
+    "## [Unreleased]\n\n## [0.4.0] - 2026-08-15\n\n## [0.3.0] - 2026-08-15\n"
+)
 
 
 #: The failure the whole-section read would have missed: a stale marker with the newly-cut version
@@ -301,7 +330,9 @@ LATE_MENTION = (
 
 def test_the_staleness_detector_fires_and_stays_silent_on_a_current_section():
     cut = _changelog_releases(CHANGELOG_FIXTURE)
-    assert cut == ["0.4.0", "0.3.0"], "the changelog release detector stopped matching headings"
+    assert cut == ["0.4.0", "0.3.0"], (
+        "the changelog release detector stopped matching headings"
+    )
     newest_cut = max(cut, key=_version_key)
 
     stale = max(_releases(_marker_paragraph(_section(STALE))), key=_version_key)
@@ -354,7 +385,7 @@ _MODULE = sys.modules[__name__]
 
 
 def _guard_outcome(monkeypatch, directory):
-    """"ran" or "skipped" for the guard, with its fragment directory pointed at *directory*.
+    """ "ran" or "skipped" for the guard, with its fragment directory pointed at *directory*.
 
     An `AssertionError` counts as "ran": whether the real `CLAUDE.md` marker is current is a
     different question, and these two tests are only about whether the guard reached it.
@@ -431,13 +462,17 @@ def test_an_unreadable_fragment_directory_is_not_read_as_an_empty_one(tmp_path):
                 "'could not look' rather than 'no release pending'."
             )
         fragments, reason = _pending_fragments(blocked_dir)
-        assert fragments is None, "an unreadable directory came back as a list of fragments"
+        assert fragments is None, (
+            "an unreadable directory came back as a list of fragments"
+        )
         assert reason and "could not be listed" in reason
     finally:
         blocked_dir.chmod(0o700)
 
 
-def test_an_absent_fragment_directory_is_no_release_pending_rather_than_an_error(tmp_path):
+def test_an_absent_fragment_directory_is_no_release_pending_rather_than_an_error(
+    tmp_path,
+):
     """The positive control for the case above: absence is a real answer, and a different one."""
     fragments, reason = _pending_fragments(tmp_path / "nothing-here")
     assert fragments == [], "an absent directory should mean no release is pending"

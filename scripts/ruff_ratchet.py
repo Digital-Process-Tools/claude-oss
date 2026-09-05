@@ -87,8 +87,12 @@ def _count(root: Path) -> Tuple[Optional[int], str]:
         # site.
         proc = subprocess.run(
             ["ruff", "check", "--output-format", "json", "--no-cache", "--", "."],
-            cwd=str(root), capture_output=True, text=True, timeout=120,
-            encoding="utf-8", errors="replace",
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+            timeout=120,
+            encoding="utf-8",
+            errors="replace",
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return None, "ruff could not be run: %s" % (exc,)
@@ -97,14 +101,15 @@ def _count(root: Path) -> Tuple[Optional[int], str]:
     # verdict about the tree, so it is not a count either.
     if proc.returncode not in (0, 1):
         return None, "ruff exited %d: %s" % (
-            proc.returncode, proc.stderr or proc.stdout)
+            proc.returncode,
+            proc.stderr or proc.stdout,
+        )
     try:
         items = json.loads(proc.stdout or "[]")
     except ValueError:
         return None, "ruff produced unparseable output: %r" % (proc.stdout,)
     if not isinstance(items, list):
-        return None, "expected a JSON array from ruff, got %s" % (
-            type(items).__name__,)
+        return None, "expected a JSON array from ruff, got %s" % (type(items).__name__,)
     return len(items), proc.stdout
 
 

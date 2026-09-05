@@ -113,8 +113,17 @@ def _child_pytest(path_entries, args):
     env["PATH"] = os.pathsep.join([entry for entry in path_entries if entry])
     env.pop("OSS_TEST_BASH", None)
     return subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-rs", "--no-cov",
-         "-p", "no:cacheprovider"] + list(args),
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-rs",
+            "--no-cov",
+            "-p",
+            "no:cacheprovider",
+        ]
+        + list(args),
         cwd=str(REPO_ROOT),
         env=env,
         stdout=subprocess.PIPE,
@@ -159,7 +168,9 @@ def test_a_broken_shell_earlier_on_path_does_not_turn_the_suites_red(tmp_path):
     runs_here, why = _full_suite_leg()
     if not runs_here:
         pytest.skip(why)
-    done = _child_pytest([str(stub.parent), os.environ.get("PATH", "")], LAUNCHER_SUITES)
+    done = _child_pytest(
+        [str(stub.parent), os.environ.get("PATH", "")], LAUNCHER_SUITES
+    )
     assert "failed" not in done.stdout, done.stdout[-4000:]
     assert done.returncode == 0, done.stdout[-4000:]
     # The positive control, and the whole claim. "Nothing failed" and "exit 0" are
@@ -167,10 +178,14 @@ def test_a_broken_shell_earlier_on_path_does_not_turn_the_suites_red(tmp_path):
     # outcome this fix must not produce here: a usable shell was reachable, so the
     # suites had to run. The expected count is collected rather than written down,
     # so adding a test to either suite cannot quietly weaken this to "some passed".
-    assert "{} passed".format(_collected(LAUNCHER_SUITES)) in done.stdout, done.stdout[-4000:]
+    assert "{} passed".format(_collected(LAUNCHER_SUITES)) in done.stdout, done.stdout[
+        -4000:
+    ]
 
 
-def test_no_shell_at_all_does_not_silence_the_assertions_that_never_wanted_one(tmp_path):
+def test_no_shell_at_all_does_not_silence_the_assertions_that_never_wanted_one(
+    tmp_path,
+):
     """The other half. With no shell reachable the spawning tests can only report
     that they could not run -- but the source-text assertions spawn nothing, and a
     file-wide skip that takes them down is this plugin's own defect class: a check
@@ -193,6 +208,7 @@ def test_a_suite_that_could_not_find_a_shell_says_what_it_tried(tmp_path):
     done = _child_pytest([str(empty)], LAUNCHER_SUITES)
     assert "no usable shell" in done.stdout, done.stdout[-4000:]
     assert "failed" not in done.stdout, done.stdout[-4000:]
+
 
 # The classifier's own controls. They spawn nothing, so they run everywhere -- which
 # is the point: a blanket skip on "no shell here" would take down the only thing
@@ -233,7 +249,10 @@ def test_a_silent_success_is_not_usable():
 
 
 def test_the_report_names_every_candidate_and_what_it_said():
-    tried = [("/w/bash", (False, "exit 1: refused")), ("/g/bash", (False, "not spawnable"))]
+    tried = [
+        ("/w/bash", (False, "exit 1: refused")),
+        ("/g/bash", (False, "not spawnable")),
+    ]
     said = shell_probe.report(tried)
     assert "no usable shell" in said
     assert "/w/bash" in said and "refused" in said
@@ -333,7 +352,9 @@ def _check_matrix(matrix):
     assert pinned in versions, (
         "_full_suite_leg pins the POSIX leg to Python {}, which the matrix no longer runs, so "
         "the full-suite child would run on no POSIX leg at all. Matrix python-version: "
-        "{}. Move FULL_SUITE_POSIX_LEG to a version the matrix has.".format(pinned, versions)
+        "{}. Move FULL_SUITE_POSIX_LEG to a version the matrix has.".format(
+            pinned, versions
+        )
     )
 
 
@@ -351,13 +372,19 @@ def test_the_guard_fails_on_a_matrix_that_dropped_either_leg():
     `BaseException` and a `pytest.skip` inside a `raises(Exception)` block sails past it,
     skipping the enclosing test -- a green tick over an assertion that never ran.
     """
-    real = {"os": [FULL_SUITE_WINDOWS_OS, FULL_SUITE_POSIX_OS], "python-version": ["3.9", "3.12"]}
+    real = {
+        "os": [FULL_SUITE_WINDOWS_OS, FULL_SUITE_POSIX_OS],
+        "python-version": ["3.9", "3.12"],
+    }
     _check_matrix(real)  # the control's own control: this shape must pass
 
     for dropped in (
         {"os": [FULL_SUITE_POSIX_OS], "python-version": ["3.9"]},
         {"os": [FULL_SUITE_WINDOWS_OS], "python-version": ["3.9"]},
-        {"os": [FULL_SUITE_WINDOWS_OS, FULL_SUITE_POSIX_OS], "python-version": ["3.12"]},
+        {
+            "os": [FULL_SUITE_WINDOWS_OS, FULL_SUITE_POSIX_OS],
+            "python-version": ["3.12"],
+        },
     ):
         with pytest.raises(AssertionError):
             _check_matrix(dropped)

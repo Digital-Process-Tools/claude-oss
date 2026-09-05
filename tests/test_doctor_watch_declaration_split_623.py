@@ -109,7 +109,8 @@ def test_split_reports_the_silent_ops_for_a_partial_declaration(tmp_path, monkey
     repo = tmp_path / "repo"
     repo.mkdir()
     _supertool_config(
-        repo, {"ops": {"radar": {"watch_name": "oss"}, "channel": {"watch_name": "oss"}}}
+        repo,
+        {"ops": {"radar": {"watch_name": "oss"}, "channel": {"watch_name": "oss"}}},
     )
     registry = _fake_install(tmp_path)
     _point_expanduser_at(monkeypatch, registry)
@@ -147,7 +148,9 @@ def test_split_is_unknown_when_the_registry_is_absent(tmp_path, monkeypatch):
     monkeypatch.setattr(
         doctor.os.path,
         "expanduser",
-        lambda p: str(tmp_path / "nope.json") if p.endswith("installed_plugins.json") else p,
+        lambda p: (
+            str(tmp_path / "nope.json") if p.endswith("installed_plugins.json") else p
+        ),
     )
     state, declaring_ops, silent_ops, why = _REAL_WATCH_DECLARATION_SPLIT(tmp_path)
     assert state == "unknown"
@@ -162,7 +165,12 @@ def test_check_watch_channel_reports_partial_for_a_half_declared_repo(
     monkeypatch.setattr(
         doctor,
         "_watch_declaration_split",
-        lambda project_dir: ("found", ("radar",), ("channel", "unwatch", "watch", "watches"), ""),
+        lambda project_dir: (
+            "found",
+            ("radar",),
+            ("channel", "unwatch", "watch", "watches"),
+            "",
+        ),
     )
     doctor.check_watch_channel(tmp_path, env={})
     capsys.readouterr()
@@ -190,14 +198,20 @@ def test_check_watch_channel_reports_split_unknown_rather_than_ok(
     assert "OK" not in [state for state, _ in findings]
 
 
-def test_check_watch_channel_stays_ok_when_fully_declared(tmp_path, monkeypatch, capsys):
+def test_check_watch_channel_stays_ok_when_fully_declared(
+    tmp_path, monkeypatch, capsys
+):
     """Must-not-fire control for both states above: nothing silent clears
     normally, through the ordinary `declared-only` -> OK path."""
     _supertool_config(tmp_path, {"ops": {"radar": {"watch_name": "oss"}}})
     monkeypatch.setattr(
-        doctor, "_watch_declaration_split", lambda project_dir: ("found", ("radar",), (), "")
+        doctor,
+        "_watch_declaration_split",
+        lambda project_dir: ("found", ("radar",), (), ""),
     )
-    monkeypatch.setattr(doctor, "_consumer_watch_name_verdict", lambda name: ("accepted", ""))
+    monkeypatch.setattr(
+        doctor, "_consumer_watch_name_verdict", lambda name: ("accepted", "")
+    )
     doctor.check_watch_channel(tmp_path, env={})
     capsys.readouterr()
     findings = list(doctor.FINDINGS)

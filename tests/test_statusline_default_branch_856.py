@@ -76,7 +76,8 @@ def test_all_check_runs_passed_is_green(monkeypatch):
     combined-status endpoint reports nothing (`total: 0`) but check-runs carries
     real, concluded, passing data."""
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json(
                 [{"status": "completed", "conclusion": "success"}] * 13
@@ -89,7 +90,8 @@ def test_all_check_runs_passed_is_green(monkeypatch):
 
 def test_a_failed_check_run_is_bad(monkeypatch):
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json(
                 [
@@ -107,7 +109,8 @@ def test_legacy_status_failure_is_bad_even_with_no_check_runs_at_all(monkeypatch
     """The other direction #914 names explicitly: an external CI posting legacy
     commit statuses with zero GitHub Actions check-runs must still be read."""
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json([]),
             status=json.dumps({"state": "failure", "total": 1}),
@@ -124,7 +127,8 @@ def test_error_state_is_also_bad(monkeypatch):
     `bad` rather than falling through to `None`, the conservative direction
     to guess wrong in."""
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json([]),
             status=json.dumps({"state": "error", "total": 1}),
@@ -135,7 +139,8 @@ def test_error_state_is_also_bad(monkeypatch):
 
 def test_a_queued_check_run_is_running(monkeypatch):
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json(
                 [
@@ -151,7 +156,8 @@ def test_a_queued_check_run_is_running(monkeypatch):
 
 def test_pending_legacy_status_with_legs_reporting_is_running(monkeypatch):
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json([]),
             status=json.dumps({"state": "pending", "total": 2}),
@@ -165,7 +171,8 @@ def test_both_sources_empty_is_no_run(monkeypatch):
     nothing -- not one of them, which is what the old single-endpoint reading
     could never tell apart from "the other source has real data"."""
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json([]),
             status=json.dumps({"state": "pending", "total": 0}),
@@ -181,7 +188,8 @@ def test_check_runs_empty_but_status_unanswered_is_none_not_no_run(monkeypatch):
     exactly the "an absence this function produced rendered as an absence on the
     branch" mistake the whole issue is about, one level up."""
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(check_runs=_check_runs_json([]), status=None),
     )
     assert statusline._gh_default_branch_state("owner/repo", "main") is None
@@ -194,7 +202,8 @@ def test_no_answer_from_either_source_is_none(monkeypatch):
 
 def test_unparseable_answers_are_none(monkeypatch):
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(check_runs="not json", status="not json"),
     )
     assert statusline._gh_default_branch_state("owner/repo", "main") is None
@@ -209,7 +218,8 @@ def test_startup_failure_conclusion_is_bad(monkeypatch):
     would have been exactly the silent divergence #914's comparison test
     exists to catch."""
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json(
                 [{"status": "completed", "conclusion": "startup_failure"}]
@@ -230,7 +240,8 @@ def test_all_skipped_check_runs_is_still_green(monkeypatch):
     (unknown) instead of matching `gh-branch`'s own GREEN, the exact silent
     divergence #914's comparison test exists to catch."""
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
             check_runs=_check_runs_json(
                 [{"status": "completed", "conclusion": "skipped"}] * 3
@@ -252,15 +263,18 @@ def test_check_runs_reading_is_none_when_the_page_is_truncated(monkeypatch):
     `_gh_external_issue_count` already gives this shape one function over,
     never guessed at from the partial page that happened to arrive."""
     monkeypatch.setattr(
-        statusline, "_run",
+        statusline,
+        "_run",
         _dispatch(
-            check_runs=json.dumps({
-                "total": 3,
-                "entries": [
-                    {"status": "completed", "conclusion": "success"},
-                    {"status": "completed", "conclusion": "success"},
-                ],
-            }),
+            check_runs=json.dumps(
+                {
+                    "total": 3,
+                    "entries": [
+                        {"status": "completed", "conclusion": "success"},
+                        {"status": "completed", "conclusion": "success"},
+                    ],
+                }
+            ),
             status=json.dumps({"state": "pending", "total": 0}),
         ),
     )
@@ -366,7 +380,8 @@ def _gh_branch_verdict(repo, sha):
     try:
         result = subprocess.run(
             [supertool_bin, "gh-branch:{}".format(sha)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             timeout=60,
         )
     except (OSError, subprocess.SubprocessError):
@@ -455,10 +470,19 @@ def test_marker_survives_the_ascii_fallback():
 
 def _facts(default_branch_state=None, **overrides):
     facts = {
-        "model": "Opus", "percent": 10, "repo_name": "claude-oss",
-        "branch": "main", "default_branch": "main", "version": "0.19.0",
-        "board": {}, "release": {}, "tick": {"state": "none"}, "last": "12:00",
-        "plugins": [], "channel": None, "default_branch_state": default_branch_state,
+        "model": "Opus",
+        "percent": 10,
+        "repo_name": "claude-oss",
+        "branch": "main",
+        "default_branch": "main",
+        "version": "0.19.0",
+        "board": {},
+        "release": {},
+        "tick": {"state": "none"},
+        "last": "12:00",
+        "plugins": [],
+        "channel": None,
+        "default_branch_state": default_branch_state,
     }
     facts.update(overrides)
     return facts
@@ -503,7 +527,8 @@ def test_gather_reads_a_fresh_green_reading_through(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(statusline, "read_cache", lambda path: cache)
     monkeypatch.setattr(
-        statusline, "repo_config",
+        statusline,
+        "repo_config",
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "board_is_due", lambda c, n: False)
@@ -512,12 +537,16 @@ def test_gather_reads_a_fresh_green_reading_through(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
-    monkeypatch.setattr(statusline, "_scan_transcript", lambda path, n: ([], False, None))
+    monkeypatch.setattr(
+        statusline, "_scan_transcript", lambda path, n: ([], False, None)
+    )
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] == "green"
 
 
-def test_gather_folds_a_stale_reading_to_unknown_even_though_it_says_green(tmp_path, monkeypatch):
+def test_gather_folds_a_stale_reading_to_unknown_even_though_it_says_green(
+    tmp_path, monkeypatch
+):
     """The must-not-render-confidently case. A reading older than `REFRESH_AFTER`
     must never render as a confident `ok`, no matter what it says (#515)."""
     now = 1_000_000.0
@@ -525,7 +554,8 @@ def test_gather_folds_a_stale_reading_to_unknown_even_though_it_says_green(tmp_p
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(statusline, "read_cache", lambda path: cache)
     monkeypatch.setattr(
-        statusline, "repo_config",
+        statusline,
+        "repo_config",
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "board_is_due", lambda c, n: True)
@@ -534,7 +564,9 @@ def test_gather_folds_a_stale_reading_to_unknown_even_though_it_says_green(tmp_p
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
-    monkeypatch.setattr(statusline, "_scan_transcript", lambda path, n: ([], False, None))
+    monkeypatch.setattr(
+        statusline, "_scan_transcript", lambda path, n: ([], False, None)
+    )
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] == "unknown"
 
@@ -550,7 +582,8 @@ def test_gather_folds_to_unknown_when_stale_after_says_so_even_inside_the_interv
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(statusline, "read_cache", lambda path: cache)
     monkeypatch.setattr(
-        statusline, "repo_config",
+        statusline,
+        "repo_config",
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     # board_is_due is the real function here (not stubbed), so `stale_after` is
@@ -560,7 +593,9 @@ def test_gather_folds_to_unknown_when_stale_after_says_so_even_inside_the_interv
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
-    monkeypatch.setattr(statusline, "_scan_transcript", lambda path, n: ([], False, None))
+    monkeypatch.setattr(
+        statusline, "_scan_transcript", lambda path, n: ([], False, None)
+    )
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] == "unknown"
 
@@ -577,6 +612,8 @@ def test_gather_is_none_when_no_default_branch_is_configured(tmp_path, monkeypat
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
-    monkeypatch.setattr(statusline, "_scan_transcript", lambda path, n: ([], False, None))
+    monkeypatch.setattr(
+        statusline, "_scan_transcript", lambda path, n: ([], False, None)
+    )
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] is None

@@ -157,7 +157,9 @@ def test_record_lane_writes_and_refresh_overwrites_the_same_file(tmp_path):
 
     second = lane_setup.record_lane(root, 385, "fix/385", "/some/path")
     assert second["state"] == "recorded"
-    assert os.listdir(registry_dir) == ["385.json"], "a re-invocation refreshes, not duplicates"
+    assert os.listdir(registry_dir) == ["385.json"], (
+        "a re-invocation refreshes, not duplicates"
+    )
 
     result = lane_setup.lane_count(root)
     assert result["state"] == "resolved"
@@ -170,7 +172,9 @@ def test_record_lane_with_no_worktree_root_is_unknown_not_could_not_write(tmp_pa
     assert result["state"] == "unknown"
 
 
-def test_compute_wires_lanes_snapshot_into_the_payload_and_counts_itself(tmp_path, monkeypatch):
+def test_compute_wires_lanes_snapshot_into_the_payload_and_counts_itself(
+    tmp_path, monkeypatch
+):
     repo = tmp_path / "repo"
     repo.mkdir()
     # #865 review round: `compute(..., claim=True)` now checks
@@ -196,13 +200,22 @@ def test_compute_wires_lanes_snapshot_into_the_payload_and_counts_itself(tmp_pat
     (repo / lane_setup.CONFIG_NAME).write_text(json.dumps(config))
 
     monkeypatch.setattr(
-        lane_setup, "resolve_base", lambda *a, **k: {
-            "state": "resolved", "remote": "origin", "ref": "origin/main",
-            "sha": "a" * 40, "detail": "",
-        }
+        lane_setup,
+        "resolve_base",
+        lambda *a, **k: {
+            "state": "resolved",
+            "remote": "origin",
+            "ref": "origin/main",
+            "sha": "a" * 40,
+            "detail": "",
+        },
     )
     monkeypatch.setattr(lane_setup, "branch_occupancy", lambda *a, **k: (False, False))
-    monkeypatch.setattr(lane_setup, "read_board", lambda repo: {"state": "ok", "lines": [], "detail": ""})
+    monkeypatch.setattr(
+        lane_setup,
+        "read_board",
+        lambda repo: {"state": "ok", "lines": [], "detail": ""},
+    )
 
     real_load = lane_setup.oss_config.load
 
@@ -225,7 +238,9 @@ def test_compute_wires_lanes_snapshot_into_the_payload_and_counts_itself(tmp_pat
     assert "lanes" in rendered
 
 
-def test_a_record_vanishing_between_listdir_and_open_is_not_unreadable(tmp_path, monkeypatch):
+def test_a_record_vanishing_between_listdir_and_open_is_not_unreadable(
+    tmp_path, monkeypatch
+):
     """The reviewer's TOCTOU finding: a sibling `lane_count()` call can prune a stale
     record between our `listdir` and our `open` -- that is not corruption, and must
     not fold the whole call to `could-not-run` for a record nothing was wrong with.
@@ -263,4 +278,3 @@ def test_a_future_recorded_at_is_counted_live_not_pruned(tmp_path):
     assert result["state"] == "resolved"
     assert result["count"] == 1
     assert os.path.exists(future_path), "a future timestamp must not be pruned"
-

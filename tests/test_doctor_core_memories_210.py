@@ -41,7 +41,9 @@ def _clean_findings():
 
 def _only():
     lines = list(doctor.FINDINGS)
-    assert len(lines) == 1, "check_core_memories must print exactly one line, got {!r}".format(lines)
+    assert len(lines) == 1, (
+        "check_core_memories must print exactly one line, got {!r}".format(lines)
+    )
     return lines[0]
 
 
@@ -70,7 +72,9 @@ def test_summary_counts_dated_headers_and_finds_the_newest():
 
 
 def test_summary_of_no_dated_headers_is_zero_and_no_newest():
-    count, newest = doctor_check_memory._core_memory_summary("# Core Memories\n\nheader only, nothing else\n")
+    count, newest = doctor_check_memory._core_memory_summary(
+        "# Core Memories\n\nheader only, nothing else\n"
+    )
     assert count == 0, (count, newest)
     assert newest is None, (count, newest)
 
@@ -93,7 +97,9 @@ def test_no_memory_store_at_all_is_ok_not_a_second_warning(tmp_path):
     doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "OK", message
-    assert "no memory store" in message.lower() or "does not exist" in message.lower(), message
+    assert (
+        "no memory store" in message.lower() or "does not exist" in message.lower()
+    ), message
 
 
 def test_an_unreadable_store_is_unknown_not_absent(tmp_path, monkeypatch):
@@ -137,7 +143,9 @@ def test_present_and_empty_is_distinct_from_absent(tmp_path):
     doctor_check_memory.check_core_memories(tmp_path, home=_home(tmp_path))
     state, message = _only()
     assert state == "WARN", message
-    assert "no dated entries" in message.lower() or "holds nothing" in message.lower(), message
+    assert (
+        "no dated entries" in message.lower() or "holds nothing" in message.lower()
+    ), message
 
 
 def test_bullet_style_dated_entries_are_counted_too(tmp_path):
@@ -164,7 +172,9 @@ def test_bullet_style_dated_entries_are_counted_too(tmp_path):
     assert "2026-03-08" in message, message
 
 
-def test_undated_content_is_ok_and_says_it_could_not_count_rather_than_warning(tmp_path):
+def test_undated_content_is_ok_and_says_it_could_not_count_rather_than_warning(
+    tmp_path,
+):
     """A third real shape: undated bold-paragraph entries, no isolated date
     marker at all. Content is genuinely present -- this must be OK, honestly
     saying entries could not be counted, never the WARN reserved for a file
@@ -183,7 +193,9 @@ def test_undated_content_is_ok_and_says_it_could_not_count_rather_than_warning(t
     state, message = _only()
     assert state == "OK", message
     assert "content present" in message.lower(), message
-    assert "no `## yyyy-mm-dd` or `- yyyy-mm-dd:` markers were found" in message.lower(), message
+    assert (
+        "no `## yyyy-mm-dd` or `- yyyy-mm-dd:` markers were found" in message.lower()
+    ), message
 
 
 def test_check_memory_and_check_core_memories_agree_on_a_wholly_absent_store(tmp_path):

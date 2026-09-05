@@ -127,7 +127,9 @@ def check_latest_skew(project_dir, config, now=None):
         doctor.report(
             "WARN",
             "latest skew: could not be determined -- the cache for {} under {} "
-            "could not be read ({}: {}).".format(repo, cache_dir, type(exc).__name__, exc),
+            "could not be read ({}: {}).".format(
+                repo, cache_dir, type(exc).__name__, exc
+            ),
         )
         return
     try:
@@ -185,8 +187,9 @@ def check_latest_skew(project_dir, config, now=None):
     if statusline._version_tuple(cached) == statusline._version_tuple(live):
         doctor.report(
             "OK",
-            "latest skew: cache agrees with the live read for {} -- {} "
-            "({}).".format(repo, cached, age),
+            "latest skew: cache agrees with the live read for {} -- {} ({}).".format(
+                repo, cached, age
+            ),
         )
         return
     doctor.report(

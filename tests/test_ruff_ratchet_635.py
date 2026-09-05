@@ -31,9 +31,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 RATCHET = REPO_ROOT / "scripts" / "ruff_ratchet.py"
 
-pytestmark = pytest.mark.skipif(
-    shutil.which("ruff") is None, reason="ruff not on PATH"
-)
+pytestmark = pytest.mark.skipif(shutil.which("ruff") is None, reason="ruff not on PATH")
 
 _PYPROJECT = textwrap.dedent(
     """\
@@ -54,9 +52,17 @@ def _fixture(tmp_path, body):
 
 def _run(root, baseline, env=None):
     return subprocess.run(
-        [sys.executable, str(RATCHET), "--root", str(root),
-         "--baseline", str(baseline)],
-        capture_output=True, text=True, env=env,
+        [
+            sys.executable,
+            str(RATCHET),
+            "--root",
+            str(root),
+            "--baseline",
+            str(baseline),
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
     )
 
 

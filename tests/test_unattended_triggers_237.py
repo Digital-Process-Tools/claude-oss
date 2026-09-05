@@ -114,7 +114,11 @@ def triggers(text):
     """
     lines = text.splitlines()
     for index, line in enumerate(lines):
-        head = line.split("#", 1)[0].rstrip() if not line.lstrip().startswith("#") else line
+        head = (
+            line.split("#", 1)[0].rstrip()
+            if not line.lstrip().startswith("#")
+            else line
+        )
         if head not in ("on:", '"on":', "'on':"):
             continue
         events = []
@@ -140,7 +144,9 @@ def _workflow_sources():
     """
     sources = []
     for path in sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml")):
-        sources.append(("ours: .github/workflows/" + path.name, path.read_text(encoding="utf-8")))
+        sources.append(
+            ("ours: .github/workflows/" + path.name, path.read_text(encoding="utf-8"))
+        )
     for name in sorted(scaffold.OWNED):
         if name.startswith(".github/workflows/"):
             sources.append(("written: " + name, scaffold.render_owned(name, _config())))
@@ -191,7 +197,9 @@ def _own_code_sources():
             stderr=subprocess.PIPE,
             check=True,
         ).stdout
-        names = [name for name in out.decode("utf-8", "surrogateescape").split("\0") if name]
+        names = [
+            name for name in out.decode("utf-8", "surrogateescape").split("\0") if name
+        ]
         for name in sorted(names):
             path = REPO_ROOT / name
             if path.is_file():
@@ -204,7 +212,9 @@ def test_there_is_something_to_check():
     sources = _workflow_sources()
     ours = [label for label, _ in sources if label.startswith("ours:")]
     written = [label for label, _ in sources if label.startswith("written:")]
-    assert ours, "no workflows found under .github/workflows/ -- the sweep below is vacuous"
+    assert ours, (
+        "no workflows found under .github/workflows/ -- the sweep below is vacuous"
+    )
     assert written, (
         "scaffold.OWNED names no workflow. Either this plugin stopped writing one into "
         "managed repositories -- which is the far more interesting half of docs/autonomy.md "
@@ -231,7 +241,9 @@ def test_no_workflow_starts_by_itself():
         for event in events:
             if event in UNATTENDED:
                 unattended.append("{}: on.{}".format(label, event))
-            elif event == "workflow_dispatch" and label not in MANUAL_DISPATCH_EXCEPTIONS:
+            elif (
+                event == "workflow_dispatch" and label not in MANUAL_DISPATCH_EXCEPTIONS
+            ):
                 unattended.append(
                     "{}: on.workflow_dispatch -- a button, not a clock, but the API "
                     "presses it too, and this workflow is not named in "
@@ -305,8 +317,14 @@ def test_own_code_scan_reaches_scripts_sh_hooks_and_bin():
     # backslashes on Windows, and the expected names below are written with "/"
     # -- see the parametrized test just below for the same trap on the assertion
     # side, and CLAUDE.md's own note on path separators behaving differently.
-    covered = {path.relative_to(REPO_ROOT).as_posix() for path, _ in _own_code_sources()}
-    for expected in ("scripts/doctor.sh", "hooks/session-start-update.sh", "bin/oss-workspace"):
+    covered = {
+        path.relative_to(REPO_ROOT).as_posix() for path, _ in _own_code_sources()
+    }
+    for expected in (
+        "scripts/doctor.sh",
+        "hooks/session-start-update.sh",
+        "bin/oss-workspace",
+    ):
         assert expected in covered, (
             "{} is not in the own-code scan -- the #740 scope widening did not "
             "reach it".format(expected)
@@ -585,9 +603,7 @@ def _explained_nearby(para, basename, keyword, window=REASON_WINDOW):
     paragraph membership."""
     basename_spans = [m.start() for m in re.finditer(re.escape(basename), para)]
     keyword_spans = [m.start() for m in re.finditer(re.escape(keyword), para)]
-    return any(
-        abs(b - k) <= window for b in basename_spans for k in keyword_spans
-    )
+    return any(abs(b - k) <= window for b in basename_spans for k in keyword_spans)
 
 
 def test_docs_autonomy_names_every_unattended_exception_and_no_others():
@@ -620,7 +636,9 @@ def test_docs_autonomy_names_every_unattended_exception_and_no_others():
     missing = expected - mentioned
     assert not missing, (
         "{} not named in {} -- an exception recorded in code is silent in the "
-        "one copy a reader actually trusts (#736).".format(", ".join(sorted(missing)), DOC)
+        "one copy a reader actually trusts (#736).".format(
+            ", ".join(sorted(missing)), DOC
+        )
     )
     extra = mentioned - expected
     assert not extra, (
@@ -658,7 +676,9 @@ def test_docs_autonomy_check_would_catch_a_fictional_exception(monkeypatch):
     monkeypatch.setattr(
         sys.modules[__name__],
         "_autonomy_doc_text",
-        lambda: real + "\n\nAlso `nightly.yml` fires on workflow_dispatch, unaccounted for.",
+        lambda: (
+            real + "\n\nAlso `nightly.yml` fires on workflow_dispatch, unaccounted for."
+        ),
     )
     with pytest.raises(AssertionError) as caught:
         test_docs_autonomy_names_every_unattended_exception_and_no_others()
@@ -689,7 +709,9 @@ def test_docs_autonomy_check_would_catch_a_nearby_but_unrelated_keyword(monkeypa
         ".github/dependabot.yml here for completeness even though this sentence "
         "explains nothing about it."
     )
-    monkeypatch.setattr(sys.modules[__name__], "_autonomy_doc_text", lambda: adversarial)
+    monkeypatch.setattr(
+        sys.modules[__name__], "_autonomy_doc_text", lambda: adversarial
+    )
     with pytest.raises(AssertionError) as caught:
         test_docs_autonomy_names_every_unattended_exception_and_no_others()
     assert "within" in str(caught.value) and "dependabot.yml" in str(caught.value)

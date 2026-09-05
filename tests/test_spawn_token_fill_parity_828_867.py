@@ -100,8 +100,12 @@ def test_sub_manager_states_the_lane_fill_facts_itself():
     text = _collapse(SUB_MANAGER_MD.read_text(encoding="utf-8"))
     never_four, has_default, has_reasons = _has_fill_facts(text)
     assert never_four, "agents/sub-manager.md never states the never-four ceiling"
-    assert has_default, "agents/sub-manager.md never states three is a default, not a ceiling"
-    assert has_reasons, "agents/sub-manager.md is missing one or more of the three short-lane reasons"
+    assert has_default, (
+        "agents/sub-manager.md never states three is a default, not a ceiling"
+    )
+    assert has_reasons, (
+        "agents/sub-manager.md is missing one or more of the three short-lane reasons"
+    )
 
 
 def test_lane_fill_facts_agree_between_the_two_documents():
@@ -159,4 +163,6 @@ def test_negative_control_a_missing_default_not_ceiling_is_caught():
         "The default is three, not the ceiling", "Three issues is fine"
     )
     never_four, has_default, has_reasons = _has_fill_facts(stripped)
-    assert not has_default, "stripping the default/ceiling sentence should make the check fail"
+    assert not has_default, (
+        "stripping the default/ceiling sentence should make the check fail"
+    )

@@ -155,7 +155,9 @@ def check_modules(directory=None):
         # Absence, stated by the exception in hand. Still a problem rather than
         # an empty answer: no scripts directory means no derivation, not no
         # modules.
-        return [], ["{} is not a directory that could be listed ({})".format(directory, exc)]
+        return [], [
+            "{} is not a directory that could be listed ({})".format(directory, exc)
+        ]
     except (OSError, ValueError) as exc:
         return [], ["{} could not be listed ({})".format(directory, exc)]
     modules = sorted(
@@ -194,10 +196,12 @@ def inline_checks(source):
 
 def module_for(check_name):
     """The module a check of this name is expected to live in."""
-    return "scripts/{}{}.py".format(MODULE_PREFIX, check_name[len("check_"):])
+    return "scripts/{}{}.py".format(MODULE_PREFIX, check_name[len("check_") :])
 
 
-def convention_state(source=None, source_path=None, declared_pending=None, declared_shared=None):
+def convention_state(
+    source=None, source_path=None, declared_pending=None, declared_shared=None
+):
     """``(state, findings)`` -- ``ok`` / ``findings`` / ``could-not-read``.
 
     ``could-not-read`` is never folded into ``ok``: a source that would not open
@@ -215,7 +219,9 @@ def convention_state(source=None, source_path=None, declared_pending=None, decla
             return "could-not-read", ["{} could not be read ({})".format(path, exc)]
     state, value = inline_checks(source)
     if state != "read":
-        return "could-not-read", ["scripts/doctor.py could not be parsed ({})".format(value)]
+        return "could-not-read", [
+            "scripts/doctor.py could not be parsed ({})".format(value)
+        ]
 
     declared = set(pending) | set(shared)
     actual = set(value)

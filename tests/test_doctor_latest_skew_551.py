@@ -155,7 +155,9 @@ def test_a_non_plugin_repo_with_no_reading_is_not_checked_not_a_permanent_warn(
     assert "owner/name" in message
 
 
-def test_the_not_checked_reason_is_hedged_not_a_categorical_claim(tmp_path, monkeypatch):
+def test_the_not_checked_reason_is_hedged_not_a_categorical_claim(
+    tmp_path, monkeypatch
+):
     """A finding from review of #615/#620: `installed_plugins()` swallows a read
     failure on `installed_plugins.json` to `{}`, the identical shape as "no
     plugin installed at all" -- `_is_plugin_source_repo` cannot tell those two
@@ -178,12 +180,18 @@ def test_the_not_checked_reason_is_hedged_not_a_categorical_claim(tmp_path, monk
     assert "does not appear among" in message
 
 
-def test_a_live_read_that_does_not_answer_could_not_be_determined(tmp_path, monkeypatch):
+def test_a_live_read_that_does_not_answer_could_not_be_determined(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(statusline, "_latest_release", lambda repo: None)
     _write_cache(
         tmp_path,
-        {"fetched_at": 1.0, "latest_fetched_at": 1.0, "latest": {"owner/name": "0.12.0"}},
+        {
+            "fetched_at": 1.0,
+            "latest_fetched_at": 1.0,
+            "latest": {"owner/name": "0.12.0"},
+        },
     )
     _reset()
     doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"}, now=1.0)
@@ -204,17 +212,25 @@ def test_agreement_is_ok_and_still_carries_the_stamp(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "_latest_release", lambda repo: "0.13.0")
     _write_cache(
         tmp_path,
-        {"fetched_at": 1000.0, "latest_fetched_at": 1000.0, "latest": {"owner/name": "0.13.0"}},
+        {
+            "fetched_at": 1000.0,
+            "latest_fetched_at": 1000.0,
+            "latest": {"owner/name": "0.13.0"},
+        },
     )
     _reset()
-    doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"}, now=1000.0 + 120)
+    doctor_check_latest_skew.check_latest_skew(
+        ".", {"repo": "owner/name"}, now=1000.0 + 120
+    )
     state, message = _finding()
     assert state == "OK"
     assert "0.13.0" in message
     assert "120s old" in message
 
 
-def test_the_must_fire_control_disagreement_is_warn_not_agreement(tmp_path, monkeypatch):
+def test_the_must_fire_control_disagreement_is_warn_not_agreement(
+    tmp_path, monkeypatch
+):
     """This is the exact incident the cluster was filed from: the cache says
     0.12.0, live says 0.13.0 -- the fixture is the numbers from #549's own
     report (17:54 cache, 18:06 publish, 18:46 read)."""
@@ -222,10 +238,16 @@ def test_the_must_fire_control_disagreement_is_warn_not_agreement(tmp_path, monk
     monkeypatch.setattr(statusline, "_latest_release", lambda repo: "0.13.0")
     _write_cache(
         tmp_path,
-        {"fetched_at": 1000.0, "latest_fetched_at": 1000.0, "latest": {"owner/name": "0.12.0"}},
+        {
+            "fetched_at": 1000.0,
+            "latest_fetched_at": 1000.0,
+            "latest": {"owner/name": "0.12.0"},
+        },
     )
     _reset()
-    doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"}, now=1000.0 + 3120)
+    doctor_check_latest_skew.check_latest_skew(
+        ".", {"repo": "owner/name"}, now=1000.0 + 3120
+    )
     state, message = _finding()
     assert state == "WARN"
     assert "0.12.0" in message and "0.13.0" in message
@@ -239,7 +261,11 @@ def test_a_leading_v_does_not_read_as_disagreement(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "_latest_release", lambda repo: "v0.13.0")
     _write_cache(
         tmp_path,
-        {"fetched_at": 1000.0, "latest_fetched_at": 1000.0, "latest": {"owner/name": "0.13.0"}},
+        {
+            "fetched_at": 1000.0,
+            "latest_fetched_at": 1000.0,
+            "latest": {"owner/name": "0.13.0"},
+        },
     )
     _reset()
     doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"}, now=1000.0)

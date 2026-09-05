@@ -116,7 +116,9 @@ def test_a_dash_prefixed_default_branch_reaches_no_git_argv(tmp_path, monkeypatc
     payload = lane_setup.compute(_repo(tmp_path, HOSTILE_DASH), 368)
 
     assert HOSTILE_DASH not in _flat(calls), (
-        "the value oss_config had already refused reached git's argv: {!r}".format(calls)
+        "the value oss_config had already refused reached git's argv: {!r}".format(
+            calls
+        )
     )
     assert not [c for c in calls if c[:1] == ["fetch"]], (
         "git fetch ran for a branch name git itself would refuse: {!r}".format(calls)
@@ -156,8 +158,12 @@ def test_the_detail_is_oss_configs_own_sentence(tmp_path, monkeypatch):
     _capture(monkeypatch)
     payload = lane_setup.compute(_repo(tmp_path, HOSTILE_DASH), 368)
     sentence = oss_config.default_branch_problem(HOSTILE_DASH)
-    assert sentence is not None, "the premise of this test: oss_config refuses this value"
-    assert payload["base"]["detail"], "could-not-resolve with an empty detail says nothing"
+    assert sentence is not None, (
+        "the premise of this test: oss_config refuses this value"
+    )
+    assert payload["base"]["detail"], (
+        "could-not-resolve with an empty detail says nothing"
+    )
     # The call site passes an explicit limit to `_one_line`, so the head is compared
     # rather than the whole sentence: comparing the whole one would assert that limit
     # by accident and fail the day it moves.
@@ -193,7 +199,9 @@ def test_blocked_is_true_and_the_control_is_false(tmp_path, monkeypatch):
 
     calls = _capture(monkeypatch)
     monkeypatch.setattr(
-        lane_setup, "_git", lambda repo, *args: (calls.append(list(args)), (0, "a" * 40, ""))[1]
+        lane_setup,
+        "_git",
+        lambda repo, *args: (calls.append(list(args)), (0, "a" * 40, ""))[1],
     )
     fine = lane_setup.compute(_repo(tmp_path, WELL_FORMED), 368)
     assert fine["base"]["state"] == "resolved"
@@ -210,7 +218,9 @@ def test_branch_occupancy_never_puts_a_name_in_the_flag_position(monkeypatch):
     """
     calls = []
     monkeypatch.setattr(
-        lane_setup, "_git", lambda repo, *args: (calls.append(list(args)), (1, "", ""))[1]
+        lane_setup,
+        "_git",
+        lambda repo, *args: (calls.append(list(args)), (1, "", ""))[1],
     )
     lane_setup.branch_occupancy(".", "origin", "--upload-pack=true")
     assert calls, "branch_occupancy made no call at all, so nothing was measured"

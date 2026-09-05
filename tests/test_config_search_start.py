@@ -55,7 +55,9 @@ def test_the_search_follows_start_and_not_the_process_directory(tmp_path, monkey
     )
 
     assert origin == "clone", detail
-    assert Path(resolved).resolve() == (there / oss_config.CONFIG_NAME).resolve(), detail
+    assert Path(resolved).resolve() == (there / oss_config.CONFIG_NAME).resolve(), (
+        detail
+    )
     assert _repo_of(resolved) == "owner/what-was-asked-about"
 
 
@@ -147,7 +149,9 @@ def test_start_reached_by_a_symlinked_name_still_finds_the_clones_config(
     try:
         link.symlink_to(real, target_is_directory=True)
     except (OSError, NotImplementedError):
-        pytest.skip("this platform will not create a directory symlink without privileges")
+        pytest.skip(
+            "this platform will not create a directory symlink without privileges"
+        )
     monkeypatch.chdir(elsewhere)
 
     resolved, origin, detail = oss_config.resolve_config_path(
@@ -157,12 +161,16 @@ def test_start_reached_by_a_symlinked_name_still_finds_the_clones_config(
     assert origin == "clone", detail
     assert Path(resolved).is_file(), resolved
     assert ".." not in Path(resolved).parts, (
-        "a path walked back up through cwd is the #53 defect reintroduced: {}".format(resolved)
+        "a path walked back up through cwd is the #53 defect reintroduced: {}".format(
+            resolved
+        )
     )
     assert _repo_of(resolved) == "owner/behind-the-link"
 
 
-def test_omitting_start_still_answers_about_the_process_directory(tmp_path, monkeypatch):
+def test_omitting_start_still_answers_about_the_process_directory(
+    tmp_path, monkeypatch
+):
     """Back-compat, stated rather than assumed: every existing caller passes no `start`."""
     clone = _clone(tmp_path, "clone")
     _write_config(clone, "owner/cwd-clone")
@@ -196,7 +204,9 @@ def test_load_from_carries_start_through(tmp_path, monkeypatch):
     assert Path(resolved).resolve() == (there / oss_config.CONFIG_NAME).resolve()
 
 
-def test_a_path_with_an_anchor_of_its_own_is_refused_rather_than_joined(tmp_path, monkeypatch):
+def test_a_path_with_an_anchor_of_its_own_is_refused_rather_than_joined(
+    tmp_path, monkeypatch
+):
     """Windows only, and therefore measured rather than reasoned about.
 
     `PureWindowsPath("D:/start") / "C:x"` is `C:x`: pathlib drops the base when the
@@ -206,10 +216,12 @@ def test_a_path_with_an_anchor_of_its_own_is_refused_rather_than_joined(tmp_path
     can build a fixture that reaches this branch.
     """
     assert oss_config._anchored_elsewhere(PureWindowsPath("C:x")), "drive-relative"
-    assert oss_config._anchored_elsewhere(PureWindowsPath("/x/.oss.json")), "root-relative"
-    assert PureWindowsPath("D:/start") / PureWindowsPath("C:x") == PureWindowsPath("C:x"), (
-        "pathlib no longer drops the base, so this guard is guarding nothing"
+    assert oss_config._anchored_elsewhere(PureWindowsPath("/x/.oss.json")), (
+        "root-relative"
     )
+    assert PureWindowsPath("D:/start") / PureWindowsPath("C:x") == PureWindowsPath(
+        "C:x"
+    ), "pathlib no longer drops the base, so this guard is guarding nothing"
 
     # Positive control: the shapes every real caller passes must NOT be refused, or the
     # guard above is satisfied by a predicate that refuses everything.
@@ -233,7 +245,9 @@ def test_a_path_with_an_anchor_of_its_own_is_refused_rather_than_joined(tmp_path
     assert origin == "clone", detail
 
 
-def test_an_absolute_path_is_still_an_answer_and_not_a_starting_point(tmp_path, monkeypatch):
+def test_an_absolute_path_is_still_an_answer_and_not_a_starting_point(
+    tmp_path, monkeypatch
+):
     """`start` does not turn a path somebody typed in full into a starting point."""
     clone = _clone(tmp_path, "clone")
     _write_config(clone, "owner/clone-half")

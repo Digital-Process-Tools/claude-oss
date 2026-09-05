@@ -154,7 +154,5 @@ def test_a_changelog_that_is_there_still_assembles(tmp_path):
     """The guard must not have bought its receipt by refusing the happy path."""
     root, script_path = _repo(tmp_path, with_changelog=True)
     result = _assemble(root, script_path, "CHANGELOG.md", "--dry-run")
-    assert result.stdout.startswith("assemble    : ok"), (
-        result.stdout + result.stderr
-    )
+    assert result.stdout.startswith("assemble    : ok"), result.stdout + result.stderr
     assert result.returncode == 0

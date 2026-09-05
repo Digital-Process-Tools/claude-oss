@@ -21,14 +21,18 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 
-DISPATCH = (REPO_ROOT / "skills" / "manager" / "phases" / "dispatch.md").read_text(encoding="utf-8")
+DISPATCH = (REPO_ROOT / "skills" / "manager" / "phases" / "dispatch.md").read_text(
+    encoding="utf-8"
+)
 SUB_MANAGER = (REPO_ROOT / "agents" / "sub-manager.md").read_text(encoding="utf-8")
 # #1037: step 5 (where this rule's "a reader would otherwise assume dispatch
 # can happen more than once" concern applies) moved out of commands/tick.md
 # into its own phase file, read by a sub-manager rather than injected into
 # the scheduler on every tick -- so the third document to check is now that
 # file, not commands/tick.md itself.
-TICK = (REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md").read_text(encoding="utf-8")
+TICK = (REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md").read_text(
+    encoding="utf-8"
+)
 
 DOCS = {
     "skills/manager/phases/dispatch.md": DISPATCH,
@@ -43,15 +47,22 @@ def test_every_document_states_one_dispatch_per_tick():
     """Each of the three files #880 names must say a tick dispatches once."""
     pattern = re.compile(r"one dispatch", re.IGNORECASE)
     missing = [name for name, text in DOCS.items() if not pattern.search(text)]
-    assert not missing, "these files do not state the one-dispatch rule: {0}".format(missing)
+    assert not missing, "these files do not state the one-dispatch rule: {0}".format(
+        missing
+    )
 
 
 def test_every_document_states_resume_over_redispatch():
     """Each document must name resuming the lane's own agent as the remedy for
     a red lane or a moved base, not a fresh spawn."""
-    pattern = re.compile(r"resum\w*.{0,400}re-dispatch|re-dispatch\w*.{0,400}resum", re.IGNORECASE | re.DOTALL)
+    pattern = re.compile(
+        r"resum\w*.{0,400}re-dispatch|re-dispatch\w*.{0,400}resum",
+        re.IGNORECASE | re.DOTALL,
+    )
     missing = [name for name, text in DOCS.items() if not pattern.search(text)]
-    assert not missing, "these files do not pair resume against re-dispatch: {0}".format(missing)
+    assert not missing, (
+        "these files do not pair resume against re-dispatch: {0}".format(missing)
+    )
 
 
 def test_every_document_names_sendmessage_as_the_resume_mechanism_near_880():
@@ -61,16 +72,24 @@ def test_every_document_names_sendmessage_as_the_resume_mechanism_near_880():
     would pass for those two files even if #880's own text had never been
     added (found by review). Anchor it to the #880 citation instead, within
     a window generous enough to span the paragraph that names both."""
-    pattern = re.compile(r"SendMessage.{0,600}#880|#880.{0,600}SendMessage", re.IGNORECASE | re.DOTALL)
+    pattern = re.compile(
+        r"SendMessage.{0,600}#880|#880.{0,600}SendMessage", re.IGNORECASE | re.DOTALL
+    )
     missing = [name for name, text in DOCS.items() if not pattern.search(text)]
-    assert not missing, "these files do not name SendMessage near the #880 citation: {0}".format(missing)
+    assert not missing, (
+        "these files do not name SendMessage near the #880 citation: {0}".format(
+            missing
+        )
+    )
 
 
 def test_every_document_names_the_agent_unreachable_third_state():
     """A lane's own agent can genuinely be gone -- that is a real third state,
     not a silent re-dispatch, and #880 asks for it to be named."""
     missing = [name for name, text in DOCS.items() if "agent-unreachable" not in text]
-    assert not missing, "these files never name the agent-unreachable state: {0}".format(missing)
+    assert not missing, (
+        "these files never name the agent-unreachable state: {0}".format(missing)
+    )
 
 
 def test_every_document_cites_880():
@@ -92,7 +111,10 @@ def test_sub_manager_and_tick_point_at_dispatch_md_rather_than_duplicate_it():
     argument rather than re-typing it -- checked as a citation of the file,
     not as a hand-count of words, per this repo's own parity-against-source
     reasoning (test_write_route_fact_parity_673.py)."""
-    for name, text in (("agents/sub-manager.md", SUB_MANAGER), ("skills/manager/phases/tick-order.md", TICK)):
+    for name, text in (
+        ("agents/sub-manager.md", SUB_MANAGER),
+        ("skills/manager/phases/tick-order.md", TICK),
+    ):
         assert "skills/manager/phases/dispatch.md" in text, (
             "{0} does not point at dispatch.md for the full argument".format(name)
         )
@@ -104,13 +126,20 @@ def test_sub_manager_and_tick_point_at_dispatch_md_rather_than_duplicate_it():
 def test_fixture_with_no_rule_does_not_match_one_dispatch_pattern():
     """The positive control's opposite: unrelated prose must not accidentally
     satisfy the pattern, or the check above proves nothing."""
-    fixture = "This section describes how to review a pull request and merge it on green."
+    fixture = (
+        "This section describes how to review a pull request and merge it on green."
+    )
     assert not re.search(r"one dispatch", fixture, re.IGNORECASE)
 
 
 def test_fixture_with_no_rule_does_not_match_resume_pattern():
-    fixture = "Dispatch developer and triager agents; review their diffs before merging."
-    pattern = re.compile(r"resum\w*.{0,400}re-dispatch|re-dispatch\w*.{0,400}resum", re.IGNORECASE | re.DOTALL)
+    fixture = (
+        "Dispatch developer and triager agents; review their diffs before merging."
+    )
+    pattern = re.compile(
+        r"resum\w*.{0,400}re-dispatch|re-dispatch\w*.{0,400}resum",
+        re.IGNORECASE | re.DOTALL,
+    )
     assert not pattern.search(fixture)
 
 
