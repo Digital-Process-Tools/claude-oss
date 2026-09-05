@@ -10,8 +10,9 @@ lane whether or not it touches one of these) and not "guess from the issue text"
 (that is what #431's brief already did, wrong). It is a fact about the repository,
 re-derived rather than pasted, the same rule this whole module exists to serve.
 
-`CROSS_CUTTING_GUARDS` enumerates the class -- five guard tests, keyed to *what a
-diff does* rather than to a module it renames -- and `guards_for_files` maps a
+`CROSS_CUTTING_GUARDS` enumerates the class -- six guard tests as of #1094 (five at
+this issue's own writing), keyed to *what a diff does* rather than to a module it
+renames -- and `guards_for_files` maps a
 lane's resolved files (`resolve_lane`'s own canonical form) onto the guard tests a
 narrowed run must include. Every "must fire" case here has a "must not fire"
 sibling in the same fixture: a lane touching `agents/developer.md` must trip the
