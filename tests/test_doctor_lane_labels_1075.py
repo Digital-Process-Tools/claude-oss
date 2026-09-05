@@ -47,10 +47,14 @@ def test_zero_lane_labels_is_not_ok_it_is_a_named_gap(tmp_path):
     assert not any(
         state == "OK" and "0 lane label(s)" in msg for state, msg in doctor.FINDINGS
     ), "an empty lane vocabulary must never render as OK"
-    assert any(
-        "no lane-* labels exist" in msg
-        for _state, msg in doctor.FINDINGS
-        if "lane" in msg
+    lane_state_lines = [
+        state for state, msg in doctor.FINDINGS if "no lane-* labels exist" in msg
+    ]
+    assert lane_state_lines == ["OK"], (
+        "a legitimate, fully-answered 'zero lane labels' must not gate "
+        "main()'s verdict arithmetic to 'usable with gaps' -- WARN and "
+        "NOTICE were both tried and rejected for this state (#1075 review "
+        "round), so this must render as OK"
     )
 
 

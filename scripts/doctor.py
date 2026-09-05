@@ -8439,8 +8439,20 @@ def check_label_vocabulary(project_dir, config=None, run=None):
             ),
         )
     elif lane_state == "none-declared":
+        # #1075 review round: this is a legitimate maintainer choice, not a
+        # gap -- unlike zero priority labels (WARN, above), which the
+        # triager cannot invent. WARN was tried first and rejected: it gates
+        # `main()`'s verdict arithmetic to "usable with gaps" forever on
+        # every repo that never creates lane labels, contradicting this
+        # function's own docstring one screen up ("not a missing/WARN-worthy
+        # gap"). NOTICE was also weighed and rejected -- doctor.py's own
+        # top-of-file contract reserves NOTICE for a check "structurally
+        # unable to ever answer" (#764), and this one answered fully: there
+        # are exactly zero. OK, with the same precedent this file already
+        # uses for `declared dependencies: none named in this plugin's own
+        # manifest` (line ~8140) -- a real "none" is not a failed check.
         report(
-            "WARN",
+            "OK",
             "lane label vocabulary on {}: no lane-* labels exist -- a "
             "legitimate choice on a small repo, not a required gap. It costs "
             "one advisory tag: the triager's lane assignment is the only "
