@@ -2529,6 +2529,106 @@ def _last_plugin_identity(path):
     return None, None, None
 
 
+# A per-repo receipt for bin/oss-workspace's #764 pre-launch route: has THIS
+# verdict, on THIS plugin version, already sent a session into /oss:doctor? A WARN
+# a maintainer cannot clear (#1062 is the worked example) is otherwise a permanent
+# route -- every launch re-reads the same report, spends a turn, and never reaches
+# /oss:tick, which is this repository's own defect class pointed at the launcher:
+# an unchanging verdict can no longer carry a real signal.
+#
+# Three states, not two, for the same reason `plugin_identity_check` keeps its own
+# three apart: a route with nothing recorded yet must not render like a route that
+# compared and found no change -- `no-receipt` and `unchanged` both leave the
+# fields where they were, but only one of them is a real comparison. `changed`
+# covers either field moving on its own: the receipt is a pair, not two
+# independent latches, since a plugin update landing on an unchanged verdict is
+# exactly as worth a fresh look as a verdict changing on an unchanged plugin.
+DOCTOR_ROUTE_NO_RECEIPT = "no-receipt"
+DOCTOR_ROUTE_CHANGED = "changed"
+DOCTOR_ROUTE_UNCHANGED = "unchanged"
+
+
+def doctor_route_check(verdict, plugin_identity, prior_verdict, prior_plugin_identity):
+    """Should the #764 route into /oss:doctor fire again (#1064)?
+
+    ``verdict``/``plugin_identity`` are THIS launch's own readings -- the
+    diagnostic's ``VERDICT:`` line and ``doctor.plugin_identity(PLUGIN_ROOT)`` --
+    and are refused empty for the same reason `plugin_identity_check` refuses an
+    empty ``current``: the caller always has one (the diagnostic just answered),
+    so an empty value here is a caller error rather than a real reading.
+    ``prior_verdict``/``prior_plugin_identity`` are whatever the most recently
+    recorded receipt carried -- `_last_doctor_route` finds it -- or ``None`` when
+    no earlier launch ever recorded one.
+
+    Returns a record with ``armed`` (bool) and ``state``
+    (`DOCTOR_ROUTE_NO_RECEIPT` / `DOCTOR_ROUTE_CHANGED` / `DOCTOR_ROUTE_UNCHANGED`),
+    plus all four inputs, for a caller that wants to say what moved.
+    """
+    if not verdict or not str(verdict).strip():
+        raise StateError(
+            "doctor_route_check needs this launch's own verdict; the caller "
+            "always has one (the diagnostic just answered), so an empty value "
+            "here is a caller error rather than a real reading"
+        )
+    if not plugin_identity or not str(plugin_identity).strip():
+        raise StateError(
+            "doctor_route_check needs this launch's own plugin identity "
+            "(doctor.plugin_identity() never raises), so an empty value here is "
+            "a caller error rather than a real reading"
+        )
+    verdict = str(verdict).strip()
+    plugin_identity = str(plugin_identity).strip()
+    if prior_verdict is None or prior_plugin_identity is None:
+        return {
+            "armed": True,
+            "state": DOCTOR_ROUTE_NO_RECEIPT,
+            "verdict": verdict,
+            "prior_verdict": prior_verdict,
+            "plugin_identity": plugin_identity,
+            "prior_plugin_identity": prior_plugin_identity,
+        }
+    if verdict == prior_verdict and plugin_identity == prior_plugin_identity:
+        return {
+            "armed": False,
+            "state": DOCTOR_ROUTE_UNCHANGED,
+            "verdict": verdict,
+            "prior_verdict": prior_verdict,
+            "plugin_identity": plugin_identity,
+            "prior_plugin_identity": prior_plugin_identity,
+        }
+    return {
+        "armed": True,
+        "state": DOCTOR_ROUTE_CHANGED,
+        "verdict": verdict,
+        "prior_verdict": prior_verdict,
+        "plugin_identity": plugin_identity,
+        "prior_plugin_identity": prior_plugin_identity,
+    }
+
+
+def _last_doctor_route(path):
+    """The most recent entry that recorded a doctor-route receipt (#1064),
+    scanning back past any entry that recorded something else -- same shape as
+    `_last_plugin_identity` / `_last_wait`, and for the same reason: a receipt
+    written several launches ago must still be found behind whatever landed
+    after it.
+
+    Returns ``(entry, verdict, plugin_identity)`` for the most recent entry
+    whose ``detail`` carries a ``doctor_route_verdict`` key -- even a falsy
+    one, since the freshest statement is what a reader must see -- or
+    ``(None, None, None)`` if no entry ever recorded one.
+    """
+    for entry in reversed(read(path)):
+        if not isinstance(entry, dict):
+            continue
+        detail = entry.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        if "doctor_route_verdict" in detail:
+            return entry, detail["doctor_route_verdict"], detail.get("doctor_route_plugin_identity")
+    return None, None, None
+
+
 def _plugin_root_snapshot_path(path):
     """Where the within-tick root snapshot lives (#565): beside the state file,
     never inside it -- this is deliberately NOT an entry, so it must not

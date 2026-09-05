@@ -213,6 +213,19 @@ def check_branch_protection(project_dir, config=None, run=None):
         doctor.report("OK", "branch protection: {}".format(detail))
         return
     if state == "not-protected":
+        # #1065 considered and declined a runnable `gh api`/`gh ruleset`
+        # command here, unlike the sibling forge-side checks in
+        # `doctor_check_security_settings.py` / `doctor_check_security_
+        # alerts.py`: those are single booleans with one safe call each,
+        # while a branch protection rule or ruleset that actually enforces
+        # anything needs the CI check CONTEXTS to require -- names this
+        # diagnostic has no reliable local source for (`.oss.json` carries
+        # `test_command`, not the job/check names GitHub matched against a
+        # run). A generated command naming the wrong checks, or none, would
+        # either silently protect nothing or lock out a legitimate merge --
+        # worse than the URL-only remedy it would replace. The settings-page
+        # link stays the whole remedy until a reliable check-name source
+        # exists.
         slug = (config or {}).get("repo") if config else None
         url = SETTINGS_PAGE_URL.format(slug) if isinstance(slug, str) and slug else None
         remedy = (

@@ -286,3 +286,34 @@ def test_check_reports_could_not_tell_distinctly_never_as_ok_or_a_count(tmp_path
     assert doctor.FINDINGS[-1][0] == "WARN"
     assert "could not tell" in out
     assert not out.startswith("OK ")
+
+
+# --- #1065: a runnable command, not only a URL a human has to click ------------
+
+
+def test_code_scanning_warn_carries_the_default_setup_command(tmp_path, capsys):
+    """#1062's own remedy, offered directly: PATCHing default-setup turns the
+    scanner on WITHOUT adding a workflow file, so it never displaces or
+    conflicts with a default setup that is already running."""
+    run = _run_once(1, '{"message": "no analysis found"}', "gh: no analysis found (HTTP 404)")
+    doctor.check_code_scanning_alerts(tmp_path, config=_config(repo="owner/name"), run=run)
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "gh api -X PATCH repos/owner/name/code-scanning/default-setup -f state=configured" in out
+
+
+def test_dependabot_warn_carries_the_vulnerability_alerts_command(tmp_path, capsys):
+    run = _run_once(1, '{"message": "no analysis found"}', "gh: no analysis found (HTTP 404)")
+    doctor.check_dependabot_alerts(tmp_path, config=_config(repo="owner/name"), run=run)
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "gh api -X PUT repos/owner/name/vulnerability-alerts" in out
+
+
+def test_secret_scanning_warn_carries_the_security_and_analysis_command(tmp_path, capsys):
+    run = _run_once(1, '{"message": "no analysis found"}', "gh: no analysis found (HTTP 404)")
+    doctor.check_secret_scanning_alerts(tmp_path, config=_config(repo="owner/name"), run=run)
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "WARN"
+    assert "security_and_analysis[secret_scanning][status]=enabled" in out
+    assert "repos/owner/name" in out

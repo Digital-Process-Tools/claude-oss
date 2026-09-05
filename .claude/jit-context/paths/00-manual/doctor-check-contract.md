@@ -30,10 +30,10 @@ a sentence only a human can act on; the same finding cleared in one call as
 family, not a special case. Name the command where one exists; keep the settings URL as the fallback
 where none does, and for the human who prefers it.
 
-**`doctor.py`'s docstring is narrower than it reads.** *The diagnostic never names a next command*
-describes the overall next step only -- `/oss:tick`, which belongs in `commands/doctor.md`. A
-**per-line remedy belongs in `doctor.py`**, and the WARN lines already carry them. Do not read the
-docstring as forbidding test 2.
+`doctor.py`'s own `owned_drift_summary` docstring states this split directly since #1065 shipped it
+-- a per-line remedy belongs in `doctor.py`, the overall next step (`/oss:tick`) belongs in
+`commands/doctor.md`. If you find yourself reading it as forbidding test 2 above, the docstring has
+drifted again; fix it there rather than adding a second correction here.
 
 Every check still owes its own third state -- `WARN ... could not be determined`, never folded into
 either answer. A permission-limited read that cannot see a setting must not render as a setting
