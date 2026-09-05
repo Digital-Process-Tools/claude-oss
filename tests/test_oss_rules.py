@@ -999,6 +999,26 @@ def test_install_refuses_a_symlinked_layer_and_leaves_its_target_untouched(tmp_p
     assert link.is_symlink()  # the link itself is untouched too, not just its target
 
 
+def test_install_refuses_a_layer_checked_out_as_a_plain_file(tmp_path):
+    """A tracked symlink checked out with `core.symlinks=false` (the historical
+    Windows default lacking the privilege or Developer Mode) never becomes a
+    directory symlink -- git writes a plain text file holding the link's target path
+    instead. `is_symlink()` is False for that and `exists()` is True, so without a
+    dedicated check `layer.iterdir()` would raise an uncaught `NotADirectoryError`
+    rather than the same clean `RulesError` refusal the symlink case gets.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    layer_path = root / ".claude" / "jit-context" / "paths" / oss_rules.LAYER
+    layer_path.parent.mkdir(parents=True)
+    layer_path.write_text("../../../elsewhere\n", encoding="utf-8")
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert layer_path.is_file() and not layer_path.is_dir()
+
+
 def test_install_still_replaces_an_ordinary_real_directory_layer(tmp_path):
     """The positive control for the test above: an install() that refused everything,
     including a perfectly ordinary layer, would also make the decoy above look

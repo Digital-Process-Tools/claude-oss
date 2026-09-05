@@ -930,6 +930,16 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
                 "link into whatever it points at. Remove the link (or move it aside if "
                 "it was committed on purpose) and rerun.".format(dimension, layer)
             )
+        # A tracked symlink checked out with `core.symlinks=false` (the historical
+        # Windows default without the privilege or Developer Mode) never becomes a
+        # directory symlink at all -- git writes a plain text file holding the link's
+        # target path instead. `is_symlink()` is False for that file and `exists()` is
+        # True, so without this check `layer.iterdir()` two lines below would raise an
+        # uncaught `NotADirectoryError`. Not the write-through-the-link defect #1110
+        # is about (there is no real directory to empty), but the same refusal-not-a-
+        # traceback contract this loop exists to keep, on the same "layer" variable.
+        elif layer.exists() and not layer.is_dir():
+            raise RulesError("{}: {} is not a directory".format(dimension, layer))
 
     for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER
