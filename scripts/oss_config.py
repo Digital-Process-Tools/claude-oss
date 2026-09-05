@@ -1013,13 +1013,21 @@ def _brace_interval_problem(pattern):
 
     `re.compile` gives no signal here: `a{1,2,3}` is not a valid Python
     interval either, so Python reads it as eight literal characters and
-    never raises. Measured directly against both BSD grep (what
-    `/usr/bin/grep` is on macOS) and ugrep: `a{1,2,3}` (three counts, ERE
-    allows at most two) and an unbalanced `a{` (no closing `}`) both exit 2,
-    SYNTAX ERROR -- indistinguishable, in the generated
+    never raises. Measured directly against BSD grep 2.6.0-FreeBSD (what
+    `/usr/bin/grep` is on macOS): `a{1,2,3}` (three counts, ERE allows at
+    most two) exits 2, SYNTAX ERROR -- indistinguishable, in the generated
     `if ! grep -Eq PATTERN; then skip; fi` guard, from a genuine no-match
-    (#1015, found by review). `{`, `}`, digits and `,` are all otherwise
-    safe, allow-listed characters, so this is checked separately from
+    (#1015, found by review). An unbalanced `a{` (no closing `}`) is
+    refused too, but re-measurement on that same BSD grep build found it
+    exits 1, not 2 -- an ordinary no-match rather than a syntax error
+    (#1060, found by review; the original docstring claimed both arms
+    exit 2 and was wrong for this one). Refusing a bare `a{` is still the
+    right call: `grep -E`'s own manual documents no interval semantics for
+    an unclosed brace, so treating it as malformed here is a defensible
+    conservative reading even though this particular BSD grep build
+    happens not to error on it -- another grep build, or another version,
+    may. `{`, `}`, digits and `,` are all otherwise safe, allow-listed
+    characters, so this is checked separately from
     `USER_VISIBLE_PATH_CHAR_RE` above: only the *arrangement* was checked
     there -- this function also checks the *magnitude*: `a{99999}` is a
     well-formed interval bound Python's own grammar has no opinion on, but
