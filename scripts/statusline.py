@@ -1426,8 +1426,24 @@ def _malformed_repo(repo):
     Reuses `_REPO_RE` (above, `oss_config.REPO_RE`'s own copy for the same
     standalone-vendoring reason) rather than a second `owner/name` pattern --
     one regex for "is this shape a legitimate repo slug", not one per caller.
+
+    **`_REPO_RE` alone is not enough (self-review finding on this same
+    round):** it forbids a slash, a backslash and whitespace WITHIN a
+    segment, but never excludes a literal `..` segment, so `"../secret"`
+    matches it as a well-formed two-segment shape. Left unguarded, that is
+    the same "reaches `gh api` unchanged and addresses a different endpoint"
+    failure this whole port exists to close, just moved from `branch`
+    (checked explicitly by `_malformed_api_ref` below) onto `repo`. Checked
+    as an exact-segment comparison, not `".." in repo` -- a repo whose OWNER
+    or NAME legitimately contains two adjacent dots elsewhere in the segment
+    (e.g. `owner/na..me`) is not a traversal and `_REPO_RE`'s own
+    single-segment character class already forbids a slash from ever
+    appearing inside one, so `".."` can only ever occur as a whole segment
+    here, never as a partial match worth catching more broadly.
     """
-    return not isinstance(repo, str) or not _REPO_RE.match(repo)
+    if not isinstance(repo, str) or not _REPO_RE.match(repo):
+        return True
+    return ".." in repo.split("/")
 
 
 #: A branch name may legitimately carry a slash (`release/1.0`) and sits as
@@ -1463,6 +1479,15 @@ def _gh_count(repo, kind):
     runs its filter once per page and prints one number per page with no total, so
     whoever reads the first line gets a number smaller than the truth, correctly
     formatted, at exit 0. One call and one field cannot fail that way.
+
+    Refuses (returns ``None``, never calling ``gh``) when `repo` is malformed
+    (#1035, upstream #2278). `repo` here is not a REST path segment -- it is a
+    `repo:` qualifier inside a search-API query string against the fixed
+    `search/issues` endpoint, so a malformed value cannot redirect this call
+    to a different endpoint the way it could at the REST call sites below;
+    it could only widen or alter the search filter's own semantics. Guarded
+    with the same check anyway, because a value `_malformed_repo` refuses is
+    not a legitimate `repo:` qualifier either.
     """
     if _malformed_repo(repo):
         return None

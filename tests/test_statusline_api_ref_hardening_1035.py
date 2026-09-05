@@ -12,8 +12,19 @@ straight into a `gh api` argument:
 - `_reading_from_check_runs` / `_reading_from_combined_status` build
   `"repos/{}/commits/{}/...".format(repo, branch)` -- both `repo` and `branch`
   in scope (#2245).
-- `_gh_count`, `_gh_external_issue_count`, `_latest_release` interpolate
-  `repo` alone, no `branch` in scope (#2278).
+- `_gh_external_issue_count`, `_latest_release` interpolate `repo` alone,
+  straight into a REST path segment (`"repos/{}/issues".format(repo)`,
+  `"repos/{}/contents/...".format(repo)`), no `branch` in scope (#2278).
+- `_gh_count` interpolates `repo` alone too, but NOT into a path segment --
+  it builds `"repo:{} is:{} is:open".format(repo, kind)`, a search-API QUERY
+  value against the fixed `search/issues` endpoint. A malformed value here
+  cannot redirect the call to a different endpoint (there is only one); it
+  can only widen or alter the search filter's own semantics. Guarded with
+  the same `_malformed_repo` check anyway, because a value `_REPO_RE` refuses
+  is not a legitimate `repo:` qualifier either, but the failure shape this
+  one closes off is query-injection, not endpoint-confusion (self-review
+  finding on this same round: the two failure shapes were originally
+  described identically here, which was imprecise for this one site).
 
 A malformed value makes the call address a different endpoint than the one
 configured, silently, and reports the wrong branch's state as the configured
@@ -57,6 +68,22 @@ def test_malformed_repo_rejects_empty_string():
 
 def test_malformed_repo_rejects_extra_path_segment():
     assert statusline._malformed_repo("owner/name/extra") is True
+
+
+def test_malformed_repo_rejects_dot_dot_segment():
+    """Self-review finding (#1035): `_REPO_RE` alone (`\\A[^/\\\\s]+/[^/\\\\s]+\\Z`)
+    only forbids a slash, a backslash and whitespace WITHIN a segment -- it
+    never excludes a literal `..` segment, so `"../secret"` matches it as a
+    perfectly good two-segment `owner/name` shape. Reused unchanged, that
+    would leave `repos/../secret/commits/main/check-runs` reachable through
+    `_malformed_repo`, the exact "malformed value reaches `gh api` unchanged
+    and addresses a different endpoint" failure this whole port exists to
+    close -- just moved from `branch` (which `_malformed_api_ref` already
+    checks for `..` explicitly) to `repo` (which relied on `_REPO_RE` alone
+    and was never checked for it)."""
+    assert statusline._malformed_repo("../secret") is True
+    assert statusline._malformed_repo("owner/..") is True
+    assert statusline._malformed_repo("../..") is True
 
 
 def test_malformed_repo_accepts_owner_slash_name():
