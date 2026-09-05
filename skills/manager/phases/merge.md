@@ -71,6 +71,35 @@ is not on this list is just a way of not fixing things.
 
 - **"Not failing" is not "green" — count the checks.** The state counts must sum to the number of
   legs, and any leg not `SUCCESS` gets named before merging.
+- **Green and mergeable means merge -- no pre-merge rebase, `git merge origin/main`, force-push, or
+  fresh matrix run, unless something other than staleness demands one (#1085).** This holds where
+  the managed repo's CI has this shape, and it is a fact to check per repo rather than assume: a
+  `pull_request`-triggered workflow paired with its own `push: branches: [<default_branch>]` run on
+  the same file (this repo's own `.github/workflows/tests.yml` is one instance, not a name to expect
+  elsewhere). A `pull_request` run checks out a merge-ref computed when the run started, so where the
+  base has not moved since, a green PR has already tested the post-merge content and a rebase would
+  re-test byte-identical content -- a full matrix for nothing. Where the base *has* moved, the
+  squash's own `push` run on the default branch tests the real combined content regardless of
+  whether anyone rebased first, so a pre-merge rebase does not add coverage there either -- it
+  duplicates a run already being paid for. That `push` run is the backstop, which is why step 3
+  below (reading `gh-branch` after the squash) matters more, not less. **Where a managed repo's CI
+  lacks that `push`-on-default-branch half, there is no backstop and this policy does not carry over
+  without re-deriving the argument for that repo's own trigger shape.**
+
+  The residual cost, stated rather than smoothed over: a semantic conflict -- one branch adds a
+  test, another renames what it calls -- is green *and* mergeable and can still land red on the
+  default branch, and the remedy then is a revert. That cost is accepted deliberately; it is smaller
+  than a rebase on every merge, nearly all of which would be re-testing content that did not change.
+  **This policy holds only paired with watching the tick's last merge to conclusion before the tick
+  closes** (`skills/manager/phases/tick-order.md`'s *What ends a tick*, which refuses to close while
+  radar's board -- carrying the default branch as a member row, per that file's own step 4 --
+  reports anything unwatched) -- a green merge followed by the tick dying before that run
+  concludes removes the pre-merge check without keeping the post-merge one. A rebase or
+  `git merge origin/main` stays
+  correct where the PR is *not* mergeable, or its failure is understood to come from a stale base --
+  #389's rule just below still applies there, and a merge is preferred over a rebase because it does
+  not rewrite
+  history.
 - **A rerun does not re-resolve a moved base, so it replays the same red.** `gh run rerun <id>
   --failed` re-runs the check suite against the merge ref it already had; it does not re-resolve
   that ref against a `main` that has since moved. A fix landed on the default branch after the run
@@ -125,28 +154,32 @@ is not on this list is just a way of not fixing things.
   and both times destroyed a commit the lane had made in the window between the tick's last look and
   the force-remove: a self-review finding it had just fixed, local only, gone with the tree. Both were
   recovered by luck, a surviving reflog entry, not by design. **Before that force-remove runs, read the
-  tree's HEAD one more time** (`git-worktrees:PATH`, or the raw `git -C <worktree> rev-parse HEAD`
-  as a fallback — see below) and compare it to the HEAD you observed when you decided to force this one —
-  the merge's own head commit, or your last `git-worktrees` read of that path. If it moved, something
-  committed there after your last look and the force-remove is refused this tick: leave the worktree
-  standing, the same as any other `cannot tell`, and let a later tick's cooldown re-evaluate it rather
-  than destroying work you have not re-observed. This closes the actual race window; a tick cannot get
-  it right by being careful, because the gap is between its own two observations, not a lapse in
-  attention.
+  tree's HEAD one more time with `git -C <worktree> rev-parse HEAD` — unconditionally, never as a
+  fallback (#1056; see below for why)** — and compare it to the HEAD you observed when you decided
+  to force this one — the merge's own head commit, or your last `git-worktrees` read of that path.
+  If it moved, something committed there after your last look and the force-remove is refused this
+  tick: leave the worktree standing, the same as any other `cannot tell`, and let a later tick's
+  cooldown re-evaluate it rather than destroying work you have not re-observed. This closes the
+  actual race window; a tick cannot get it right by being careful, because the gap is between its
+  own two observations, not a lapse in attention.
 
-  **Lead with `git-worktrees:PATH` for that HEAD re-read, not the raw `git -C` form (#1017).**
+  **`git-worktrees:PATH` cannot perform this comparison at all, so it is never the fallback and
+  never the primary either (#1056).** The op reports branch, path, occupancy, `[merged, clean]`, a
+  remote-tracking line and a `git status --porcelain` line — no commit SHA anywhere. #1017 wrote the
+  raw `rev-parse` as a fallback "taken only if the op cannot answer" on the reasoning that
+  `git-worktrees` would usually suffice; but the op *always* answers with a merged/occupancy
+  verdict, just never with the SHA this check needs, so that fallback could never fire — the guard
+  was nominally on and effectively off. Read `git-worktrees:PATH` for the merged/occupancy state as
+  before; run `git -C <worktree> rev-parse HEAD` for the SHA comparison every time, full stop.
+
   #982 narrowed `.claude/settings.json`'s blanket `Bash(git *)` grant to an enumerated allow-list
   matched as a literal command-string prefix, and `git -C <worktree> rev-parse HEAD` does not
   start with the string `git rev-parse` — `-C <path>` sits ahead of the subcommand. Whether Claude
   Code's own Bash permission matcher normalizes a git global option before that prefix test is
   reasoned here, not observed (nothing in this loop can drive its permission UI to confirm it
-  directly); treat the raw form as liable to stall on an interactive prompt regardless of the
-  answer. Widening the allow-list is not the fix — `Bash(git -C:*)` would match `git -C <any
-  path> <anything at all>`, reopening every subcommand #982 narrowed the grant to exclude. Use
-  `git-worktrees:PATH` first: it is reachable through the already-granted `Bash(supertool:*)`
-  entry and answers the same question this check needs — merged/dirty/occupancy state that would
-  differ if a commit landed since your last look. Fall back to `git -C <worktree> rev-parse HEAD`
-  only if the op cannot answer, and expect that fallback may need an interactive grant.
+  directly); expect this call may need an interactive grant. Widening the allow-list is not the
+  fix — `Bash(git -C:*)` would match `git -C <any path> <anything at all>`, reopening every
+  subcommand #982 narrowed the grant to exclude — so grant this one call, not the pattern.
 
   **When the HEAD check passes and you do force it, record the override** —
   `oss_state.py`'s `--cleanup-override WORKTREE=REASON` (repeatable), same call as the tick's other

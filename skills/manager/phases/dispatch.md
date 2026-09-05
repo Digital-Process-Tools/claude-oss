@@ -112,6 +112,36 @@ a finding, never a silent pass. It is typed after the spawn, exactly like the mo
 it makes a wrong dispatch observable rather than preventing one -- nothing in this repository can
 intercept the real `Agent(...)` call before it runs.
 
+### A pending default branch is not a red one
+
+`gh-branch` reports `NOT GREEN` both when a leg has failed and when legs have not concluded yet.
+Those call for opposite behaviour, and collapsing them is this repository's own named defect class
+-- an absence produced by the tool, read as an absence in the world. Four cases (#1084), and only
+two of them justify holding:
+
+- **Default branch pending, dispatching a new lane** -- do not wait. The lane branches off that
+  commit and its own pull request runs the full matrix against the merge result; waiting buys
+  nothing the lane's own CI does not answer more directly.
+- **Default branch pending, merging an already-green pull request** -- do not wait. The merge gate
+  reads the pull request's own checks, and a pending default branch right after a squash is the
+  expected state -- `skills/manager/phases/merge.md`'s own step 3 is a read, not a hold.
+- **Default branch red, dispatching** -- do not dispatch. Fix the default branch first: a lane cut
+  from a red base inherits the breakage and cannot tell its own failure from the inherited one.
+- **Default branch not green, tagging a release** -- wait. Already the rule at
+  `skills/manager/phases/release.md`, and it is about the exact commit, at leg level.
+
+**A fifth case sits beside these, and it is not a wait between dispatches -- it is a wait at the
+tick's own edge.** Watch the last merge of a tick to conclusion before the tick closes. #968
+recorded a merge train that outpaced the default branch's own run across four merges in one tick,
+never once observing it GREEN between them -- tolerable only because each pull request merged on
+its own concluded run against its own rebased head. Where a rebase is skipped on file-disjointness
+grounds, or skipped altogether under `merge.md`'s own #1085 policy, the default branch's own `push`
+run is the *only* backstop for the combined content, so a tick that merges on green and dies before
+that run concludes has removed the pre-merge check without keeping the post-merge one.
+`skills/manager/phases/tick-order.md`'s *What ends a tick* is where this is enforced -- a tick does
+not close while radar's board says something is unwatched, and the default branch is carried there
+as a member row, per that same file's own step 4 -- not a sixth case pasted in beside these five.
+
 ### Run a fleet, not a queue
 
 **Several developers in parallel. That is the point of this loop, not an optimisation of it.** One

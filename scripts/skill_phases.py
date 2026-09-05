@@ -173,9 +173,20 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # declared baseline -- the #1036 select_issues.py directive and the #1037
     # step-5 pointer update both landed in this file. Budget unchanged;
     # comfortably under it.
+    # Raised for #1084: 58344 B on disk against the prior 57900 B ceiling, a
+    # 444 B overage. New subsection states the four (really five) cases for
+    # whether a pending vs red default branch should block dispatch, merge or
+    # release -- a rule this repo was following by habit rather than by
+    # instruction. Too small an overage to be worth trimming something else
+    # to absorb, so the ceiling moved with ~10% headroom over the new size
+    # rather than cutting anything.
+    # Re-baselined for #1084's own self-review round: 58344 B became 58392 B
+    # after two small precision fixes to the new subsection's cross-reference
+    # wording (radar's board-member row is established at tick-order.md's
+    # step 4, not inside "What ends a tick" itself). Budget unchanged.
     "skills/manager/phases/dispatch.md": (
-        56058,
-        57900,
+        58392,
+        64200,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
@@ -203,9 +214,33 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # worktree-reap fix) without touching this table. Budget unchanged; the
     # file is still under it, though only by 45 B (worth a fresh headroom
     # raise the next time this file grows, out of scope here).
+    # Raised for #1085/#1056: 16671 B on disk against the prior 14500 B
+    # ceiling, which #1029's own note already flagged as due. Two additions,
+    # not one: #1085's merge policy (green and mergeable means merge, no
+    # pre-merge rebase absent a real reason) and #1056's fix to the #1007
+    # worktree HEAD-comparison guard, whose git-worktrees-first fallback
+    # could never fire because that op never emits a commit SHA. Neither
+    # paragraph could be cut to make room for the other -- one is a new
+    # policy, the other closes a data-loss guard that was silently off --
+    # so the ceiling moved with ~10% headroom over the new size rather than
+    # trimming either down.
+    # Re-baselined for #1085/#1056's own self-review round: 16671 B became
+    # 17234 B after fixing a wrong issue citation (the rerun rule "just
+    # below" is #389's, not #1004's -- #1004 is an unrelated release-marker
+    # edit) and a hardcoded, repo-specific CI fact (the new policy bullet
+    # named this repo's own tests.yml trigger shape as though it held for
+    # every managed repo; now stated as a per-repo fact to check, with the
+    # repo's own file named as one instance rather than a name to expect
+    # elsewhere) surfaced by self-review. Budget unchanged.
+    # Re-baselined for #1091's CI leg: the literal substring "merging on
+    # green" in the #1085 policy bullet collided with test_command_
+    # references.py's ACTS_THE_LOOP_TAKES boundary check (a phase file is
+    # concatenated after SKILL.md's own stop-boundary marker, and that
+    # enumerated act may not appear on that side). Reworded to "a green
+    # merge"; 17234 B became 17250 B. Budget unchanged.
     "skills/manager/phases/merge.md": (
-        14455,
-        14500,
+        17250,
+        18300,
         "merging: the gates, the call itself, and what is still owed after green",
     ),
     # Re-baselined for #1014: 10381 B on disk against a stale 10195 declared
