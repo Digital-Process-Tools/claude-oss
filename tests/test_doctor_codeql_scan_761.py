@@ -135,7 +135,15 @@ def test_uncovered_outside_owned_when_the_same_language_also_appears_outside(tmp
     scripts_dir = tmp_path / "scripts"
     scripts_dir.mkdir()
     (scripts_dir / "doctor.py").write_text("# real product code\n", encoding="utf-8")
-    run = _languages_run({"Python": 154452, "Shell": 1511382})
+    # #1062: the `covered` path now asks the forge whether default setup
+    # already scans these families, so this fixture has to answer that call
+    # too -- `_languages_run` would hand the languages body back for it and
+    # the state would (correctly) become `could-not-tell`, which is a
+    # different subject from the inside/outside split this test pins.
+    run = _routed_run(
+        {"Python": 154452, "Shell": 1511382},
+        default_setup=(0, json.dumps({"state": "not-configured"}), ""),
+    )
     state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
     assert state == "uncovered-outside-owned"
     assert "python" in detail
@@ -254,3 +262,134 @@ def test_check_codeql_scan_reports_could_not_tell_distinctly(tmp_path, capsys):
     assert doctor.FINDINGS[-1][0] == "WARN"
     assert "could not tell" in out
     assert not out.startswith("OK ")
+
+
+# ------------------------------------------------- #1062: GitHub's default setup
+
+
+def _routed_run(languages_dict, default_setup=None):
+    """A `run` stub that answers the two `gh api` paths separately.
+
+    #1062: the check makes a second forge call on the `covered` path, and the
+    single-answer `_run_once` above would hand the languages body back for it
+    too -- a stub that cannot tell the two calls apart cannot pin which one
+    produced an answer. `default_setup` is `(rc, stdout, stderr)`, or `None`
+    when the test wants no default-setup call to be answered at all.
+    """
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        path = cmd[-1]
+        if path.endswith("/default-setup"):
+            if default_setup is None:
+                raise AssertionError("default-setup was called and the test declared none")
+            rc, out, err = default_setup
+            return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr=err)
+        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(languages_dict), stderr="")
+
+    run.calls = calls
+    return run
+
+
+def _repo_with_python_outside_owned(tmp_path):
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "doctor.py").write_text("# real product code\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_default_setup_covering_the_local_families_is_not_a_warning(tmp_path):
+    """#1062's own measured case: CodeQL default setup ships no workflow file,
+    so the local walk sees nothing -- and the repo is fully scanned."""
+    _repo_with_python_outside_owned(tmp_path)
+    run = _routed_run(
+        {"Python": 154452},
+        default_setup=(0, json.dumps({"state": "configured", "languages": ["actions", "python"]}), ""),
+    )
+    state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "default-setup-covers"
+    assert "default setup" in detail
+    assert "python" in detail
+
+
+def test_default_setup_not_covering_every_local_family_still_warns(tmp_path):
+    """Must-fire pair for the test above: a default setup that is configured
+    and does NOT list a family found locally is a real gap, not a pass."""
+    _repo_with_python_outside_owned(tmp_path)
+    (tmp_path / "app.go").write_text("package main\n", encoding="utf-8")
+    run = _routed_run(
+        {"Python": 154452, "Go": 4000},
+        default_setup=(0, json.dumps({"state": "configured", "languages": ["python"]}), ""),
+    )
+    state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "uncovered-outside-owned"
+    assert "go" in detail
+
+
+def test_default_setup_not_configured_keeps_the_original_warning(tmp_path):
+    _repo_with_python_outside_owned(tmp_path)
+    run = _routed_run(
+        {"Python": 154452},
+        default_setup=(0, json.dumps({"state": "not-configured"}), ""),
+    )
+    state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "uncovered-outside-owned"
+    assert "python" in detail
+
+
+def test_default_setup_404_keeps_the_original_warning(tmp_path):
+    """A clean 404 is the issue's own second outcome: nothing is configured."""
+    _repo_with_python_outside_owned(tmp_path)
+    run = _routed_run(
+        {"Python": 154452},
+        default_setup=(1, "", "gh: Not Found (HTTP 404)"),
+    )
+    state, _detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "uncovered-outside-owned"
+
+
+def test_default_setup_403_is_never_folded_into_either_answer(tmp_path):
+    """A permission-limited read that cannot see the setting must not render
+    as a setting confirmed absent -- the rule `branch protection` in the same
+    diagnostic already follows."""
+    _repo_with_python_outside_owned(tmp_path)
+    run = _routed_run(
+        {"Python": 154452},
+        default_setup=(1, "", "gh: Resource not accessible by integration (HTTP 403)"),
+    )
+    state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "could-not-tell"
+    assert "403" in detail
+
+
+def test_default_setup_unparseable_body_is_could_not_tell(tmp_path):
+    _repo_with_python_outside_owned(tmp_path)
+    run = _routed_run({"Python": 154452}, default_setup=(0, "not json", ""))
+    state, _detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "could-not-tell"
+
+
+def test_default_setup_is_not_called_when_nothing_sits_outside_owned(tmp_path):
+    """Must-not-fire control: the owned-only and no-supported-language paths
+    answer without the second forge call at all."""
+    oss_dir = tmp_path / ".oss"
+    oss_dir.mkdir()
+    (oss_dir / "assemble_changelog.py").write_text("# vendored\n", encoding="utf-8")
+    run = _routed_run({"Python": 1000}, default_setup=None)
+    state, _detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "owned-only"
+    assert not any(cmd[-1].endswith("/default-setup") for cmd in run.calls)
+
+
+def test_check_codeql_scan_reports_ok_for_default_setup_coverage(tmp_path, capsys):
+    _repo_with_python_outside_owned(tmp_path)
+    run = _routed_run(
+        {"Python": 154452},
+        default_setup=(0, json.dumps({"state": "configured", "languages": ["python"]}), ""),
+    )
+    doctor.check_codeql_scan(tmp_path, config=_config(), run=run)
+    out = capsys.readouterr().out
+    assert doctor.FINDINGS[-1][0] == "OK"
+    assert out.startswith("OK ")
+    assert "consider adding a CodeQL workflow" not in out
