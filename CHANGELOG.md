@@ -7,6 +7,206 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-05
+
+### Added
+
+- 250 tracked `.py` files had no linter anywhere, write-time or CI (#635). Now both: a
+  `ruff` write-time validator (`.supertool.json`) reports a finding the moment a file is
+  edited or created, and a new `lint` job in `.github/workflows/tests.yml` runs
+  `scripts/ruff_ratchet.py` over the whole tree on every push and pull request. The
+  ruleset (`[tool.ruff.lint]` in `pyproject.toml`) is five rules with teeth --
+  F401/F841 (unused import/local), E722 (bare `except:`), B006 (mutable default), A001
+  (shadowed builtin) -- with ruff's default `UP*` style rules left off because they
+  assume an interpreter newer than the declared 3.9 floor. Neither leg demands a clean
+  tree: measured against this selection, the tree already carries 95 findings across 51
+  files outside this issue's own claimed scope, so `ruff_ratchet.py` freezes that count
+  as a ratchet -- the CI leg fails a PR that raises it, never one that leaves it flat --
+  and the write-time validator only ever reports, matching this repo's own
+  `markdownlint`/`shellcheck` convention of never reverting a good edit over a lint
+  finding.
+
+- `/oss:doctor` now reports on six administrative GitHub settings it never touched before,
+  report-only with no `--apply` per this family's own contract: secret scanning, secret-scanning
+  push protection, the "Dependabot alerts" (vulnerability-alerts) toggle and automated security
+  fixes (`scripts/doctor_check_security_settings.py`), plus a CodeQL-coverage finding
+  (`scripts/doctor_check_codeql_scan.py`) that reads `GET /repos/{owner}/{repo}/languages`,
+  intersects it with a hardcoded (and drift-prone -- named as such) CodeQL-supported-language
+  table, and **subtracts the paths this plugin owns wholesale** (`.oss/`,
+  `.github/workflows/oss-changelog.yml`, `.claude/jit-context/*/01-oss/`) before deciding whether
+  a default CodeQL setup would scan real product code, would scan only this plugin's own vendored
+  files (worse than no scanner, since findings there are unfixable without being reverted at the
+  next `/oss:scaffold` run), would have nothing to scan at all, or could not be told (#761).
+
+### Changed
+
+- `skills/manager/SKILL.md`'s `## Who decides` now names committing directly to the default
+  branch, outside a pull request, as a stop -- with no content exception, `trap.d/` fragments
+  included, and no "CI reached green afterward" substitute for reaching it before the write lands.
+  A `git revert` being loop-reachable with no outside credential answered the wrong question: this
+  loop hit the identical fork twice in one tick, once bypassing 14 of 14 required checks straight to
+  `main` and once routing the same discovery through an ordinary pull request (#1021) -- the rule now
+  states which of the two the loop follows going forward (#976).
+
+- `scripts/lane_setup.py`'s `--stack-on BRANCH` flag (#1006) landed with no brief, phase file or
+  agent definition naming it -- only its own test did. `skills/manager/phases/dispatch.md` now
+  documents what it does and when to reach for it: the narrow case where a lane about to be
+  dispatched is meant to stack on a specific sibling branch (not `default_branch`) and that
+  branch's own worktree is the one reading `cannot tell`, as distinct from `merge.md`'s #1007
+  paragraph, which gates *removing* an already-merged worktree rather than *creating* a new one
+  (#1020).
+
+- `scripts/tree_snapshot.py`'s root resolution was investigated after a developer lane
+  reported a false `mutated` verdict caused, it hypothesized, by resolving across sibling
+  worktrees. Reading the code and reproducing directly against real `git worktree add`
+  siblings of this repo found no such heuristic and no code behavior change was needed:
+  `snapshot` always reads the invoking process's actual cwd (or an explicit `--root`), and
+  `compare`'s default root, since #971, is the *recorded* root from the before-snapshot
+  rather than the live cwd -- so a `compare` call made after the Bash tool resets cwd
+  between calls still lands on the right tree. `--root`'s own `--help` text now says so
+  explicitly, `agents/developer/review.md`'s snapshot/compare snippet gets a note pointing
+  at #971, and `tests/test_tree_snapshot_sibling_worktree_1024.py` pins the scenario
+  against real worktree siblings rather than #971's synthetic independent repos (#1024).
+
+- `commands/tick.md` used to inject its own numbered steps 1 through 6, plus "What ends a tick",
+  into the scheduler's context on every tick -- ~13k tokens of a ~52k-byte file, even though only
+  the sub-manager spawned from it ever executes that content. That order of operations now lives in
+  its own phase file, `skills/manager/phases/tick-order.md`, read by the sub-manager rather than
+  injected into the scheduler; `commands/tick.md` itself shrank from 52,090 B to 17,348 B, carrying
+  only the spawn, the seven-state handback classification and step 7, which are the scheduler's own
+  (#1037).
+
+### Fixed
+
+- `escaped_newline_body_errors` -- the on-disk check that refuses a pull request
+  body more escaped than formatted -- shipped enforced in PR #723 but undeclared
+  in `x-enforced-on-disk`, deliberately: no developer lane may hold an unmerged
+  report against contract 8 was the precondition for declaring it, and two lanes
+  did at the time. That precondition now holds, so contract 9 declares the rule,
+  with its mutation case wired into `test_every_on_disk_claim_has_a_case_that_proves_it`.
+  Compatibility: breaking - the rule fires on `body`, a free-text field every
+  prior contract already carried, so it cannot be scoped to something only a
+  new document could spell (unlike #698's `no_close` at contract 8): a
+  version-8 report whose pull request body happened to be more escaped than
+  formatted was valid under 8 and is refused under 9 (#724).
+
+- `scripts/select_issues.py` now translates GitHub's own `author_association` values
+  (`OWNER`/`MEMBER`/`COLLABORATOR` to `"maintainer"`, `CONTRIBUTOR`/`NONE` to `"external"`) before
+  handing them to `dispatch_rank.rank` and `dispatch_rank.order`, both of which only ever accepted
+  the internal two-value vocabulary. A real `gh api` payload used to rank every non-loop issue
+  `unrankable` and, because `order`'s own stable-sort key saw the same untranslated value, left every
+  non-loop issue in input order regardless of true priority -- silently making #993's
+  external/maintainer split inert outside a test fixture that pre-translated the value by hand.
+  An association in neither GitHub set still refuses to rank rather than being guessed (#1013).
+
+- `CLAUDE.md`'s agent and manager-skill budget tables named a "measured (baseline)" column
+  nothing ever checked against the files it describes: `check()` in `agent_budgets.py`,
+  `skill_phases.py` and `command_budgets.py` only ever compared measured size against `budget`
+  (the ceiling), never against `baseline`, so a baseline could drift from disk indefinitely with
+  no test noticing -- and several already had (`agents/sub-manager.md` measured 16,341 B on disk
+  against a declared 15,501, for one). `tests/test_baseline_matches_disk_1014.py` now compares
+  every declared baseline against the file's actual size directly, and every stale baseline in
+  both `CLAUDE.md` tables and their backing Python modules is re-measured to match disk (#1014).
+
+- `scripts/oss_config.py`'s `user_visible_paths_problem` validated a contributor-supplied path
+  regex with Python's `re.compile`, but the value is spliced into a `grep -E` (POSIX ERE) command
+  in the generated changelog-gate workflow. A malformed `{}` interval such as `a{1,2,3}` -- three
+  counts where ERE allows at most two -- passes `re.compile` unmodified (Python reads it as
+  literal characters, since it is not a valid Python interval either) while `grep -E` exits 2,
+  SYNTAX ERROR, measured on both BSD grep and ugrep. The generated
+  `if ! grep -Eq PATTERN; then skip; fi` guard cannot tell that apart from a genuine no-match, so
+  an accepted-but-malformed pattern silently and permanently turned the changelog gate off for
+  the whole repository. `user_visible_paths_problem` now refuses any `{...}` that is not a
+  well-formed interval bound (#1015).
+
+- `skills/manager/phases/dispatch.md`'s budget is raised from 50,600 B to 57,900 B in the same
+  diff that adds the `--stack-on` prose #1020 asks for -- the margin had narrowed to 10 B, the
+  same shape #725 already hit once, and this issue asked for the raise to land with the growth
+  that needed it rather than after the fact (#1016).
+
+- `skills/manager/phases/merge.md`'s worktree-reap HEAD re-check (#1007) now leads with
+  `git-worktrees:PATH`, already covered by the `Bash(supertool:*)` grant, instead of the raw
+  `git -C <worktree> rev-parse HEAD` -- composed with #982's narrowed git allow-list, the raw form
+  does not start with any covered subcommand prefix and could stall on an interactive permission
+  prompt the safety check was written to run unattended (#1017).
+
+- `scripts/oss_config.py`'s `user_visible_paths_problem` denylisted a single quote and `\n`
+  individually, but not `\r`, U+2028 (the YAML line separator) or VT (`\x0b`) -- all of which are
+  YAML line breaks that could either be silently absorbed into the generated `grep -E`
+  alternation (a permanent, silent gate skip) or terminate the generated workflow's own YAML
+  block scalar mid-parse. Replaced with an anchored allow-list of printable ASCII, the same shape
+  `changelog_untagged_problem`'s `CHANGELOG_UNTAGGED_RE` already uses elsewhere in this file, so
+  every line-break byte -- known today or not -- is refused by construction rather than by name
+  (#1018).
+
+- `scripts/doctor_check_security_alerts.py` and `scripts/doctor_check_branch_protection.py` each
+  ran their `gh api` subprocess with `universal_newlines=True` and no `errors=`, which decodes
+  under `errors="strict"` with the runner's own locale codec -- a byte that codec cannot represent
+  raised `UnicodeDecodeError` (a `ValueError`, not caught by the surrounding
+  `except (OSError, subprocess.SubprocessError)`), which would have aborted the whole `doctor.py`
+  run before its `VERDICT:` line, breaking the "exit 0 always" contract every check states. Both
+  `_gh_api` functions now read raw bytes and decode with `errors="replace"`, the same fix
+  `doctor.py`'s own two subprocess reads already carry for the identical trap (#1019).
+
+- `scripts/brief_schema.py` (dispatch's pre-spawn validator, #967) now flags a leftover
+  `{{...}}` template placeholder in a composed brief -- structurally, not by presence -- after a
+  sub-manager dispatched three lanes with one brief's "supertool required" section left as the
+  literal marker it was meant to be substituted with, caught it only after all three `Agent()`
+  calls had returned, and found `SendMessage` unavailable to correct any of them (#1022).
+  `skills/manager/phases/dispatch.md`'s per-brief checklist gained an eighth item asking the same
+  thing by eye, for a brief composed and sent without ever touching a file, which the validator
+  cannot reach. A PreToolUse hook blocking the `Agent` tool call itself was investigated and
+  declined for now -- see the report for the reasoning.
+
+- `scripts/skill_phases.py`'s declared baselines for `skills/manager/SKILL.md` and
+  `skills/manager/phases/merge.md` had drifted from disk again after #1026 grew both files for
+  unrelated reasons (#976's push-to-main rule, #1017's worktree-reap fix), leaving
+  `tests/test_baseline_matches_disk_1014.py` red on `main`. Re-measured both (44,358 B and
+  14,455 B) and corrected `scripts/skill_phases.py`'s `DOCUMENTS` and `CLAUDE.md`'s matching
+  table rows and derived-total sentence (#1029); budgets are unchanged, and both files remain
+  comfortably (`SKILL.md`) or narrowly (`merge.md`, 45 B) under their ceilings.
+
+- `scripts/statusline.py` now guards every GitHub API call that interpolates `.oss.json`'s
+  `repo` or `default_branch`: `_reading_from_check_runs` and `_reading_from_combined_status`
+  (repo and branch, straight into a `gh api` REST path segment), `_gh_external_issue_count`
+  and `_latest_release` (repo alone, also a REST path segment), and `_gh_count` (repo alone,
+  a search-API query qualifier rather than a path segment). A malformed `repo` or `branch`
+  used to reach `gh api` unchanged -- including a literal `..` path segment in `repo` itself,
+  not only in `branch` -- addressing a different endpoint than the one configured and
+  reporting that endpoint's answer as the configured default branch's own state. Every
+  guarded call now refuses (returns `None`, the same "could not look" answer the rest of
+  this module already gives) rather than call `gh` with an unsafe value. Ports three fixes
+  `Digital-Process-Tools/claude-supertool` had already merged into its own scaffolded copy
+  of this file, ahead of this plugin's own source copy (#1035).
+
+- `scripts/select_issues.py` (#970) composes the ranking, staleness, lane-collision and claim
+  checks into one call and refuses `none-available` when an input could not be read -- but nothing
+  in the loop's own written procedure actually called it. `commands/tick.md` step 5 named
+  `dispatch_rank.py` and `lane_setup.py --claim` as the commands to run by hand, and
+  `skills/manager/phases/dispatch.md`'s own mention was phrased as a description rather than a
+  directive. Both sites now name `scripts/select_issues.py` as the dispatch-selection call itself,
+  closing the gap where a tick that found nothing and a tick whose claim read failed used to close
+  identically as "nothing left" (#1036).
+
+- `tests/test_dev_dependencies_611.py`'s CI-sufficiency guard now unions the installed-package
+  tokens from every `pip install` line in `.github/workflows/tests.yml`, instead of returning on
+  the first one found. A dependency declared only on a later job's install step (`lint`'s own line,
+  say) used to be invisible to the check and would pass silently even when genuinely undeclared for
+  local reproduction -- exactly the gap #635/PR #1039 hit, caught only because a reviewer read the
+  workflow file by hand (#1040).
+
+- A sub-manager that stops mid-work has twice closed its handback with free prose promising its
+  own resumption ("I'll pick this back up once CI resolves") instead of the `TICK: paused` shape
+  that exists for exactly this case -- and the correction held for only one turn out of three after
+  being stated directly, twice. Two structural changes close the gap a reminder paragraph alone
+  could not: `agents/sub-manager.md` now asks a sub-manager to validate its own draft handback
+  through `scripts/tick_handback.py` before ending its turn, and `commands/tick.md`'s
+  `could-not-classify` handling now asks the scheduler to re-ask the same sub-manager via
+  `SendMessage` before falling back to a manual read of the raw message. `_RESUME_PROMISE`'s own
+  pattern (#941) is also widened to name the promise-to-resume shape in the third observed
+  instance's own wording ("will act as soon as ... clear"), which its four prior sub-patterns did
+  not match (#1048).
+
 ## [0.23.0] - 2026-09-04
 
 ### Added
@@ -8283,7 +8483,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.24.0
 [0.23.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.23.0
 [0.22.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.22.0
 [0.21.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.21.0
