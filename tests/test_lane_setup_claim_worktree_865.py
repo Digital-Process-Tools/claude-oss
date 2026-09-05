@@ -34,19 +34,48 @@ def _fake_gh_bin(tmp_path):
     `gh` -- a fake `gh` on PATH, answering only the two calls
     `select_issues_claim_read.py` makes, keeps the assignee half a fixed
     `claimed` so the worktree check is the only thing varying under test.
+
+    A POSIX shebang script is never spawnable on Windows -- `shutil.which("gh")`
+    finds nothing (it only probes names already carrying one of `PATHEXT`'s
+    extensions) and `subprocess.run(["gh", ...])` finds nothing either, so
+    `test_claim_from_the_clone_records` -- the positive control that the claim
+    actually records -- read that absence as `COULD NOT CLAIM` and exited 3
+    (observed on `pytest (windows-latest, 3.12)`). The fix is the fixture, not
+    a weaker assertion: on Windows this writes `gh.cmd` instead, the same
+    per-platform launcher shape `test_lane_setup_317.py::_stub_supertool`
+    already uses for the identical PATHEXT/shebang gap.
     """
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir(exist_ok=True)
-    gh_path = bin_dir / "gh"
-    gh_path.write_text(
-        "#!/bin/sh\n"
-        "if [ \"$1\" = \"api\" ]; then echo tester; exit 0; fi\n"
-        "if [ \"$1\" = \"issue\" ] && [ \"$2\" = \"view\" ]; then "
-        "echo '{\"assignees\": []}'; exit 0; fi\n"
-        "if [ \"$1\" = \"issue\" ] && [ \"$2\" = \"edit\" ]; then exit 0; fi\n"
-        "exit 1\n"
-    )
-    gh_path.chmod(0o755)
+    if os.name == "nt":
+        gh_path = bin_dir / "gh.cmd"
+        gh_path.write_text(
+            "@echo off\r\n"
+            'if "%1"=="api" goto api\r\n'
+            'if "%1"=="issue" if "%2"=="view" goto view\r\n'
+            'if "%1"=="issue" if "%2"=="edit" goto edit\r\n'
+            "exit /b 1\r\n"
+            ":api\r\n"
+            "echo tester\r\n"
+            "exit /b 0\r\n"
+            ":view\r\n"
+            'echo {"assignees": []}\r\n'
+            "exit /b 0\r\n"
+            ":edit\r\n"
+            "exit /b 0\r\n",
+            encoding="utf-8",
+        )
+    else:
+        gh_path = bin_dir / "gh"
+        gh_path.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "api" ]; then echo tester; exit 0; fi\n'
+            'if [ "$1" = "issue" ] && [ "$2" = "view" ]; then '
+            "echo '{\"assignees\": []}'; exit 0; fi\n"
+            'if [ "$1" = "issue" ] && [ "$2" = "edit" ]; then exit 0; fi\n'
+            "exit 1\n"
+        )
+        gh_path.chmod(0o755)
     return bin_dir
 
 
@@ -112,7 +141,9 @@ def test_claim_from_the_clone_records(clone, tmp_path):
     """Positive control: run from the clone -- a real working tree, not a
     linked one -- and the claim must actually record."""
     fake_bin = _fake_gh_bin(tmp_path)
-    result = _run(["999", "--claim", "--lane", "README.md"], cwd=clone, extra_path=fake_bin)
+    result = _run(
+        ["999", "--claim", "--lane", "README.md"], cwd=clone, extra_path=fake_bin
+    )
     assert result.returncode == 0, result.stdout
     assert "not recorded" not in result.stdout, result.stdout
 

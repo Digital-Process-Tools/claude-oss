@@ -992,7 +992,49 @@ def _receipt_companions_line(result):
     return "COULD NOT TELL -- {0}".format(result["detail"])
 
 
+def _split_label_positionals(argv):
+    """Pull the up-to-three plain positionals that follow ``--label`` out of
+    *argv* by hand, before argparse ever sees them.
+
+    argparse cannot reliably parse a *second* run of optional positionals
+    (``ISSUES``, ``PHRASE``, ``SUBAGENT_TYPE``) that appears after an
+    optional flag (``--label``) -- whether it does depends on the
+    interpreter: observed to fail on 3.10 and 3.11 (CPython's own
+    intermixed-positional handling changed in 3.12) and pass on 3.12 and
+    3.13, which is exactly the kind of silent, version-dependent breakage
+    this file's own supported floor (Python 3.9) cannot afford. Since the
+    call shape is always ``<issue> --label <ISSUES> <PHRASE>
+    [<SUBAGENT_TYPE>] [--model ...] [--background]`` (#1069, #989), consume
+    the label's own positionals directly out of the tokens immediately
+    following ``--label`` and hand argparse a single, unambiguous
+    ``issue`` positional plus whatever flags remain.
+    """
+    argv = list(argv)
+    try:
+        label_at = argv.index("--label")
+    except ValueError:
+        return argv, (None, None, None)
+    rest = argv[label_at + 1 :]
+    consumed = []
+    for token in rest:
+        if len(consumed) >= 3:
+            break
+        if token != "-" and token.startswith("-"):
+            break
+        consumed.append(token)
+    consumed_count = len(consumed)
+    consumed += [None] * (3 - consumed_count)
+    tail = rest[consumed_count:]
+    new_argv = argv[: label_at + 1] + tail
+    return new_argv, tuple(consumed)
+
+
 def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    argv, (label_issues_value, label_phrase_value, label_subagent_value) = (
+        _split_label_positionals(argv)
+    )
     parser = argparse.ArgumentParser(
         description=(
             "One call for a developer lane's setup facts: the resolved base, the "
@@ -1007,33 +1049,6 @@ def main(argv=None):
         default=None,
         help="the issue number this lane implements -- omit only together with "
         "--suggest-companions, which carries its own issue number as its argument",
-    )
-    parser.add_argument(
-        "label_issues",
-        nargs="?",
-        default=None,
-        metavar="ISSUES",
-        help="with --label: every issue this lane carries, primary included, "
-        "comma-separated -- positional, so composing a label costs no more "
-        "typing than fleet_label.py's own three-positional call did (#1069). "
-        "Ignored without --label.",
-    )
-    parser.add_argument(
-        "label_phrase",
-        nargs="?",
-        default=None,
-        metavar="PHRASE",
-        help="with --label: the short description of what the lane is doing. "
-        "Ignored without --label.",
-    )
-    parser.add_argument(
-        "label_subagent",
-        nargs="?",
-        default=None,
-        metavar="SUBAGENT_TYPE",
-        help="with --label: given, renders the whole literal Agent(...) call "
-        "(#989) instead of only the description string. Ignored without "
-        "--label.",
     )
     parser.add_argument("--repo", default=".", help="repository to read (default: .)")
     parser.add_argument(
@@ -1169,6 +1184,9 @@ def main(argv=None):
         "(--claim, --release, --derive-held, --against) alongside it.",
     )
     args = parser.parse_args(argv)
+    args.label_issues = label_issues_value
+    args.label_phrase = label_phrase_value
+    args.label_subagent = label_subagent_value
 
     if args.suggest_companions is not None:
         if args.issue is not None:

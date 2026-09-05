@@ -155,3 +155,70 @@ def test_cli_still_prints_a_representable_phrase_verbatim(monkeypatch):
     assert exit_code == 0
     written = stream.buffer.getvalue().decode("cp1252", "replace")
     assert written.strip() == "Lane 534  auto-update path"
+
+
+def test_split_label_positionals_consumes_up_to_three_plain_tokens():
+    # Regression for the CI leg this fix closes: argparse's own handling of a
+    # second run of optional positionals (ISSUES, PHRASE, SUBAGENT_TYPE)
+    # appearing after an optional flag (--label) is not consistent across
+    # interpreters -- observed to fail the exact call shape below on 3.9,
+    # 3.10 and 3.11 ("unrecognized arguments: ...") and pass on 3.12/3.13,
+    # purely as a side effect of an unrelated CPython change to argparse's
+    # own intermixed-positional handling. `_split_label_positionals` removes
+    # argparse from that decision entirely by consuming the label's own
+    # positionals out of argv by hand before argparse ever sees them, so the
+    # result must be identical on every supported interpreter -- this test
+    # exercises the splitter directly rather than through a subprocess,
+    # which is what makes it interpreter-independent; the subprocess tests
+    # above (`test_cli_prints_the_label`, `test_cli_refuses_without_full_
+    # bundle`) and `test_fleet_label_989.py::test_cli_prints_the_whole_agent_
+    # call` are what actually failed on the affected interpreters before
+    # this fix and are the ones that pin the real defect.
+    new_argv, values = lane_setup._split_label_positionals(
+        ["534", "--label", "534,537,495", "auto-update path", "oss:developer",
+         "--model", "sonnet"]
+    )
+    assert new_argv == ["534", "--label", "--model", "sonnet"]
+    assert values == ("534,537,495", "auto-update path", "oss:developer")
+
+
+def test_split_label_positionals_stops_at_the_next_flag():
+    # Only two plain tokens follow --label here -- the flag right after must
+    # not be swallowed as a third label positional.
+    new_argv, values = lane_setup._split_label_positionals(
+        ["534", "--label", "534,537,495", "auto-update path", "--background"]
+    )
+    assert new_argv == ["534", "--label", "--background"]
+    assert values == ("534,537,495", "auto-update path", None)
+
+
+def test_split_label_positionals_is_a_noop_without_the_flag():
+    # Positive control: no --label at all means nothing is pulled out.
+    argv = ["534", "--claim", "--lane", "scripts/foo.py"]
+    new_argv, values = lane_setup._split_label_positionals(argv)
+    assert new_argv == argv
+    assert values == (None, None, None)
+
+
+def test_cli_two_label_positionals_survive_a_trailing_flag():
+    # The two-positional (no SUBAGENT_TYPE) shape with a global flag
+    # immediately after it -- the second real call shape this fix must not
+    # regress, run as a subprocess the way the defect actually renders.
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "534",
+            "--label",
+            "534,537,495",
+            "auto-update path",
+            "--background",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode == 0
+    assert result.stdout.strip() == "Lane 534 x3  auto-update path"
