@@ -6,8 +6,15 @@ match: (^|/)scripts/(select_issues|dispatch_rank|lane_setup|issue_claim|prefligh
 
 **What this family is for.** Do everything a script can do toward *which issues should a developer be
 given*, so the manager is left with judgement and delegation rather than arithmetic. The unit handed
-back is the **group** -- one dispatchable lane -- not a list the caller still has to join. A lane
-carries three issues; one issue per lane is the under-filled state.
+back is the **group** -- one dispatchable lane -- not a list the caller still has to join.
+
+**Three issues per group is the target, and it is a target rather than a quota.** One issue per
+lane is the under-filled state, so a selection that returns singletons has not finished its job.
+But the bound is declared-file overlap, never the count: a group is padded to three only from
+issues that genuinely land inside the same files, and a group of two or one is correct when
+nothing else overlaps. Report **why** a group is short -- no overlapping candidate, or a capped
+board read -- rather than returning a short group silently, which reads identically to a lane
+nobody could fill.
 
 **`select_issues.py` composes, never reimplements.** `dispatch_rank.order/rank` for the order,
 `preflight_check.search` for staleness, `lane_setup.resolve_lane/lane_overlap` for collision,
