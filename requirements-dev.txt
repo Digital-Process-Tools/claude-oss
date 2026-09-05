@@ -25,7 +25,12 @@
 #                      declines every test in the file when `ruff` is not on PATH -- so
 #                      without this, the whole file passes by skipping rather than by
 #                      running (#635). Also lets a contributor reproduce the `lint` CI
-#                      leg locally with `python3 scripts/ruff_ratchet.py`.
+#                      leg locally with `python3 scripts/ruff_ratchet.py`. Pinned to the
+#                      exact version `.github/workflows/tests.yml` installs (#1061) --
+#                      an unpinned `ruff` here would let a local
+#                      `--write-baseline` run capture a snapshot against a different
+#                      ruleset than CI checks it with, reintroducing the drift #1061
+#                      pins CI itself against.
 #
 # pytest-xdist is deliberately NOT here. It is optional worker-sizing guidance
 # (scripts/doctor.py's worker_sizing / _xdist_installed), never required by addopts or
@@ -40,4 +45,4 @@ pytest
 pytest-cov
 markdown-it-py
 pyyaml
-ruff
+ruff==0.16.3

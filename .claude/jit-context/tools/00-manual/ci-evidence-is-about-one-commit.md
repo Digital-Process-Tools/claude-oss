@@ -22,7 +22,7 @@ first two; noticing that no sha was ever cleared catches the third.
   and nothing in the loop would have caught it. **Name the sha in the claim** — a claim that names
   its commit is falsifiable in one call, one that does not is prose.
 
-- **A rerun re-runs the merge-ref it already had (#1004).** `tests.yml` triggers on plain
+- **A rerun re-runs the merge-ref it already had (#389).** `tests.yml` triggers on plain
   `pull_request`, so the checkout is a merge-ref computed **when the run started**. Re-running a
   completed run's jobs reuses that frozen ref. So when a fix lands on the default branch and a PR
   is red because its base lacked it, re-running the PR reproduces the identical failure — and reads

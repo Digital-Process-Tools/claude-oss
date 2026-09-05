@@ -73,7 +73,19 @@ def _workflow_installed_packages():
     packages = set()
     for line in text.splitlines():
         if line.strip().startswith("pip install") and "requirements" not in line:
-            packages.update(tok.lower() for tok in line.strip().split()[2:])
+            for tok in line.strip().split()[2:]:
+                # #1061 pins `ruff` to an exact version here (`ruff==0.16.3`) so a
+                # ruff release changing its own ruleset cannot masquerade as a code
+                # regression in scripts/ruff_ratchet.py. `requirements-dev.txt`
+                # declares the bare name via the same `_PACKAGE_NAME` regex
+                # `_declared_packages()` already uses -- so a pinned token is
+                # normalised to its name here too, or a version-pinned install line
+                # would never match the (deliberately unversioned) declared set and
+                # this sufficiency check would fail on every future pin, not only
+                # this one.
+                match = _PACKAGE_NAME.match(tok)
+                if match:
+                    packages.add(match.group(1).lower())
     return packages
 
 
