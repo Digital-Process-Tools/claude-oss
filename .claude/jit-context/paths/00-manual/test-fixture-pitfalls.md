@@ -1,6 +1,6 @@
 ---
-title: "Writing a test here: seven fixture traps that each cost a CI round"
-description: "A fixture is a measurement, not a given. Long paths, permission denies, injected failures and platform differences must be established and skipped with what went untested, never asserted."
+title: "Writing a test here: ten traps that each cost a CI round"
+description: "A fixture is a measurement, not a given. Long paths, permission denies, injected failures, ambient credentials and section locators must be established, not assumed -- and a check must name its subject and derive its location."
 match: (^|/)tests/
 ---
 
@@ -33,6 +33,40 @@ sentence naming what went untested.
   answers mean there is nothing to classify, and it skips carrying both.
 - **Pin `PATH`.** With the stub absent, the launcher finds the real `claude` and executes it — a
   suite starting live agent sessions in temp directories.
+
+- **Ambient credentials are a third axis, beside OS and interpreter, and the least visible.**
+  `tests/test_select_issues_970.py` spawned `select_issues.py` as a subprocess; that reached the real
+  `issue_claim.check`, which shells out to `gh issue view`. The author's shell was authenticated, so
+  it passed locally. CI has no `GH_TOKEN`, `gh` exits 4, and the code correctly answered
+  `could-not-select` — red on every leg. **The code was right and the test was environment-dependent**:
+  it asserted a success path reachable only when the environment happens to carry credentials, and
+  said so nowhere. Unlike OS and interpreter this is not a property of the machine at all — the same
+  laptop passes or fails depending on whether somebody ran `gh auth login` that month. Any test whose
+  subject shells out to `gh`, `git push`, or anything authenticable must pin the unauthenticated case
+  explicitly, or it is measuring the author's session. A review spawn found the identical dependency
+  in a sibling test — the first was found by CI, the second only by looking for more of the shape.
+
+- **A content check should name its subject and derive its location.** `text.find("## What is not
+  proven yet")` takes the *first* occurrence: adding a cross-reference elsewhere in `CLAUDE.md`
+  containing that literal string (inside backticks, which `find` does not care about) repointed two
+  tests at the wrong section, and four tests went red reading as *the section has gone stale* — the
+  opposite of what happened. Anchor on `\n## ` at line start, or the heading plus its newline. The
+  worse case is the same bug passing: `test_the_release_trigger_names_exactly_the_rows_that_block`
+  found its marker in the *wrong file* because the intended sentence had reflowed between the two
+  words it matched on, and reflowing one more line would have landed it on a sentence that enumerates
+  nothing — green, vacuously. Splitting `SKILL.md` twice turned this up six times; the guards that
+  survived were the ones deriving location from the spine's own text
+  (`checklist_skew.py`, `manager_docs.documents()`), not the ones that pinned a filename.
+
+- **A test whose comment names a source of truth must import it.** A parity guard read
+  `#: dispatch_rank.SHORT_REASONS is the actual source of truth` and then compared
+  `agents/sub-manager.md` against `commands/tick.md` — two prose copies against each other, so both
+  naming the same stale set was indistinguishable from both being right. A fourth word was added to
+  `SHORT_REASONS` and the guard went on reporting parity, shipping a refusal no dispatching agent had
+  been told about. `tuple(_dispatch_rank.SHORT_REASONS)` made it fail immediately on both briefs.
+  Note `loop-prose-parity.md` already said *pin the measured tool output, not the parity* — it fires
+  on `agents/*.md` and `skills/manager/**`, not on the test asserting over them, so the guidance was
+  in the session and pointed at the wrong file.
 
 **A negative assertion needs a positive control**: pair every must-not-fire with a must-fire in the
 same fixture, or an assertion that nothing happened also passes when nothing ran.
