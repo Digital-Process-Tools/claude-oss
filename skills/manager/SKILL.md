@@ -34,8 +34,11 @@ lives in its own file, and is read when the loop enters that phase**, not before
 | Merge | `skills/manager/phases/merge.md` | green, and once before the first tick of a new install |
 | Release | `skills/manager/phases/release.md` | a release trigger fired |
 | Accounting | `skills/manager/phases/accounting.md` | a tick is closing, and at every release tag |
+| Tick order | `skills/manager/phases/tick-order.md` | a sub-manager's tick begins -- steps 1-6, and what ends one (#1037) |
 
 Resolve each against `${CLAUDE_PLUGIN_ROOT}`, the same way every script path on this page resolves.
+`skills/manager/phases/tick-order.md` is read by a sub-manager, not by this session directly --
+`commands/tick.md` names it, the same way it names every other phase file below.
 
 **A phase file that was not read is not a phase that went smoothly.** Say which of the three
 happened -- `read`, `not-read` with the reason, `could-not-read` -- in the same breath as the phase's
@@ -587,7 +590,7 @@ third party, a release a gate refused, an empty board. When a direct instruction
 out loud, because a loop that stops silently is indistinguishable from one that was never armed.
 **The asymmetry behind that, the rule it replaced and the state-file calls that record a wait, a
 plugin identity and a same-tick plugin-root move are in `skills/manager/phases/accounting.md`;
-`commands/tick.md` steps 1 and 6 are where those calls are wired.**
+`skills/manager/phases/tick-order.md` steps 1 and 6 are where those calls are wired.**
 
 **A recorded wait names what it is waiting on in a form a later turn can re-read.** *Blocked on audit
 completion* is unfalsifiable prose, and it survived ninety minutes after the audit had answered.

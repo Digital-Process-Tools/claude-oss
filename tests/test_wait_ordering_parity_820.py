@@ -38,7 +38,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_content_invariants import MANAGER_SKILL  # noqa: E402
 
-TICK_MD = REPO_ROOT / "commands" / "tick.md"
+# #1037: this content moved out of commands/tick.md into its own phase file.
+TICK_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 
 #: The shared fact, folded to lowercase so a legitimate sentence-initial
 #: capital ("A wait is not an act...") is not read as a disagreement with a

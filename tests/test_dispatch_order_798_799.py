@@ -665,10 +665,15 @@ def test_the_spine_points_at_the_table_rather_than_restating_it():
 def test_tick_md_states_the_lane_size_bound():
     """#799 item 3. The bound belongs where step 5 dispatches, not only in the
     phase file, because a session can reach the dispatch step holding the
-    command and not the phase."""
-    text = (repo_root() / "commands" / "tick.md").read_text(encoding="utf-8")
+    command and not the phase.
+
+    #1037: step 5 moved out of commands/tick.md into its own phase file, read
+    by a sub-manager rather than injected into the scheduler on every tick."""
+    text = (repo_root() / "skills" / "manager" / "phases" / "tick-order.md").read_text(
+        encoding="utf-8"
+    )
     assert "never 4" in text or "never four" in text, (
-        "commands/tick.md step 5 does not state the lane size bound"
+        "skills/manager/phases/tick-order.md step 5 does not state the lane size bound"
     )
 
 

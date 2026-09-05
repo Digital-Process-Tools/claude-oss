@@ -23,12 +23,17 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 DISPATCH = (REPO_ROOT / "skills" / "manager" / "phases" / "dispatch.md").read_text(encoding="utf-8")
 SUB_MANAGER = (REPO_ROOT / "agents" / "sub-manager.md").read_text(encoding="utf-8")
-TICK = (REPO_ROOT / "commands" / "tick.md").read_text(encoding="utf-8")
+# #1037: step 5 (where this rule's "a reader would otherwise assume dispatch
+# can happen more than once" concern applies) moved out of commands/tick.md
+# into its own phase file, read by a sub-manager rather than injected into
+# the scheduler on every tick -- so the third document to check is now that
+# file, not commands/tick.md itself.
+TICK = (REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md").read_text(encoding="utf-8")
 
 DOCS = {
     "skills/manager/phases/dispatch.md": DISPATCH,
     "agents/sub-manager.md": SUB_MANAGER,
-    "commands/tick.md": TICK,
+    "skills/manager/phases/tick-order.md": TICK,
 }
 
 # --------------------------------------------------------- positive controls
@@ -87,7 +92,7 @@ def test_sub_manager_and_tick_point_at_dispatch_md_rather_than_duplicate_it():
     argument rather than re-typing it -- checked as a citation of the file,
     not as a hand-count of words, per this repo's own parity-against-source
     reasoning (test_write_route_fact_parity_673.py)."""
-    for name, text in (("agents/sub-manager.md", SUB_MANAGER), ("commands/tick.md", TICK)):
+    for name, text in (("agents/sub-manager.md", SUB_MANAGER), ("skills/manager/phases/tick-order.md", TICK)):
         assert "skills/manager/phases/dispatch.md" in text, (
             "{0} does not point at dispatch.md for the full argument".format(name)
         )

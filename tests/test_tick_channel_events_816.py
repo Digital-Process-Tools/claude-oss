@@ -53,14 +53,23 @@ def test_probe_exception_is_named_with_its_condition():
 
 
 def test_rule_lives_beside_step_7_not_inside_the_sub_managers_numbered_steps():
+    """#1037 moved the sub-manager's own numbered steps 1-6 (and "What ends
+    a tick") out of commands/tick.md entirely, into
+    skills/manager/phases/tick-order.md -- so the physical separation this
+    test checks for is now a fact about which FILE the rule is in, not only
+    where it sits within one file. The positional half (beside step 7)
+    still applies within commands/tick.md, which is what remains here."""
     raw = TICK_MD.read_text(encoding="utf-8")
     step7_idx = raw.find("7. **Arm the next tick")
-    ends_idx = raw.find("## What ends a tick")
-    assert step7_idx != -1 and ends_idx != -1
+    assert step7_idx != -1
     situational_idx = raw.find("situational awareness")
     assert situational_idx != -1, "commands/tick.md does not state the channel-event rule at all"
-    assert step7_idx < situational_idx < ends_idx, (
-        "the channel-event rule must sit in the scheduler own half of the "
-        "file, beside step 7 and before What ends a tick, not inside the "
-        "sub-manager numbered steps 1-6"
+    assert step7_idx < situational_idx, (
+        "the channel-event rule must sit in the scheduler's own half of the "
+        "file, at or after step 7"
+    )
+    assert "## What ends a tick" not in raw, (
+        "commands/tick.md still carries 'What ends a tick' -- #1037 moved "
+        "it to skills/manager/phases/tick-order.md, so a copy left behind "
+        "here is a duplicate, not a fix"
     )

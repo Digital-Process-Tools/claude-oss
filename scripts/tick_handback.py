@@ -150,8 +150,17 @@ _RESUME_PROMISE = re.compile(
     r"|once\s+(?:ci|the\s+ci|a\s+poller|the\s+poller)\b"
     r"|when\s+(?:ci|the\s+ci|a\s+poller|the\s+poller)"
     r"\s+(?:resolves|reports|finishes|completes|clears)"
+    # #1048: the third observed instance -- "will act as soon as #923/#924
+    # clear" -- names neither "once/when CI" nor "will resume/continue",
+    # so #941's own four sub-patterns above missed it. "as soon as ...
+    # clear/resolves/finishes/completes/reports" is the shape that phrasing
+    # takes; it does not require the word "will" immediately before it, on
+    # the same reasoning "once CI"/"when CI" above do not either.
+    r"|as\s+soon\s+as\b.{0,60}?"
+    r"(?:clear|clears|resolve|resolves|finish|finishes|complete|completes|report|reports)\b"
+    r"|waiting\s+for\s+(?:the\s+)?(?:background\s+)?(?:ci|the\s+ci|a\s+poller|the\s+poller)"
     r")",
-    re.IGNORECASE,
+    re.IGNORECASE | re.DOTALL,
 )
 
 

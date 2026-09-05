@@ -82,7 +82,9 @@ def test_commands_use_the_plugin_root_variable_for_scripts():
 
 SETUP_MD = REPO_ROOT / "commands" / "setup.md"
 SCAFFOLD_MD = REPO_ROOT / "commands" / "scaffold.md"
-TICK_MD = REPO_ROOT / "commands" / "tick.md"
+# #1037: TICK_FACTS below (step 2/4 content: the board read, the radar heal)
+# moved out of commands/tick.md into its own phase file.
+TICK_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 DOCTOR_MD = REPO_ROOT / "commands" / "doctor.md"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 

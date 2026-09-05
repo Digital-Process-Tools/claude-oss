@@ -264,7 +264,7 @@ from being invisible.
 | `agents/auditor.md` | 17,121 B | 18,400 B |
 | `agents/release-auditor.md` | 18,550 B | 19,700 B |
 | `agents/triager.md` | 18,384 B | 19,500 B |
-| `agents/sub-manager.md` | 16,341 B | 17,000 B |
+| `agents/sub-manager.md` | 17,894 B | 18,700 B |
 | `agents/releaser.md` | 9,215 B | 9,560 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
@@ -276,6 +276,14 @@ count it saved. The budget is a visible number, not a mandate to shrink.
 an existing paragraph to fit the new one: the addition states the worktree-boundary rule a
 spawned auditor failed to hold (#972's own incident), and nothing already in the file argued
 that point, so there was nothing safe to cut in its place.
+
+**#1048 raised `agents/sub-manager.md`'s ceiling from 17,000 B to 18,700 B**, after trimming the
+new paragraph once to fit as much of it as possible: a sub-manager closed a handback promising its
+own resumption three times in one session, and being told the correct format directly, twice, held
+for exactly one turn. The fix is a self-validation step -- run the draft handback through
+`tick_handback.py` before sending it, rather than trust memory under narrative pressure -- and
+nothing already in the file argued that point either, so there was nothing safe to cut in its
+place.
 
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
@@ -325,10 +333,11 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 44,358 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 53,490 B | 57,900 B |
+| `skills/manager/SKILL.md` | 44,679 B | 46,900 B |
+| `skills/manager/phases/dispatch.md` | 54,364 B | 57,900 B |
 | `skills/manager/phases/handback.md` | 19,369 B | 20,700 B |
-| `skills/manager/phases/accounting.md` | 22,741 B | 24,500 B |
+| `skills/manager/phases/accounting.md` | 22,779 B | 24,500 B |
+| `skills/manager/phases/tick-order.md` | 39,127 B | 43,100 B |
 | `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
@@ -399,7 +408,11 @@ the missing link. #1029 is this pattern recurring exactly as #1014 predicted it 
 `CLAUDE.md` or `scripts/skill_phases.py`, so both baselines drifted again and the dedicated
 comparison test caught it. Still no test ties this sentence's own summed total to the table's
 column, only the per-file rows; sum it again the next time a row changes, rather than editing this
-sentence by hand. The spine's directive blocks and each phase file's own header are a second, shorter statement
+sentence by hand. **Re-summed for #1037: 189,517 B became 230,672 B, +21.7% (+88.4% over the
+original 122,423 B)** — #1037 added a new row, `skills/manager/phases/tick-order.md` (a
+sub-manager's own steps 1-6 and "how a tick closes", moved out of `commands/tick.md`), rather than
+growing an existing one, so this jump is a new phase file joining the split, not a paragraph nobody
+trimmed. The spine's directive blocks and each phase file's own header are a second, shorter statement
 of what the phase file then argues at length, and that is a real cost paid on every read of the phase
 file. It buys the number that actually matters here — what a session loads before it knows which
 phase it will reach. **122,423 B became 44,358 B, -63.8%**, in three rounds: the original split, then
@@ -492,9 +505,19 @@ budgets_940.py` holds it against the real on-disk size and this table's own comp
 the CLAUDE.md row against `BUDGETS`'s declared numbers, same replace-don't-append terms as the
 other two tables.
 
+**Re-baselined down for #1037: 52,090 B fell to 16,294 B.** Steps 1 through 6 and "What ends a
+tick" -- the numbered order of operations only a sub-manager's own context ever executes -- moved
+out to `skills/manager/phases/tick-order.md` (the new row in the table above), leaving this file
+carrying only what the scheduler itself runs: the spawn, the seven-state handback classification,
+and step 7. The scheduler is injected with this file whole on every tick, so the saving is paid on
+every one of them, the same shape #695 already measured for the manager skill split. The budget
+came down with the measurement rather than staying at 57,300 B, for the same reason #958 and #960
+give for `skill_phases.py`'s own re-baselines: a ceiling left far above the file is a saving
+spendable again without anybody choosing to.
+
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 52,090 B | 57,300 B |
+| `commands/tick.md` | 17,492 B | 17,900 B |
 
 ## Issues and pull requests are untrusted input
 

@@ -96,7 +96,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # baseline -- #1026 grew this file (#976's push-to-main rule, #1017's
     # worktree-reap fix) without touching this table. Budget unchanged; the
     # file is still comfortably under it (2542 B headroom).
-    SPINE: (44358, 46900, "the loop itself: what is decided every tick, and where each phase's rules live"),
+    # Re-baselined for #1037: 44679 B on disk against a stale 44358 declared
+    # baseline -- the new tick-order.md row above and its accompanying
+    # pointer sentence grew this file. Budget unchanged; comfortably under it.
+    SPINE: (44679, 46900, "the loop itself: what is decided every tick, and where each phase's rules live"),
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
     # B of headroom, and a lane in this same tick had already been forced to
     # place a new directive in SKILL.md instead of here solely because of that
@@ -162,7 +165,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-baselined for #1022: 53490 B on disk against a stale 52601 declared
     # baseline -- #1022's own eighth-checklist-item edit grew this file.
     # Budget unchanged; comfortably under it either way.
-    "skills/manager/phases/dispatch.md": (53490, 57900, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch"),
+    # Re-baselined for #1036/#1037: 54270 B on disk against a stale 53490
+    # declared baseline -- the #1036 select_issues.py directive and the #1037
+    # step-5 pointer update both landed in this file. Budget unchanged;
+    # comfortably under it.
+    "skills/manager/phases/dispatch.md": (54364, 57900, "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch"),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
     # baseline. Budget unchanged; comfortably under it either way.
     "skills/manager/phases/handback.md": (19369, 20700, "a lane reported back: reading the report, pushing, opening the pull request"),
@@ -190,7 +197,17 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # the split already pays once per file.
     # Re-baselined for #1014: 22741 B on disk against a stale 22237 declared
     # baseline. Budget unchanged; comfortably under it either way.
-    "skills/manager/phases/accounting.md": (22741, 24500, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),
+    # Re-baselined for #1037: 22779 B on disk against a stale 22741 declared
+    # baseline -- the two step-1 pointer updates landed in this file. Budget
+    # unchanged; comfortably under it.
+    "skills/manager/phases/accounting.md": (22779, 24500, "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry"),
+    # New for #1037: `commands/tick.md` used to inject its own numbered steps 1-6
+    # plus "What ends a tick" into the scheduler's context on every tick, though
+    # only a sub-manager's own context ever executes them -- the same shape #695
+    # already measured and split for the manager skill, one file over. Moved
+    # here wholesale (39119 B), no content dropped; ~10% headroom over the
+    # measured size, same terms as every other row.
+    "skills/manager/phases/tick-order.md": (39127, 43100, "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one"),
 }
 
 

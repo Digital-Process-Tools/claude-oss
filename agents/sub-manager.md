@@ -82,20 +82,25 @@ handback, review, merge, accounting:
 Skill(manager)
 ```
 
-**Before you open `commands/tick.md` at all: read it in bounded chunks from the first call, never
-a bare `cat` or a Bash-tool read of the whole file.** It is 743 lines and past this harness's
-output-truncation threshold, so a first-call full read comes back as a preview plus a saved-file
-pointer, not the content -- and recovering the rest costs a second call that re-pays the first
-call's cost for nothing it delivered (#940, confirmed directly against this same harness class).
-`commands/tick.md` carries a short version of this same note in its own first ~500 bytes, placed to
-land inside the truncation preview -- this paragraph is the fix that fires before you ever reach
-that preview: use `supertool 'read:commands/tick.md:OFFSET:LIMIT'`, sized well under the truncation
-point, for every read of that file from your very first one.
+**Before you open `skills/manager/phases/tick-order.md` at all: read it in bounded chunks from the
+first call, never a bare `cat` or a Bash-tool read of the whole file.** It carries your own order of
+operations (#1037) and is past this harness's output-truncation threshold on its own, so a first-call
+full read comes back as a preview plus a saved-file pointer, not the content -- and recovering the
+rest costs a second call that re-pays the first call's cost for nothing it delivered (#940, confirmed
+directly against this same harness class, for the file this content used to live in before the
+split). Use `supertool 'read:skills/manager/phases/tick-order.md:OFFSET:LIMIT'`, sized well under the
+truncation point, for every read of that file from your very first one. `commands/tick.md` itself is
+much smaller post-split and does not need this care, but read it the same way out of habit.
 
-Then follow `commands/tick.md`'s own order of operations. Nothing about *how* a tick runs changes
-because you are the one running it rather than a human-invoked session: the state file read, the
-board read, the ranking table, dispatch, review, merge-on-green, the cohort accounting at the end --
-all of it, exactly as written there and in `skills/manager/phases/*.md`.
+Then follow your own order of operations at `skills/manager/phases/tick-order.md` -- steps 1
+through 6, and "What ends a tick" (#1037: this used to be `commands/tick.md`'s own numbered list,
+injected into the scheduler's context on every tick for content only your context ever runs).
+Nothing about *how* a tick runs changes because you are the one running it rather than a
+human-invoked session: the state file read, the board read, the ranking table, dispatch, review,
+merge-on-green, the cohort accounting at the end -- all of it, exactly as written there and in
+`skills/manager/phases/*.md`. `commands/tick.md` stays the file that documents the whole command --
+its own spawn of you, the seven-state handback classification, and step 7 (arming the next
+wakeup), which is the scheduler's own, not yours.
 
 **One phase is not yours: release.** If a release trigger fires during your tick (`merged_prs` or
 `soak_hours` crossed, per `skills/manager/phases/release.md`), **do not run the release phase
@@ -119,9 +124,9 @@ ceiling. Fill by companion search: each candidate's declared lane against the to
 over the open board. `--against` between lanes you already picked is the conflict check, a different
 question (#918). A short lane names `board-exhausted`, `no-adjacent`, `did-not-search` or
 `could-not-tell`; naming none is the defect (#867). Record every dispatched lane's fill with `--lane-fill PRIMARY:COUNT[:REASON]` on the same
-`oss_state.py --decision` call `commands/tick.md` step 6 already makes -- it refuses the whole call
-when a short lane arrives unreasoned, so the receipt is the check, not a repeated read of this
-paragraph.
+`oss_state.py --decision` call `skills/manager/phases/tick-order.md` step 6 already makes -- it
+refuses the whole call when a short lane arrives unreasoned, so the receipt is the check, not a
+repeated read of this paragraph.
 
 **One dispatch per tick, then resume rather than re-dispatch (#880).** Your fan-out above is the
 whole of your dispatching this tick. A lane that comes back red, or whose base moves under it, is
@@ -152,7 +157,7 @@ this repository's own defect class is an absence rendered as a clean result):
 ```
 TICK: completed
 TICK-ENDS: <one of work-started / blocked / nothing-left -- which of
-"What ends a tick" (commands/tick.md) applies to this tick, required>
+"What ends a tick" (skills/manager/phases/tick-order.md) applies to this tick, required>
 <one paragraph: what you read, what you dispatched or merged or reviewed, or that
 nothing was ready to act on this tick -- an idle tick is a real, clean answer>
 ```
@@ -197,6 +202,24 @@ them apart. If your context dies before you write anything at all, that renders 
 `returned-nothing`: the scheduler must be able to tell a sub-manager that ran a whole tick and
 found nothing to do (`TICK: completed`, idle) from one that never got to speak (empty message) --
 they are not the same event and must not read as the same event.
+
+**Validate your own draft before you send it (#1048).** A reminder paragraph already failed on
+this exact defect: told directly, twice, to use `TICK: paused`, a sub-manager still closed a third
+handback with free prose promising its own resumption. Remembering the rule under pressure is not
+the fix; checking the draft is. Before ending your turn with any final message meant as a handback,
+run it through the same tool the scheduler will:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - <<'MSG'
+    <your draft message, indented exactly as commands/tick.md's own framing shows>
+END OF MESSAGE
+MSG
+```
+
+`could-not-classify` or `could-not-read` means the draft is not a shape the scheduler can act on --
+do not send it. Read the reason (it names `TICK: paused` when your draft reads as a resumption
+promise) and rewrite into one of the four `TICK:` shapes above before ending your turn. Nothing in
+this harness can refuse your final message outright, so this check is one you run on yourself.
 
 **Last: clear your role marker, right before you write the handback message above.**
 

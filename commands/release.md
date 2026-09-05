@@ -76,7 +76,8 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    an unbounded "findings, therefore stop" makes every release hostage to diminishing returns. After
    round two, file the rest against the next milestone and ship.
 
-   **Resolve the plugin root at the point of use, the same way `commands/tick.md` step 1 already does
+   **Resolve the plugin root at the point of use, the same way `skills/manager/phases/tick-order.md`
+   step 1 already does
    for `doctor.py` (#789).** `${CLAUDE_PLUGIN_ROOT}` in this file's own command text is a
    version-pinned path substituted once when the command was injected — it only locates the script
    file to run. `checklist_skew.py` and `ranking_table.py` each *also* fall back internally to
@@ -89,7 +90,8 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    split across two**: a shell variable does not survive between separate command invocations — only
    `cd` does — so a block that assigns a root and a later, separate block that reads it are not
    guaranteed to share anything, and an unset variable there is silently read as empty rather than as
-   an error. `commands/tick.md`'s own `DOCTOR_ROOT` block keeps its assignment and its one use site
+   an error. `skills/manager/phases/tick-order.md`'s own `DOCTOR_ROOT` block keeps its assignment
+   and its one use site
    together for exactly this reason; each of the two call sites below now resolves and consumes its
    own root inline, rather than sharing one resolution across three separate blocks. `release_delta.py`
    takes no `--plugin-root` at all (confirmed by its own `--help`): its only use of
