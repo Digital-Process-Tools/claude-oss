@@ -1,7 +1,7 @@
 ---
 title: "How the loop's markdown is managed: three tiers, replace-don't-append, split by subject"
 description: "Route a lesson before writing it. Budgets are declared in three registries and hand-copied into CLAUDE.md, so baseline and budget move in the same diff. Split on subject, never size -- and measured 2026-09-05, there is almost no duplication left to extract."
-keywords: phase file, spine, byte budget, document budget, split a document, loop prose
+keywords: phase file, manager spine, byte budget, document budget, split a document, loop prose
 ---
 
 **Three tiers, and routing comes before writing.** `CLAUDE.md` is loaded whole on every session, so

@@ -16,7 +16,7 @@ launcher symlink	launcher-path-reach.md
 login shell path	launcher-path-reach.md	
 dpt-plugins path	launcher-path-reach.md	
 phase file	loop-document-structure.md	
-spine	loop-document-structure.md	generic
+manager spine	loop-document-structure.md	
 byte budget	loop-document-structure.md	
 document budget	loop-document-structure.md	
 split a document	loop-document-structure.md	
