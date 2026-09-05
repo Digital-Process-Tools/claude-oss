@@ -65,6 +65,7 @@ OP_INVENTORY = {
     "gh-prs": "github",
     "git-commit": "git",
     "git-diff": "git",
+    "git-push": "git",
     "git-worktrees": "git",
     "glob": None,
     "grep": None,

@@ -1,0 +1,4 @@
+Bash	~gh-run|gh-branch|gh-pr:[0-9]+:status	ci-evidence-is-about-one-commit.md	remind			
+Bash	~git-push	lane-branch-upstream.md	remind			
+Bash	~gh-pr-merge	stacked-pr-cleanup-recovery.md	remind			
+Bash	~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit	supertool-payload-forms.md	remind			

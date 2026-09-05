@@ -24,3 +24,15 @@ keywords: subagent, sub-agent, spawned agent, developer lane, sub-manager, jit r
   the same match.
 - **To probe:** batch a known-good control (a rule already seen to fire this session) and read
   `hooks.log` for `(none) [shown:N]` -- that string means suppressed, not unmatched.
+
+**And the probe itself has to be a form the hook understands.** Driving `pre-path-hook.sh` with
+`{"tool_name":"Bash","tool_input":{"command":"supertool 'paste:trap.d/904.x.md'"}}` reported
+`(silent)` for a rule whose `match:` was correct — and for a known-good rule that had already fired
+several times in the same session. The real write op is `paste:::PATH:::CONTENT`, so `paste:PATH` is
+not a form any path can be extracted from; the same three paths with `read:<path>` fired correctly.
+First reading was *my new rule does not fire*; the honest one was *my probe does not probe*.
+**Always put a rule you have already seen fire in the same probe batch.** A probe that produces no
+output and a probe that was never understood by the thing it is probing look identical, and telling
+those two apart is the first thing this repository says about itself. That control was in the batch
+by luck, not design, and it is the only reason the false reading cost two minutes instead of an
+afternoon spent editing a correct rule until it "worked".
