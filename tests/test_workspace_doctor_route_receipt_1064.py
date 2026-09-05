@@ -15,6 +15,7 @@ The diagnostic's own `VERDICT:` line still comes from a hand-written stub
 needs the real `doctor.py`.
 """
 
+import json
 import os
 import shutil
 import stat
@@ -174,6 +175,15 @@ def test_a_second_launch_in_the_identical_state_does_not_route_again(tmp_path):
     assert "/oss:doctor" not in argv, argv
     assert "/oss:tick" in argv, argv
     assert "unchanged" in second.stderr, second.stderr
+
+    # Self-review finding: an `unchanged` launch already compares correctly
+    # against the FIRST launch's own receipt, so it must not write a second
+    # one -- growing this shared, un-rotated state file by one entry on
+    # every launch, forever, for as long as an uncleared WARN persists.
+    state_file = repo / ".max" / "name-watch.json"
+    entries = json.loads(state_file.read_text(encoding="utf-8"))
+    receipts = [e for e in entries if "doctor_route_verdict" in (e.get("detail") or {})]
+    assert len(receipts) == 1, entries
 
 
 def test_a_changed_verdict_re_arms_the_route(tmp_path):

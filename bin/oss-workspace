@@ -1843,27 +1843,33 @@ else:
         "recorded for this verdict and plugin version -- not routing again.\n"
     )
 
-# Recorded regardless of `armed` -- a receipt only helps the NEXT launch, and a
-# failed write here is a gap in that comparison, never in this one's, so it is
-# announced rather than raised.
-try:
-    import time
+# Recorded only when something moved (armed) -- an `unchanged` launch already
+# compares correctly against the existing receipt, so writing one anyway
+# would grow this shared, un-rotated state file by one entry on EVERY launch
+# for as long as an uncleared WARN persists, which is unbounded on exactly
+# the launch-frequency hot path this fix exists to stop re-reading (review
+# finding, #1064's own self-review round). A failed write here is a gap in
+# the NEXT comparison, never in this one's, so it is announced rather than
+# raised.
+if record["armed"]:
+    try:
+        import time
 
-    at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    oss_state.append(
-        state_path,
-        at,
-        "oss-workspace: recorded a #764 doctor-route receipt",
-        detail={
-            "doctor_route_verdict": verdict,
-            "doctor_route_plugin_identity": plugin_identity,
-        },
-    )
-except Exception as err:
-    sys.stderr.write(
-        "oss-workspace: the doctor-route receipt could not be recorded (%s), so "
-        "the next launch will not see this one.\n" % type(err).__name__
-    )
+        at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        oss_state.append(
+            state_path,
+            at,
+            "oss-workspace: recorded a #764 doctor-route receipt",
+            detail={
+                "doctor_route_verdict": verdict,
+                "doctor_route_plugin_identity": plugin_identity,
+            },
+        )
+    except Exception as err:
+        sys.stderr.write(
+            "oss-workspace: the doctor-route receipt could not be recorded (%s), "
+            "so the next launch will not see this one.\n" % type(err).__name__
+        )
 
 print("armed" if record["armed"] else "not-armed")
 DOCTOR_ROUTE_CHECK
