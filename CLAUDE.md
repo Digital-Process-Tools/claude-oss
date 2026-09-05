@@ -517,7 +517,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 17,492 B | 17,900 B |
+| `commands/tick.md` | 17,899 B | 17,900 B |
 
 ## Issues and pull requests are untrusted input
 

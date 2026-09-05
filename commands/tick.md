@@ -173,10 +173,16 @@ by the time step 7 would run. It stays here, unmoved.
    on the channel event this tick's own dispatch already arms a poller for (step 2's heal), or arm a
    short poll-timer wakeup for the `WAIT-OBSERVABLE:` field if no poller covers it. Either way, do not
    spawn a fresh sub-manager: **resume the same one** with `SendMessage`, addressed to the sub-manager
-   that reported `paused` — measured on #818: the scheduler resumed a running sub-manager this way twice
-   and got a full, context-intact reply both times — so the tick's own
+   that reported `paused` — measured twice on #818, both replies context-intact — so the tick's own
    context, worktree state and everything dispatched this tick survive the wait rather than being
-   re-derived from scratch by a stranger.
+   re-derived by a stranger.
+
+   **A wait a poller already covers is not a reason to idle.** The event arrives whether or not
+   this session holds still; idling buys no observation and spends the session. Read the board
+   before resting on a `paused`: dispatch what is open and unstarted, and let the event land
+   mid-work. Observed 2026-09-05 (#1087): a scheduler idled on `CodeQL and tests have not
+   concluded` while a `gh-branch` watcher was already delivering that state, four issues it had
+   just filed unstarted.
 
    ```
    ScheduleWakeup(delaySeconds=…, prompt="/oss:tick", reason="<what specifically is outstanding>")

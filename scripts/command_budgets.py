@@ -54,7 +54,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # self-review fix (two stale "below" cross-references pointing at
     # content #1037 moved out of this file) landed here. Budget unchanged;
     # comfortably under it.
-    "commands/tick.md": (17492, 17900),
+    "commands/tick.md": (17899, 17900),
 }
 
 
