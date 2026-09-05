@@ -1412,6 +1412,50 @@ def plugin_facts(loop_name, installed, latest_by_repo, stale=False):
 # ------------------------------------------------------------------------- refresh
 
 
+def _malformed_repo(repo):
+    """True when `repo` cannot safely fill an `owner/name` API path segment.
+
+    Ported from claude-supertool's own scaffolded copy (#1035, upstream
+    #2245/#2278): `.oss/statusline.py` there guards every `repo`-only call
+    site through this check, and this repo's own source copy -- the thing
+    that copy is scaffolded FROM -- never received it. `repo` comes from
+    `.oss.json` via `repo_config()` with no upstream validation, so a
+    malformed value would otherwise reach `gh api` unchanged and address a
+    different endpoint than the one configured.
+
+    Reuses `_REPO_RE` (above, `oss_config.REPO_RE`'s own copy for the same
+    standalone-vendoring reason) rather than a second `owner/name` pattern --
+    one regex for "is this shape a legitimate repo slug", not one per caller.
+    """
+    return not isinstance(repo, str) or not _REPO_RE.match(repo)
+
+
+#: A branch name may legitimately carry a slash (`release/1.0`) and sits as
+#: the LAST path segment in `"repos/{}/commits/{}/...".format(repo, branch)`,
+#: so this excludes it -- unlike `_REPO_RE`, which requires exactly one.
+#: Whitespace and `?` (which would start a bogus query string mid-path) are
+#: refused outright; `..` is checked separately in `_malformed_api_ref` below,
+#: matching claude-supertool's own split (#1035, upstream #2245).
+_BRANCH_UNSAFE_RE = re.compile(r"[\s?]")
+
+
+def _malformed_api_ref(repo, branch):
+    """True when `repo` or `branch` cannot safely build
+    `"repos/{}/commits/{}/...".format(repo, branch)` (#1035, upstream #2245).
+
+    `_reading_from_check_runs` and `_reading_from_combined_status` are the
+    two call sites with a `branch` in scope; every other guarded site here
+    interpolates `repo` alone and uses `_malformed_repo` directly.
+    """
+    if _malformed_repo(repo):
+        return True
+    if not isinstance(branch, str) or not branch:
+        return True
+    if ".." in branch:
+        return True
+    return bool(_BRANCH_UNSAFE_RE.search(branch))
+
+
 def _gh_count(repo, kind):
     """One exact count, read off the search API's own `total_count`.
 
@@ -1420,6 +1464,8 @@ def _gh_count(repo, kind):
     whoever reads the first line gets a number smaller than the truth, correctly
     formatted, at exit 0. One call and one field cannot fail that way.
     """
+    if _malformed_repo(repo):
+        return None
     query = "repo:{} is:{} is:open".format(repo, kind)
     out = _run(
         [
@@ -1494,6 +1540,8 @@ def _gh_external_issue_count(repo, total):
     same as a missing row: one unreadable association and the whole count is untaken.
     """
     if not isinstance(total, int):
+        return None
+    if _malformed_repo(repo):
         return None
     out = _run(
         [
@@ -1592,7 +1640,15 @@ def _reading_from_check_runs(repo, branch):
     Returns ``None`` when the call did not answer or produced something this
     function cannot parse -- never confused with a reading that genuinely came
     back empty, which is a dict with ``total == 0`` and every flag ``False``.
+
+    Refuses (returns ``None``, never calling ``gh``) when `repo` or `branch`
+    is malformed (#1035, upstream #2245) -- both are interpolated straight
+    into the path segment below with no upstream validation, and a malformed
+    value would silently address a different endpoint than the one
+    configured while this reads it back as that endpoint's answer.
     """
+    if _malformed_api_ref(repo, branch):
+        return None
     out = _run(
         [
             "gh",
@@ -1669,7 +1725,13 @@ def _reading_from_combined_status(repo, branch):
     an undocumented API change would take, and reading it as bad -- rather than
     falling through to `None`, which the merge below reads as "this source did
     not answer" -- is the conservative direction to guess wrong in.
+
+    Refuses (returns ``None``, never calling ``gh``) when `repo` or `branch`
+    is malformed, the same check and the same reason as
+    `_reading_from_check_runs` above (#1035, upstream #2245).
     """
+    if _malformed_api_ref(repo, branch):
+        return None
     out = _run(
         [
             "gh",
@@ -1765,8 +1827,13 @@ def _latest_release(repo):
     `doctor.published_versions` already asks this exact question this exact way. Two
     sources for one question is how a status line and a diagnostic come to disagree in
     front of the same person, which is worse than either being wrong alone.
+
+    Refuses (returns ``None``, never calling ``gh``) when `repo` is malformed
+    (#1035, upstream #2278) -- `repo` here is `slug`, a dependency's own
+    `repository` URL fed through `repo_from_url`, interpolated straight into
+    the path segment below with no further check.
     """
-    if not repo:
+    if _malformed_repo(repo):
         return None
     encoded = _run(
         [
