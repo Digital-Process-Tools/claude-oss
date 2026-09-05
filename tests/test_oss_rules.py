@@ -954,3 +954,86 @@ def test_reinstall_removes_a_stale_owned_name_even_if_it_is_a_dangling_symlink(
     oss_rules.install(tmp_path)
 
     assert not stale_link.is_symlink() and not stale_link.exists()
+
+
+def test_install_refuses_a_symlinked_layer_and_leaves_its_target_untouched(tmp_path):
+    """#1110: `layer.exists()` and `layer.iterdir()` both follow a directory symlink,
+    so a committed `.claude/jit-context/<dimension>/01-oss` link used to have its
+    TARGET emptied of owned-shape files and then written into -- the `is_symlink()`
+    guard that used to live in this loop was on the CHILDREN, one level too deep, and
+    checked nothing about `layer` itself.
+
+    The decoy holds an owned-shape `.md` file and the index name: if `install()`
+    silently did nothing at all, both would also survive, so the decoy alone is not
+    the assertion -- see the paired positive control below for what makes it one.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    decoy = tmp_path / "decoy"
+    decoy.mkdir()
+    victim = decoy / "something.md"
+    victim.write_text("--- decoy content, not this plugin's ---\n", encoding="utf-8")
+    victim_index = decoy / oss_rules.INDEX
+    victim_index.write_text("decoy\tindex\n", encoding="utf-8")
+
+    link = root / ".claude" / "jit-context" / "paths" / oss_rules.LAYER
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether install() refuses a symlinked layer rather than "
+            "writing through it".format(getattr(exc, "errno", None), type(exc).__name__)
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert (
+        victim.read_text(encoding="utf-8")
+        == "--- decoy content, not this plugin's ---\n"
+    )
+    assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
+    assert sorted(p.name for p in decoy.iterdir()) == ["00-index.tsv", "something.md"]
+    assert link.is_symlink()  # the link itself is untouched too, not just its target
+
+
+def test_install_refuses_a_layer_checked_out_as_a_plain_file(tmp_path):
+    """A tracked symlink checked out with `core.symlinks=false` (the historical
+    Windows default lacking the privilege or Developer Mode) never becomes a
+    directory symlink -- git writes a plain text file holding the link's target path
+    instead. `is_symlink()` is False for that and `exists()` is True, so without a
+    dedicated check `layer.iterdir()` would raise an uncaught `NotADirectoryError`
+    rather than the same clean `RulesError` refusal the symlink case gets.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    layer_path = root / ".claude" / "jit-context" / "paths" / oss_rules.LAYER
+    layer_path.parent.mkdir(parents=True)
+    layer_path.write_text("../../../elsewhere\n", encoding="utf-8")
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert layer_path.is_file() and not layer_path.is_dir()
+
+
+def test_install_still_replaces_an_ordinary_real_directory_layer(tmp_path):
+    """The positive control for the test above: an install() that refused everything,
+    including a perfectly ordinary layer, would also make the decoy above look
+    untouched for the wrong reason. This confirms install() still does its normal job
+    when `layer` is a real directory rather than a symlink.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    layer = _layer(root, "paths")
+    layer.mkdir(parents=True)
+    stale = layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(root)
+
+    assert not stale.exists()
+    assert (layer / oss_rules.INDEX).exists()
+    assert not layer.is_symlink()

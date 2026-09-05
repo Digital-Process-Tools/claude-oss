@@ -899,6 +899,9 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     what decides whether a missing assembler is a gap or a decision (#117). The whole
     layer ships either way -- omitting the rule would leave the reader with no statement
     at all, where the defect was a statement about a different repository.
+
+    Raises `RulesError` if any dimension's layer is a symlink (#1110): this module
+    never replaces a layer through a link, only a real directory it owns outright.
     """
     root = Path(repo_root)
     if root.exists() and not root.is_dir():
@@ -908,6 +911,36 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     # Rendered once, against this tree, before anything is removed -- which is also what
     # makes an unrenderable gate state a refusal rather than a half-replaced layer.
     rendered = rules(root, fragments_dir, untagged, gate)
+
+    # Checked for every dimension before anything is removed, for the same reason the
+    # render happens up front: a symlink caught on the third dimension must not leave
+    # the first two already replaced. `Path.exists()` and `Path.iterdir()` both follow a
+    # directory symlink -- so a `.claude/jit-context/<dimension>/01-oss` that is a
+    # committed link would otherwise have its TARGET emptied of owned-shape files and
+    # then written into, and `layer.mkdir(..., exist_ok=True)` would succeed because the
+    # link already exists (#1110). `is_symlink()` is checked ahead of and separately
+    # from `exists()`: it is true for a broken link too, which `exists()` alone would
+    # read as "layer absent" and walk straight past.
+    for dimension in rendered:
+        layer = root / ".claude" / "jit-context" / dimension / LAYER
+        if layer.is_symlink():
+            raise RulesError(
+                "{}: {} is a symlink, not a directory this plugin owns -- install() "
+                "replaces the whole layer, which would delete and rewrite through the "
+                "link into whatever it points at. Remove the link (or move it aside if "
+                "it was committed on purpose) and rerun.".format(dimension, layer)
+            )
+        # A tracked symlink checked out with `core.symlinks=false` (the historical
+        # Windows default without the privilege or Developer Mode) never becomes a
+        # directory symlink at all -- git writes a plain text file holding the link's
+        # target path instead. `is_symlink()` is False for that file and `exists()` is
+        # True, so without this check `layer.iterdir()` two lines below would raise an
+        # uncaught `NotADirectoryError`. Not the write-through-the-link defect #1110
+        # is about (there is no real directory to empty), but the same refusal-not-a-
+        # traceback contract this loop exists to keep, on the same "layer" variable.
+        elif layer.exists() and not layer.is_dir():
+            raise RulesError("{}: {} is not a directory".format(dimension, layer))
+
     for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER
         if layer.exists():

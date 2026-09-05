@@ -1974,6 +1974,14 @@ def rule_layer_paths():
     return sorted(paths)
 
 
+# `_layer_scan` alone reports this cause: `install()` refuses a symlinked layer
+# outright (`oss_rules.RulesError`, #1110), and this scan exists to preview what THAT
+# call would do without duplicating its judgment -- so a symlinked layer is reported as
+# unreadable here too, never followed into whatever it points at and listed as removals
+# for files that are not the managed repository's to lose.
+CAUSE_LAYER_SYMLINKED = "layer-symlinked"
+
+
 def _layer_scan(repo_root, dimensions):
     """``(files, unreadable)`` for the owned layer, per dimension. Never raises.
 
@@ -1993,16 +2001,25 @@ def _layer_scan(repo_root, dimensions):
     that is #124's shape and this module has paid for it once already. No second question
     is put to the filesystem to explain the first one's failure: the exception in hand
     decides which of the two it was.
+
+    A symlinked layer is a third thing again, and checked ahead of both: ``os.listdir``
+    follows a directory symlink, so without this check a committed link's TARGET would
+    be walked and its files reported as ``remove`` rows -- a plan the maintainer approves
+    believing it describes the managed repository's own stale files, when it actually
+    names whatever the link points at (#1110). Reported as unreadable instead, and the
+    target's contents are never listed at all.
     """
     root = Path(repo_root)
     found = []
     unreadable = []
     for dimension in sorted(dimensions):
         relative = "{}/{}/{}".format(RULES_LAYER_DIR, dimension, oss_rules.LAYER)
+        layer_dir = root / RULES_LAYER_DIR / dimension / oss_rules.LAYER
+        if layer_dir.is_symlink():
+            unreadable.append(_unreadable(relative, CAUSE_LAYER_SYMLINKED))
+            continue
         try:
-            names = os.listdir(
-                str(root / RULES_LAYER_DIR / dimension / oss_rules.LAYER)
-            )
+            names = os.listdir(str(layer_dir))
         except (FileNotFoundError, NotADirectoryError):
             continue
         except OSError:
@@ -3914,16 +3931,25 @@ def _main(argv=None):
     # rather than asked for again: it costs a second walk of the repository, and two
     # reads are two chances for the preview and the write to disagree.
     gate = rules_plan["gate"]
-    rules = oss_rules.install(
-        args.root,
-        fragments_dir=fragments_dir(config),
-        # The rule prints a command a human copies. Given nothing it printed a generic
-        # explanation of `--untagged` and no version, so the reader had to derive this
-        # repository's answer themselves -- twice, once here and once in the CI leg,
-        # which is exactly the disagreement the key exists to make impossible (#101).
-        untagged=untagged_versions(config),
-        gate=gate,
-    )
+    try:
+        rules = oss_rules.install(
+            args.root,
+            fragments_dir=fragments_dir(config),
+            # The rule prints a command a human copies. Given nothing it printed a
+            # generic explanation of `--untagged` and no version, so the reader had to
+            # derive this repository's answer themselves -- twice, once here and once
+            # in the CI leg, which is exactly the disagreement the key exists to make
+            # impossible (#101).
+            untagged=untagged_versions(config),
+            gate=gate,
+        )
+    except oss_rules.RulesError as exc:
+        # A symlinked `01-oss` layer (#1110) is the one case this raises after the
+        # templates and owned files above have already been written -- refusing here
+        # is still strictly safer than the alternative of writing through the link, and
+        # the preview above never promised the layer write would succeed.
+        print("FAIL {}".format(exc))
+        return 1
     for path in rules:
         # os.path.relpath, not Path.relative_to: install() returns paths built from the
         # root as GIVEN, and `--root .` is how the command invokes it. relative_to()
