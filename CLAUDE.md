@@ -541,10 +541,13 @@ silently; see the note below.
 
 **Only the version citation was re-derived here, not the substantive numbers below it, and that
 distinction matters more than usual this time.** Confirmed `v0.24.0` is commit `ef9a1bc` (`git
-rev-parse v0.24.0`), and that `git log v0.23.0..v0.24.0 --oneline | wc -l` returns **17** commits
-(a merged-PR-equivalent proxy, not the same measurement the release session itself runs against
+rev-parse v0.24.0`), and that `git rev-list --count v0.23.0..v0.24.0` returns **17** commits (a
+merged-PR-equivalent proxy, not the same measurement the release session itself runs against
 squash-merge history -- treat this as reasoned, not the gate-3-audit-rounds/cohort-freeze figures a
-real release cut would produce). **Gate 3's audit rounds, the cohort freeze, and the reach probe
+real release cut would produce). Never piping `git log` through `wc` for a count:
+`tests/test_git_count_proxy_236.py` guards against exactly that shape, because an empty range reads
+as `1` rather than `0` through the maintainer's own shell proxy, and zero is exactly the value a
+delta count needs to be able to say. **Gate 3's audit rounds, the cohort freeze, and the reach probe
 below were NOT re-derived for v0.24.0** -- they still describe `v0.23.0` (measured at `b45ef51`) and
 are left exactly as the v0.23.0 release session wrote them, because fabricating re-derived numbers
 without actually running gate 3's audit or a fresh cohort count would be worse than leaving last
