@@ -8337,6 +8337,66 @@ def label_vocabulary_state(project_dir, config=None, run=None):
     return "missing", slug
 
 
+def lane_label_state(project_dir, config=None, run=None):
+    """#1075: does a LANE label vocabulary exist -- reported on its own,
+    never folded into `label_vocabulary_state`'s priority verdict. Zero lane
+    labels used to render inside the same `OK` line as a fully populated
+    vocabulary, distinguished only by a number a reader had to notice --
+    this project's own named defect class (an absence rendered as
+    satisfied), in the one line right next to where priority does it
+    correctly.
+
+    Three states, mirroring `label_vocabulary_state`'s shape so a caller can
+    pattern-match either the same way: `satisfied` (payload = `(slug,
+    lanes)`), `none-declared` (payload = `slug` -- a legitimate maintainer
+    choice on a small repo, not a `missing`/`WARN`-worthy gap the way zero
+    priority labels is), and `could-not-tell` (payload = reason, identical
+    to the priority check's own reasons since both read the same `gh label
+    list` call).
+
+    Pays its own `gh label list` call rather than sharing
+    `label_vocabulary_state`'s -- `check_label_vocabulary` below calls both,
+    which is one extra subprocess per diagnostic run rather than a second
+    code path to keep in sync with the first.
+    """
+    run = subprocess.run if run is None else run
+    slug = (config or {}).get("repo") if config else None
+    if slug is not None and not isinstance(slug, str):
+        return "could-not-tell", "the repo value in .oss.json is not a string"
+    if not slug:
+        slug, reason = _origin_slug(project_dir, run=run)
+        if slug is None:
+            return "could-not-tell", reason
+    if shutil.which("gh") is None:
+        return "could-not-tell", "gh is not on PATH"
+    try:
+        done = run(
+            ["gh", "label", "list", "--repo", slug, "--json", "name", "--limit", "200"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            timeout=25,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return "could-not-tell", "gh label list did not run ({})".format(exc)
+    if done.returncode != 0:
+        return "could-not-tell", "gh label list failed for {}".format(slug)
+    try:
+        rows = json.loads(done.stdout or "[]")
+    except ValueError:
+        return (
+            "could-not-tell",
+            "gh label list returned output that did not parse as JSON",
+        )
+    names = [
+        row.get("name") for row in rows if isinstance(row, dict) and row.get("name")
+    ]
+    classified = oss_config.classify_labels(names)
+    if classified["lanes"]:
+        return "satisfied", (slug, classified["lanes"])
+    return "none-declared", slug
+
+
 def check_label_vocabulary(project_dir, config=None, run=None):
     if oss_config is None:
         report(
@@ -8350,9 +8410,9 @@ def check_label_vocabulary(project_dir, config=None, run=None):
         slug, priority, lanes = payload
         report(
             "OK",
-            "label vocabulary on {}: {} priority label(s) ({}); {} lane label(s). "
-            "The triager can tag from this today.".format(
-                slug, len(priority), ", ".join(priority[:3]), len(lanes)
+            "label vocabulary on {}: {} priority label(s) ({}). The triager can "
+            "tag priority from this today.".format(
+                slug, len(priority), ", ".join(priority[:3])
             ),
         )
     elif state == "missing":
@@ -8365,6 +8425,34 @@ def check_label_vocabulary(project_dir, config=None, run=None):
         )
     else:
         report("WARN", "label vocabulary: could not tell -- {}".format(payload))
+
+    # #1075: the lane half gets its own line and its own three states,
+    # rather than being counted inside the priority verdict above.
+    lane_state, lane_payload = lane_label_state(project_dir, config=config, run=run)
+    if lane_state == "satisfied":
+        slug, lanes = lane_payload
+        report(
+            "OK",
+            "lane label vocabulary on {}: {} lane label(s) ({}). The triager "
+            "can tag lanes from this today.".format(
+                slug, len(lanes), ", ".join(lanes[:3])
+            ),
+        )
+    elif lane_state == "none-declared":
+        report(
+            "WARN",
+            "lane label vocabulary on {}: no lane-* labels exist -- a "
+            "legitimate choice on a small repo, not a required gap. It costs "
+            "one advisory tag: the triager's lane assignment is the only "
+            "consumer of labels.lanes today, and developer-lane dispatch "
+            "bounds lanes by declared-file disjointness, not by labels. "
+            "Optional: `gh label create lane-example --repo {} --color "
+            "0e8a16`.".format(lane_payload, lane_payload),
+        )
+    else:
+        report(
+            "WARN", "lane label vocabulary: could not tell -- {}".format(lane_payload)
+        )
 
 
 def run_install_audit(project_dir, plugin_root=None, record=None, run=None):
