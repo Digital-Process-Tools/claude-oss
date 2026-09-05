@@ -31,10 +31,12 @@ only the unconditional publishing clause above, which is unchanged. The agent co
 **Release what a lane did not finish.** The developer never writes to the forge, so the assignment
 placed at dispatch is still sitting on the issue when this report comes back, and the report already
 carries what tells the two cases apart — `files` empty, no commit made. When a lane ends without a
-commit, release the issues it was claimed under before the spawn:
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue_claim.py" <N> [<N> ...] --release`, which removes only
-our own assignment and reports `released` / `not-assigned` / `not-mine` / `could-not-read` /
-`could-not-release`. Skipping this turns a collision problem into a permanent
+commit, release the issues it was claimed under before the spawn -- the mirror of `--claim` (#1069),
+releasing the lane record AND the primary issue's own GitHub assignee in one call:
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --release [--release-also <N> ...]`,
+naming every companion issue the lane also claimed as a `--release-also`. It removes only our own
+assignment and reports `released` / `not-assigned` / `not-mine` / `could-not-read` /
+`could-not-release` for each issue named. Skipping this turns a collision problem into a permanent
 lock: an issue assigned to a lane that
 no longer exists is indistinguishable from one still being worked, which is this repository's own
 defect class landing on the mechanism meant to prevent it. A lane that *did* return a commit needs no
@@ -46,7 +48,7 @@ than a lane that never committed — a commit exists, a pull request was opened 
 state: an assignee, no lane behind it, and a selection step that now skips it forever because it
 reads as somebody's. `gh-pr:N:status` already reads `state` and `merged_at`; when `state` is `CLOSED`
 and `merged_at` reads as unset (the op prints `-`, never the word `null`), release the linked issue
-the same way — `issue_claim.py <N> --release`. Three states, exactly as parallel as the
+the same way — `lane_setup.py <N> --release`. Three states, exactly as parallel as the
 claim step's own: **released** — `state` is `CLOSED` and `merged_at` is unset; **still-assigned** —
 `state` is `MERGED` or still `OPEN`; and **could not read the pull request state** — the call failed
 or was not made, and this **must never render as released**, for the same reason a claim state that

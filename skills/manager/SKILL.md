@@ -332,18 +332,18 @@ quote the error, report it as a finding rather than only routing around it, and 
 lane's brief carrying every further open issue whose files land inside its already-claimed set.
 Three states, computed rather than felt: **`filled`** on both axes; **`under-filled`**, naming the
 count, the shared file that blocked a further issue, and the issues queued behind it; and
-**`could-not-tell`**, which must never render as `filled`. **Claim before you spawn**, every issue in the lane in one call:
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/issue_claim.py" <N> [<N> ...] --claim`. Skip every candidate
-that came back anything but `claimed` or `already-mine`.
+**`could-not-tell`**, which must never render as `filled`. **Claim before you spawn** -- the
+`--claim` row of the table below writes every issue's own GitHub assignee AND registers the lane in
+one call (#1069); skip every candidate whose claim result names anything but `claimed`.
 
-Three calls stand in for judgement here, and none of them is optional:
+Four calls stand in for judgement here, and none of them is optional:
 
 | Before | Call |
 | --- | --- |
 | naming a lane, against everything already running | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN --derive-held` (fallback: `--against PATTERN`, only on `could-not-derive-the-held-set`; on `could-not-check` -- a refused pattern, not a broken derivation -- fix the pattern instead, see `dispatch.md`) |
 | bundling a second issue into a lane already claimed | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN --against PATTERN`, the candidate's declared lane against the one running lane, not the derived aggregate |
-| writing each brief | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim --lane PATTERN [--lane PATTERN ...]`, from the clone -- `--claim` registers the lane (#705); the two rows above are probes and must not carry it, and `--claim` itself refuses without `--lane` (#788), the same PATTERN(s) this candidate was already probed with |
-| dispatching | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py" <primary> <issue1,issue2,...> "<phrase>"` |
+| writing each brief -- claiming in both senses (#1069) | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim --lane PATTERN [--lane PATTERN ...] [--claim-also N ...]`, from the clone -- `--claim` writes the primary issue's (and every `--claim-also` companion's) GitHub assignee AND registers the lane, rolling the assignee write(s) back if registration fails (named states: `claimed` / `already-claimed` / `could-not-claim-assignee` / `assignee-rolled-back` / `rollback-failed-assignee-still-set`); the two rows above are probes and must not carry it, and `--claim` itself refuses without `--lane` (#788), the same PATTERN(s) this candidate was already probed with |
+| dispatching | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label --label-issues <issue1,issue2,...> --label-phrase "<phrase>"` |
 
 Launch every dispatched lane in a single message so they run concurrently.
 

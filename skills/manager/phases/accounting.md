@@ -131,7 +131,7 @@ written down, and kept.
 **The sweep that produced those clusters is expected to have run after the previous release, not at
 some unspecified time (#855).** The spine's *Cadence* section states the order -- ticks, release,
 triage, ticks -- and the reason: triage lands immediately before the next run of ticks so the
-priorities `dispatch_rank.py` reads are as fresh as they can be, and the cohort it counts against
+priorities `select_issues_rank.py` reads are as fresh as they can be, and the cohort it counts against
 has already stopped being edited by the freeze. If this step is consuming clusters from a sweep that
 predates the last release, say so rather than treating the clusters as current.
 
@@ -244,7 +244,7 @@ already computes a release delta this way; hold every new count to the same rule
 **Three to four ticks, then a release, then a triage sweep, then three to four more ticks.**
 Stated by the maintainer 2026-09-02, and nowhere else in this loop's prose until now (#855). The
 ordering matters and is not the one the documents used to imply: triage lands **immediately before**
-the next run of ticks, not at the end of the one that just closed, so `dispatch_rank.py` reads
+the next run of ticks, not at the end of the one that just closed, so `select_issues_rank.py` reads
 priority labels that are as fresh as they can be at the moment it actually consumes them, and the
 cohort burn-down a triage sweep feeds counts a set the release has already stopped editing (the same
 "re-count after the last label write, never before it" discipline the accounting phase already

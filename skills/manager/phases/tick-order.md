@@ -358,16 +358,17 @@ tool, and you are gone by the time step 7 would run.
    **Select in the dispatch order, and carry 1 to 3 issues per lane, never 4 (#798, #799).** The
    order is two axes — author before priority within a band, so a human ask outranks loop work of
    the same or lower band while a blocking-class defect the loop found still outranks an ordinary
-   ask. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/dispatch_rank.py"` is the one place that table
-   lives; the spine's *Deciding what to build* states it and `skills/manager/phases/dispatch.md`
+   ask. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` is the one place that
+   table lives; the spine's *Deciding what to build* states it and `skills/manager/phases/dispatch.md`
    says how a lane is filled from it.
 
    **Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself, not
-   `dispatch_rank.py` and the staleness/collision/claim reads joined by hand.** It composes
-   `dispatch_rank.py`'s own ranking table — `dispatch_rank.py` stays the one place that table
-   lives, and is what this call composes internally, not a separate call to run first — with the
-   staleness (`preflight_check.py`) and lane-collision (`lane_setup.py`) checks and the assignee
-   read (`issue_claim.py`) into one call, board in, ranked claimable candidates out. Three states,
+   the ranking/staleness/collision/claim reads joined by hand.** It composes ranking
+   (`select_issues_rank.py`, the same module the `--board` receipt above renders from) with the
+   staleness (`select_issues_preflight.py`) and lane-collision (`select_issues_overlap.py`,
+   `select_issues_companions.py`) checks and the assignee read (`select_issues_claim_read.py`) into
+   one call, board in, ranked claimable candidates out — those five are submodules now (#1069), none
+   with a `__main__` of their own; `select_issues.py` is the one entry point. Three states,
    and the third must never render as the second: `candidates` (at least one issue survived, with
    the reason every dropped one was dropped), `none-available` (every input was read cleanly and
    nothing survived — a real, established absence), `could-not-select` (at least one input could
@@ -431,10 +432,11 @@ tool, and you are gone by the time step 7 would run.
    op makes still applies. Settle this before the first tick rather than at the merge step, where
    the review is already spent — see *Before the first tick* in `skills/manager/phases/merge.md`.
 
-   **Compose each spawn's `description` with `scripts/fleet_label.py`, not by hand (#539).** A lane
-   carrying three issues and a lane carrying one used to render identically in the fleet view — the
-   label named only the first issue. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fleet_label.py" <primary>
-   <every issue this lane carries, comma-separated> "<phrase>"` prints `Lane <primary> x<N>  <phrase>`
+   **Compose each spawn's `description` with `scripts/lane_setup.py --label`, not by hand (#539,
+   folded in for #1069).** A lane carrying three issues and a lane carrying one used to render
+   identically in the fleet view — the label named only the first issue. `python3
+   "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label --label-issues <every issue this
+   lane carries, comma-separated> --label-phrase "<phrase>"` prints `Lane <primary> x<N>  <phrase>`
    and refuses to print anything when the bundle is incomplete — *Run a fleet, not a queue* in
    `skills/manager/phases/dispatch.md` has the full convention. Paste its stdout as the `Agent`
    call's `description`.

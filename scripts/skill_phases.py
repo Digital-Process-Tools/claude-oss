@@ -99,8 +99,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-baselined for #1037: 44679 B on disk against a stale 44358 declared
     # baseline -- the new tick-order.md row above and its accompanying
     # pointer sentence grew this file. Budget unchanged; comfortably under it.
+    # Re-baselined for #1069: 45046 B on disk -- the claim/label call-site
+    # rewrites (dispatch_rank.py/issue_claim.py/preflight_check.py/
+    # fleet_label.py folded into select_issues.py/lane_setup.py) grew this by
+    # 367 B. Budget unchanged; comfortably under it.
     SPINE: (
-        44679,
+        45046,
         46900,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -185,14 +189,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # wording (radar's board-member row is established at tick-order.md's
     # step 4, not inside "What ends a tick" itself). Budget unchanged.
     "skills/manager/phases/dispatch.md": (
-        58392,
+        58947,
         64200,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
     # baseline. Budget unchanged; comfortably under it either way.
     "skills/manager/phases/handback.md": (
-        19369,
+        19598,
         20700,
         "a lane reported back: reading the report, pushing, opening the pull request",
     ),
@@ -263,8 +267,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-baselined for #1037: 22779 B on disk against a stale 22741 declared
     # baseline -- the two step-1 pointer updates landed in this file. Budget
     # unchanged; comfortably under it.
+    # Re-baselined for #1069: 22779 B became 22789 B -- two dispatch_rank.py
+    # mentions renamed to select_issues_rank.py in the same call-site rewrite.
+    # Budget unchanged; comfortably under it.
     "skills/manager/phases/accounting.md": (
-        22779,
+        22789,
         24500,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
@@ -274,8 +281,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # already measured and split for the manager skill, one file over. Moved
     # here wholesale (39119 B), no content dropped; ~10% headroom over the
     # measured size, same terms as every other row.
+    # Re-baselined for #1069: 39329 B became 39490 B -- the dispatch_rank.py/
+    # preflight_check.py/issue_claim.py/fleet_label.py call sites rewritten
+    # for select_issues.py/lane_setup.py's own two-entry-point shape. Budget
+    # unchanged; comfortably under it.
     "skills/manager/phases/tick-order.md": (
-        39329,
+        39490,
         43100,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
