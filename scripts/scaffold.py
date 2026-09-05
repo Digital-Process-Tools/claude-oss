@@ -2099,8 +2099,9 @@ _RULE_REPLACE_REASON = (
     "rewritten whether or not anything in it changed"
 )
 _RULE_REMOVE_REASON = (
-    "in the {} layer today and not shipped by this version; the layer is deleted before "
-    "it is rewritten, so this file would go with it"
+    "in the {} layer today and not shipped by this version; a rule nobody ships any "
+    "more must not survive an update and keep firing with nobody maintaining it, so "
+    "this file is removed on reinstall"
 )
 #: #755, #1042. `install()` writes exactly two shapes into a dimension of this layer:
 #: one `.md` rule file per rule, and one file named `oss_rules.INDEX` holding the
@@ -3866,8 +3867,10 @@ def _main(argv=None):
     written = result["created"] + result["replaced"]
 
     # Two different contracts, so they are reported apart. Templates are defaults and
-    # never overwrite; the rule layer is ours and is replaced wholesale, which is only
-    # safe because nothing a human wrote lives in it.
+    # never overwrite; the rule layer is ours, and every file in it that this plugin
+    # could have shipped is replaced on every run -- which is only safe because nothing
+    # a human wrote lives in it. A file in the layer this plugin has never shipped is
+    # not ours to touch at all, however it got there (#1042): see `owned_shape()`.
     #
     # After `apply()`, and that ordering is load-bearing rather than tidy: the changelog
     # rule names the assembler by reading the tree for it, and on a first-ever scaffold
@@ -3883,10 +3886,10 @@ def _main(argv=None):
     # Re-detected here rather than carried out of `apply()`: this is the state of the
     # tree AFTER the writes, which is the tree the rule describes. On a first-ever
     # scaffold `.oss/` did not exist when `plan()` looked, and it does now.
-    # The removal half of the layer's contract, said out loud. `install()` rmtree's the
-    # layer before rewriting it, so a rule this version no longer ships is deleted and
-    # nothing here used to mention it -- and a preview that promises a deletion the
-    # receipt never confirms is only half a fix for #182.
+    # The removal half of the layer's contract, said out loud. `install()` deletes
+    # every file it recognises as its own that this version no longer ships (a `.md`
+    # rule, or the index) and leaves everything else alone (#1042) -- and a preview
+    # that promises a deletion the receipt never confirms is only half a fix for #182.
     #
     # `entries` is the pre-write plan, and reusing it here is safe rather than merely
     # cheap: the only thing read out of it is the action on the OWNED files, and

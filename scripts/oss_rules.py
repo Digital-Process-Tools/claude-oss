@@ -17,6 +17,7 @@ the index is a no-op rather than a diff.
 Python 3.9 compatible.
 """
 
+import shutil
 from pathlib import Path
 
 LAYER = "01-oss"
@@ -909,7 +910,19 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
         layer = root / ".claude" / "jit-context" / dimension / LAYER
         if layer.exists():
             for child in layer.iterdir():
-                if child.is_file() and owned_shape(child.name):
+                if not owned_shape(child.name):
+                    continue
+                # `Path.is_file()` is False for a dangling symlink and for a
+                # directory, so it alone would let a stale owned-shape name survive
+                # a reinstall in either shape -- the old `shutil.rmtree(layer)` swept
+                # everything without caring. `is_symlink()` first: a symlink (broken
+                # or not) is removed as the link itself, never by following it into
+                # whatever it points at, even when the target is a directory.
+                if child.is_symlink():
+                    child.unlink()
+                elif child.is_dir():
+                    shutil.rmtree(child)
+                else:
                     child.unlink()
         layer.mkdir(parents=True, exist_ok=True)
 

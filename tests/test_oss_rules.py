@@ -924,3 +924,33 @@ def test_owned_shape_matches_only_md_and_index(tmp_path):
     assert oss_rules.owned_shape(oss_rules.INDEX)
     assert not oss_rules.owned_shape("01-paths.tsv")
     assert not oss_rules.owned_shape("00-README.txt")
+
+
+def test_reinstall_removes_a_stale_owned_name_even_if_it_is_a_dangling_symlink(
+    tmp_path,
+):
+    """The selective-delete loop in `install()` swept only regular files at first
+    pass (#1042 self-review, `oss:auditor`): `Path.is_file()` is `False` for a
+    dangling symlink, so a broken symlink whose NAME matches an owned shape (a stale
+    `.md` rule someone linked in) used to survive a reinstall that the old
+    `shutil.rmtree()` would have swept without caring whether the link resolved.
+    """
+    layer = _layer(tmp_path, "paths")
+    layer.mkdir(parents=True, exist_ok=True)
+    oss_rules.install(tmp_path)
+    stale_link = layer / "stale-link.md"
+    try:
+        stale_link.symlink_to(layer / "nowhere.md")
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a symlink here (errno {}, {}): "
+            "untested here is whether a dangling symlink with an owned-shape name "
+            "survives a reinstall".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+    assert not (layer / "nowhere.md").exists()  # the fixture is genuinely dangling
+
+    oss_rules.install(tmp_path)
+
+    assert not stale_link.is_symlink() and not stale_link.exists()
