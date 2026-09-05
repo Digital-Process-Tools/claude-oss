@@ -378,8 +378,10 @@ tool, and you are gone by the time step 7 would run.
    invent a preflight or lane pattern for an issue that named neither (#267). Three issues is the
    default rather than the ceiling, and a
    lane dispatched with fewer says why in one of `board-exhausted`, `no-adjacent`,
-   `did-not-search` or `could-not-tell` — and it fills a lane with the companion search (each
-   candidate's declared lane against the top issue's, over the open board), never with `--against`
+   `did-not-search` or `could-not-tell` — and it fills a lane from `select_issues.py`'s own `groups`
+   output (#1068), which already runs the companion search per candidate against the open board and
+   returns each group's own third state (`candidates`/`none`/`could-not-tell`) and, for a short
+   group, why. Read `groups`, do not re-run the sweep by hand — and never fill from `--against`
    between lanes already picked, which is the conflict check answering a different question (#918). A short lane with no reason is a defect in the tick -- and now one this loop
    can detect rather than only state: record every dispatched lane's fill with `--lane-fill
    PRIMARY:COUNT[:REASON]` on the same `oss_state.py --decision` call (#852), which refuses the

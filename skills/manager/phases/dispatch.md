@@ -261,7 +261,9 @@ padded to hit that number), with a per-member disposition and a per-group third 
 (`candidates`/`none`/`could-not-tell`) — a group is a suggestion, never a dispatch, so still weigh it
 against topic and judgement above. `ungrouped` names candidates a group could not be built for at all
 (no declared files, per #267, or files that could not be resolved) — distinct from a group that
-stayed short and says why.
+stayed short and says why. Pass `board_capped` / `board_cap_detail` in the payload when the board read
+that fed this call was itself capped (#593's `per=` ceiling) — otherwise a short group because the
+read was truncated cannot be told from one because nothing genuinely overlaps.
 
 **Before #1036 this paragraph only described the script; nothing told a session to run it.**
 `commands/tick.md` step 5 named `dispatch_rank.py` and `lane_setup.py --claim` as the commands to

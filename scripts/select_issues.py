@@ -180,11 +180,18 @@ def _group_candidates(candidates, issues_by_number, resolved_files_by_number,
                   nothing overlaps and a short group because the read was
                   truncated never render as the same row.
       ungrouped   every candidate that could not join any group at all --
-                  declares no files (#267: never guessed into one) or its own
-                  declared files could not be resolved to anything on disk --
-                  each carrying its own `why`. Not the same list as a short
-                  group's members: this is "never entered grouping",
-                  `short_reason` is "entered, and stayed alone".
+                  declares no files (#267: never guessed into one), the only
+                  reason reachable through `select()`'s own call graph today;
+                  a second, named reason ("its own declared files could not
+                  be resolved to anything on disk") is kept for a future
+                  caller of this function that builds `candidates` /
+                  `resolved_files_by_number` some other way, since every
+                  `select()` candidate with `lane_patterns` has already
+                  passed the refused/resolved-to-nothing dark-input checks by
+                  the time grouping runs. Each entry carries its own `why`.
+                  Not the same list as a short group's members: this is
+                  "never entered grouping", `short_reason` is "entered, and
+                  stayed alone".
     """
     board = {
         "capped": bool(board_capped),
@@ -206,12 +213,25 @@ def _group_candidates(candidates, issues_by_number, resolved_files_by_number,
         claimed = resolved_files_by_number.get(number)
         if not claimed:
             row = issues_by_number.get(number) or {}
-            why = (
-                "declares no files -- an issue's files are not derivable from "
-                "its body (#267), so it cannot be grouped"
-                if not row.get("lane_patterns")
-                else "its own declared files could not be resolved to anything on disk"
-            )
+            if row.get("lane_patterns"):
+                # Defensive only, reviewed and left in on purpose (#1068 review
+                # round): under `select()`'s own control flow this arm cannot
+                # actually run today -- any candidate whose `lane_patterns` is
+                # truthy has already passed the refused/`_lane_resolved_to_
+                # nothing` dark-input checks above (either of which would have
+                # forced the whole call to `could-not-select` before grouping
+                # ever runs), so `resolved_files_by_number[number]` is always
+                # set and non-empty by the time `candidates` is built. Kept as
+                # a second, named reason -- rather than folded into the one
+                # below -- so a future caller of this internal function with a
+                # `candidates`/`resolved_files_by_number` pair built some other
+                # way still gets a true answer instead of a misleading one.
+                why = "its own declared files could not be resolved to anything on disk"
+            else:
+                why = (
+                    "declares no files -- an issue's files are not derivable "
+                    "from its body (#267), so it cannot be grouped"
+                )
             ungrouped.append(dict(cand, why=why))
             continue
         result = suggest_companions(Path("."), number, claimed, board)
@@ -247,12 +267,14 @@ def select(payload, checker=None, search=None, resolve_lane=None, suggest_compan
     """The join. `payload` is `{"declared": {...}, "issues": [...], ...}` --
     see the module docstring's per-issue optional fields (`preflight_pattern`
     / `preflight_roots`, `lane_patterns`) and the top-level optional
-    `held_files` and `repo`.
+    `held_files`, `repo`, `lanes_read_ok` / `lanes_read_why` (#1067) and
+    `board_capped` / `board_cap_detail` (#1068, consumed only by grouping --
+    see "## Groups" above).
 
-    `checker`/`search`/`resolve_lane` default to `issue_claim.check`/
-    `preflight_check.search`/`lane_setup.resolve_lane` -- injectable so a
-    caller (or a test) never needs a live `gh` session or a real tree to
-    drive this function.
+    `checker`/`search`/`resolve_lane`/`suggest_companions` default to
+    `issue_claim.check`/`preflight_check.search`/`lane_setup.resolve_lane`/
+    `lane_setup.suggest_companions` -- injectable so a caller (or a test)
+    never needs a live `gh` session or a real tree to drive this function.
 
     #1067: `held_files` gets the same could-not-read treatment `board_read_ok`
     already has, via a top-level `lanes_read_ok` / `lanes_read_why` pair --
