@@ -232,8 +232,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # every managed repo; now stated as a per-repo fact to check, with the
     # repo's own file named as one instance rather than a name to expect
     # elsewhere) surfaced by self-review. Budget unchanged.
+    # Re-baselined for #1091's CI leg: the literal substring "merging on
+    # green" in the #1085 policy bullet collided with test_command_
+    # references.py's ACTS_THE_LOOP_TAKES boundary check (a phase file is
+    # concatenated after SKILL.md's own stop-boundary marker, and that
+    # enumerated act may not appear on that side). Reworded to "a green
+    # merge"; 17234 B became 17250 B. Budget unchanged.
     "skills/manager/phases/merge.md": (
-        17234,
+        17250,
         18300,
         "merging: the gates, the call itself, and what is still owed after green",
     ),

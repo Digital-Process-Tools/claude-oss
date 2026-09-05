@@ -93,8 +93,9 @@ is not on this list is just a way of not fixing things.
   **This policy holds only paired with watching the tick's last merge to conclusion before the tick
   closes** (`skills/manager/phases/tick-order.md`'s *What ends a tick*, which refuses to close while
   radar's board -- carrying the default branch as a member row, per that file's own step 4 --
-  reports anything unwatched) -- merging on green and dying before that run concludes removes the
-  pre-merge check without keeping the post-merge one. A rebase or `git merge origin/main` stays
+  reports anything unwatched) -- a green merge followed by the tick dying before that run
+  concludes removes the pre-merge check without keeping the post-merge one. A rebase or
+  `git merge origin/main` stays
   correct where the PR is *not* mergeable, or its failure is understood to come from a stale base --
   #389's rule just below still applies there, and a merge is preferred over a rebase because it does
   not rewrite

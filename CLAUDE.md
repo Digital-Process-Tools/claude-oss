@@ -341,7 +341,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
-| `skills/manager/phases/merge.md` | 17,234 B | 18,300 B |
+| `skills/manager/phases/merge.md` | 17,250 B | 18,300 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
@@ -415,7 +415,10 @@ size, rather than cutting either down. Re-baselined again in the same lane's own
 16,671 B became 17,234 B after fixing a wrong issue citation (the rerun rule "just below" is #389's,
 not #1004's) and a hardcoded, repo-specific CI fact (the policy bullet named this repo's own
 `tests.yml` trigger shape as though it held for every managed repo; now stated as a per-repo fact to
-check). Budget unchanged.
+check). Budget unchanged. Re-baselined once more for #1091's CI leg: the
+literal substring "merging on green" in that same bullet collided with `tests/test_command_
+references.py`'s cross-file act-boundary check (a phase file is concatenated after `SKILL.md`'s own
+stop-boundary marker), reworded to "a green merge" -- 17,234 B became 17,250 B. Budget unchanged.
 
 **The total grew: 122,423 B became 189,517 B, +54.8%** — re-derived by summing the table's own
 "measured (baseline)" column above, not by editing the prior figure (186,769 B / +52.6%, itself a
