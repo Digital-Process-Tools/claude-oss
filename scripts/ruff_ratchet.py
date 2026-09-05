@@ -46,7 +46,27 @@ from typing import Optional, Tuple
 # Measured at #635 -- see the module docstring for what this number is and
 # is not. Do not raise it to make a regression go away; lower it whenever a
 # real fix reduces the count.
-BASELINE = 95
+#
+# #761 raised this from 95 to 99: four new F401 "imported but unused" hits
+# in scripts/doctor.py's own import block for the two new per-check modules
+# (doctor_check_security_settings.security_and_analysis_feature_state,
+# automated_security_fixes_state, vulnerability_alerts_state; doctor_check_
+# codeql_scan.codeql_scan_state) -- the same accepted, deliberate pattern the
+# other ~37 pre-existing hits of this shape already sit inside the baseline
+# for: each name is unreferenced by doctor.py itself but is reachable as
+# `doctor.<name>` for a test's `monkeypatch.setattr(doctor, ...)`, exactly
+# the convention `doctor_check_supertool_ops`'s own import group documents.
+# Confirmed rather than assumed: all four are called directly as
+# `doctor.<name>(...)` in tests/test_doctor_security_settings_761.py and
+# tests/test_doctor_codeql_scan_761.py. A fifth new hit in the same block,
+# `CODEQL_LANGUAGE_FAMILIES`, was NOT part of this convention -- nothing
+# referenced it as `doctor.CODEQL_LANGUAGE_FAMILIES` anywhere, and it is
+# outside what tests/test_doctor_check_convention_630.py governs (check_*
+# functions only) -- so it was removed from the import instead of raising
+# the baseline for it; ruff's own count dropped from 100 to 99 findings
+# after that one removal, confirming it was the one genuinely dead re-export
+# among the five.
+BASELINE = 99
 
 
 def _count(root: Path) -> Tuple[Optional[int], str]:

@@ -2687,6 +2687,26 @@ from doctor_check_security_alerts import (
     check_secret_scanning_alerts,
 )
 
+# #761: same convention -- the four cheap, non-language-dependent security
+# settings (secret scanning, push protection, automated security fixes, and
+# the "Dependabot alerts" toggle), and the CodeQL owned-path language finding.
+# See scripts/doctor_check_security_settings.py and
+# scripts/doctor_check_codeql_scan.py for why these are two modules rather
+# than folded into doctor_check_security_alerts.py above.
+from doctor_check_security_settings import (
+    security_and_analysis_feature_state,
+    automated_security_fixes_state,
+    vulnerability_alerts_state,
+    check_secret_scanning,
+    check_secret_scanning_push_protection,
+    check_automated_security_fixes,
+    check_vulnerability_alerts,
+)
+from doctor_check_codeql_scan import (
+    codeql_scan_state,
+    check_codeql_scan,
+)
+
 
 # #582: does the supertool that resolves here carry the ops this plugin's own
 # shipped text names? Written straight into scripts/doctor_check_supertool_ops.py
@@ -8361,6 +8381,20 @@ def main(argv=None):
     check_code_scanning_alerts(project_dir, config)
     check_dependabot_alerts(project_dir, config)
     check_secret_scanning_alerts(project_dir, config)
+    # #761: same local gating, same report-only reasoning -- the settings
+    # half (is the feature even turned on) rather than the alerts half
+    # (has it run) the three checks above answer. See doctor_check_
+    # security_settings.py's own docstring for why these are distinct
+    # from the three calls just above.
+    check_secret_scanning(project_dir, config)
+    check_secret_scanning_push_protection(project_dir, config)
+    check_vulnerability_alerts(project_dir, config)
+    check_automated_security_fixes(project_dir, config)
+    # #761: the CodeQL owned-path language finding -- see doctor_check_
+    # codeql_scan.py's own docstring for why a default CodeQL setup can be
+    # worse than no scanner at all on a repo whose only supported language
+    # is this plugin's own vendored .oss/ directory.
+    check_codeql_scan(project_dir, config)
     check_statusline(project_dir)
     check_auto_update(project_dir)
     # The weakest of the two "am I current" checks, deliberately last of the pair:

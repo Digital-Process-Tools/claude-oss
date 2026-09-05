@@ -911,6 +911,36 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(
         doctor, "check_secret_scanning_alerts", lambda *a, **kw: doctor.report("OK", "secret-scanning alerts")
     )
+    # #761: `check_secret_scanning` / `check_secret_scanning_push_protection` /
+    # `check_vulnerability_alerts` / `check_automated_security_fixes` each make
+    # their own real `gh api repos/owner/name[...]` call, and `check_codeql_scan`
+    # makes a real `gh api repos/owner/name/languages` call -- exactly the same
+    # reason `check_branch_protection` and the three #760 checks immediately
+    # above are stubbed rather than measured here: `owner/name` does not exist
+    # on GitHub, so each would otherwise land on its own `could-not-tell` state,
+    # which renders as WARN here exactly as it does for #759/#760's checks
+    # (same severity model, same reason), breaking this "fully configured,
+    # everything clean" fixture's own invariant over a fact this test is not
+    # about.
+    monkeypatch.setattr(
+        doctor, "check_secret_scanning", lambda *a, **kw: doctor.report("OK", "secret scanning")
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_secret_scanning_push_protection",
+        lambda *a, **kw: doctor.report("OK", "secret scanning push protection"),
+    )
+    monkeypatch.setattr(
+        doctor, "check_vulnerability_alerts", lambda *a, **kw: doctor.report("OK", "vulnerability alerts")
+    )
+    monkeypatch.setattr(
+        doctor,
+        "check_automated_security_fixes",
+        lambda *a, **kw: doctor.report("OK", "automated security fixes"),
+    )
+    monkeypatch.setattr(
+        doctor, "check_codeql_scan", lambda *a, **kw: doctor.report("OK", "CodeQL coverage")
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether the Windows gap below is real is a question about
