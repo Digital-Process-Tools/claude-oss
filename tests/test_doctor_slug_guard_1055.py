@@ -101,3 +101,39 @@ def test_resolve_slug_refuses_a_malformed_origin_fallback(
     resolved, reason = module._resolve_slug(str(tmp_path), {}, _no_run)
     assert resolved is None
     assert "owner/name" in reason
+
+
+# ------------------------------------------------------- self-review findings
+
+
+def test_malformed_repo_accepts_a_repo_name_starting_with_a_hyphen():
+    """Self-review finding: an earlier version of this guard refused a
+    leading `-` in EITHER segment and asserted in its own docstring that
+    doing so was never a false positive. GitHub bars a leading hyphen from a
+    USERNAME but not from a REPOSITORY NAME, so `"someowner/-legit-repo"` is
+    a real, GitHub-permitted slug that must resolve, not be refused."""
+    assert doctor._malformed_repo("someowner/-legit-repo") is False
+
+
+def test_malformed_repo_still_rejects_a_leading_hyphen_in_the_owner_position():
+    """Must-fire pair for the test above: the owner segment is where an
+    option-injection shape (`"-X/POST"`) would be read as a flag first, so
+    that position is still refused."""
+    assert doctor._malformed_repo("-X/POST") is True
+
+
+def test_malformed_repo_fallback_still_refuses_a_backslash_segment(monkeypatch):
+    """Self-review finding: the `oss_config is None` fallback shipped with
+    no test at all, and a hand-rolled shape check there had silently dropped
+    the backslash exclusion the primary `oss_config.repo_problem` path
+    carries (#897's own Windows-`normpath` traversal reason). Forcing
+    `doctor.oss_config` to `None` exercises the fallback directly."""
+    monkeypatch.setattr(doctor, "oss_config", None)
+    assert doctor._malformed_repo("owner\\..\\..\\x/name") is True
+
+
+def test_malformed_repo_fallback_still_accepts_a_well_formed_slug(monkeypatch):
+    """Must-fire pair for the test above: the fallback path still resolves
+    an ordinary slug when `oss_config` is unavailable."""
+    monkeypatch.setattr(doctor, "oss_config", None)
+    assert doctor._malformed_repo("owner/name") is False
