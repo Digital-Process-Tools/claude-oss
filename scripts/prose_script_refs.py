@@ -160,10 +160,24 @@ def script_flags(path):
     own source, or `(None, detail)` when the file could not be read or does
     not parse as Python. See the module docstring for why this is a whole-file
     literal scan rather than an `ArgumentParser`-specific walk.
+
+    **Self-review finding (#1070, oss:auditor): `UnicodeDecodeError` is a
+    `ValueError`, not an `OSError`**, so a script whose bytes are not valid
+    UTF-8 used to propagate an unhandled traceback here instead of reaching
+    this function's own `(None, detail)` state -- the one read in this
+    module that was strict where `survey()`'s own read one function away
+    already uses `errors="replace"` deliberately. Caught explicitly, by
+    name, rather than switched to `errors="replace"`: silently substituting
+    bytes inside a file this function is about to feed to `ast.parse` risks
+    turning a real syntax error into a different, misleading one instead of
+    reporting the actual problem (the file is not readable as Python at
+    all).
     """
     try:
         text = Path(path).read_text(encoding="utf-8")
     except OSError as exc:
+        return None, "{0}: {1}".format(type(exc).__name__, exc)
+    except UnicodeDecodeError as exc:
         return None, "{0}: {1}".format(type(exc).__name__, exc)
     try:
         tree = ast.parse(text, filename=str(path))
@@ -225,6 +239,17 @@ def check_text(text, scripts_dir):
     Tier 1 runs over the whole text; Tier 2 only over `_tier2_windows(text)`,
     and only for a script Tier 1 already found on disk -- a missing script is
     reported once, by Tier 1, never twice.
+
+    **Self-review finding (#1070, both spawned reviewers independently found
+    this): a window can name more than one script** -- a piped or otherwise
+    chained one-liner such as `python3 scripts/a.py --x scripts/b.py --y`.
+    Scanning from one script's own mention to the *end of the window* would
+    check `--y` (which belongs to `b.py`) against `a.py`'s own parser too,
+    the exact false-positive shape this whole module exists to avoid. Each
+    script's own flag scan is therefore bounded to the text between its own
+    mention and the *next* script mention in the same window (or the end of
+    the window, for the last one / the only one) -- `mentions[i + 1].start()`
+    below, computed once per window rather than re-scanned per script.
     """
     findings = []
     for match in SCRIPT_MENTION_RE.finditer(text):
@@ -234,7 +259,8 @@ def check_text(text, scripts_dir):
                 {"kind": "missing-script", "script": name, "flag": None, "detail": None}
             )
     for window in _tier2_windows(text):
-        for match in SCRIPT_MENTION_RE.finditer(window):
+        mentions = list(SCRIPT_MENTION_RE.finditer(window))
+        for index, match in enumerate(mentions):
             name = match.group(1)
             path = Path(scripts_dir) / name
             if not path.is_file():
@@ -250,7 +276,13 @@ def check_text(text, scripts_dir):
                     }
                 )
                 continue
-            for flag_match in FLAG_TOKEN_RE.finditer(window[match.end() :]):
+            segment_end = (
+                mentions[index + 1].start()
+                if index + 1 < len(mentions)
+                else len(window)
+            )
+            segment = window[match.end() : segment_end]
+            for flag_match in FLAG_TOKEN_RE.finditer(segment):
                 flag = flag_match.group(0)
                 if flag in flags or flag in _ALWAYS_ACCEPTED:
                     continue

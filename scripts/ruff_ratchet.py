@@ -159,7 +159,19 @@ def _fingerprint(item: dict, root: Path) -> Optional[str]:
     try:
         rel = Path(filename).resolve().relative_to(root.resolve()).as_posix()
     except (OSError, ValueError):
-        rel = str(filename)
+        # Self-review finding (#1070, oss:auditor): not observed to fire --
+        # `ruff` is invoked with `cwd=str(root)` and given `.` as its only
+        # target (see `_run_ruff`), so every `filename` it reports should
+        # already resolve under `root` -- but nothing here proves that
+        # holds on every platform (a case-folding mismatch, a symlinked
+        # root), and the fallback is exercised by no test. Normalized the
+        # same way as the happy-path `rel` above (forward slashes, via
+        # `PurePath.as_posix`-equivalent replacement) rather than left as a
+        # raw, possibly-backslashed `str(filename)`: a fingerprint in this
+        # fallback state should still have a chance of matching the
+        # checked-in baseline's own posix-style entries, even though it is
+        # no longer relative to `root`.
+        rel = str(filename).replace("\\", "/")
     if code is None:
         code = ""
     if _SEP in rel or _SEP in code or _SEP in message:
@@ -214,18 +226,32 @@ def _load_baseline(path: Path) -> Tuple[Optional[Counter], str]:
     return counts, ""
 
 
-def _write_baseline(path: Path, counts: Counter) -> int:
-    """Writes one line per occurrence, sorted -- a diff-friendly text file a
+def _write_baseline(path: Path, counts: Counter) -> Tuple[Optional[int], str]:
+    """(written, detail). `written` is the number of lines written, or
+    `None` when the file could not be written -- self-review finding
+    (#1070, Explore): this used to call `Path.write_text` with no
+    `try/except` at all, so a typo'd `--baseline-file` directory or a
+    read-only checkout crashed with an unhandled traceback and exit code 1,
+    the same code this module uses for "genuine new/increased findings
+    present" -- indistinguishable from a real regression to a caller
+    checking only the exit code, and unlike every other failure-to-operate
+    arm in this module (which all resolve to a clean `could-not-run`).
+
+    Sorted, one line per occurrence -- a diff-friendly text file a
     maintainer can open directly, per #1061's own brief: a plain list of
-    (path, code, message) triples, one finding per line, is readable without
-    tooling and diffs one line per finding gained or lost rather than one
-    opaque integer. Returns the number of lines written."""
+    (path, code, message) triples, one finding per line, is readable
+    without tooling and diffs one line per finding gained or lost rather
+    than one opaque integer.
+    """
     lines: List[str] = []
     for fingerprint, count in counts.items():
         lines.extend([fingerprint] * count)
     lines.sort()
-    path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
-    return len(lines)
+    try:
+        path.write_text("".join(line + "\n" for line in lines), encoding="utf-8")
+    except OSError as exc:
+        return None, "%s could not be written: %s" % (path, exc)
+    return len(lines), ""
 
 
 def _new_or_increased(current: Counter, baseline: Counter) -> Dict[str, int]:
@@ -262,16 +288,26 @@ def main(argv=None) -> int:
         print("COULD NOT RUN: %s" % (detail,))
         return 2
     current, dropped = _fingerprint_counts(items, root)
+    # Self-review finding (#1070, Explore): computed once, up front, and
+    # printed on every exit path below -- the FAIL branch used to omit this
+    # entirely, so a run that both failed on a real new finding AND silently
+    # dropped an unfingerprintable one told the reader about the failure and
+    # said nothing about the drop, on exactly the path a maintainer is most
+    # likely to be reading carefully. CLAUDE.md's own defect class: an
+    # absence produced by the tool must never render like an absence in the
+    # world, and that has to hold on every branch, not only the quiet one.
+    dropped_note = (
+        ""
+        if not dropped
+        else " (%d finding(s) could not be fingerprinted and were dropped)" % (dropped,)
+    )
 
     if args.write_baseline:
-        written = _write_baseline(baseline_file, current)
-        extra = (
-            ""
-            if not dropped
-            else " (%d finding(s) could not be fingerprinted and were dropped)"
-            % (dropped,)
-        )
-        print("WROTE: %d finding(s) to %s%s" % (written, baseline_file, extra))
+        written, write_detail = _write_baseline(baseline_file, current)
+        if written is None:
+            print("COULD NOT RUN: %s" % (write_detail,))
+            return 2
+        print("WROTE: %d finding(s) to %s%s" % (written, baseline_file, dropped_note))
         return 0
 
     baseline, baseline_detail = _load_baseline(baseline_file)
@@ -284,7 +320,7 @@ def main(argv=None) -> int:
         total_new = sum(over.values())
         print(
             "FAIL: %d new/increased finding(s) not in the baseline snapshot "
-            "(%s):" % (total_new, baseline_file)
+            "(%s)%s:" % (total_new, baseline_file, dropped_note)
         )
         for fingerprint in sorted(over):
             path, code, message = fingerprint.split(_SEP, 2)
@@ -300,11 +336,6 @@ def main(argv=None) -> int:
         )
         return 1
 
-    dropped_note = (
-        ""
-        if not dropped
-        else " (%d finding(s) could not be fingerprinted)" % (dropped,)
-    )
     fewer = sum(baseline.values()) - sum(current.values())
     if fewer > 0:
         print(

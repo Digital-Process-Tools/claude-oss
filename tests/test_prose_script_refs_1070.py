@@ -255,6 +255,25 @@ def test_tier2_keeps_two_scripts_in_one_fenced_block_apart(tmp_path):
     )
 
 
+def test_tier2_two_scripts_in_one_inline_span_keep_their_own_flags_apart(tmp_path):
+    """Self-review regression (#1070, found independently by both spawned
+    reviewers): a single documented command line can name two DIFFERENT
+    scripts in sequence (a piped or chained one-liner). Scanning from a
+    script's own mention to the end of the whole window used to check the
+    second script's flag against the first script's parser too."""
+    scripts_dir = tmp_path
+    (scripts_dir / "a.py").write_text(
+        "def main(argv=None):\n    pass\n", encoding="utf-8"
+    )
+    (scripts_dir / "b.py").write_text(ARGPARSE_SCRIPT, encoding="utf-8")
+    text = "`python3 scripts/a.py scripts/b.py --repo .` does both in one line.\n"
+    findings = refs.check_text(text, scripts_dir)
+    assert findings == [], (
+        "--repo belongs to b.py, named second on the line, and must never be "
+        "checked against a.py's own (empty) flag set -- got {0!r}".format(findings)
+    )
+
+
 def test_tier2_reports_could_not_derive_flags_for_a_broken_script(tmp_path):
     scripts_dir = tmp_path
     (scripts_dir / "broken.py").write_text("def broken(:\n", encoding="utf-8")
