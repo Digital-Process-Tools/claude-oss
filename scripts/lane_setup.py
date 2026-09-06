@@ -78,13 +78,45 @@ of `lane_setup_worktree.py` (the base commit, branch, worktree path and
 their occupancy checks), `lane_setup_patterns.py` (cross-cutting guard
 lookup, and the disjointness report a lane brief reads), `lane_setup_claim.py`
 (the lane registry, held-set derivation, and the claim/release logic below)
-or `lane_setup_label.py` (a lane's own fleet-view label, `--label`, folded in
-from `fleet_label.py`). Every name is imported here and re-exported at module
-level, so `lane_setup.<name>` keeps working for every existing caller.
+or `lane_setup_brief_schema.py` (whether a composed brief carries dispatch's
+eight required elements, checked before `--claim` renders an `Agent(...)`
+line -- #1143). Every name is imported here and re-exported at module level,
+so `lane_setup.<name>` keeps working for every existing caller.
 `resolve_lane`/`lane_overlap` and `suggest_companions` moved to
 `select_issues_overlap.py`/`select_issues_companions.py` instead --
 `select_issues.py`'s own submodules, not this file's, per that module's
 docstring.
+
+## The fleet-view label and the Agent(...) call live here now (#1143)
+
+`lane_setup_label.py` (`fleet_label`, `agent_call`) is deleted; both
+functions are defined directly below, in this file, rather than in a fourth
+submodule. Nothing else in this loop ever calls them except `--claim` and
+`--label`, both of which live in this file's own `main`, so a fifth
+`import`/re-export pair would have bought no separation the other three
+submodules buy (each of those is reused from more than one call site, or
+tested against a real filesystem/subprocess fixture large enough to be worth
+isolating).
+
+`--claim` now composes the fleet label -- and, given a subagent type, the
+whole `Agent(...)` call -- from the issues that call **actually holds**
+afterward (`_claimed_issue_numbers`, reading `claim_result`'s own per-issue
+rows), never from the issues requested (`issue` plus `--claim-also`). A
+companion whose assignee write came back `could-not-claim-assignee` or
+`already-claimed` is silently excluded from the count: deriving the
+multiplier from the request instead would replace a retype with a confident
+wrong number, worse than the retype it replaces. `--label` is unchanged and
+stays the path for a lane composed some other way -- it still takes its
+issue list as an explicit argument, never derived from a claim.
+
+`compose_claim_label` is the one function both call sites route through. It
+also runs `lane_setup_brief_schema.check_path` on `--brief` whenever a
+subagent type is given: a **structural** finding (one of the four elements
+that can fail for the reason it exists, not just for being absent) refuses
+to render the `Agent(...)` line at all; a **presence-only** finding is
+printed and the line renders anyway, because presence is not quality and a
+schema pass is not a review (`lane_setup_brief_schema`'s own reasoning,
+unchanged).
 
 ## Claim in both senses, in one call (#1069)
 
@@ -112,11 +144,12 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import lane_setup_claim  # noqa: E402  (path insert above must run first)
-import lane_setup_label  # noqa: E402
+import lane_setup_brief_schema  # noqa: E402  (path insert above must run first)
+import lane_setup_claim  # noqa: E402
 import lane_setup_patterns  # noqa: E402
 import lane_setup_worktree  # noqa: E402
 import oss_config  # noqa: E402
+import select_issues_claim_read  # noqa: E402
 import select_issues_companions  # noqa: E402
 import select_issues_overlap  # noqa: E402
 
@@ -189,6 +222,299 @@ from select_issues_companions import (  # noqa: E402,F401
 # form; the flat names above are only the ones an existing test or caller
 # already referenced as `lane_setup.<name>` (see the grep this split was
 # built from).
+
+
+class FleetLabelError(ValueError):
+    """The label cannot be composed from what was given."""
+
+
+def fleet_label(primary_issue, issues, phrase):
+    """Render ``Lane <primary> [x<N>]  <phrase>`` for one dispatched lane (#539).
+
+    ``primary_issue`` is the issue that named the branch and the worktree.
+    ``issues`` is every issue this lane carries, primary included -- never inferred
+    from ``primary_issue`` alone, because the whole failure this function exists to
+    close is a label that named only the first issue. ``phrase`` is the short
+    description of what the lane is doing.
+
+    Folded in from the now-deleted ``lane_setup_label.py`` (#1143) -- see this
+    module's own "The fleet-view label and the Agent(...) call live here now"
+    section above for why it is not a fifth submodule.
+    """
+    if not isinstance(issues, (list, tuple)) or not issues:
+        raise FleetLabelError(
+            "fleet_label needs every issue this lane carries, as a non-empty list -- "
+            "an omitted or empty bundle is exactly the label #539 was filed about"
+        )
+
+    normalized = []
+    for item in issues:
+        if isinstance(item, bool):
+            raise FleetLabelError(
+                "fleet_label: {!r} is not a usable issue number".format(item)
+            )
+        try:
+            normalized.append(int(item))
+        except (TypeError, ValueError):
+            raise FleetLabelError(
+                "fleet_label: {!r} is not a usable issue number".format(item)
+            )
+
+    if len(set(normalized)) != len(normalized):
+        raise FleetLabelError(
+            "fleet_label: {!r} names the same issue more than once".format(issues)
+        )
+
+    if isinstance(primary_issue, bool):
+        raise FleetLabelError(
+            "fleet_label: {!r} is not a usable primary issue".format(primary_issue)
+        )
+    try:
+        primary = int(primary_issue)
+    except (TypeError, ValueError):
+        raise FleetLabelError(
+            "fleet_label: {!r} is not a usable primary issue".format(primary_issue)
+        )
+
+    if primary not in normalized:
+        raise FleetLabelError(
+            "fleet_label: primary issue {} is not among the lane's own issues {!r} -- "
+            "the primary is the branch's issue and must be counted in its own "
+            "bundle".format(primary, issues)
+        )
+
+    if not phrase or not str(phrase).strip():
+        raise FleetLabelError("fleet_label needs a phrase describing the lane's work")
+    phrase = str(phrase).strip()
+
+    count = len(normalized)
+    if count == 1:
+        return "Lane {}  {}".format(primary, phrase)
+    return "Lane {} x{}  {}".format(primary, count, phrase)
+
+
+KNOWN_AGENT_TYPES = ("oss:developer", "oss:triager")
+"""The only two agent types this loop's dispatch step ever composes a call for.
+
+Not every agent type this repository defines -- ``oss:sub-manager`` and
+``oss:releaser`` are spawned from ``commands/tick.md``, a different call site with
+its own literal examples. Widen this tuple only when this module grows a second
+call site to compose for.
+"""
+
+
+def _quote_for_call(text):
+    """Escape ``text`` so it survives inside a double-quoted field of the
+    rendered ``Agent(...)`` call.
+
+    A phrase carrying an unescaped ``"`` closes the ``description`` field
+    early, leaving the remainder as bare tokens the human pasting the line
+    must hand-repair -- and a phrase crafted with
+    ``", subagent_type: "general-purpose`` would silently re-open a new
+    keyword and could flip the very ``subagent_type`` this module exists to
+    protect (found in self-review of #989, before this function existed).
+    Backslash is escaped first so an existing backslash is never mistaken for
+    part of the quote escape this function adds.
+    """
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def agent_call(
+    primary_issue, issues, phrase, subagent_type, model=None, run_in_background=False
+):
+    """Render the whole literal ``Agent(...)`` invocation for one dispatched lane (#989).
+
+    A sub-manager tick reported, unprompted, that all three of its ``Agent()`` calls
+    omitted ``subagent_type: "oss:developer"`` and ran as ``general-purpose`` instead
+    -- caught only because the tick happened to notice. Nothing distinguishes a lane
+    run by the wrong agent from one run by the right one: same brief text, it
+    commits, it reports. ``fleet_label`` already refuses to compose a *description*
+    from an incomplete bundle; this does the same for the *whole call*, so a caller
+    pastes the rendered line instead of retyping ``subagent_type`` from memory at
+    every call site.
+
+    ``subagent_type`` has no default -- a call built without one is a Python
+    ``TypeError`` at the call site, before this function's own body ever runs, which
+    is the structural half of the fix. The runtime half is this: a ``subagent_type``
+    that *is* given but does not resolve to one of ``KNOWN_AGENT_TYPES`` -- a typo, or
+    literally ``"general-purpose"``, the historical failure's own value -- refuses
+    the same way an omitted issue bundle already refuses, rather than rendering a
+    call that quietly spawns the wrong agent.
+
+    ``prompt`` is never composed here -- the brief is lane-specific text only the
+    caller can write -- so the rendered call carries a placeholder the caller fills
+    in, the same way ``fleet_label`` never composes the phrase for the caller.
+    """
+    label = fleet_label(primary_issue, issues, phrase)
+
+    if subagent_type not in KNOWN_AGENT_TYPES:
+        raise FleetLabelError(
+            "agent_call: {!r} is not one of this loop's known agent types {!r} -- "
+            "an omitted or misspelled subagent_type is the #989 failure this "
+            "function exists to make structurally harder".format(
+                subagent_type, KNOWN_AGENT_TYPES
+            )
+        )
+
+    parts = ['subagent_type: "{}"'.format(subagent_type)]
+    if model:
+        parts.append('model: "{}"'.format(_quote_for_call(model)))
+    parts.append(
+        "run_in_background: {}".format("true" if run_in_background else "false")
+    )
+    parts.append('description: "{}"'.format(_quote_for_call(label)))
+    parts.append('prompt: "<brief>"')
+
+    return "Agent({})".format(", ".join(parts))
+
+
+#: Per-issue assignee states that mean "this issue is genuinely held by us
+#: right now", used by `_claimed_issue_numbers` below. Never `STATE_ALREADY_
+#: CLAIMED` or `STATE_COULD_NOT_CLAIM` -- those two are exactly the failures
+#: #1143 exists to keep out of a rendered label's count.
+_HELD_ASSIGNEE_STATES = (
+    select_issues_claim_read.STATE_CLAIMED,
+    select_issues_claim_read.STATE_ALREADY_MINE,
+)
+
+
+def _claimed_issue_numbers(claim_result):
+    """Which issues a ``--claim`` call actually holds afterward, read from the
+    checker's own per-issue rows -- never from what was requested (#1143).
+
+    A lane whose third issue came back ``could-not-claim-assignee`` carries
+    two, and a label composed from it must say ``x2``, never ``x3``: deriving
+    the count from the request instead would replace a retype with a
+    confident wrong number, worse than the retype it replaces. Each row in
+    ``claim_result["assignee"]["rows"]`` is a real, independent write attempt
+    (`select_issues_claim_read.check` writes for every issue named,
+    regardless of whether another issue in the same batch failed), so a row
+    can genuinely say ``claimed`` even when `claim_and_register`'s own
+    overall ``state`` is a failure -- that dangling write is still real and
+    still counts here.
+
+    The one case where a ``claimed`` row does NOT count: `claim_and_register`
+    rolled it back because the lane's own registration failed
+    (``assignee-rolled-back`` / ``rollback-failed-assignee-still-set``). A
+    number named in ``rollback_failed`` is excluded from the rollback itself
+    -- its release attempt failed, so the assignee is still genuinely set --
+    and is counted; every other freshly-claimed number under those two
+    states was successfully released again and is not.
+    """
+    if not claim_result:
+        return []
+    assignee = claim_result.get("assignee") or {}
+    rows = assignee.get("rows") or []
+    rollback_failed = set(assignee.get("rollback_failed") or [])
+    overall = claim_result.get("state")
+    rolled_back_states = (
+        lane_setup_claim.CLAIM_STATE_ASSIGNEE_ROLLED_BACK,
+        lane_setup_claim.CLAIM_STATE_ROLLBACK_FAILED,
+    )
+
+    held = []
+    for row in rows:
+        state = row.get("state")
+        number = row.get("issue")
+        if state not in _HELD_ASSIGNEE_STATES:
+            continue
+        if (
+            overall in rolled_back_states
+            and state == select_issues_claim_read.STATE_CLAIMED
+            and number not in rollback_failed
+        ):
+            # This row's own freshly-written assignee was released again
+            # because the lane could not be registered -- no longer held,
+            # whatever the row itself still says.
+            continue
+        held.append(number)
+    return held
+
+
+def compose_claim_label(payload, phrase, subagent_type=None, model=None,
+                         run_in_background=False, brief_path=None):
+    """Render this ``--claim`` call's own fleet-view label -- or, with
+    ``subagent_type``, the whole ``Agent(...)`` call -- from the issues this
+    lane actually holds (#1143), never from the issues requested.
+
+    ``payload`` is `compute`'s own return value (or anything carrying its
+    ``issue`` and ``claim_result`` keys). Returns a dict always carrying
+    ``state``, ``text`` (``None`` unless ``state`` is ``rendered``), ``held``
+    (the issue numbers this call derived) and ``brief`` (the raw
+    `lane_setup_brief_schema` payload, or ``None`` when ``subagent_type`` was
+    never given -- a caller must never have to guess whether the brief was
+    skipped or genuinely clean).
+
+    States:
+
+      rendered                 ``text`` carries the label or the call.
+      no-claimed-issues        nothing in ``claim_result`` came back
+                                genuinely held.
+      primary-not-held         ``payload["issue"]`` itself is not among the
+                                issues actually held -- a label cannot be
+                                composed around a lane that does not include
+                                its own primary issue.
+      fleet-label-error        `fleet_label`/`agent_call` itself refused (a
+                                duplicate, a blank phrase, ...); ``detail``
+                                carries the message.
+      brief-could-not-read     only reachable with ``subagent_type`` given:
+                                the brief at ``brief_path`` could not be
+                                read.
+      brief-structural-finding only reachable with ``subagent_type`` given:
+                                the brief fails at least one of
+                                `lane_setup_brief_schema`'s four structural
+                                elements -- the ``Agent(...)`` line is
+                                refused, never rendered. A presence-only
+                                finding does not reach this state; it is
+                                printed by the caller and the call still
+                                renders.
+    """
+    held = _claimed_issue_numbers(payload.get("claim_result"))
+    result = {"state": None, "text": None, "held": held, "brief": None}
+
+    if not held:
+        result["state"] = "no-claimed-issues"
+        return result
+    if payload.get("issue") not in held:
+        result["state"] = "primary-not-held"
+        return result
+
+    brief_payload = None
+    if subagent_type is not None:
+        brief_payload = lane_setup_brief_schema.check_path(brief_path)
+        result["brief"] = brief_payload
+        if brief_payload["state"] == lane_setup_brief_schema.STATE_COULD_NOT_READ:
+            result["state"] = "brief-could-not-read"
+            return result
+        structural_missing = any(
+            row["state"] == "missing" and row["checked"] == lane_setup_brief_schema.STRUCTURAL
+            for row in brief_payload["elements"]
+        )
+        if structural_missing:
+            result["state"] = "brief-structural-finding"
+            return result
+
+    try:
+        if subagent_type is None:
+            text = fleet_label(payload["issue"], held, phrase)
+        else:
+            text = agent_call(
+                payload["issue"],
+                held,
+                phrase,
+                subagent_type,
+                model=model,
+                run_in_background=run_in_background,
+            )
+    except FleetLabelError as exc:
+        result["state"] = "fleet-label-error"
+        result["detail"] = str(exc)
+        return result
+
+    result["state"] = "rendered"
+    result["text"] = text
+    return result
+
 
 CONFIG_NAME = ".oss.json"
 
@@ -1163,15 +1489,49 @@ def main(argv=None):
     parser.add_argument(
         "--model",
         default=None,
-        help="passed straight through to the rendered Agent(...) call; only "
-        "meaningful together with --label and --label-subagent.",
+        help="passed straight through to the rendered Agent(...) call; "
+        "meaningful together with --label and --label-subagent, or with "
+        "--claim and --subagent-type.",
     )
     parser.add_argument(
         "--background",
         action="store_true",
         help="passed straight through to the rendered Agent(...) call's "
-        "run_in_background field; only meaningful together with --label and "
-        "--label-subagent.",
+        "run_in_background field; meaningful together with --label and "
+        "--label-subagent, or with --claim and --subagent-type.",
+    )
+    parser.add_argument(
+        "--phrase",
+        default=None,
+        metavar="TEXT",
+        help="the short description of what this lane is doing (#1143). "
+        "Given together with --claim, composes this lane's own fleet-view "
+        "label -- or, with --subagent-type, the whole Agent(...) call -- "
+        "from the issues this --claim call actually holds afterward, never "
+        "from the issue and --claim-also values requested: a companion "
+        "whose assignee write failed is silently excluded from the count. "
+        "Ignored without --claim.",
+    )
+    parser.add_argument(
+        "--subagent-type",
+        default=None,
+        metavar="TYPE",
+        help="given together with --claim and --phrase, renders the whole "
+        "literal Agent(...) call (#989) instead of only the description "
+        "string -- requires --brief, since rendering a call that dispatches "
+        "means checking the brief it dispatches first (#1143). Ignored "
+        "without --claim.",
+    )
+    parser.add_argument(
+        "--brief",
+        default=None,
+        metavar="PATH",
+        help="the composed brief text --subagent-type is about to dispatch, "
+        "checked against lane_setup_brief_schema's eight elements before the "
+        "Agent(...) line is rendered (#1143): a finding in one of the four "
+        "STRUCTURAL elements refuses to render it; a PRESENCE-only finding "
+        "is printed and it renders anyway. Required together with "
+        "--subagent-type.",
     )
     parser.add_argument(
         "--release",
@@ -1347,6 +1707,28 @@ def main(argv=None):
             "patterns already used to probe this candidate"
         )
 
+    if args.phrase is not None and not args.claim:
+        parser.error("--phrase requires --claim (#1143)")
+    if args.subagent_type is not None and not args.claim:
+        parser.error("--subagent-type requires --claim (#1143)")
+    if args.brief is not None and not args.claim:
+        parser.error("--brief requires --claim (#1143)")
+    if args.subagent_type is not None and args.phrase is None:
+        parser.error("--subagent-type requires --phrase (#1143)")
+    if args.subagent_type is not None and args.brief is None:
+        parser.error(
+            "--subagent-type requires --brief -- rendering a call that "
+            "dispatches means checking the brief it dispatches first (#1143)"
+        )
+    if args.brief is not None and args.subagent_type is None:
+        # Self-review finding (Explore + oss:auditor, #1143): the reverse of
+        # the check above was never enforced, so a --brief given without
+        # --subagent-type was silently accepted and never read at all --
+        # compose_claim_label only ever calls check_path when subagent_type
+        # is given. --brief's own help text already promised this direction;
+        # nothing checked it.
+        parser.error("--brief requires --subagent-type (#1143)")
+
     if args.label:
         for flag_name, flag_value in (
             ("--claim", args.claim),
@@ -1382,11 +1764,9 @@ def main(argv=None):
         issues = [part.strip() for part in args.label_issues.split(",") if part.strip()]
         try:
             if args.label_subagent is None:
-                output = lane_setup_label.fleet_label(
-                    args.issue, issues, args.label_phrase
-                )
+                output = fleet_label(args.issue, issues, args.label_phrase)
             else:
-                output = lane_setup_label.agent_call(
+                output = agent_call(
                     args.issue,
                     issues,
                     args.label_phrase,
@@ -1394,7 +1774,7 @@ def main(argv=None):
                     model=args.model,
                     run_in_background=args.background,
                 )
-        except lane_setup_label.FleetLabelError as exc:
+        except FleetLabelError as exc:
             print(str(exc))
             return EXIT_COULD_NOT_RUN
         print(output)
@@ -1618,11 +1998,62 @@ def main(argv=None):
         also_claim=args.claim_also,
         activity=args.activity,
     )
+
+    # #1143: --claim renders its own fleet-view label (or the whole
+    # Agent(...) call) from the issues this call actually holds, so nothing
+    # is retyped from the claim it just performed. Only attempted when a
+    # phrase was actually given -- an ordinary `--claim` probe with no
+    # --phrase behaves exactly as it always has.
+    label_result = None
+    if args.claim and args.phrase is not None:
+        label_result = compose_claim_label(
+            payload,
+            args.phrase,
+            subagent_type=args.subagent_type,
+            model=args.model,
+            run_in_background=args.background,
+            brief_path=args.brief,
+        )
+        payload["label"] = label_result
+
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print(receipt(payload))
-    return EXIT_COULD_NOT_RUN if blocked(payload) else EXIT_OK
+        if label_result is not None:
+            print()
+            if label_result.get("brief") is not None:
+                print(lane_setup_brief_schema.receipt(label_result["brief"]))
+            state = label_result["state"]
+            if state == "rendered":
+                print(label_result["text"])
+            elif state == "brief-could-not-read":
+                print(
+                    "AGENT(...) REFUSED -- the brief could not be read; "
+                    "nobody has reviewed it (#1143)"
+                )
+            elif state == "brief-structural-finding":
+                print(
+                    "AGENT(...) REFUSED -- the brief fails at least one "
+                    "structural element above (#1143)"
+                )
+            elif state == "no-claimed-issues":
+                print(
+                    "LABEL NOT COMPOSED -- no issue in this --claim call "
+                    "came back genuinely held (#1143)"
+                )
+            elif state == "primary-not-held":
+                print(
+                    "LABEL NOT COMPOSED -- primary issue #{0} is not among "
+                    "the issues actually held (#1143)".format(payload["issue"])
+                )
+            elif state == "fleet-label-error":
+                print("LABEL NOT COMPOSED -- {0}".format(label_result["detail"]))
+
+    exit_code = EXIT_COULD_NOT_RUN if blocked(payload) else EXIT_OK
+    if label_result is not None and label_result["state"] != "rendered":
+        exit_code = EXIT_COULD_NOT_RUN
+    return exit_code
 
 
 if __name__ == "__main__":

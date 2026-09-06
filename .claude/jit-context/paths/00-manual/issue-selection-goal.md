@@ -21,7 +21,8 @@ order, `select_issues_preflight.search` for staleness, `select_issues_overlap.re
 lane_overlap` and `select_issues_companions.suggest_companions` for collision and bundling,
 `select_issues_claim_read.check` for who holds it -- all five owned by this entry point (#1069).
 `lane_setup.py` (and its own `lane_setup_claim.py`/`lane_setup_worktree.py`/
-`lane_setup_patterns.py`/`lane_setup_label.py` submodules) is the sibling entry point -- setup and
+`lane_setup_patterns.py`/`lane_setup_brief_schema.py` submodules -- `lane_setup_label.py` is gone,
+folded directly into `lane_setup.py` itself, #1143) is the sibling entry point -- setup and
 claim, not selection -- and imports `select_issues_overlap` back for its own registration and
 disjointness-report needs, the one cross-import in this family. Add a caller, never a second copy
 of one of those answers. It makes exactly one `gh` call, on survivors only; the board itself is

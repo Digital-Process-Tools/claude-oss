@@ -46,13 +46,21 @@ so rather than leaving it to be inferred.
                    and "nobody read this brief" are different facts, and the
                    second must not be reported in the vocabulary of the first.
 
+## No longer a standalone CLI (#1143)
+
+`brief_schema.py`'s own `main`/argparse CLI is gone -- `lane_setup.py --claim`
+is the one entry point that reaches `check_path` now, checking the brief a
+lane's `--subagent-type` render is about to dispatch before it renders the
+`Agent(...)` line, following the "No longer a standalone CLI" precedent
+`select_issues_rank.py` and `select_issues_preflight.py` already carry from
+#1069. Renamed from `brief_schema.py` to `lane_setup_brief_schema.py` in the
+same change, following the `doctor_check_*` precedent: the prefix names the
+entry point that owns this submodule.
+
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
 
-import argparse
-import json
 import re
-import sys
 from pathlib import Path
 
 STATE_OK = "ok"
@@ -379,28 +387,3 @@ def receipt(payload):
     )
     return "\n".join(lines)
 
-
-def main(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Validate a developer brief against dispatch's eight elements."
-    )
-    parser.add_argument("briefs", nargs="+", help="brief files")
-    parser.add_argument("--json", action="store_true", help="emit payloads as JSON")
-    args = parser.parse_args(argv)
-
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(errors="backslashreplace")
-        except (AttributeError, ValueError):  # pragma: no cover - very old Python
-            pass
-
-    payloads = [check_path(path) for path in args.briefs]
-    if args.json:
-        sys.stdout.write(json.dumps(payloads, indent=2) + "\n")
-    else:
-        sys.stdout.write("\n".join(receipt(p) for p in payloads) + "\n")
-    return 0 if all(p["state"] == STATE_OK for p in payloads) else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
