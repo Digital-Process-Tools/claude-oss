@@ -53,6 +53,36 @@ def _looks_like_a_declared_path(token):
     return True
 
 
+def _derive_declared_patterns(title, body):
+    """The raw glob/path tokens named literally, in backticks, in one
+    issue's `title` and `body` -- the extraction half of `_derive_declared_
+    files` below, split out for #1135 so `select_issues.py` can run the
+    identical extraction for a LEAD's own file set (never a guess: the same
+    backtick-declaration `_derive_declared_files` already treats as
+    legitimate for a companion) and then feed the result through its own
+    `resolve_lane` call, the same pipeline every other `lane_patterns`
+    source already goes through (refused-pattern and held-files checks
+    included). Returns `None` -- never `[]` -- when nothing survives, the
+    same "could not be derived" posture `_derive_declared_files` promises.
+    """
+    text = "{0}\n{1}".format(title or "", body or "")
+    candidates = []
+    seen = set()
+    for match in _BACKTICK_SPAN_RE.finditer(text):
+        token = match.group(1).strip()
+        if not _looks_like_a_declared_path(token):
+            continue
+        if select_issues_overlap._lane_pattern_problem(token) is not None:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        candidates.append(token)
+    if not candidates:
+        return None
+    return candidates
+
+
 def _derive_declared_files(repo, title, body):
     """Every repo-relative path or glob named literally, in backticks, in one
     issue's `title` and `body` (#851, option 1 of the three the issue itself
@@ -88,19 +118,7 @@ def _derive_declared_files(repo, title, body):
     `--lane` value goes through, so a declared path that is a directory or a
     glob expands exactly the same way here as it would on the command line.
     """
-    text = "{0}\n{1}".format(title or "", body or "")
-    candidates = []
-    seen = set()
-    for match in _BACKTICK_SPAN_RE.finditer(text):
-        token = match.group(1).strip()
-        if not _looks_like_a_declared_path(token):
-            continue
-        if select_issues_overlap._lane_pattern_problem(token) is not None:
-            continue
-        if token in seen:
-            continue
-        seen.add(token)
-        candidates.append(token)
+    candidates = _derive_declared_patterns(title, body)
     if not candidates:
         return None
     return select_issues_overlap.resolve_lane(repo, candidates)
