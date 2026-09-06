@@ -12,19 +12,21 @@ never one of that script's four outcomes -- not `create`, `skipped`, `could-not-
 `role-forbidden`. Nothing in the release machinery reports it, because nothing in the release
 machinery is reached.
 
-**It is per-context, not per-command.** Observed twice:
+**It is per-context, not per-command.** Observed twice, both on `claude-remember`, a sibling
+repository this plugin also manages -- its own tag sequence, not this repo's:
 
-- **v0.26.0 (2026-09-04)**: denied twice inside `oss:releaser`, then once more from the scheduler
-  session. Florian ran the byte-identical command with the `!` prefix and it returned
-  `state: created`, `latest: true`.
-- **v0.28.0 (2026-09-05)**: denied twice inside `oss:releaser`, which correctly stopped and reported
-  `RELEASE: released` with the release object explicitly NOT published. The **identical call from the
-  scheduler session succeeded on the first try** -- `state: created`, and `gh release view v0.28.0`
-  read back `isDraft: false`, `publishedAt` set.
+- **`claude-remember` v0.26.0 (2026-09-04)**: denied twice inside `oss:releaser`, then once more
+  from the scheduler session. Florian ran the byte-identical command with the `!` prefix and it
+  returned `state: created`, `latest: true`.
+- **`claude-remember` v0.28.0 (2026-09-05)**: denied twice inside `oss:releaser`, which correctly
+  stopped and reported `RELEASE: released` with the release object explicitly NOT published. The
+  **identical call from the scheduler session succeeded on the first try** -- `state: created`, and
+  `gh release view v0.28.0` read back `isDraft: false`, `publishedAt` set.
 
 So the order is: releaser reports the publish outstanding -> **the scheduler retries it once from its
 own context** -> only if that is also denied does a human get handed the command. Skipping the middle
-step cost a human round-trip on v0.26.0 at the exact moment the loop looked finished.
+step cost a human round-trip on `claude-remember`'s v0.26.0 at the exact moment the loop looked
+finished.
 
 **A tag alone is not a release.** Every prior tag in this repo has a release object; a tag without one
 is the state that got v0.21.0 flagged as forgotten. Verify with `gh release view <tag>` and read the
