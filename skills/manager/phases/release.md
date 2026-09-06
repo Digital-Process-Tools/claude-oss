@@ -49,10 +49,13 @@ Gates, each a call and not a feeling:
 
    **This is a computed disposition, not a judgement call made fresh each release (#1043).**
    `scripts/gate3_disposition.py` takes the round, the auditor's verdict word and whether any
-   finding in this round sits in a blocking row, and answers `proceed` / `stop-tag` /
-   `carry-forward-and-proceed` / `could-not-decide`. Run it and quote its `DISPOSITION:` line in
-   the release report rather than re-deriving the rule from memory. **Two audit rounds, hard cap** —
-   after round two, file the rest against the next milestone and ship.
+   finding in this round sits in a blocking row -- yes, no, or **unknown** when that was never
+   established -- and answers `proceed` / `stop-tag` / `carry-forward-and-proceed` /
+   `could-not-decide`. `unknown` for a round-two `findings` verdict answers `could-not-decide`,
+   never `carry-forward-and-proceed` -- unranked or could-not-rank must never read as non-blocking.
+   Run it and quote its `DISPOSITION:` line in the release report rather than re-deriving the rule
+   from memory. **Two audit rounds, hard cap** — after round two, file the rest against the next
+   milestone and ship.
 
    **One exception, and it is why the ranking is not decoration: a finding in a row the table marks
    blocking is not carry-forward material.** It stops the tag in either round. Each finding the

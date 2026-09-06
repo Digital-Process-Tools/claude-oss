@@ -68,6 +68,21 @@ def test_round_two_findings_with_a_blocking_row_stops_the_tag():
     assert verdict["disposition"] == "stop-tag"
 
 
+def test_round_two_findings_with_unknown_blocking_is_could_not_decide():
+    """#1158: an unranked/unknown has_blocking must never be silently read
+    as non-blocking. Before the fix this returned carry-forward-and-proceed,
+    which is exactly the defect class this repository is named after -- an
+    absence (the rank was never established) rendered as a finding (not
+    blocking)."""
+    verdict = gate3_disposition.decide(
+        round_number=2,
+        verdict="findings",
+        has_blocking=gate3_disposition.BLOCKING_UNKNOWN,
+    )
+    assert verdict["disposition"] == "could-not-decide"
+    assert verdict["disposition"] != "carry-forward-and-proceed"
+
+
 def test_round_two_clean_proceeds():
     verdict = gate3_disposition.decide(
         round_number=2, verdict="clean", has_blocking=False
@@ -130,6 +145,14 @@ def test_cli_reports_proceed_for_clean():
     result = _run(["--round", "1", "--verdict", "clean", "--blocking", "no"])
     assert "proceed" in result.stdout
     assert result.returncode == gate3_disposition.EXIT_PROCEED
+
+
+def test_cli_accepts_unknown_blocking_and_reports_could_not_decide():
+    """#1158: the CLI must offer a route to the honest 'never ranked' answer
+    instead of forcing a caller under pressure to pick yes or no."""
+    result = _run(["--round", "2", "--verdict", "findings", "--blocking", "unknown"])
+    assert "could-not-decide" in result.stdout
+    assert result.returncode == gate3_disposition.EXIT_USAGE_ERROR
 
 
 def test_cli_exit_codes_are_distinct():
