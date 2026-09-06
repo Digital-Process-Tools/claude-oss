@@ -5,6 +5,7 @@
 (^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$	issue-selection-goal.md
 (^|/)bin/oss-workspace$	launcher-prompt-selection.md
 (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
+(^|/)(agents/([^/]+\.md|[^/]+/[^/]+\.md)|skills/manager/([^/]+\.md|phases/[^/]+\.md)|commands/[^/]+\.md)$	md-is-a-manual-not-a-rationale.md
 (^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
 (^|/)scripts/oss_rules\.py$	rules-layer-symlinks.md

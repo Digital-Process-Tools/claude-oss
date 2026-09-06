@@ -209,9 +209,20 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # positional arguments, matching fleet_label.py's own old call length
     # plus the one unavoidable --label mode-selector token. A net shrink.
     # Budget unchanged.
+    # Re-baselined DOWN for #1136: 58916 B became 51277 B, a 54% cut to the
+    # selection band (14240 B to 6601 B). That band was written when a session
+    # drove selection by hand across four scripts; #970 composed them into
+    # select_issues.py, #1068 added groups and #1129 gave grouping a file set it
+    # could derive, and the prose was never cut back to match. A phase file is an
+    # operator's manual for the tools its phase runs -- why three issues per lane
+    # beats four belongs beside _GROUP_TARGET = 3, not here, and each incident
+    # stays recorded in its own issue. The ceiling comes down with the
+    # measurement rather than staying at 64200 B, for the reason #958 and #960
+    # already give for their own re-baselines: a ceiling left far above the file
+    # is a saving spendable again without anybody choosing to.
     "skills/manager/phases/dispatch.md": (
-        58916,
-        64200,
+           51277,
+        56400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared

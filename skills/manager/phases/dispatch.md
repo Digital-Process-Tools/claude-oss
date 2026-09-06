@@ -266,175 +266,89 @@ writes every issue's own GitHub assignee AND registers the lane in one call:
 
     python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane PATTERN [--lane PATTERN ...] [--claim-also <N> ...]
 
-Dispatch only what comes back `claimed`. A spawn that dies on its first call must not leave an
-unclaimed issue with a worktree attached, and a lane running for hours while the issue reads
-`Assignees: none` is how two readers pick the same issue. `already-claimed` /
-`could-not-claim-assignee` / `assignee-rolled-back` / `rollback-failed-assignee-still-set` are the
-named failure states -- see `lane_setup_claim.claim_and_register`'s own docstring for what each means
-and, for the last one, which issue is still assigned and needs releasing by hand.
+Dispatch only what comes back `claimed`. `already-claimed` / `could-not-claim-assignee` /
+`assignee-rolled-back` / `rollback-failed-assignee-still-set` are the named failure states — see
+`lane_setup_claim.claim_and_register`'s own docstring for what each means and, for the last one,
+which issue is still assigned and needs releasing by hand. `could-not-read` is never `unassigned`.
 
-**`could-not-read` is not `unassigned`, and the script is what holds those apart** — picking an issue
-whose claim state is unknown is this repository's own defect class, one layer up. The rest of the
-argument, including what a `claimed` row does *not* promise, is in the script's own docstring rather
-than here (#964).
+**Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself — this is the
+directive, not a description.** Board in, ranked claimable candidates out. It composes ranking,
+staleness, lane-collision and the claim read into one call, and returns three states —
+`candidates` / `none-available` / `could-not-select`, the last never rendering as the second — plus a
+per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankable` /
+`lane-collision`). It does not replace `--claim` above: reading who is claimable and writing a claim
+stay separate calls.
 
-**Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself — this
-is the directive, not only a description of what the script does.** It composes the ranking,
-staleness and lane-collision checks above plus this claim read into one call, board in, ranked
-claimable candidates out, three states (`candidates` / `none-available` / `could-not-select`, the
-last never rendering as the second) and a per-issue disposition (`eligible` / `assigned` /
-`assignee-unreadable` / `stale` / `unrankable` / `lane-collision`). It does not replace `--claim`
-above — reading who is claimable and writing a claim stay separate calls, the same separation
-`select_issues_claim_read.py` itself already makes between its own `read` and `claim` modes — and it does not invent a
-preflight pattern or a lane pattern for an issue that named neither (#267): those stay
-caller-supplied input, exactly as they are for the scripts it composes.
+**Read `groups`, not the flat `candidates` list, when deciding what to dispatch (#1068).** Each group
+is a suggested lane: it fills to three members, never pads to reach three. **Cap at three, never
+four** (#799, measured across 237 lanes in #499) -- `select_issues_rank.check_lane` refuses a fourth
+before the spawn, not after. Each group carries a per-member
+disposition plus its own third state (`candidates` / `none` / `could-not-tell`). Companions are
+chosen by file adjacency to the group's top issue, whatever their own rank. A group is a suggestion,
+never a dispatch — weigh it against topic and judgement. `ungrouped` names candidates no group could
+be built for at all, which is distinct from a group that stayed short and says why.
 
-**A `candidates` result also carries `groups` (#1068) — read that, not the flat `candidates` list,
-when deciding what to dispatch.** Each group is a suggested lane, targeting three members (never
-padded to hit that number), with a per-member disposition and a per-group third state
-(`candidates`/`none`/`could-not-tell`) — a group is a suggestion, never a dispatch, so still weigh it
-against topic and judgement above. `ungrouped` names candidates a group could not be built for at all
-(no declared files, per #267, or files that could not be resolved) — distinct from a group that
-stayed short and says why. Pass `board_capped` / `board_cap_detail` in the payload when the board read
-that fed this call was itself capped (#593's `per=` ceiling) — otherwise a short group because the
-read was truncated cannot be told from one because nothing genuinely overlaps.
+**Populate the payload, or the call answers a narrower question than you asked.**
 
-**Before #1036 this paragraph only described the script; nothing told a session to run it.**
-`commands/tick.md` step 5 named `dispatch_rank.py` and `lane_setup.py --claim` as the commands to
-run, by name, and a tick following that imperative literally got the four-scripts-joined-by-hand
-shape #970 exists to replace — with no refusal step, so a tick that found nothing and a tick whose
-claim read failed closed identically as `nothing left`. `skills/manager/phases/tick-order.md` step 5
-now names this script directly for the same reason (that content moved out of `commands/tick.md`
-itself for #1037, into the file a sub-manager's own steps live in).
+- `held_files` — from `lane_setup.derive_held_set(repo_slug, worktree_root, exclude_issue=<the issue
+  being considered>)["held"]`, sorted. Its `state`/`detail` carry through as `lanes_read_ok`
+  (`state == "resolved"`) and `lanes_read_why`. `lanes_read_ok is False` forces `could-not-select`
+  before `held_files` is read, so a lane inventory that could not be enumerated is never
+  indistinguishable from a tick with no live lanes. A caller that populates neither is read as "not
+  attempted" (#1067).
+- `board_capped` / `board_cap_detail` — when the board read that fed this call was itself capped
+  (#593's `per=` ceiling). Without it, a short group because the read was truncated cannot be told
+  from one because nothing genuinely overlaps.
+- `lane_patterns` / `preflight_pattern` stay caller-supplied per issue; the module never invents
+  either (#267).
 
-**`held_files`'s producer, named here because #1067 found nothing in this tree named it anywhere.**
-Feed `select_issues.py`'s top-level `held_files` from `lane_setup.derive_held_set(repo_slug,
-worktree_root, exclude_issue=<the issue being considered>)["held"]` (sorted keys) — the same call the
-lane-collision check above already runs. Its `state` and `detail` carry straight through as
-`lanes_read_ok` (`state == "resolved"`) and `lanes_read_why` (`detail`, when it did not): `lanes_read_ok
-is False` forces `could-not-select` before `held_files` is read at all, so a lane inventory that could
-not be enumerated is never indistinguishable from a tick with no live lanes. A caller that never
-populates the pair (nothing to offer) is read as "not attempted", the same posture `board_read_ok`'s
-own absence already gets.
-
-A contributor without write access cannot self-assign — GitHub restricts assignment to write or
-triage permission — so this mechanism claims for the maintainer's own loop only. What an outside
-contributor uses to claim an issue is a separate decision (#460); it must land somewhere this same
-selection step reads, not in a channel of its own that renders an actually-claimed issue as free.
-
-**A fourth fact the assignee field cannot carry at all: the maintainer deliberately holding an issue
-open (#844).** An empty assignee field on a public repository means only "no maintainer lane holds
-this" — never "nobody wants it" and never "the maintainer is willing to have it taken". A reservation
-made off the tracker — in a session handoff, from memory — is structurally invisible to a sub-manager
-spawned fresh into the repository with nothing (#695): it can only read what is on the tracker.
-`labels.reserved` in `.oss.json` is the fix, the same opt-in shape `labels.filed_by_loop` already is
-(#762) — derivable from the tracker by anyone rather than recalled — and `select_issues_rank.reserved`
-reads it back, printing `[RESERVED]` beside every issue that carries it when ranking the board. A
-repository that has not declared a spelling reads every issue as unreserved, never as `could-not-tell`
-— there is nothing ambiguous about a label field with no candidate spelling to look for.
-
-**The lane's top issue is the best-ranked one, by the dispatch order in `SKILL.md`'s "Deciding what
-to build" (#798).** Author before priority within a band: a human ask outranks loop work of the same
-or lower band, and a blocking-class defect the loop found still outranks an ordinary ask. Compute it
-with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` rather than reading the table and
-judging, and report a `could-not-rank` rather than treating it as the bottom of the board.
-**Companions are chosen by file adjacency to that top issue, whatever their own rank** — the saving a
-bundle buys is a shared worktree, and ranking companions again would break up the bundles worth having.
-
-**Three issues per lane is the default, not the ceiling (#799).** Measured across 237 lanes in
-this repository's own transcripts (#499): a lane's cost is dominated by fixed overhead paid once
-regardless of how much work it carries — a turn-1 baseline, an orientation phase, two self-review
-spawns, a full suite run — so three issues in one lane cost 16% less per issue than one issue alone,
-and four or more is a cliff at 141 median turns and 68% worse per issue. The number was already
-right and the default was wrong: the loop picked one issue and then went looking for companions, so
-most lanes ended up carrying one. Fill to three. **Cap at three, never four**, and
-`select_issues_rank.check_lane` refuses a fourth before the spawn rather than after, because past the
-spawn the cost is already committed.
-
-**Run the companion search. It is a separate call from the conflict check, pointed the other way.**
-`--against` answers two different questions depending on what it is aimed at, and #918 is the tick
-that aimed it at the wrong one: it checked the three lanes it had already picked against *each
-other*, got `no overlap`, and recorded `no-adjacent` — a claim about the board, on a measurement that
-never looked at the board. Three single-issue lanes went out with 31 issues open and every gate
-green. Aim it at each *candidate's* declared lane against the top issue's, one call per candidate,
-before the lane is filled. **Board size never enters that failure**: with 100 issues open the same
-sequence returns the same answer, because the board is not what it read.
+**`labels.reserved` in `.oss.json` is how the maintainer holds an issue open (#844).** An empty
+assignee field means only "no maintainer lane holds this" — never "nobody wants it". A reservation
+made off the tracker is invisible to a sub-manager spawned fresh with nothing, so it goes on the
+tracker: `select_issues_rank.reserved` reads the declared spelling back and prints `[RESERVED]`
+beside every issue carrying it. A repo declaring no spelling reads every issue as unreserved, never
+as `could-not-tell`. Note that a contributor without write access cannot self-assign at all, so this
+mechanism claims for the maintainer's own loop only (#460).
 
 **A lane dispatched with fewer than three says why, in the handback, in one of four words.**
-`board-exhausted` — fewer than three file-disjoint candidates remain. `no-adjacent` — the search
-above ran across the board and nothing shares a file or module with the top issue. `did-not-search`
-— it did not run (#918). `could-not-tell` — it ran and could not be computed. **A short lane with no reason is a defect in the tick**, and the four are a closed set on
-purpose: a free-text reason is unreadable by anything but a person, which is the defect #773 filed
-against a handback state carrying only prose. The last two earn their place separately — a board
-never measured for adjacency, one whose measurement was attempted and failed, and one measured and
-found to have none are three different facts, and #918 is the tick that proved the first was being
-reported as the third.
+`board-exhausted` — fewer than three file-disjoint candidates remain. `no-adjacent` — the search ran
+and nothing shares a file or module with the top issue. `did-not-search` — it did not run.
+`could-not-tell` — it ran and could not be computed. **A short lane with no reason is a defect in the
+tick**, and the four are a closed set: a free-text reason is unreadable by anything but a person
+(#773). A board never measured, one whose measurement failed, and one measured and found empty are
+three different facts.
 
-**`board-exhausted` is now checked against the board, not merely typed (#871).** Every refusal on this
-path used to be a *shape* refusal — one of the three declared words — and never asked whether the
-reason was *true*: a one-issue lane could write `board-exhausted` and satisfy every gate while 35
-issues sat open. `--lane-fill PRIMARY:COUNT:board-exhausted:CANDIDATES` carries the fourth,
-optional field — the file-disjoint candidate count the same `resolve_lane`/`lane_overlap` sweep above
-already produces — and `oss_state.py --decision` now refuses the whole call when `CANDIDATES` is at
-or above three, the same way an unsupported reason word already was. Omit it and nothing changes;
-name it and a lazy `board-exhausted` is refused at the one place a lane record already exists to
-attach the refusal to, the way #866's advisory check could not for a declined dispatch with no record
-of its own.
+**Two of the four carry a count that can refute them (#871, #918).**
+`--lane-fill PRIMARY:COUNT:board-exhausted:CANDIDATES` takes the file-disjoint candidate count;
+`oss_state.py --decision` refuses the call when it is three or more.
+`--lane-fill PRIMARY:COUNT:no-adjacent:CANDIDATES` takes the count of candidates *adjacent to the top
+issue*, and its threshold is stricter — `no-adjacent` means zero, so **one adjacent candidate refuses
+it**. `did-not-search` and `could-not-tell` take **no** count, and `oss_state.py` refuses one supplied
+anyway: a count refutes a claim, and neither of those two makes one. Attach the count whenever the
+search ran; a refusal without one is unfalsifiable.
 
-**#918 gives `no-adjacent` the same treatment, through the same field.**
-`--lane-fill PRIMARY:COUNT:no-adjacent:CANDIDATES` carries the count of candidates *adjacent to the
-top issue* — the companion search's own output, not the disjoint sweep's — and the threshold is
-stricter than `board-exhausted`'s: that one needs three to be refuted, but `no-adjacent` means zero,
-so **one adjacent candidate refuses it**, because one adjacent candidate is one issue this lane could
-have carried. The field is one field and the word decides which count it is; `did-not-search` and
-`could-not-tell` take **no** count at all and `oss_state.py` refuses one supplied anyway, because a
-count refutes a claim and neither of those two makes one. Attach it whenever the search ran: a
-`no-adjacent` with no count is still accepted, and is exactly as unfalsifiable as every refusal was
-before #871.
+**A bundle is not a cluster.** A cluster claims one change fixes several issues and needs a shared
+failure to back it; a bundle claims only that the fixes share a worktree. A bundle of two or three
+stays two or three fixes: **each issue keeps its own test story and its own changelog fragment**, and
+the pull request closes every issue it carries.
 
-**A bundle is not a cluster** — `agents/triager.md`
-correctly refuses to cluster on a shared file, because a cluster claims one change fixes several
-issues and needs a shared failure to back that; a bundle claims only that the fixes share a
-worktree, and the file each one reads is exactly the right evidence for that weaker claim. A bundle
-of two or three stays two or three fixes, never one: **each issue keeps its own test story and its
-own changelog fragment**, and the pull request closes every issue it carries.
+**Never bundle an issue a running lane already touches.** `select_issues.py` excludes them when
+`held_files` is populated, per above. To check one named running lane directly, `lane_setup.py --lane
+PATTERN --against PATTERN` — overlap against a *running* lane means conflict; overlap against a
+*candidate's* declared lane means the two are worth bundling. Same flag, opposite readings; aim it
+deliberately.
 
-**Never bundle an issue a running lane already touches** —
-check with `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" --lane PATTERN --against PATTERN`, read
-the other way from the
-disjointness rule above: overlap there means conflict, and overlap here, at selection time, against a
-*candidate's* declared lane rather than a running one, means the two are worth bundling. This is a
-different call from the one above, not the same one restated: it needs the overlap against one named
-running lane, not the aggregate `--derive-held` set every other lane and open pull request contributes
-to, so `--against` stays the mechanism here.
+**The fleet-view label names what a lane covers, not what it starts with (#539).** The count is the
+load-bearing half — a reader scanning four rows should see `x3, x1, x1, x1` without reading any
+phrase — so the multiplier spelling is the convention: `Lane 534 x3  auto-update path`, never
+`Lane 534 (+537, +495)  …`. Compose it rather than typing it:
 
-**The two-issue row must not become a rule.** It is n=58 and is worse per issue than
-a single-issue lane, which is exactly the shape of a result that reverses on more data — a blanket
-refusal to pair up two issues would pin that noise as a fact, the same mistake #435 records about a
-test that froze one interpreter's answer into a hardcoded platform one. Carry the caveat with the
-number rather than silently dropping either.
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label <issue1,issue2,...> "<phrase>"
 
-**The fleet-view label names what a lane covers, not what it starts with (#539).** Four
-concurrent lanes used to render as `Lane 534  auto-update path`, `Lane 535  statusline guard sets` —
-the first issue's number plus a phrase about it. A lane carrying three issues and a lane carrying one
-rendered identically, because the label is composed at the moment of the spawn and nothing checked it
-against what the lane actually carries. The count is the load-bearing half — a reader scanning four
-rows should see `x3, x1, x1, x1` without reading any phrase — so the multiplier spelling is the
-convention: `Lane 534 x3  auto-update path`, never `Lane 534 (+537, +495)  …`. The enumeration was
-considered and rejected: it describes only the phrase's own issue and leaves a bundle's other work as
-invisible as the count-free label did.
-
-Compose it with `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label
-<issue1,issue2,...> "<phrase>"` rather than typing it by hand, and
-paste its stdout as the `Agent` call's `description`.
-The label is a string handed to a tool parameter — nothing in this repository can inspect it again
-once the lane is running, which is why a guard has to sit in the one function that composes it rather
-than in something that checks the fleet view afterwards. `lane_setup.py --label` refuses to print
-anything when the caller has not named every issue the lane carries (an omitted or partial bundle),
-so a lane
-dispatched from a script that never ran cannot silently fall back to the thin label. A lane briefed by
-hand without running it is the one case this cannot catch — the same limit named for `lane_setup.py`
-above applies here for the same reason.
+and paste its stdout as the `Agent` call's `description`. `--label` refuses to print anything when the
+caller has not named every issue the lane carries, so a lane dispatched through it cannot silently
+fall back to the thin label. A lane briefed by hand without running it is the one case this cannot
+catch.
 
 Launch every dispatched lane — bundled or not — in a single message so they run concurrently.
 

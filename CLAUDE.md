@@ -346,7 +346,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 45,029 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 58,916 B | 64,200 B |
+| `skills/manager/phases/dispatch.md` | 51,277 B | 56,400 B |
 | `skills/manager/phases/handback.md` | 19,598 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 22,789 B | 24,500 B |
 | `skills/manager/phases/tick-order.md` | 39,460 B | 43,100 B |
@@ -357,6 +357,15 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
+
+**#1136 cut `dispatch.md` rather than growing it: 58,916 B became 51,277 B, -13.0%.** Its selection
+band -- 14,240 B, 24% of the file -- was written when a session drove selection by hand across four
+scripts. #970 composed those into `select_issues.py`, #1068 added `groups`, #1129 gave grouping a
+file set it could derive, and the prose was never cut back to match. The rule applied: **a phase file
+is an operator's manual for the tools its phase runs.** Why three issues per lane beats four belongs
+beside `_GROUP_TARGET = 3`; the manual says the tool fills to three and how to read what comes back.
+Each incident stays recorded in its own issue, which does not expire. 14,240 B became 6,601 B, a 54%
+cut to that band, and the ceiling came down with the measurement.
 
 **This table is where #675 was found.** `dispatch.md` measured 25,980 B (LF, 338 lines) — 120 B
 under its 26,100 B budget — and 26,318 B as a Windows checkout's CRLF, 218 B *over* the same budget,
