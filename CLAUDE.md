@@ -323,7 +323,7 @@ only the lane can report.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer/review.md` | 9,868 B | 10,500 B |
+| `agents/developer/review.md` | 10,132 B | 10,500 B |
 | `agents/developer/review-return.md` | 11,249 B | 12,400 B |
 | `agents/developer/report.md` | 17,401 B | 19,100 B |
 

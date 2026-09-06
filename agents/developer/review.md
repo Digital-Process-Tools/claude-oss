@@ -56,8 +56,11 @@ printf '%s' "$BEFORE" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py"
 ```
 
 Neither call needs an explicit `--root`. `snapshot` reads the calling process's actual cwd at that
-call -- never a guess across a sibling worktree -- and `compare` defaults to re-snapshotting the root
-`snapshot` recorded, not whatever cwd the later, separate Bash call happens to be standing in (#971).
+call -- there is no glob/mtime-based cross-worktree GUESS anywhere in the module's own code -- and
+`compare` defaults to re-snapshotting the root `snapshot` recorded, not whatever cwd the later,
+separate Bash call happens to be standing in (#971). That is a fact about the code; it is not a
+promise that the process's own cwd is always what the shell line said it was, which is exactly what
+the three incidents above report and the verification step above exists for.
 
 `clean` (exit 0) means nothing persisted. `mutated` (exit 1) names what changed — restore it
 (`git checkout -- <path>`, or delete a leftover scratch file), re-run whatever suite you already
