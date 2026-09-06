@@ -544,22 +544,40 @@ def compose_claim_label(
     return result
 
 
-#: #1153: three of `select_issues.py`'s own four group `state` values
-#: translate onto `select_issues_rank.SHORT_REASONS` without guessing --
-#: `"none"` and `"could-not-tell"` are literally what those two reasons
-#: already mean (#918: `no-adjacent` is "measured and found nothing
-#: adjacent", `could-not-tell` is "attempted and failed"), and `"lane-other"`
-#: never calls the board sweep at all (#1130), which is #918's own
-#: definition of `did-not-search`: "a computation nobody started".
-#: `"candidates"` (some companions found, group still short) is deliberately
-#: absent: `board-exhausted` is a claim about the WHOLE board's remaining
-#: disjoint candidate count (#871), which a single group's own `state` never
+#: #1153: the four values `select_issues.py`'s own per-group `state` field
+#: takes -- `"candidates"`/`"none"`/`"could-not-tell"` from
+#: `select_issues_companions.suggest_companions`'s own three-value return,
+#: and `"lane-other"` set directly by `select_issues.py` for a solo #1130
+#: dispatch. `select_issues.py` exposes no importable constant naming this
+#: set the way `select_issues_rank.SHORT_REASONS` names its own vocabulary
+#: (checked: neither module declares one) -- this tuple is retyped here,
+#: once, rather than left implicit in the argparse `choices=` below and in
+#: `_GROUP_STATE_SHORT_REASONS`'s keys separately, so there is exactly one
+#: place in this file that could go stale rather than two. Closing the
+#: remaining gap -- a shared constant `select_issues.py` itself exports, so
+#: neither copy could ever drift from the actual producer -- would touch
+#: that module's own shape and is reported rather than done here (#1153).
+_GROUP_STATES = ("candidates", "none", "could-not-tell", "lane-other")
+
+#: Three of the four `_GROUP_STATES` translate onto
+#: `select_issues_rank.SHORT_REASONS` without guessing -- `"none"` and
+#: `"could-not-tell"` are literally what those two reasons already mean
+#: (#918: `no-adjacent` is "measured and found nothing adjacent",
+#: `could-not-tell` is "attempted and failed"), and `"lane-other"` never
+#: calls the board sweep at all (#1130), which is #918's own definition of
+#: `did-not-search`: "a computation nobody started". `"candidates"` (some
+#: companions found, group still short) is deliberately absent:
+#: `board-exhausted` is a claim about the WHOLE board's remaining disjoint
+#: candidate count (#871), which a single group's own `state` never
 #: establishes, so translating it would invent a reason nobody measured.
 _GROUP_STATE_SHORT_REASONS = {
     "none": "no-adjacent",
     "could-not-tell": "could-not-tell",
     "lane-other": "did-not-search",
 }
+assert set(_GROUP_STATE_SHORT_REASONS) <= set(
+    _GROUP_STATES
+)  # #1153: one vocabulary, checked
 
 
 def group_short_reason(group_state):
@@ -1664,7 +1682,7 @@ def main(argv=None):
     parser.add_argument(
         "--group-state",
         default=None,
-        choices=("candidates", "none", "could-not-tell", "lane-other"),
+        choices=_GROUP_STATES,
         metavar="STATE",
         help="given together with --claim: the group's own `state` field, "
         "unchanged, from select_issues.py's own grouping JSON (#1153) -- so "

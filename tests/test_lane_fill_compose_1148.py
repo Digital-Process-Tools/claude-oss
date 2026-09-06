@@ -467,3 +467,44 @@ def test_cli_group_state_requires_claim():
     )
     assert result.returncode != 0
     assert "--group-state requires --claim" in result.stderr
+
+
+def test_cli_group_state_rejects_an_unknown_word():
+    """The same shape as test_cli_short_reason_rejects_an_unknown_word above
+    -- found missing by the self-review round (#1153)."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "999",
+            "--claim",
+            "--lane",
+            "a.py",
+            "--phrase",
+            "x",
+            "--group-state",
+            "not-a-real-state",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode == 2
+    assert "invalid choice" in result.stdout
+
+
+def test_group_state_short_reasons_is_a_subset_of_group_states():
+    """The sync guard #1153's self-review round added: `_GROUP_STATE_SHORT_
+    REASONS`'s keys and the `--group-state` choices tuple are two places
+    that could drift from each other inside this one file -- this asserts
+    the invariant `lane_setup.py`'s own module-level `assert` already
+    enforces at import time, so a future edit that breaks it fails a named
+    test rather than only an import-time assertion nobody runs directly."""
+    assert set(lane_setup._GROUP_STATE_SHORT_REASONS) <= set(lane_setup._GROUP_STATES)
+    # And the one deliberately-unmapped state is exactly "candidates" --
+    # never silently joined by a state select_issues.py adds later without
+    # this mapping being revisited.
+    unmapped = set(lane_setup._GROUP_STATES) - set(
+        lane_setup._GROUP_STATE_SHORT_REASONS
+    )
+    assert unmapped == {"candidates"}
