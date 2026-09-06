@@ -267,7 +267,7 @@ from being invisible.
 | `agents/auditor.md` | 12,963 B | 15,600 B |
 | `agents/release-auditor.md` | 13,992 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
-| `agents/sub-manager.md` | 15,571 B | 16,800 B |
+| `agents/sub-manager.md` | 16,060 B | 16,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
@@ -317,13 +317,15 @@ in the file argued that point, so there was nothing safe to cut in its place; th
 carries the same ~10% headroom the other re-baselines in this table use.
 
 **#1190 re-baselined `agents/sub-manager.md` without raising its ceiling**: 14,666 B became
-15,571 B, still under the 16,800 B budget. #818 ("hand a CI wait back, always") and #1086
+16,060 B, still under the 16,800 B budget. #818 ("hand a CI wait back, always") and #1086
 ("call `pr_green.py --wait` instead") were two rules about the same moment that disagreed, and
 a sub-manager that followed #818 six times in one tick paid ~11k tokens per resume finding no
 other work to dispatch into a lane freed mid-wait. One paragraph replaces both with an ordered
 procedure -- re-select a freed lane first, else wait inside the turn with `pr_green.py --wait`,
 else hand back with the fleet's occupancy folded into `WAIT-OBSERVABLE` -- rather than a third
-rule stacked beside the two it removes.
+rule stacked beside the two it removes. A self-review round grew it once more (15,571 B ->
+16,060 B): a placeholder example that wrapped across a markdown line, and step 2's `--wait` call
+having no branch for a `pending` timeout, both closed in place.
 
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
@@ -380,7 +382,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 41,367 B | 44,800 B |
+| `skills/manager/SKILL.md` | 41,601 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 53,485 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 18,549 B | 19,500 B |
@@ -389,7 +391,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/review.md` | 10,353 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 9,326 B | 10,300 B |
 | `skills/manager/phases/merge.md` | 14,230 B | 15,400 B |
-| `skills/manager/phases/ci-green.md` | 2,454 B | 2,700 B |
+| `skills/manager/phases/ci-green.md` | 2,646 B | 2,700 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.

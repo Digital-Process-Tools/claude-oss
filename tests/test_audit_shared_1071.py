@@ -13,9 +13,9 @@ must-not-fire assertion (a negative assertion needs a positive control):
     ``scripts/audit_shared.py`` rather than in either single-parent
     registry;
   - the measured duplication between the two parents is now far below the
-    pre-extraction figure -- the must-fire control for this one is the
-    historical count itself, quoted above, which this synthetic pair
-    reproduces so the comparison does not rely on memory.
+    pre-extraction figure, with its own must-fire control: a synthetic pair
+    built from the exact paragraph #1071 was filed against, proving the
+    8-gram helper can still find real duplication rather than never firing.
 """
 
 import re
@@ -87,4 +87,29 @@ def test_duplication_between_the_two_agents_dropped_far_below_the_filed_count():
         f"{len(shared)} shared 8-grams remain between agents/auditor.md and "
         "agents/release-auditor.md -- #1071's extraction should have moved "
         "the duplicated prose out, not left it in place"
+    )
+
+
+def test_the_duplication_check_actually_fires_on_real_duplication(tmp_path):
+    # Must-fire control for the assertion above: a synthetic pair carrying
+    # the fragment's own text (the near-verbatim prose #1071 was filed
+    # against, before it was extracted) reproduced word-for-word in both
+    # files must trip the identical threshold this test enforces on the
+    # real files -- otherwise a passing test above would be
+    # indistinguishable from a helper that can never find anything.
+    duplicated_paragraph = (
+        audit_shared.repo_root()
+        .joinpath(*audit_shared.FRAGMENT.split("/"))
+        .read_text(encoding="utf-8")
+    )
+    file_a = tmp_path / "a.md"
+    file_b = tmp_path / "b.md"
+    file_a.write_text(duplicated_paragraph + " unique to a only", encoding="utf-8")
+    file_b.write_text(duplicated_paragraph + " unique to b only", encoding="utf-8")
+    shared = _shared_8grams(file_a, file_b)
+    assert len(shared) >= 150, (
+        "the 8-gram helper found only "
+        f"{len(shared)} shared grams in a synthetic pair built by "
+        "duplicating the fragment's own text into both files -- the check "
+        "cannot be trusted to fire on real duplication"
     )

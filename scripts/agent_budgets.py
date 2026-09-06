@@ -130,7 +130,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # with the fleet's occupancy folded into WAIT-OBSERVABLE) rather than a
     # third rule beside the two. Ceiling left unchanged; 1229 B of headroom
     # remains.
-    "agents/sub-manager.md": (15571, 16800),
+    # Re-baselined again in the same lane's own self-review round: 15571 B
+    # became 16060 B. A reviewer spawn found three follow-on gaps in the new
+    # procedure -- the WAIT-OBSERVABLE example wrapped across a markdown
+    # line inside its own placeholder, which scripts/tick_handback.py's
+    # single-line regex would have silently truncated had a sub-manager
+    # reproduced it verbatim; step 2's pr_green.py --wait call had no branch
+    # for a `pending` timeout, reading as though every call resolves the
+    # wait; and it did not name what to do when that call times out still
+    # pending. All three fixed in place. Ceiling unchanged; 740 B of
+    # headroom remains.
+    "agents/sub-manager.md": (16060, 16800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
