@@ -23,7 +23,7 @@ a document that reads as current when it is aspirational is this repository's ow
 | The brief validated as part of rendering | **built** (#1143) |
 | `select_issues.py` fetches its own board; no stdin payload | **built** (#1145) |
 | One group per lane label, rather than a partition of the board | **built** (#1146) |
-| Issue bodies returned with each group | **built** (#1147) |
+| Issue bodies returned with each group | **built** (#1147), **narrowed** (#1180): the default fleet print no longer attaches them at all -- see step 1 and step 2 below |
 | `--claim` emits step 5's own `--lane-fill` token | **built** (#1148) -- `COUNT` is fully mechanical (the claim's own held issues); `REASON` is derived from a `--group-state` flag carrying the group's own `state` field for three of its four values, or an explicit `--short-reason` override for the fourth (#1153) |
 
 **Every row is built. None of it has been observed in a live tick.** The five steps below were
@@ -72,7 +72,7 @@ Five steps. Two are calls, one is a judgement, one is a paste, one is the lane r
 | **Who** | the sub-manager, once per tick |
 | **Runs** | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py"` |
 | **Input** | nothing. It fetches the board itself -- issues, labels, `author_association` -- reads `.oss.json` for the declared label spellings, and derives the held set from the lanes already running. There is no stdin payload and no `--fetch` mode. |
-| **Output** | the fleet: **one group per lane label**, each carrying up to three issues, **with the full body of every issue in every group returned**. |
+| **Output** | the fleet: **one group per lane label**, each carrying up to three issues, **no issue bodies attached** (#1180). |
 
 State, and the third must never render as the second:
 
@@ -85,6 +85,15 @@ Per issue: `eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankab
 is `measured` or `inferred`, and -- when short of three -- one of `board-exhausted` / `no-adjacent` /
 `did-not-search` / `could-not-tell`.
 
+**#1180: the default print no longer attaches every issue body.** #1147 attached the full, fenced
+body of every group member so step 2 never had to read the tracker again -- but the bodies
+themselves were measured at 66% of a real fleet's serialized bytes, enough on their own to push the
+whole payload over the harness's output-truncation cap. When that happens the caller gets a
+persisted-file pointer instead of a fleet, and step 2 ends up re-reading every issue by hand anyway
+-- the exact cost #1147 existed to remove. `select_fleet(..., include_bodies=False)` is what
+`main()`'s default print now calls; a library caller of `select_fleet()` directly still gets bodies
+attached by default (`include_bodies=True`), unchanged.
+
 ---
 
 ### Step 2 — Veto
@@ -92,8 +101,16 @@ is `measured` or `inferred`, and -- when short of three -- one of `board-exhaust
 | | |
 | --- | --- |
 | **Who** | the LLM. This is the only step it judges. |
-| **Input** | the issue bodies step 1 already returned. **Not the board.** No further reads. |
+| **Input** | the surviving groups' own issue bodies -- a second, bounded call (below), never the board. |
 | **Output** | for each group: dispatch it, or drop it and say why. |
+
+**The bounded second call**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --bodies N N ...`,
+naming exactly the issue numbers in the groups step 1 handed back (never the whole board) -- one more
+`gh` read, bounded to a handful of numbers rather than the whole fleet, in exchange for a payload
+that fits. Returns `{"state": "ok" | "could-not-fetch", "bodies": {"<number>": {"body",
+"body_truncated", "body_length"}}, "not_found": [N, ...]}` -- the same fenced-body shape #1147
+already uses, keyed by issue number. `not_found` names a requested number that is not (or no longer)
+on the open board, a stated absence rather than a silently missing key.
 
 One question per group: **is this worth a lane?** Stale, settled elsewhere, needs the maintainer,
 wrong for the project. Nothing else -- not ranking, not grouping, not disjointness, all of which

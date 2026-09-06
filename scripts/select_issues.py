@@ -406,7 +406,7 @@ def _group_candidates(
             groups.append(
                 {
                     "members": [dict(cand, role="lead")],
-                    "state": "lane-other",
+                    "state": select_issues_companions.STATE_LANE_OTHER,
                     "detail": "",
                     "short_reason": (
                         "lane-other: no lane owns this issue's files -- "
@@ -445,7 +445,7 @@ def _group_candidates(
             continue
         result = suggest_companions(Path("."), number, claimed, board)
         members = [dict(cand, role="lead")]
-        if result["state"] == "candidates":
+        if result["state"] == select_issues_companions.STATE_CANDIDATES:
             for entry in result["candidates"]:
                 cnum = entry["number"]
                 if cnum in taken:
@@ -466,7 +466,7 @@ def _group_candidates(
                     break
         short_reason = None
         if len(members) < _GROUP_TARGET:
-            if result["state"] == "could-not-tell":
+            if result["state"] == select_issues_companions.STATE_COULD_NOT_TELL:
                 short_reason = "board sweep could not tell: {0}".format(
                     result["detail"]
                 )
@@ -1210,6 +1210,7 @@ def select_fleet(
     search=None,
     resolve_lane=None,
     suggest_companions=None,
+    include_bodies=True,
 ):
     """`docs/pick-the-work.md` step 1 -- #1145, #1146, #1147. No input beyond
     an already-loaded `.oss.json` (`config`, i.e. `oss_config.load(...)`'s
@@ -1226,6 +1227,17 @@ def select_fleet(
     already is, so a test never needs a live `gh` session.
     `checker`/`search`/`resolve_lane`/`suggest_companions` pass straight
     through to every `select()` call this makes.
+
+    `include_bodies` (#1180): default True so a direct caller of this
+    function (every test that predates #1180, and any future library
+    caller) keeps getting the #1147 shape unchanged. main()'s own default
+    CLI print passes False -- the fleet's issue bodies were measured at
+    66% of a real payload's bytes, enough to push it over the harness's
+    output cap and force step 2 to re-read every issue by hand instead of
+    reading the fleet inline, exactly the failure #1147 existed to
+    prevent. `_issue_bodies()` (`--bodies` on the CLI) is the bounded
+    second call that fetches back just the bodies of the groups a caller
+    actually kept, once it knows which those are.
 
     Returns:
 
@@ -1361,7 +1373,8 @@ def select_fleet(
             # from view, only from getting a group of its own this tick.
             if cap_groups:
                 result["groups"]["groups"] = result["groups"]["groups"][:1]
-            _attach_bodies(result["groups"], issues_by_number)
+            if include_bodies:
+                _attach_bodies(result["groups"], issues_by_number)
         return result
 
     lanes = {}
@@ -1419,6 +1432,48 @@ def select_fleet(
         "lanes": lanes,
         "dropped": dropped,
     }
+
+
+def _issue_bodies(config, numbers, fetcher=None):
+    """The second, bounded call #1180 adds: fetch the board once and fence
+    back the bodies of exactly the requested issue numbers -- never the
+    whole fleet. This is what step 2 of `docs/pick-the-work.md` reaches
+    for once it knows which groups it actually kept, now that the default
+    fleet print (`main()`, `include_bodies=False`) no longer carries every
+    body inline.
+
+    `numbers` is a list/iterable of `int` issue numbers. Returns:
+
+        {"state": "ok" | "could-not-fetch", "detail": str,
+         "bodies": {"<number>": {"body", "body_truncated", "body_length"}},
+         "not_found": [N, ...]}
+
+    `state` is `could-not-fetch` only when the board read itself failed --
+    the same could-not/real-absence split every other read in this module
+    makes. A requested number simply not on the open board (already closed,
+    a typo, merged in the meantime) is a real, stated absence: it lands in
+    `not_found`, never silently missing from `bodies` with no trace at all.
+    """
+    fetcher = _fetch_board if fetcher is None else fetcher
+    repo_slug = (config or {}).get("repo")
+    board = fetcher(repo_slug)
+    if board.get("state") != "ok":
+        return {
+            "state": "could-not-fetch",
+            "detail": board.get("detail") or "board read failed",
+            "bodies": {},
+            "not_found": [],
+        }
+    issues_by_number = {row.get("number"): row for row in board.get("issues") or []}
+    bodies = {}
+    not_found = []
+    for number in numbers:
+        row = issues_by_number.get(number)
+        if row is None:
+            not_found.append(number)
+            continue
+        bodies[str(number)] = _fenced_body(row.get("body"))
+    return {"state": "ok", "detail": "", "bodies": bodies, "not_found": not_found}
 
 
 def _reconfigure_streams():
@@ -1486,6 +1541,17 @@ def _build_parser():
         "issue numbers, never read from stdin.",
     )
     parser.add_argument(
+        "--bodies",
+        type=int,
+        nargs="+",
+        default=None,
+        metavar="N",
+        help="fetch just these issue numbers' own fenced bodies (#1180) -- "
+        "the bounded second call step 2 makes for the groups it actually "
+        "kept, now that the default fleet print no longer attaches every "
+        "body inline.",
+    )
+    parser.add_argument(
         "--short-reason", default=None, choices=select_issues_rank.SHORT_REASONS
     )
     parser.add_argument(
@@ -1536,6 +1602,13 @@ def main(argv=None):
     stdin instead; there is no stdin fallback left in this mode, and none of
     the other modes below gained one either.
 
+    `include_bodies=False` (#1180): the default print no longer attaches
+    issue bodies to each group's members -- they were measured at 66% of a
+    real fleet's serialized bytes, enough on their own to push the payload
+    over the harness's output-truncation cap and hand the caller a file
+    pointer instead of a fleet. `--bodies N N ...` is the bounded second
+    call: fetch back just the fenced bodies of the groups actually kept.
+
     `--board` still reads its own board-shaped payload on stdin -- it is a
     separate, older CLI mode (folded in from `dispatch_rank.py`'s own former
     CLI, #1069) that only ever renders a receipt over an already-assembled
@@ -1557,6 +1630,25 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     _reconfigure_streams()
+
+    if args.bodies is not None:
+        config, problems = oss_config.load(Path(args.repo) / oss_config.CONFIG_NAME)
+        if config is None:
+            error_result = {
+                "state": "could-not-fetch",
+                "detail": "config: {0}".format(
+                    "; ".join(problems)
+                    if problems
+                    else "{0}: could not be read".format(args.repo)
+                ),
+                "bodies": {},
+                "not_found": [],
+            }
+            print(json.dumps(error_result, indent=2, sort_keys=True))
+            return 2
+        result = _issue_bodies(config, args.bodies)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result["state"] == "ok" else 2
 
     if args.check_lane is not None:
         answer = select_issues_rank.check_lane(
@@ -1619,7 +1711,7 @@ def main(argv=None):
         print(json.dumps(error_result, indent=2, sort_keys=True))
         return 2
 
-    result = select_fleet(config, repo_root=args.repo)
+    result = select_fleet(config, repo_root=args.repo, include_bodies=False)
     print(json.dumps(result, indent=2, sort_keys=True))
     if result["state"] == STATE_CANDIDATES:
         return 0
