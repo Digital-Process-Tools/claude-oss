@@ -17,49 +17,86 @@ a control on a fragment that never named itself even before the rename (must
 refuse rather than silently produce another broken fragment).
 """
 
+import ast
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ASSEMBLER = REPO_ROOT / "scripts" / "assemble_changelog.py"
-RENAMER = REPO_ROOT / "scripts" / "rename_changelog_fragment.py"
-LANE_SETUP = REPO_ROOT / "scripts" / "lane_setup.py"
-OSS_CONFIG = REPO_ROOT / "scripts" / "oss_config.py"
-# #1069: lane_setup.py split into an entry point plus these submodules
-# (none with a __main__ of their own); every one of them is imported
-# unconditionally at module scope, so all have to be vendored alongside it
-# for `import lane_setup` to resolve here.
-LANE_SETUP_SUBMODULES = [
-    "lane_setup_brief_schema.py",
-    "lane_setup_claim.py",
-    "lane_setup_patterns.py",
-    "lane_setup_worktree.py",
-    "select_issues_claim_read.py",
-    "select_issues_companions.py",
-    "select_issues_overlap.py",
-]
+SCRIPTS_DIR = REPO_ROOT / "scripts"
+RENAMER = SCRIPTS_DIR / "rename_changelog_fragment.py"
+
+# The vendored root: the one script this test actually invokes as a
+# subprocess. #1148's own PR review is why this is no longer a hand-kept
+# list of everything the renamer's import chain happens to reach today --
+# `lane_setup.py` grew a new `import select_issues_rank` for an unrelated
+# reason (a lane-size constant), and the old hardcoded LANE_SETUP_SUBMODULES
+# list here had no way to know: it went stale on a CI-only failure (a local
+# run has the whole of scripts/ on the path, so this class of gap is
+# invisible until a runner actually isolates the vendored copy). Deriving
+# the set by following imports, transitively, closes the whole class rather
+# than adding one more name to a list the next new import will make stale
+# again.
+VENDOR_ROOTS = ("rename_changelog_fragment",)
 
 OK, REFUSED = 0, 3
 
 
+def _local_import_names(path, known):
+    """Every name `path` imports directly that is itself one of `known` (a
+    module name with a same-named file under scripts/), found by parsing
+    the file's own `import X` / `from X import ...` statements with `ast`
+    rather than executing anything."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in known:
+                    found.add(alias.name)
+        elif (
+            isinstance(node, ast.ImportFrom)
+            and node.level == 0
+            and node.module in known
+        ):
+            found.add(node.module)
+    return found
+
+
+def _vendor_closure(roots):
+    """Every scripts/*.py module reachable from `roots` by following local
+    imports, transitively -- the set `_vendor` below actually copies. A
+    module reachable only through a THIRD module's own import (not directly
+    from `roots`) is exactly the shape #1148's PR review found missing here,
+    so this keeps widening the frontier until nothing new turns up rather
+    than walking `roots`'s own imports once."""
+    known = {p.stem for p in SCRIPTS_DIR.glob("*.py")}
+    closure = set(roots)
+    frontier = set(roots)
+    while frontier:
+        discovered = set()
+        for name in frontier:
+            for dep in _local_import_names(SCRIPTS_DIR / (name + ".py"), known):
+                if dep not in closure:
+                    discovered.add(dep)
+        closure |= discovered
+        frontier = discovered
+    return closure
+
+
 def _vendor(tmp_path):
     """A synthetic repo with its own .git and changelog.d/, carrying copies of
-    both scripts at the same relative layout as this repo -- the renamer
-    imports the assembler as a sibling module in scripts/, so both have to be
-    copied together for that import to resolve."""
+    the renamer and everything its own import chain reaches -- the renamer
+    imports the assembler and lane_setup as sibling modules in scripts/, and
+    each of those pulls in more of its own family, so the whole closure has
+    to be copied together for `import rename_changelog_fragment` to resolve
+    here."""
     root = tmp_path / "vendor"
     script_dir = root / "scripts"
     script_dir.mkdir(parents=True)
-    shutil.copy(ASSEMBLER, script_dir / "assemble_changelog.py")
-    shutil.copy(RENAMER, script_dir / "rename_changelog_fragment.py")
-    # #444: the renamer now confirms absence via lane_setup._absence_confirmed,
-    # which imports oss_config -- both stdlib-only, so vendored alongside it.
-    shutil.copy(LANE_SETUP, script_dir / "lane_setup.py")
-    shutil.copy(OSS_CONFIG, script_dir / "oss_config.py")
-    for name in LANE_SETUP_SUBMODULES:
-        shutil.copy(REPO_ROOT / "scripts" / name, script_dir / name)
+    for name in _vendor_closure(VENDOR_ROOTS):
+        shutil.copy(SCRIPTS_DIR / (name + ".py"), script_dir / (name + ".py"))
     (root / "changelog.d").mkdir()
     subprocess.run(["git", "init", "-q"], cwd=str(root), check=True)
     subprocess.run(
@@ -95,6 +132,43 @@ def _rename(script_path, root, fragment_rel, new_issue):
         capture_output=True,
         text=True,
     )
+
+
+def test_vendor_closure_includes_every_transitive_local_import(tmp_path):
+    """The exact regression this fix closes (#1148's own PR review):
+    `lane_setup.py` gained `import select_issues_rank`, three imports deep
+    from the renamer's own root (rename_changelog_fragment -> lane_setup ->
+    select_issues_rank), and the old hardcoded LANE_SETUP_SUBMODULES list
+    did not know. Assert the derived closure reaches it -- and, as a
+    positive control, that it reaches the modules that were already known
+    to be needed, so a closure that discovered nothing at all would not
+    pass this test by accident."""
+    closure = _vendor_closure(VENDOR_ROOTS)
+    assert "select_issues_rank" in closure
+    for already_known in (
+        "assemble_changelog",
+        "lane_setup",
+        "oss_config",
+        "lane_setup_worktree",
+        "select_issues_claim_read",
+    ):
+        assert already_known in closure
+
+
+def test_vendored_tree_can_actually_import_the_renamer(tmp_path):
+    """The end-to-end shape of the bug: run the vendored copy standalone (no
+    scripts/ on the path beyond what _vendor copied) and confirm it does not
+    fail to import at all -- paired with the tests below, which exercise it
+    for real, this is the narrowest possible reproduction of a
+    ModuleNotFoundError in the vendored tree."""
+    root, script_path = _vendor(tmp_path)
+    result = subprocess.run(
+        [sys.executable, "-c", "import rename_changelog_fragment"],
+        cwd=str(script_path.parent),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_rename_moves_the_self_reference_with_the_filename(tmp_path):

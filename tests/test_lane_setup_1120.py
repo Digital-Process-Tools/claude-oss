@@ -56,6 +56,12 @@ def test_resolved_finds_the_newest_mtime_among_several_files(tmp_path):
     now = time.time()
     os.utime(str(older), (now - 500, now - 500))
     os.utime(str(newer), (now - 5, now - 5))
+    # #1140: `sub`'s own mtime is now part of the walk too, and `mkdir()`
+    # just above set it to "now" -- backdate it so this test still measures
+    # what it says it measures (the newest FILE mtime), rather than
+    # incidentally asserting the new subdirectory-mtime behaviour that
+    # test_lane_setup_1140.py covers on its own.
+    os.utime(str(newer.parent), (now - 5, now - 5))
 
     result = lane_setup_worktree.worktree_last_activity(str(tmp_path))
 

@@ -24,7 +24,7 @@ a document that reads as current when it is aspirational is this repository's ow
 | `select_issues.py` fetches its own board; no stdin payload | **built** (#1145) |
 | One group per lane label, rather than a partition of the board | **built** (#1146) |
 | Issue bodies returned with each group | **built** (#1147) |
-| `--claim` emits step 5's `--lane-fill` token | **built** (#1148) |
+| `--claim` emits step 5's own `--lane-fill` token | **built** (#1148) -- `COUNT` is fully mechanical (the claim's own held issues); `REASON` is carried through from a `--short-reason` flag the caller still passes by hand, since the group does not yet hand its own closed-vocabulary reason to `--claim` |
 
 **Every row is built. None of it has been observed in a live tick.** The five steps below were
 tested, and each was run against the real board by hand during the round that built them, but no
@@ -124,10 +124,13 @@ was reviewed*.
 `--claim`'s five states, the brief's result and the label's outcome are reported **separately**,
 never flattened into one verdict.
 
-**It also emits step 5's `--lane-fill PRIMARY:COUNT[:REASON]` token**, with the count from the claim
-result and the reason carried through from the group `select_issues.py` already labelled. Nobody
-computes it. That closes the same defect the label had: two calls that must agree, kept in agreement
-by hand.
+**It also emits step 5's `--lane-fill PRIMARY:COUNT[:REASON]` token** (#1148), with `COUNT` from the
+claim's own held issues -- nobody computes that by hand any more. `REASON` is carried through from a
+`--short-reason` flag the caller still passes at this call, since `select_issues.py` does not yet put
+the closed-vocabulary reason directly on the group (see the "designed, not built" rows above); once
+it does, the caller passes the group's own reason straight through instead of deriving one itself.
+Never invented when omitted: a short lane whose caller gives no `--short-reason` renders a token with
+no reason at all, so step 5's own `--decision` refusal (#852) still fires on it downstream.
 
 ---
 
