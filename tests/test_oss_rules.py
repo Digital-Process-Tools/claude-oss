@@ -999,6 +999,125 @@ def test_install_refuses_a_symlinked_layer_and_leaves_its_target_untouched(tmp_p
     assert link.is_symlink()  # the link itself is untouched too, not just its target
 
 
+def test_install_refuses_a_symlinked_jit_context_parent(tmp_path):
+    """#1116: #1110's guard checks `is_symlink()` on the LAYER component only
+    (`.../<dimension>/01-oss`). A symlink one level further up -- at
+    `.claude/jit-context` itself -- makes `layer` a real directory INSIDE the
+    link's target: `is_symlink()` is False, `exists()`/`is_dir()` are both True,
+    and the removal loop runs against the target, then `install()` writes there.
+
+    The decoy mirrors the full nesting the real layer needs (`paths/01-oss/`)
+    because the link is two levels above the layer this time, not at it.
+
+    The paired positive control, in this same fixture: a second repo with the
+    identical real, non-symlinked nesting (`.claude/jit-context/paths/01-oss/`)
+    must keep installing normally -- the case a containment fix could break by
+    rejecting ordinary parents along with symlinked ones.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    decoy = tmp_path / "decoy"
+    layer_target = decoy / "paths" / oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    victim = layer_target / "something.md"
+    victim.write_text("--- decoy content, not this plugin's ---\n", encoding="utf-8")
+    victim_index = layer_target / oss_rules.INDEX
+    victim_index.write_text("decoy\tindex\n", encoding="utf-8")
+
+    link = root / ".claude" / "jit-context"
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether install() refuses a symlinked jit-context "
+            "parent rather than writing through it".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert (
+        victim.read_text(encoding="utf-8")
+        == "--- decoy content, not this plugin's ---\n"
+    )
+    assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
+    assert sorted(p.name for p in layer_target.iterdir()) == [
+        "00-index.tsv",
+        "something.md",
+    ]
+    assert link.is_symlink()
+
+    control_root = tmp_path / "control-repo"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
+
+
+def test_install_refuses_a_symlinked_dot_claude_parent(tmp_path):
+    """#1116, one level further still: a symlink at `.claude` itself. Same
+    mechanism as the jit-context case above -- `layer` ends up a real directory
+    inside the link's target, three components below where the link sits.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    decoy = tmp_path / "decoy"
+    layer_target = decoy / "jit-context" / "paths" / oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    victim = layer_target / "something.md"
+    victim.write_text("--- decoy content, not this plugin's ---\n", encoding="utf-8")
+    victim_index = layer_target / oss_rules.INDEX
+    victim_index.write_text("decoy\tindex\n", encoding="utf-8")
+
+    link = root / ".claude"
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether install() refuses a symlinked .claude parent "
+            "rather than writing through it".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert (
+        victim.read_text(encoding="utf-8")
+        == "--- decoy content, not this plugin's ---\n"
+    )
+    assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
+    assert sorted(p.name for p in layer_target.iterdir()) == [
+        "00-index.tsv",
+        "something.md",
+    ]
+    assert link.is_symlink()
+
+    control_root = tmp_path / "control-repo-2"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
+
+
 def test_install_refuses_a_layer_checked_out_as_a_plain_file(tmp_path):
     """A tracked symlink checked out with `core.symlinks=false` (the historical
     Windows default lacking the privilege or Developer Mode) never becomes a

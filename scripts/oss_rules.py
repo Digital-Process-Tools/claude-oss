@@ -921,6 +921,15 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     # link already exists (#1110). `is_symlink()` is checked ahead of and separately
     # from `exists()`: it is true for a broken link too, which `exists()` alone would
     # read as "layer absent" and walk straight past.
+    # `is_symlink()` on `layer` alone answers about its final path component only
+    # (#1116): a symlink at any PARENT -- `.claude/jit-context/<dimension>`,
+    # `.claude/jit-context`, or `.claude` itself -- leaves `layer` a real directory
+    # INSIDE the link's target, so `is_symlink()` is False and `exists()`/`is_dir()`
+    # are both True, walking straight past every check below and into the removal
+    # loop against a directory this repository does not own. Resolved once, outside
+    # the loop, because it names the same tree on every dimension.
+    root_resolved = root.resolve()
+
     for dimension in rendered:
         layer = root / ".claude" / "jit-context" / dimension / LAYER
         if layer.is_symlink():
@@ -940,6 +949,24 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
         # traceback contract this loop exists to keep, on the same "layer" variable.
         elif layer.exists() and not layer.is_dir():
             raise RulesError("{}: {} is not a directory".format(dimension, layer))
+        # The containment check (#1116): resolve `layer` and confirm the result is
+        # still under `root`. `Path.resolve()` follows every symlink in the path, not
+        # just the last component, so a symlinked `jit-context` or `.claude` above
+        # resolves `layer` to somewhere under the LINK'S TARGET instead -- caught here
+        # regardless of whether `layer` itself exists yet, because `layer.mkdir(...)`
+        # below would otherwise silently create and write through a symlinked parent
+        # even when there is no pre-existing layer directory to empty first.
+        resolved_layer = layer.resolve()
+        try:
+            resolved_layer.relative_to(root_resolved)
+        except ValueError:
+            raise RulesError(
+                "{}: {} resolves to {}, outside {} -- a parent directory in this path "
+                "is a symlink, and install() replaces the whole layer, which would "
+                "delete and rewrite through the link into whatever it points at. "
+                "Remove the link (or move it aside if it was committed on purpose) "
+                "and rerun.".format(dimension, layer, resolved_layer, root_resolved)
+            )
 
     for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER

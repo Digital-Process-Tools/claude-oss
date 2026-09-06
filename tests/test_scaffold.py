@@ -1534,6 +1534,87 @@ def test_layer_scan_reports_a_symlinked_layer_as_unreadable_not_as_removals(tmp_
     ], unreadable
 
 
+def test_layer_scan_reports_a_symlinked_jit_context_parent_as_unreadable(tmp_path):
+    """#1116: `is_symlink()` on the layer directory alone answers about its final path
+    component only. A symlink one level further up -- `.claude/jit-context` itself --
+    still leaves `layer_dir` a real directory INSIDE the link's target, so
+    `layer_dir.is_symlink()` is False and the old code walked straight into
+    `os.listdir` against the target, exactly the lying `remove` row #1110 was filed
+    over, one parent higher.
+
+    The paired positive control, in this same fixture: a repo with the identical
+    real, non-symlinked nesting must keep listing stale files normally.
+    """
+    decoy = tmp_path / "decoy"
+    layer_target = decoy / "paths" / scaffold.oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    (layer_target / "something.md").write_text("decoy\n", encoding="utf-8")
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    link = root / scaffold.RULES_LAYER_DIR
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether _layer_scan refuses a symlinked jit-context "
+            "parent".format(getattr(exc, "errno", None), type(exc).__name__)
+        )
+
+    present, unreadable = scaffold._layer_scan(root, {"paths": {}})
+
+    assert present == [], present
+    relative = "{}/paths/{}".format(scaffold.RULES_LAYER_DIR, scaffold.oss_rules.LAYER)
+    assert unreadable == [
+        {"path": relative, "cause": scaffold.CAUSE_LAYER_SYMLINKED}
+    ], unreadable
+
+    control_root = tmp_path / "control-repo"
+    control_layer = (
+        control_root / scaffold.RULES_LAYER_DIR / "paths" / scaffold.oss_rules.LAYER
+    )
+    control_layer.mkdir(parents=True)
+    (control_layer / "stale.md").write_text("stale\n", encoding="utf-8")
+
+    control_present, control_unreadable = scaffold._layer_scan(
+        control_root, {"paths": {}}
+    )
+    assert control_present == ["{}/stale.md".format(relative)], control_present
+    assert control_unreadable == [], control_unreadable
+
+
+def test_layer_scan_reports_a_symlinked_dot_claude_parent_as_unreadable(tmp_path):
+    """#1116, one level further still: a symlink at `.claude` itself. Same mechanism
+    as the jit-context case above, three components below where the link sits.
+    """
+    decoy = tmp_path / "decoy"
+    layer_target = decoy / "jit-context" / "paths" / scaffold.oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    (layer_target / "something.md").write_text("decoy\n", encoding="utf-8")
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    link = root / ".claude"
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether _layer_scan refuses a symlinked .claude "
+            "parent".format(getattr(exc, "errno", None), type(exc).__name__)
+        )
+
+    present, unreadable = scaffold._layer_scan(root, {"paths": {}})
+
+    assert present == [], present
+    relative = "{}/paths/{}".format(scaffold.RULES_LAYER_DIR, scaffold.oss_rules.LAYER)
+    assert unreadable == [
+        {"path": relative, "cause": scaffold.CAUSE_LAYER_SYMLINKED}
+    ], unreadable
+
+
 def test_layer_scan_still_lists_an_ordinary_real_directory_layer(tmp_path):
     """The positive control for the test above: this confirms `_layer_scan` still does
     its normal job -- listing stale files as `present` -- for a real directory, so
