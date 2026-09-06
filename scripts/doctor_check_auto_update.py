@@ -153,7 +153,35 @@ def check_auto_update(project_dir, sh_available=None):
 
 def _report_plugin(receipt, state, partial, stamp):
     """The loop plugin's own row -- unchanged by #605, moved out so the dependency row
-    below cannot be reached only on some of its arms."""
+    below cannot be reached only on some of its arms.
+
+    #1154: the "updated" message below is correct only for the async SessionStart
+    hook, where an update can land under a session that already loaded its registry.
+    It is wrong for `bin/oss-workspace`'s synchronous, pre-`exec claude` call --
+    that update runs BEFORE this session's own process starts, so there is no old
+    copy for `/reload-plugins` to move this session out of. `receipt["caller"]`
+    (written by `plugin_update.update()`) is how the two are told apart:
+    `"launcher"` gets the no-action-needed message below; anything else -- absent
+    (an older receipt, or the async hook's own call, which never passes `caller`),
+    or explicitly `"hook"` -- keeps the original assertive one unchanged.
+    """
+    if state == "updated" and receipt.get("caller") == "launcher":
+        message = (
+            "auto-update: updated {} from {} to {}{} -- this ran before this "
+            "session started (via the workspace launcher), so this session already "
+            "runs the new copy. No reload or restart is needed for "
+            "it.".format(
+                receipt.get("plugin"), receipt.get("from"), receipt.get("to"), stamp
+            )
+        )
+        if partial:
+            doctor.report(
+                "WARN",
+                message + " But not every scope: {}".format(receipt.get("detail")),
+            )
+            return
+        doctor.report("OK", message)
+        return
     if state == "updated":
         message = (
             "auto-update: updated {} from {} to {}{} -- this session is still running "
@@ -272,6 +300,18 @@ def _report_dependencies(receipt):
         )
         return
     if moved:
+        # #1154: the same half-fix the issue warns against is doubly wrong here --
+        # this row already answers about a DIFFERENT plugin than `_report_plugin`
+        # above, so it needs its own `receipt.get("caller")` read rather than
+        # inheriting whatever the plugin row decided.
+        if receipt.get("caller") == "launcher":
+            doctor.report(
+                "OK",
+                summary + ". This ran before this session started (via the "
+                "workspace launcher), so this session already runs the new copies "
+                "-- no reload or restart is needed for it.",
+            )
+            return
         doctor.report(
             "WARN",
             summary + ". This session is still running the copies it started with: run "

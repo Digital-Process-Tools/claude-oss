@@ -673,8 +673,17 @@ def update(
     runner=None,
     now=None,
     receipt=None,
+    caller=None,
 ):
     """Refresh the marketplace, update this plugin and its declared dependencies (#605).
+
+    `caller` (#1154) names who is asking -- `"launcher"` for `bin/oss-workspace`'s
+    synchronous, pre-`exec claude` call, `None`/anything else for the async
+    SessionStart hook (`hooks/session-start-update.sh`), which never passes it. It is
+    written onto the receipt as `document["caller"]` so `doctor.check_auto_update` can
+    tell the two apart: an update that ran BEFORE this session's own process started
+    has no old-copy window for `/reload-plugins` to close, and only the launcher's own
+    call site can make that claim true.
 
     The marketplace refresh comes first and its failure is fatal to the run: without it
     `latest` means whatever it meant the last time anything refreshed, so an update
@@ -717,6 +726,18 @@ def update(
             # expires DEBOUNCE_SECONDS after the last REAL check regardless of how
             # many debounced calls happened in between.
             document["debounced"] = True
+            # `caller` stays whatever `dict(receipt)` above already copied through
+            # (#1154, self-review finding): it names who ran the REAL check this
+            # debounced call is echoing, not who happens to be asking right now.
+            # The launcher writes `caller="launcher"` on its synchronous, pre-`exec`
+            # call; `hooks/session-start-update.sh` typically fires moments later in
+            # the SAME session and lands inside the debounce window with no
+            # `--caller` of its own -- overwriting `caller` with THIS call's `None`
+            # would silently turn the receipt back into one `doctor.check_auto_update`
+            # reads as the hook's, reintroducing the exact false "/reload-plugins"
+            # claim this issue exists to remove, in the one sequence that matters
+            # most (an auditor spawn reproduced this end-to-end before this comment
+            # existed).
             document["detail"] = (
                 "a receipt from {:.0f}s ago is inside the {}s debounce window, so "
                 "nothing was re-checked; last result: {}".format(
@@ -771,6 +792,11 @@ def update(
     document = _update_one(name, root, plugins_root, runner, scope_fallback=True)
     document["at"] = stamp
     document["plugin"] = name
+    # Who asked (#1154): `"launcher"` for bin/oss-workspace's synchronous, pre-`exec
+    # claude` call, anything else (including the default `None`) for the async
+    # SessionStart hook, which never passes this. `doctor.check_auto_update` reads it
+    # back to decide whether "/reload-plugins" is a claim this session can even use.
+    document["caller"] = caller
 
     # A dependency's verdict never becomes the loop plugin's, in either direction: the
     # top-level `state`/`plugin`/`from`/`to` above still answer about the loop plugin
@@ -837,10 +863,18 @@ def main(argv=None):
     # receipt is not a fresh one: `ReceiptUnreadable` means something is there and
     # cannot be trusted, which is the opposite of "a run just happened cleanly", so
     # it is never handed through as though it were a dict.
+    # #1154: `--caller launcher` is what `bin/oss-workspace` passes on its
+    # synchronous, pre-`exec claude` call, so the receipt can say who ran it --
+    # see `update()`'s own docstring for why that matters to `doctor.check_auto_update`.
+    caller = None
+    if "--caller" in argv:
+        idx = argv.index("--caller")
+        if idx + 1 < len(argv):
+            caller = argv[idx + 1]
     prior = read_receipt()
     if isinstance(prior, ReceiptUnreadable):
         prior = None
-    document = update(root=root, receipt=prior)
+    document = update(root=root, receipt=prior, caller=caller)
     write_receipt(document)
     if "--print" in argv:
         sys.stdout.write(json.dumps(document, indent=2))

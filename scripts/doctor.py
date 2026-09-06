@@ -8188,8 +8188,44 @@ def check_oss_json_presence(project_dir, run=None):
     return config
 
 
-def dependency_resolution_state(names, record=None, repos=None):
-    """Per declared dependency: resolves / contract-unknown / missing.
+def _dependency_install_broken(name, project_dir, plugins_root):
+    """Is the SPECIFIC directory `installed_plugins.json` names as active for
+    THIS project on disk, but missing its own `.claude-plugin/plugin.json` (#1126)?
+
+    Every currency check above `dependency_resolution_state` reads the install
+    RECORD, never the tree at the recorded path -- `dependency_repositories`'s own
+    glob (`cache/*/{name}/*/.claude-plugin/plugin.json`) is unversioned, so it is
+    satisfied by ANY marketplace/version directory that happens to carry a
+    manifest, not the one the record says is active for this project. A truncated
+    unpack of the active version -- the directory exists (the unpack at least
+    started) but its manifest does not -- is invisible to that glob and reads as
+    `resolves`.
+
+    `plugin_update.resolved_plugin_root` is #677's own accessor for "the copy
+    actually recorded as installed for THIS project": it already stats the exact
+    version directory (`candidate.is_dir()`) and returns ``None`` -- never a
+    guessed path -- whenever any piece of that resolution is unavailable (no
+    marketplace on record, an unqualified local install, or the directory itself
+    missing). ``None`` here is NOT evidence of a broken install: it is evidence
+    this route could not resolve at all, which is not the same fact, and is left
+    for the existing `resolves`/`contract-unknown` split to answer. Only a
+    directory that DID resolve and lacks a manifest inside it is `True`.
+    """
+    if plugin_update is None:
+        return False
+    try:
+        candidate = plugin_update.resolved_plugin_root(name, project_dir, plugins_root)
+    except OSError:
+        return False
+    if candidate is None:
+        return False
+    return not (candidate / ".claude-plugin" / "plugin.json").is_file()
+
+
+def dependency_resolution_state(
+    names, record=None, repos=None, project_dir=None, plugins_root=None
+):
+    """Per declared dependency: resolves / contract-unknown / missing / broken-install.
 
     ``repos`` is ``dependency_repositories(names)``, passed in rather than called
     here so a caller that already computed it (or a test standing one up) is not
@@ -8201,6 +8237,25 @@ def dependency_resolution_state(names, record=None, repos=None):
     * ``contract-unknown``  -- active, but its own manifest could not be read.
       This is #286's own instance: a cache-versus-tree skew answering silently.
     * ``missing``           -- no active version in the install record at all.
+    * ``broken-install``    -- active per the record, AND the exact directory that
+      record names for THIS project resolves on disk, but has no `.claude-plugin/
+      plugin.json` inside it (#1126): a truncated or incomplete unpack, reported
+      whatever `repos` says, because a plugin nothing can load is not "resolving".
+
+    ``project_dir``/``plugins_root`` gate the `broken-install` check and default to
+    ``None``, which skips it entirely -- every existing caller of this function
+    passes neither, and a stat-based check appearing under their feet would be a
+    silent behaviour change for callers that never asked for it.
+
+    ``record`` (the install-record FILE this function's own `active_versions` call
+    reads) and ``plugins_root`` (the plugins ROOT DIRECTORY `resolved_plugin_root`
+    reads `installed_plugins.json` and `cache/` beneath) must name the same
+    install root for the `broken-install` check to mean anything -- a caller
+    supplying one but not the other could have `active_versions` and
+    `resolved_plugin_root` disagree about which version is "active". Today's one
+    caller, `check_dependency_resolution`, never supplies `plugins_root`
+    independently of `record`, so this cannot currently happen; noted here for the
+    next caller that might (self-review finding, #1126).
     """
     active = active_versions(names, record=record)
     repos = {} if repos is None else repos
@@ -8209,6 +8264,13 @@ def dependency_resolution_state(names, record=None, repos=None):
         version = active.get(name)
         if version is None:
             findings.append({"name": name, "state": "missing", "version": None})
+            continue
+        if project_dir is not None and _dependency_install_broken(
+            name, project_dir, plugins_root
+        ):
+            findings.append(
+                {"name": name, "state": "broken-install", "version": version}
+            )
         elif repos.get(name):
             findings.append({"name": name, "state": "resolves", "version": version})
         else:
@@ -8218,7 +8280,9 @@ def dependency_resolution_state(names, record=None, repos=None):
     return findings
 
 
-def check_dependency_resolution(record=None, repos=None):
+def check_dependency_resolution(
+    record=None, repos=None, project_dir=None, plugins_root=None
+):
     """Not a hardcoded dependency list: `declared_dependencies()` reads this
     plugin's own manifest, the same accessor `check_freshness` already uses, so a
     dependency added or removed there reaches this check with no edit here.
@@ -8256,7 +8320,11 @@ def check_dependency_resolution(record=None, repos=None):
         return
     computed_repos = dependency_repositories(names) if repos is None else repos
     for finding in dependency_resolution_state(
-        names, record=record, repos=computed_repos
+        names,
+        record=record,
+        repos=computed_repos,
+        project_dir=project_dir,
+        plugins_root=plugins_root,
     ):
         name = finding["name"]
         if finding["state"] == "resolves":
@@ -8265,6 +8333,18 @@ def check_dependency_resolution(record=None, repos=None):
                 "dependency {}: active at {}, manifest readable".format(
                     name, finding["version"]
                 ),
+            )
+        elif finding["state"] == "broken-install":
+            # #1126: active per the record, but the exact directory the record
+            # names for THIS project has no `.claude-plugin/plugin.json` inside
+            # it -- a truncated or incomplete unpack, whatever the record says.
+            report(
+                "WARN",
+                "dependency {}: the install record names {} as active, but the "
+                "installed copy at that version has no .claude-plugin/plugin.json "
+                "-- the unpack looks truncated or incomplete, not current despite "
+                "what the record says. Run `claude plugin update {}@<marketplace>` "
+                "or reinstall it.".format(name, finding["version"], name),
             )
         elif finding["state"] == "contract-unknown":
             report(
@@ -8625,7 +8705,7 @@ def run_install_audit(project_dir, plugin_root=None, record=None, run=None):
 
     config = check_oss_json_presence(project_dir, run=run)
 
-    check_dependency_resolution(record=record)
+    check_dependency_resolution(record=record, project_dir=project_dir)
 
     check_supertool_entry_point(project_dir)
     check_oss_workspace_launcher(plugin_root=plugin_root)

@@ -227,6 +227,7 @@ def test_main_reads_the_real_receipt_and_threads_it_through(tmp_path, monkeypatc
         runner=None,
         now=None,
         receipt=None,
+        caller=None,
     ):
         captured["receipt"] = receipt
         return {"state": "updated", "at": now or time.time(), "debounced": True}
@@ -257,6 +258,7 @@ def test_a_receipt_unreadable_is_not_threaded_as_a_dict(tmp_path, monkeypatch):
         runner=None,
         now=None,
         receipt=None,
+        caller=None,
     ):
         captured["receipt"] = receipt
         return {"state": "could-not-check", "at": time.time()}

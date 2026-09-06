@@ -115,10 +115,17 @@ broken needs a session to fix it in.
 ## What this deliberately does not do
 
 **No `/reload-plugins` after the update.** Step 6 is synchronous and pre-`exec`, so the session never
-held the old registry. `plugin_update.py:836-841` says the same and is why the launcher composes its
-own sentence instead of using the receipt's `detail`. The case that does need it -- an update landing
+held the old registry. `plugin_update.py`'s own `--print-state` comment (around its `main()`, the
+`--print-state` block) says the same and is why the launcher composes its own sentence instead of
+using the receipt's `detail` -- cited by name rather than by line number, which this same diff
+already moved once by adding the `--caller` argv parsing above it. The case that does need it -- an
+update landing
 under a running session via `hooks/session-start-update.sh` -- opens after this file has `exec`ed.
-#1154 is the instance where doctor prints the reload advice anyway.
+Issue #1154 fixed the instance where doctor printed the reload advice anyway: step 6 now passes
+`--caller launcher`, `plugin_update.update()` writes it onto the receipt as `document["caller"]`,
+and `doctor.check_auto_update` reads it back -- `"launcher"` never claims `/reload-plugins` will do
+anything for the session reading it; anything else (an older receipt, or the hook's own call, which
+never passes `caller`) keeps the original advice.
 
 **No transcribed rule.** Name acceptance asks the consumer; the census asks `doctor.py`. A copied
 `NAME_RE` is a second rule that drifts.

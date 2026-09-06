@@ -152,7 +152,7 @@ fi
 # extra by this running here instead of in the background.
 if [ -n "$python_bin" ]; then
     auto_update_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
-        --root "$repo_root" --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
+        --root "$repo_root" --caller launcher --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
     if [ "$auto_update_status" -ne 0 ]; then
         echo "oss-workspace: could not check whether the oss plugin is current" \
              "(exit status $auto_update_status). Opening the session anyway;" \
