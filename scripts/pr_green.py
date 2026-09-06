@@ -110,6 +110,16 @@ def _decode(value):
     return value or ""
 
 
+def _flatten(text):
+    """#1113: text this loop did not generate itself -- `gh` stderr, a CI
+    leg's own name -- collapsed onto one line before it is stitched into a
+    line-structured receipt (`#N | STATE | ...`) a caller parses one row at
+    a time. Unflattened, an embedded newline puts forge-supplied text at
+    column 0 of the next line, where it can read as a second, unrelated row
+    (e.g. a fake `#999 | GREEN | ...`)."""
+    return " ".join(str(text).split())
+
+
 def _gh(gh, args, run, timeout=30):
     """Run ``[gh] + args``, returning ``(stdout, stderr, detail)``.
 
@@ -397,7 +407,7 @@ def list_open_pr_numbers(gh, run, repo=None):
 def _render(entry):
     if entry["state"] == STATE_COULD_NOT_READ:
         return "#{0} | COULD-NOT-READ | {1}".format(
-            entry["pr"], entry.get("detail", "unknown")
+            entry["pr"], _flatten(entry.get("detail", "unknown"))
         )
     if entry["state"] == STATE_GREEN:
         line = "#{0} | GREEN | branch: {1} | sha: {2}".format(
@@ -419,18 +429,24 @@ def _render(entry):
         for leg in entry["failing"]:
             lines.append(
                 "  FAILED {0} (workflow: {1}, conclusion: {2})".format(
-                    leg["name"], leg.get("workflow") or "?", leg["conclusion"]
+                    _flatten(leg["name"]),
+                    _flatten(leg.get("workflow") or "?"),
+                    leg["conclusion"],
                 )
             )
             if leg.get("log_line"):
                 lines.append("    {0}".format(leg["log_line"]))
         return "\n".join(lines)
     # STATE_PENDING
+    # #1113 self-review: `pending_legs` entries come from the identical
+    # forge-controlled `name`/`context` source as `leg["name"]` above --
+    # flattened for the same reason.
     return "#{0} | PENDING | branch: {1} | sha: {2} | still running: {3}".format(
         entry["pr"],
         entry.get("branch", "?"),
         entry.get("sha", "?"),
-        ", ".join(entry.get("pending_legs", [])) or "(rollup not yet reported)",
+        ", ".join(_flatten(leg) for leg in entry.get("pending_legs", []))
+        or "(rollup not yet reported)",
     )
 
 

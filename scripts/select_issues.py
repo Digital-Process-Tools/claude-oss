@@ -631,8 +631,17 @@ def select(
     # guarantee"). Absent or empty, nothing is filtered -- the historical,
     # whole-board behaviour every caller before #1078 still gets.
     lane_label = payload.get("lane_label")
+    lane_label_filter = None
     if lane_label:
+        before = len(issues)
         issues = [row for row in issues if lane_label in (row.get("labels") or [])]
+        # #1112: `none-available` used to render identically for "the board
+        # is genuinely empty" and "the board has candidates, but none of
+        # them carry this lane label" -- an absence produced by a filter is
+        # not an absence in the world. Name the filter and how many rows it
+        # removed so the two cases are distinguishable in the receipt, even
+        # when this label happens to match everything (`removed: 0`).
+        lane_label_filter = {"label": lane_label, "removed": before - len(issues)}
 
     # #1067: `held_files` used to have no unreadable state at all -- "the live
     # lanes could not be enumerated" and "there are no live lanes" arrived as
@@ -926,6 +935,9 @@ def select(
         "candidates": candidates,
         "dropped": dropped,
         "groups": {"groups": groups, "ungrouped": ungrouped},
+        # #1112: `None` when no `lane_label` was set at all -- distinct from
+        # a filter that ran and removed nothing.
+        "lane_label_filter": lane_label_filter,
     }
 
 
