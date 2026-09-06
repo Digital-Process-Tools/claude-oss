@@ -18,16 +18,28 @@ a document that reads as current when it is aspirational is this repository's ow
 | Grouping, three per lane, per-group states | **built** (#1068) |
 | A file set derived from the `lane-*` label | **built** (#1129) |
 | The lead using body-declared paths; `measured` vs `inferred` adjacency | **built** (#1135) |
-| `lane-other`, dispatched solo | **built** (#1130) -- fixture-verified only; no issue has carried the label yet |
+| `lane-other`, dispatched solo | **built** (#1130) |
 | `--claim` renders the whole `Agent(...)` call | **built** (#1143) |
 | The brief validated as part of rendering | **built** (#1143) |
-| `select_issues.py` fetches its own board; no stdin payload | **designed, not built** (#1143) |
-| One group per lane label, rather than a partition of the board | **designed, not built** (#1143) |
-| Issue bodies returned with each group | **designed, not built** (#1143) |
+| `select_issues.py` fetches its own board; no stdin payload | **built** (#1145) |
+| One group per lane label, rather than a partition of the board | **built** (#1146) |
+| Issue bodies returned with each group | **built** (#1147) |
+| `--claim` emits step 5's `--lane-fill` token | **built** (#1148) |
 
-Today `select_issues.py` still requires a caller-built payload on stdin and returns a partition of
-the whole board -- 18 groups on a 38-issue board, for a tick that dispatches at most five lanes.
-Steps 1 and 2 below describe where that is going, and #1143 is the issue that gets it there.
+**Every row is built. None of it has been observed in a live tick.** The five steps below were
+tested, and each was run against the real board by hand during the round that built them, but no
+sub-manager has yet dispatched through the sequence end to end: every lane dispatched while it was
+being built had its `Agent(...)` call composed by hand, which is the one thing the design forbids.
+The first tick to run it is the first evidence, and is where to look for what is still wrong.
+
+Two known gaps, neither blocking:
+
+- **Body-derivation over-claims what an issue merely cites.** An issue quoting nine paths resolves
+  to all nine. A bundle that should not have been bundled is the cost; the group's own `overlap`
+  field shows it.
+- **Nothing counts a short fleet.** A lane returning `none` is visible in `lanes`, so an idle lane
+  is legible in the output itself -- but no metric records it, so a run of under-filled ticks is
+  only noticed by a reader.
 
 ## The shape
 
@@ -212,8 +224,7 @@ must not render alike.
   examples resolves to all nine. Label-derivation over-claimed a subsystem; body-derivation
   over-claims whatever the author quoted. Distinguishing a path an issue *claims* from one it
   *cites* is unsolved.
-- **`lane-other`'s solo rule is fixture-verified only.** No issue on the board has carried that
-  label yet, so the branch has never executed against a real one.
-- **Nothing measures fleet under-fill.** A tick that dispatches one lane and a tick that dispatches
-  five produce identical handbacks. `--lane-fill` records a short *lane*; nothing records a short
-  *fleet*, so the failure is invisible unless a human asks.
+- **Nothing counts a short fleet.** A lane returning `none` is visible in `lanes`, so an idle lane
+  can be read off the output -- but no metric records it, so a run of under-filled ticks is noticed
+  only by a reader who looks.
+- **The sequence has not run in a live tick.** See the table above.
