@@ -74,6 +74,22 @@ def _make_executable(path):
     path.chmod(path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def _planted_name(name):
+    """The three tests below run against the REAL platform (no `_force_
+    windows` monkeypatch), so a fixture must be shaped for whatever
+    platform actually executes it. On real Windows, `safe_which`'s own
+    Windows-shaped branch applies the real `PATHEXT` and deliberately never
+    probes a bare, unextended name -- see this module's own docstring and
+    `_windows_candidate_names` -- so an extensionless `gh` fixture is
+    unresolvable there by design and would make these three fail on real
+    Windows CI while passing everywhere else. Elsewhere, a bare name is
+    exactly what a real POSIX `gh` looks like. Return the name shaped for
+    whichever platform is actually running the test, so the assertion
+    keeps pinning exact resolution rather than being loosened to tolerate
+    either shape."""
+    return name + ".exe" if sys.platform == "win32" else name
+
+
 def _force_windows(monkeypatch):
     """Exercise `safe_which`'s own Windows-shaped branch on whatever real
     platform this suite runs on. This is a REASONED claim about
@@ -226,12 +242,13 @@ def test_safe_which_uses_real_path_env_when_path_argument_omitted(
 ):
     real_dir = tmp_path / "on_the_real_path"
     real_dir.mkdir()
-    target = real_dir / "gh"
+    name = _planted_name("gh")
+    target = real_dir / name
     target.write_text("#!/bin/sh\n")
     _make_executable(target)
     monkeypatch.setenv("PATH", str(real_dir))
 
-    resolved = gh_which.safe_which("gh")
+    resolved = gh_which.safe_which(name)
 
     assert resolved == str(target), resolved
 
@@ -251,12 +268,13 @@ def test_safe_which_walks_past_empty_directories_to_a_later_path_entry(tmp_path)
     real_dir = tmp_path / "the_real_one"
     for directory in (empty_one, empty_two, real_dir):
         directory.mkdir()
-    target = real_dir / "gh"
+    name = _planted_name("gh")
+    target = real_dir / name
     target.write_text("#!/bin/sh\necho gh\n")
     _make_executable(target)
 
     search_path = os.pathsep.join([str(empty_one), str(empty_two), str(real_dir)])
-    resolved = gh_which.safe_which("gh", path=search_path)
+    resolved = gh_which.safe_which(name, path=search_path)
 
     assert resolved == str(target), resolved
 
@@ -270,12 +288,13 @@ def test_safe_which_stops_at_the_first_real_path_entry_that_resolves(tmp_path):
     second_dir = tmp_path / "second_on_path"
     for directory in (first_dir, second_dir):
         directory.mkdir()
+    name = _planted_name("gh")
     for directory in (first_dir, second_dir):
-        candidate = directory / "gh"
+        candidate = directory / name
         candidate.write_text("#!/bin/sh\necho gh\n")
         _make_executable(candidate)
 
     search_path = os.pathsep.join([str(first_dir), str(second_dir)])
-    resolved = gh_which.safe_which("gh", path=search_path)
+    resolved = gh_which.safe_which(name, path=search_path)
 
-    assert resolved == str(first_dir / "gh"), resolved
+    assert resolved == str(first_dir / name), resolved
