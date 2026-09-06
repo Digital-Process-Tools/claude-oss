@@ -10,11 +10,11 @@ Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
 
 import os
-import shutil
 import stat
 import subprocess
 from pathlib import Path
 
+import gh_which  # noqa: E402
 import oss_config  # noqa: E402
 
 
@@ -35,7 +35,9 @@ def _one_line(text, limit=200):
 
 def _git(repo, *args):
     """Run git in `repo`. Returns (returncode, stdout, stderr) and never raises."""
-    git = shutil.which("git")
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    git = gh_which.safe_which("git")
     if git is None:
         return None, "", "git is not on PATH"
     env = dict(os.environ)

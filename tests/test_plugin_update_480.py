@@ -705,10 +705,16 @@ def test_run_hands_subprocess_the_resolved_path_not_the_bare_name(monkeypatch):
     Windows, so a bare `"claude"` never resolves to a real Windows install's
     `claude.cmd` -- only `shutil.which()` does that search. `_run()` must
     hand the RESOLVED path to `subprocess.run`, not the bare name it was
-    given, or this exact regression is silently reintroduced."""
+    given, or this exact regression is silently reintroduced.
+
+    #1157: patches `plugin_update.gh_which.safe_which` rather than
+    `plugin_update.shutil.which` -- `_run` no longer calls `shutil.which`
+    directly (see `scripts/gh_which.py`'s docstring for why a bare
+    `shutil.which(name)`, `path=` or not, is not safe on Windows).
+    """
     calls = []
 
-    def fake_which(name):
+    def fake_which(name, path=None):
         return "/resolved/" + name + ".cmd"
 
     class _FakeCompleted:
@@ -719,7 +725,7 @@ def test_run_hands_subprocess_the_resolved_path_not_the_bare_name(monkeypatch):
         calls.append(argv)
         return _FakeCompleted()
 
-    monkeypatch.setattr(plugin_update.shutil, "which", fake_which)
+    monkeypatch.setattr(plugin_update.gh_which, "safe_which", fake_which)
     monkeypatch.setattr(plugin_update.subprocess, "run", fake_run)
 
     ok, output = plugin_update._run(["claude", "plugin", "marketplace", "update"])
@@ -734,14 +740,14 @@ def test_run_falls_back_to_the_bare_name_when_which_cannot_resolve_it(monkeypatc
     was tried, rather than a fabricated `None`."""
     calls = []
 
-    def fake_which(name):
+    def fake_which(name, path=None):
         return None
 
     def fake_run(argv, **kwargs):
         calls.append(argv)
         raise FileNotFoundError(2, "no such file")
 
-    monkeypatch.setattr(plugin_update.shutil, "which", fake_which)
+    monkeypatch.setattr(plugin_update.gh_which, "safe_which", fake_which)
     monkeypatch.setattr(plugin_update.subprocess, "run", fake_run)
 
     ok, output = plugin_update._run(["claude", "mcp", "list"])

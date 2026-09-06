@@ -47,6 +47,7 @@ import shutil
 import subprocess
 
 import doctor
+import gh_which
 
 
 def _gh_api(path, run):
@@ -62,10 +63,15 @@ def _gh_api(path, run):
     #: `subprocess.run(["gh", ...])` on Windows reaches `CreateProcess`,
     #: which only auto-appends `.exe` for an extensionless name and never
     #: `.cmd`/`.bat`, so a `gh.cmd` launcher on PATH is invisible to a bare
-    #: argv. `shutil.which` performs the full PATHEXT-aware search and
-    #: returns a spawnable path; when it resolves nothing the bare name is
-    #: kept so the existing `FileNotFoundError` handling below still fires.
-    gh_bin = shutil.which("gh") or "gh"
+    #: argv. #1157: a bare `shutil.which("gh")` -- even with a `path=`
+    #: argument -- still lets a `gh.cmd` committed to the inspected repo's
+    #: own root win over a real `PATH` entry on Windows, because the
+    #: curdir insertion fires whenever the queried NAME has no directory
+    #: part, regardless of `path`. `gh_which.safe_which` closes that; see
+    #: its docstring for the mechanism. When it resolves nothing the bare
+    #: name is kept so the existing `FileNotFoundError` handling below
+    #: still fires.
+    gh_bin = gh_which.safe_which("gh") or "gh"
     try:
         done = run(
             [gh_bin, "api", path],

@@ -240,13 +240,13 @@ import argparse
 import json
 import os
 import secrets
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import gh_which  # noqa: E402
 import lane_setup  # noqa: E402
 import oss_config  # noqa: E402
 import select_issues_claim_read  # noqa: E402
@@ -959,7 +959,12 @@ def _run_gh(args, timeout=_GH_TIMEOUT):
     are three different reasons, and a caller told only "it failed" cannot
     tell an absent tool from an unauthenticated session.
     """
-    resolved = shutil.which(args[0])
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- a bare
+    # `shutil.which(args[0])` still lets a same-named `.cmd`/`.bat`
+    # committed to the inspected repo's own root win over a real `PATH`
+    # entry on Windows, `path=` argument or not (see `gh_which`'s
+    # docstring for the mechanism).
+    resolved = gh_which.safe_which(args[0])
     argv = [resolved] + list(args[1:]) if resolved else args
     try:
         proc = subprocess.run(

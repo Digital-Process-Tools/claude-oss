@@ -51,11 +51,12 @@ Python 3.9 compatible.
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+import gh_which
 
 #: Where the receipt lives: machine state, never inside a managed repository.
 RECEIPT_NAME = "auto-update.json"
@@ -522,7 +523,9 @@ def _run(command, timeout=180):
     A name that `which()` cannot resolve at all is left as-is, so the
     eventual `OSError` still names the exact string that was tried.
     """
-    resolved = shutil.which(command[0]) if command else None
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    resolved = gh_which.safe_which(command[0]) if command else None
     argv = [resolved] + list(command[1:]) if resolved else list(command)
     try:
         result = subprocess.run(

@@ -60,6 +60,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import gh_which
+
 STATE_DELTA = "delta"
 STATE_FIRST_RELEASE = "first-release"
 STATE_COULD_NOT_RUN = "could-not-run"
@@ -97,7 +99,9 @@ def _one_line(text, limit=200):
 
 def _git(repo, *args):
     """Run git in `repo`. Returns (returncode, stdout, stderr) and never raises."""
-    git = shutil.which("git")
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    git = gh_which.safe_which("git")
     if git is None:
         return None, "", "git is not on PATH"
     env = dict(os.environ)
