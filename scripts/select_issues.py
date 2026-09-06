@@ -183,12 +183,9 @@ adjacency rules," never a re-derivation. Nothing else changes:
 not, and `ungrouped` is untouched -- the cap removes a group's number, not
 an issue's visibility.
 
-**The no-lane-label bucket is deliberately NOT capped yet
-(`cap_groups=False`).** Whether it should be capped the same way, or
-should return no group at all -- nothing disjoint-by-construction backs
-it, and #1130 already requires a `lane-other` issue to dispatch solo,
-never bundled -- is an open question this diff states rather than
-decides.
+**The no-lane-label bucket is capped the same way, for the same reason
+(`cap_groups=True`):** a lane runs one developer at a time, and being a
+pseudo-lane does not exempt this bucket from that.
 
 **An issue carrying none of the declared lane labels does not vanish just
 because iteration is now label-driven.** It (and a `labels.lane_other`
@@ -1331,14 +1328,11 @@ def select_fleet(
     unrouted_issues = [
         row for row in issues if not (set(row.get("labels") or []) & labelled)
     ]
-    # Maintainer round (#1146): whether THIS bucket should be capped to one
-    # group the same way a real lane now is -- or should return no group at
-    # all, since nothing disjoint-by-construction backs it and #1130 already
-    # requires a `lane-other` issue to be solo, never bundled -- is an open
-    # question, deliberately left open here (`cap_groups=False`, the
-    # pre-existing behaviour) rather than decided unilaterally. See the
-    # developer report for the reasoning weighed and not yet acted on.
-    lanes[NO_LANE_LABEL_KEY] = _run_one(unrouted_issues, None, cap_groups=False)
+    # Maintainer round 2 (#1146): capped the same way a real lane is, for the
+    # same reason -- a lane runs one developer at a time, and being a
+    # pseudo-lane does not exempt this bucket from that. The rest stay
+    # visible in `candidates` and are recomputed next tick, identically.
+    lanes[NO_LANE_LABEL_KEY] = _run_one(unrouted_issues, None, cap_groups=True)
 
     states = [row["state"] for row in lanes.values()]
     if any(s == STATE_CANDIDATES for s in states):
