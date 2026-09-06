@@ -548,16 +548,15 @@ def compose_claim_label(
 #: takes -- `"candidates"`/`"none"`/`"could-not-tell"` from
 #: `select_issues_companions.suggest_companions`'s own three-value return,
 #: and `"lane-other"` set directly by `select_issues.py` for a solo #1130
-#: dispatch. `select_issues.py` exposes no importable constant naming this
-#: set the way `select_issues_rank.SHORT_REASONS` names its own vocabulary
-#: (checked: neither module declares one) -- this tuple is retyped here,
-#: once, rather than left implicit in the argparse `choices=` below and in
-#: `_GROUP_STATE_SHORT_REASONS`'s keys separately, so there is exactly one
-#: place in this file that could go stale rather than two. Closing the
-#: remaining gap -- a shared constant `select_issues.py` itself exports, so
-#: neither copy could ever drift from the actual producer -- would touch
-#: that module's own shape and is reported rather than done here (#1153).
-_GROUP_STATES = ("candidates", "none", "could-not-tell", "lane-other")
+#: dispatch. #1199 closed the gap #1153 left open: this used to be a
+#: second, independently-typed copy of the vocabulary, with no test tying
+#: it back to the producer. `select_issues_companions.GROUP_STATES` is now
+#: that single source -- imported here rather than retyped, and rather
+#: than imported from `select_issues.py` itself, because `select_issues.py`
+#: imports THIS file (`lane_setup`), so the reverse import would make the
+#: two modules circular. `select_issues_companions` is already imported
+#: below regardless, for `suggest_companions`.
+_GROUP_STATES = select_issues_companions.GROUP_STATES
 
 #: Three of the four `_GROUP_STATES` translate onto
 #: `select_issues_rank.SHORT_REASONS` without guessing -- `"none"` and
@@ -571,9 +570,9 @@ _GROUP_STATES = ("candidates", "none", "could-not-tell", "lane-other")
 #: candidate count (#871), which a single group's own `state` never
 #: establishes, so translating it would invent a reason nobody measured.
 _GROUP_STATE_SHORT_REASONS = {
-    "none": "no-adjacent",
-    "could-not-tell": "could-not-tell",
-    "lane-other": "did-not-search",
+    select_issues_companions.STATE_NONE: "no-adjacent",
+    select_issues_companions.STATE_COULD_NOT_TELL: "could-not-tell",
+    select_issues_companions.STATE_LANE_OTHER: "did-not-search",
 }
 assert set(_GROUP_STATE_SHORT_REASONS) <= set(
     _GROUP_STATES
@@ -1482,7 +1481,7 @@ def _receipt_companions_line(result):
     dropped": a real candidate found elsewhere on the board must not read
     as proof the rest of the board was swept clean.
     """
-    if result["state"] == "candidates":
+    if result["state"] == select_issues_companions.STATE_CANDIDATES:
         parts = [
             "#{0} ({1})".format(entry["number"], ", ".join(entry["files"]))
             for entry in result["candidates"]
@@ -1495,7 +1494,7 @@ def _receipt_companions_line(result):
                 )
             )
         return line
-    if result["state"] == "none":
+    if result["state"] == select_issues_companions.STATE_NONE:
         return "none -- {0}".format(result["detail"])
     return "COULD NOT TELL -- {0}".format(result["detail"])
 
@@ -2029,7 +2028,13 @@ def main(argv=None):
                 )
             )
         return (
-            EXIT_OK if result["state"] in ("candidates", "none") else EXIT_COULD_NOT_RUN
+            EXIT_OK
+            if result["state"]
+            in (
+                select_issues_companions.STATE_CANDIDATES,
+                select_issues_companions.STATE_NONE,
+            )
+            else EXIT_COULD_NOT_RUN
         )
 
     if args.release:

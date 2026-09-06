@@ -22,6 +22,31 @@ import select_issues_overlap
 #: single-line span is meant to.
 _BACKTICK_SPAN_RE = re.compile(r"`([^`\n]+)`")
 
+#: The three-value vocabulary `suggest_companions`'s own `state` field
+#: takes -- exported (#1199) so a caller does not have to retype it. See
+#: `GROUP_STATES` below for the full, four-value vocabulary a
+#: `select_issues.py` GROUP's own `state` field takes.
+STATE_CANDIDATES = "candidates"
+STATE_NONE = "none"
+STATE_COULD_NOT_TELL = "could-not-tell"
+STATES = (STATE_CANDIDATES, STATE_NONE, STATE_COULD_NOT_TELL)
+
+#: #1130: the fourth value -- set directly by `select_issues.py`'s own
+#: `_group_candidates` for a solo `lane-other` dispatch, a path that never
+#: calls `suggest_companions` at all.
+STATE_LANE_OTHER = "lane-other"
+
+#: The full, four-value vocabulary a `select_issues.py` GROUP's own
+#: `state` field takes (#1199). Defined HERE, not in `select_issues.py`,
+#: because `select_issues.py` imports `lane_setup` and `lane_setup.py`
+#: imports this module -- putting it in `select_issues.py` instead would
+#: make `lane_setup.py` import `select_issues.py` back, a circular edge
+#: neither module has today. `lane_setup.py`'s own former `_GROUP_STATES`
+#: comment asked for exactly this: one place in the codebase that could go
+#: stale, not several. `lane_setup._GROUP_STATES` IS this tuple now, not a
+#: second, independently-typed copy of it.
+GROUP_STATES = STATES + (STATE_LANE_OTHER,)
+
 
 def _looks_like_a_declared_path(token):
     """Whether a backtick-quoted `token`, pulled from an issue's title or
@@ -191,7 +216,7 @@ def suggest_companions(repo, own_issue, claimed_files, board):
     claimed = sorted(set(claimed_files))
     if board.get("capped"):
         return {
-            "state": "could-not-tell",
+            "state": STATE_COULD_NOT_TELL,
             "candidates": [],
             "undetermined": [],
             "detail": "the board read was capped ({0}) -- more open issues may "
@@ -242,14 +267,14 @@ def suggest_companions(repo, own_issue, claimed_files, board):
             )
     if candidates:
         return {
-            "state": "candidates",
+            "state": STATE_CANDIDATES,
             "candidates": candidates,
             "undetermined": undetermined,
             "detail": "",
         }
     if undetermined:
         return {
-            "state": "could-not-tell",
+            "state": STATE_COULD_NOT_TELL,
             "candidates": [],
             "undetermined": undetermined,
             "detail": "{0} of {1} other open issue(s) could not have a file set "
@@ -264,7 +289,7 @@ def suggest_companions(repo, own_issue, claimed_files, board):
             ),
         }
     return {
-        "state": "none",
+        "state": STATE_NONE,
         "candidates": [],
         "undetermined": [],
         "detail": "board read in full ({0} other open issue(s)), every one's "
