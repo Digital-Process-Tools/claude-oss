@@ -29,7 +29,8 @@ branch of `safe_which`'s OWN code on whatever platform this suite runs on --
 never a synthetic resolver standing in for a wrong assumption about what
 the real one does.
 
-Fixtures use realistic, extensioned filenames (`gh.exe`, `gh.cmd`) rather
+Fixtures use realistic, extensioned filenames (`gh.EXE`, `gh.CMD` --
+see `_PINNED_PATHEXT` for why that case is load-bearing) rather
 than a bare `gh` with no extension: a bare, unextended file is not
 something Windows' own PATHEXT-driven resolution would ever treat as
 resolvable in the first place (real `shutil.which`, `mode=os.F_OK |
@@ -52,18 +53,21 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import gh_which  # noqa: E402
 
 
-def _same_path(a, b):
-    """Windows' own filesystem is case-insensitive, so comparing resolved
-    paths verbatim would fail: `safe_which`'s PATHEXT candidates are built
-    with the exact case from `PATHEXT` (typically uppercase extensions), so
-    a fixture file created in lowercase and a candidate probed in uppercase
-    can both point at the same real file while differing as strings. Plain
-    `.lower()` rather than `os.path.normcase` deliberately: `normcase` only
-    folds case on a real Windows `sys.platform`, which this suite does not
-    genuinely have, so it would be a no-op here and hide the very mismatch
-    this helper exists to paper over.
-    """
-    return a is not None and a.lower() == b.lower()
+#: The `PATHEXT` every Windows-shaped test below pins, and the case its
+#: fixture filenames are therefore created in. UPPERCASE deliberately, and
+#: this is the whole of #1157's self-review finding: `safe_which` builds a
+#: candidate by concatenating `name` with a `PATHEXT` entry VERBATIM, so a
+#: fixture written as `gh.exe` is probed for as `gh.EXE`. That resolves on
+#: a case-insensitive filesystem (macOS APFS by default, and real Windows
+#: NTFS -- so production is unaffected) and does NOT resolve on a
+#: case-sensitive one. This repo's CI runs four `ubuntu-latest` legs on
+#: ext4, so lowercase fixtures here would have gone red on every one of
+#: them, for a reason having nothing to do with the defect under test and
+#: nothing to do with real Windows either. Confirmed by running this file
+#: against a real case-sensitive APFS volume (`hdiutil create -fs
+#: "Case-sensitive APFS"`, `pytest --basetemp=<that volume>`): 4 of 9
+#: failed with lowercase fixtures, 9 of 9 pass with these.
+_PINNED_PATHEXT = ".COM;.EXE;.BAT;.CMD"
 
 
 def _make_executable(path):
@@ -78,8 +82,17 @@ def _force_windows(monkeypatch):
     running underneath it is real code, exercised for real (`os.path.
     exists`/`os.access` against real files created by the test), not
     re-implemented or faked for the test.
+
+    `PATHEXT` is pinned rather than left ambient for the reason
+    `test-fixture-pitfalls.md` gives about credentials: an environment
+    variable the host happens to carry is a third axis beside OS and
+    interpreter, and a real `windows-latest` runner DOES set `PATHEXT`
+    (typically with `.PY`/`.PYW` appended). Pinning it makes the
+    precedence assertion below a property of `safe_which` rather than of
+    whichever runner picked the test up.
     """
     monkeypatch.setattr(gh_which.sys, "platform", "win32")
+    monkeypatch.setenv("PATHEXT", _PINNED_PATHEXT)
 
 
 def test_safe_which_never_prefers_the_cwd_shaped_entry_over_real_path(
@@ -97,10 +110,10 @@ def test_safe_which_never_prefers_the_cwd_shaped_entry_over_real_path(
     real_dir = tmp_path / "usr_local_bin"
     cwd_dir.mkdir()
     real_dir.mkdir()
-    malicious = cwd_dir / "gh.cmd"
+    malicious = cwd_dir / "gh.CMD"
     malicious.write_text("echo malicious\n")
     _make_executable(malicious)
-    real = real_dir / "gh.cmd"
+    real = real_dir / "gh.CMD"
     real.write_text("echo real gh\n")
     _make_executable(real)
 
@@ -109,7 +122,7 @@ def test_safe_which_never_prefers_the_cwd_shaped_entry_over_real_path(
     # must never consult implicitly.
     resolved = gh_which.safe_which("gh", path=str(real_dir))
 
-    assert _same_path(resolved, str(real)), resolved
+    assert resolved == str(real), resolved
     assert cwd_dir.name not in resolved, resolved
 
 
@@ -123,13 +136,13 @@ def test_safe_which_positive_control_still_resolves_from_real_path(
     _force_windows(monkeypatch)
     real_dir = tmp_path / "usr_local_bin_2"
     real_dir.mkdir()
-    real = real_dir / "gh.cmd"
+    real = real_dir / "gh.CMD"
     real.write_text("echo real gh\n")
     _make_executable(real)
 
     resolved = gh_which.safe_which("gh", path=str(real_dir))
 
-    assert _same_path(resolved, str(real)), resolved
+    assert resolved == str(real), resolved
 
 
 def test_safe_which_applies_pathext_when_queried_name_has_no_extension(
@@ -146,13 +159,13 @@ def test_safe_which_applies_pathext_when_queried_name_has_no_extension(
     _force_windows(monkeypatch)
     real_dir = tmp_path / "bin"
     real_dir.mkdir()
-    target = real_dir / "gh.exe"
+    target = real_dir / "gh.EXE"
     target.write_text("echo real gh\n")
     _make_executable(target)
 
     resolved = gh_which.safe_which("gh", path=str(real_dir))
 
-    assert _same_path(resolved, str(target)), resolved
+    assert resolved == str(target), resolved
 
 
 def test_safe_which_pathext_precedence_prefers_earlier_extension(monkeypatch, tmp_path):
@@ -164,15 +177,15 @@ def test_safe_which_pathext_precedence_prefers_earlier_extension(monkeypatch, tm
     _force_windows(monkeypatch)
     real_dir = tmp_path / "bin"
     real_dir.mkdir()
-    earlier = real_dir / "gh.exe"
-    later = real_dir / "gh.cmd"
+    earlier = real_dir / "gh.EXE"
+    later = real_dir / "gh.CMD"
     for f in (earlier, later):
         f.write_text("echo\n")
         _make_executable(f)
 
     resolved = gh_which.safe_which("gh", path=str(real_dir))
 
-    assert _same_path(resolved, str(earlier)), resolved
+    assert resolved == str(earlier), resolved
 
 
 def test_safe_which_does_not_double_extend_an_already_extensioned_name(
@@ -181,7 +194,14 @@ def test_safe_which_does_not_double_extend_an_already_extensioned_name(
     """A caller that already queries `gh.cmd` (an extensioned name) must
     resolve the bare `gh.cmd` file directly, never a doubly-extended
     `gh.cmd.exe` -- matching real `shutil.which`'s precedence rule that a
-    name already ending in a `PATHEXT` extension is checked as-is."""
+    name already ending in a `PATHEXT` extension is checked as-is.
+
+    Deliberately the one Windows-shaped fixture here still spelled in
+    LOWERCASE, against the pinned uppercase `PATHEXT`: the extension match
+    in `_windows_candidate_names` is case-insensitive, so this is the case
+    that pins that, and it is filesystem-case-safe regardless because
+    `safe_which` returns the queried name verbatim rather than
+    concatenating an extension onto it."""
     _force_windows(monkeypatch)
     real_dir = tmp_path / "bin"
     real_dir.mkdir()
@@ -191,7 +211,7 @@ def test_safe_which_does_not_double_extend_an_already_extensioned_name(
 
     resolved = gh_which.safe_which("gh.cmd", path=str(real_dir))
 
-    assert _same_path(resolved, str(target)), resolved
+    assert resolved == str(target), resolved
 
 
 def test_safe_which_returns_none_when_nothing_resolves(monkeypatch, tmp_path):
