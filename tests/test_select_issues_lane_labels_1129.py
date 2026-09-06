@@ -123,6 +123,28 @@ def test_no_mapping_declared_at_all_resolves_unknown_even_with_a_lane_label():
     assert len(result["groups"]["ungrouped"]) == 1
 
 
+def test_two_differently_mapped_lane_labels_on_one_issue_resolve_unknown():
+    """Ambiguous derivation is not a derivation (#1129's own governing rule,
+    restated here rather than only in prose): two `lane-*` labels on the
+    same issue mapped to two DIFFERENT pattern lists is not "pick one", it
+    is the identical unknown state as no lane label at all -- guessing
+    which one the issue "really" belongs to is exactly the invention #267
+    forbids. Positive control is the single-label test above: with the
+    identical mapping, one covered label derives; two differently-mapped
+    ones do not."""
+    declared = dict(DECLARED, lane_patterns=LANE_MAP)
+    payload = {
+        "declared": declared,
+        "issues": [_issue(1, ["priority-high", "lane-dispatch", "lane-doctor"])],
+    }
+    result = select_issues.select(
+        payload, checker=_no_op_checker, resolve_lane=_literal_resolve
+    )
+    entry = result["candidates"][0]
+    assert entry["lane_patterns_source"] is None
+    assert len(result["groups"]["ungrouped"]) == 1
+
+
 def test_explicit_lane_patterns_always_wins_over_a_derived_one():
     declared = dict(DECLARED, lane_patterns=LANE_MAP)
     payload = {
