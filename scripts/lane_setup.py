@@ -131,6 +131,21 @@ naming the outcome as its own state rather than a silent partial claim.
 `--release` is the mirror: it releases the local lane record AND the GitHub
 assignee together, via `lane_setup_claim.release_lane_and_assignee`.
 
+## --claim also renders step 5's own token now (#1148)
+
+`docs/pick-the-work.md` step 5 (`oss_state.py --decision ... --lane-fill
+PRIMARY:COUNT[:REASON]`) used to be typed by hand -- both `COUNT` and
+`REASON` already existed upstream, `COUNT` in this file's own claim result
+and `REASON` on whatever named the group short, and a human retyped them
+into agreement at the tick's own `--decision` call. `compose_lane_fill` (and
+`--claim`'s own `--short-reason` flag) closes that the same way #1143
+already closed it for the fleet-view label: `COUNT` comes from
+`_claimed_issue_numbers`, never from the issue and `--claim-also` values
+requested, and `REASON` is carried straight through from `--short-reason`
+rather than retyped. Never invented when omitted -- a short lane whose
+caller passed no `--short-reason` renders a token with no reason at all, so
+`oss_state.py --decision`'s own refusal (#852) still fires on it downstream.
+
 Python 3.9 compatible: no match statements, no `X | Y` annotations.
 """
 
@@ -152,6 +167,7 @@ import oss_config  # noqa: E402
 import select_issues_claim_read  # noqa: E402
 import select_issues_companions  # noqa: E402
 import select_issues_overlap  # noqa: E402
+import select_issues_rank  # noqa: E402
 
 # Re-exported at module level so `lane_setup.<name>` keeps working for every
 # existing caller and test -- only the *definition* moved (#1069). See the
@@ -431,8 +447,14 @@ def _claimed_issue_numbers(claim_result):
     return held
 
 
-def compose_claim_label(payload, phrase, subagent_type=None, model=None,
-                         run_in_background=False, brief_path=None):
+def compose_claim_label(
+    payload,
+    phrase,
+    subagent_type=None,
+    model=None,
+    run_in_background=False,
+    brief_path=None,
+):
     """Render this ``--claim`` call's own fleet-view label -- or, with
     ``subagent_type``, the whole ``Agent(...)`` call -- from the issues this
     lane actually holds (#1143), never from the issues requested.
@@ -487,7 +509,8 @@ def compose_claim_label(payload, phrase, subagent_type=None, model=None,
             result["state"] = "brief-could-not-read"
             return result
         structural_missing = any(
-            row["state"] == "missing" and row["checked"] == lane_setup_brief_schema.STRUCTURAL
+            row["state"] == "missing"
+            and row["checked"] == lane_setup_brief_schema.STRUCTURAL
             for row in brief_payload["elements"]
         )
         if structural_missing:
@@ -510,6 +533,73 @@ def compose_claim_label(payload, phrase, subagent_type=None, model=None,
         result["state"] = "fleet-label-error"
         result["detail"] = str(exc)
         return result
+
+    result["state"] = "rendered"
+    result["text"] = text
+    return result
+
+
+def compose_lane_fill(payload, short_reason=None):
+    """Render step 5's ready ``--lane-fill PRIMARY:COUNT[:REASON]`` token
+    from this ``--claim`` call's own held issues (#1148) -- so nothing is
+    retyped by hand at ``oss_state.py --decision`` time the way it is today
+    (`docs/pick-the-work.md` step 5 is paste only, and this is what makes
+    that true for the fill token the same way #1143 already made it true
+    for the fleet-view label).
+
+    ``COUNT`` comes from `_claimed_issue_numbers`, the exact derivation
+    `compose_claim_label` already uses for the label's own ``xN`` -- never
+    from the issue and ``--claim-also`` values requested: a companion whose
+    assignee write failed is silently excluded from the count.
+
+    ``short_reason`` is carried through from whatever named the group short
+    -- today typed by the caller at this call site (until ``select_issues.py``
+    itself puts the closed vocabulary directly on the group,
+    `docs/pick-the-work.md`'s own "designed, not built" row for #1143), so it
+    is entered once here rather than retyped again at step 5.
+
+    **Never guessed at when omitted.** A short lane (fewer than
+    ``select_issues_rank.MAX_LANE`` issues held) whose caller gave no
+    ``short_reason`` renders a token carrying ``PRIMARY:COUNT`` and nothing
+    more -- never one with a reason invented to make the call look complete.
+    ``oss_state.py --decision``'s own refusal (#852) fires on exactly that
+    token once it is pasted into step 5's call: quietly supplying a reason
+    nobody established would convert that guard into a rubber stamp, worse
+    than the retype this closes.
+
+    A full lane (``select_issues_rank.MAX_LANE`` issues held) never carries a
+    reason on its token, whatever ``short_reason`` was given -- a full lane
+    makes no short-lane claim for a reason to be about, and ``oss_state.py``'s
+    own ``lane_fill()`` refuses an entry that pairs a reason with a full lane
+    anyway (a different, unrelated refusal from #852's), so it is dropped
+    here rather than passed through to trip that one instead.
+
+    States, the same shape `compose_claim_label` already uses for its own
+    early exits:
+
+      rendered           ``text`` carries ``PRIMARY:COUNT[:REASON]``.
+      no-claimed-issues  nothing in ``claim_result`` came back genuinely
+                          held -- there is no fill to record for a lane that
+                          claimed nothing.
+      primary-not-held   the primary issue itself is not among the issues
+                          held.
+    """
+    held = _claimed_issue_numbers(payload.get("claim_result"))
+    result = {"state": None, "text": None, "held": held}
+
+    if not held:
+        result["state"] = "no-claimed-issues"
+        return result
+    primary = payload.get("issue")
+    if primary not in held:
+        result["state"] = "primary-not-held"
+        return result
+
+    count = len(held)
+    if count < select_issues_rank.MAX_LANE and short_reason:
+        text = "{0}:{1}:{2}".format(primary, count, short_reason)
+    else:
+        text = "{0}:{1}".format(primary, count)
 
     result["state"] = "rendered"
     result["text"] = text
@@ -1513,6 +1603,20 @@ def main(argv=None):
         "Ignored without --claim.",
     )
     parser.add_argument(
+        "--short-reason",
+        default=None,
+        choices=select_issues_rank.SHORT_REASONS,
+        metavar="REASON",
+        help="given together with --claim, carried straight through onto "
+        "the ready --lane-fill token this call renders (#1148) -- one of "
+        "board-exhausted / no-adjacent / did-not-search / could-not-tell, "
+        "the group's own reason for being short. Omit it when the group "
+        "established no reason: the rendered token then carries no reason "
+        "either, so oss_state.py --decision's own refusal (#852) still "
+        "fires downstream on a short lane rather than being satisfied by "
+        "one invented here. Ignored without --claim.",
+    )
+    parser.add_argument(
         "--subagent-type",
         default=None,
         metavar="TYPE",
@@ -1713,6 +1817,8 @@ def main(argv=None):
         parser.error("--subagent-type requires --claim (#1143)")
     if args.brief is not None and not args.claim:
         parser.error("--brief requires --claim (#1143)")
+    if args.short_reason is not None and not args.claim:
+        parser.error("--short-reason requires --claim (#1148)")
     if args.subagent_type is not None and args.phrase is None:
         parser.error("--subagent-type requires --phrase (#1143)")
     if args.subagent_type is not None and args.brief is None:
@@ -2016,6 +2122,17 @@ def main(argv=None):
         )
         payload["label"] = label_result
 
+    # #1148: --claim renders step 5's own ready --lane-fill token too,
+    # alongside the label/Agent(...) line above -- a separate field, never
+    # folded into label_result's own states (`compose_claim_label` and
+    # `compose_lane_fill` derive the same held set independently; nothing
+    # here assumes one implies the other). Attempted whenever --claim ran at
+    # all: unlike the label, this needs no --phrase to be meaningful.
+    lane_fill_result = None
+    if args.claim:
+        lane_fill_result = compose_lane_fill(payload, short_reason=args.short_reason)
+        payload["lane_fill"] = lane_fill_result
+
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -2049,6 +2166,21 @@ def main(argv=None):
                 )
             elif state == "fleet-label-error":
                 print("LABEL NOT COMPOSED -- {0}".format(label_result["detail"]))
+        if lane_fill_result is not None:
+            print()
+            fill_state = lane_fill_result["state"]
+            if fill_state == "rendered":
+                print("--lane-fill " + lane_fill_result["text"])
+            elif fill_state == "no-claimed-issues":
+                print(
+                    "LANE-FILL NOT COMPOSED -- no issue in this --claim call "
+                    "came back genuinely held (#1148)"
+                )
+            elif fill_state == "primary-not-held":
+                print(
+                    "LANE-FILL NOT COMPOSED -- primary issue #{0} is not "
+                    "among the issues actually held (#1148)".format(payload["issue"])
+                )
 
     exit_code = EXIT_COULD_NOT_RUN if blocked(payload) else EXIT_OK
     if label_result is not None and label_result["state"] != "rendered":

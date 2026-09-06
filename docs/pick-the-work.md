@@ -21,6 +21,7 @@ a document that reads as current when it is aspirational is this repository's ow
 | `lane-other`, dispatched solo | **built** (#1130) -- fixture-verified only; no issue has carried the label yet |
 | `--claim` renders the whole `Agent(...)` call | **built** (#1143) |
 | The brief validated as part of rendering | **built** (#1143) |
+| `--claim` emits step 5's own `--lane-fill` token | **built** (#1148) -- `COUNT` is fully mechanical (the claim's own held issues); `REASON` is carried through from a new `--short-reason` flag the caller still passes by hand, since the row below (the group itself carrying the closed-vocabulary reason) is not built yet |
 | `select_issues.py` fetches its own board; no stdin payload | **designed, not built** (#1143) |
 | One group per lane label, rather than a partition of the board | **designed, not built** (#1143) |
 | Issue bodies returned with each group | **designed, not built** (#1143) |
@@ -112,10 +113,13 @@ was reviewed*.
 `--claim`'s five states, the brief's result and the label's outcome are reported **separately**,
 never flattened into one verdict.
 
-**It also emits step 5's `--lane-fill PRIMARY:COUNT[:REASON]` token**, with the count from the claim
-result and the reason carried through from the group `select_issues.py` already labelled. Nobody
-computes it. That closes the same defect the label had: two calls that must agree, kept in agreement
-by hand.
+**It also emits step 5's `--lane-fill PRIMARY:COUNT[:REASON]` token** (#1148), with `COUNT` from the
+claim's own held issues -- nobody computes that by hand any more. `REASON` is carried through from a
+`--short-reason` flag the caller still passes at this call, since `select_issues.py` does not yet put
+the closed-vocabulary reason directly on the group (see the "designed, not built" rows above); once
+it does, the caller passes the group's own reason straight through instead of deriving one itself.
+Never invented when omitted: a short lane whose caller gives no `--short-reason` renders a token with
+no reason at all, so step 5's own `--decision` refusal (#852) still fires on it downstream.
 
 ---
 
