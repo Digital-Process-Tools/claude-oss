@@ -2730,6 +2730,97 @@ def _last_doctor_route(path):
     return None, None, None
 
 
+# A #1155 threshold route's own receipt: does /oss:triage, /oss:curate or
+# /oss:release fire again on this launch? Same three states and the same
+# fail-open shape as `doctor_route_check` above -- a route stuck `over`
+# threshold (11 uncurated traps, say) must not re-fire on every single
+# launch forever, but a receipt this could not compare must never render
+# as "already seen", which would silently stop the route from ever firing
+# again after one unreadable state file.
+WORKSPACE_ROUTE_NO_RECEIPT = "no-receipt"
+WORKSPACE_ROUTE_CHANGED = "changed"
+WORKSPACE_ROUTE_UNCHANGED = "unchanged"
+
+
+def workspace_route_check(route, signature, prior_signature):
+    """Should a #1155 threshold route fire again?
+
+    ``route`` names which one (``"triage"``, ``"curate"`` or ``"release"``,
+    never empty). ``signature`` is THIS launch's own reading, already folded
+    by the caller into one comparable string (state plus count) -- this
+    function never compares fields itself, so a caller that adds a field to
+    what it tracks does not have to touch this one.
+    ``prior_signature`` is whatever the most recently recorded receipt for
+    THIS route carried, or ``None`` when none exists yet (`_last_workspace_
+    route` returns that pair).
+
+    Returns a record with ``armed`` (bool) and ``state`` (`WORKSPACE_ROUTE_
+    NO_RECEIPT` / `WORKSPACE_ROUTE_CHANGED` / `WORKSPACE_ROUTE_UNCHANGED`),
+    plus ``route``, ``signature`` and ``prior_signature``, for a caller that
+    wants to say what moved.
+    """
+    if not route or not str(route).strip():
+        raise StateError(
+            "workspace_route_check needs a route name; an empty value here is "
+            "a caller error, not a real reading"
+        )
+    if not signature or not str(signature).strip():
+        raise StateError(
+            "workspace_route_check needs this launch's own signature; an "
+            "empty value here is a caller error, not a real reading"
+        )
+    route = str(route).strip()
+    signature = str(signature).strip()
+    if prior_signature is None:
+        return {
+            "armed": True,
+            "state": WORKSPACE_ROUTE_NO_RECEIPT,
+            "route": route,
+            "signature": signature,
+            "prior_signature": prior_signature,
+        }
+    if signature == prior_signature:
+        return {
+            "armed": False,
+            "state": WORKSPACE_ROUTE_UNCHANGED,
+            "route": route,
+            "signature": signature,
+            "prior_signature": prior_signature,
+        }
+    return {
+        "armed": True,
+        "state": WORKSPACE_ROUTE_CHANGED,
+        "route": route,
+        "signature": signature,
+        "prior_signature": prior_signature,
+    }
+
+
+def _last_workspace_route(path, route):
+    """The most recent entry recording a #1155 route receipt for ``route``,
+    scanning back past any entry that recorded something else, or a receipt
+    for a *different* route -- same shape as `_last_doctor_route`, and for
+    the same reason: a receipt written several launches ago must still be
+    found behind whatever landed after it, and the three routes share one
+    state file so each must find only its own.
+
+    Returns ``(entry, signature)`` for the most recent matching entry, or
+    ``(None, None)`` if no entry ever recorded one for this route.
+    """
+    for entry in reversed(read(path)):
+        if not isinstance(entry, dict):
+            continue
+        detail = entry.get("detail")
+        if not isinstance(detail, dict):
+            continue
+        if (
+            detail.get("workspace_route_name") == route
+            and "workspace_route_signature" in detail
+        ):
+            return entry, detail["workspace_route_signature"]
+    return None, None
+
+
 def _plugin_root_snapshot_path(path):
     """Where the within-tick root snapshot lives (#565): beside the state file,
     never inside it -- this is deliberately NOT an entry, so it must not

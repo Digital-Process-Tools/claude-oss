@@ -31,9 +31,9 @@ correctly.
 | The setup diagnostic run before the session, relayed whole when not `ok` | built (#764) |
 | The `/oss:doctor` route carries a receipt, so a standing WARN stops re-firing | built (#1064) |
 | Prompt first, channel flag last | built |
-| Job 2 reads more than one bit of repo state | **designed** |
-| A threshold route for triage, curate and release | **designed** |
-| Precedence between routes, and a receipt on each | **designed** |
+| Job 2 reads more than one bit of repo state | built (#1155) |
+| A threshold route for triage, curate and release | built (#1155) |
+| Precedence between routes, and a receipt on each | built (#1155) |
 | The readings the launcher computed reach the agent, not only stderr | **designed** |
 | The Python behind the shell is a module with an entry point | **designed** |
 | A launch is measured -- which prompt, how long, what was unknown | **designed** |
@@ -133,34 +133,45 @@ never passes `caller`) keeps the original advice.
 **No summarising a bad verdict to its word.** Once not `ok`, the whole report is relayed: `not
 checked` is a third state that reads as clean.
 
-## What job 2 should choose from
+## What job 2 chooses from
 
-Designed, none of it built. Today's vocabulary is three words and two are reachable in a configured
-repo. Each candidate route is a **standing count crossing a threshold**, and every count already
-exists:
+Built (#1155): `scripts/workspace_routes.py`, called from the launcher only once the two
+tooling-facing routes above have both declined to move `$prompt` off `/oss:tick`. Each candidate
+route is a **standing count crossing a threshold**, and every count already existed elsewhere in
+this repository -- this module reuses each rather than re-scanning:
 
-| when | route | counted by | 2026-09-06 |
-| --- | --- | --- | --- |
-| no `.oss.json` | `/oss:setup` | the file's presence | built |
-| plugin moved, or the doctor verdict moved | `/oss:doctor` | `plugin_update.py`, the `VERDICT:` line | built |
-| open issues with no `lane-*` or no `priority-*` | `/oss:triage` | `gh-labels:tally=`'s `no ... label` row | 1 of 33, 1 of 33 |
-| fragments in `trap.d/` | `/oss:curate` | `trap_curate.py`, which already prints `N waiting` | 11 |
-| fragments in `changelog.d/` | `/oss:release` | the count `release_version.py` reads | 19 |
-| nothing above | `/oss:tick` | the default, and the only route that is work | built |
+| when | route | counted by |
+| --- | --- | --- |
+| no `.oss.json` | `/oss:setup` | the file's presence |
+| plugin moved, or the doctor verdict moved | `/oss:doctor` | `plugin_update.py`, the `VERDICT:` line |
+| no `lane-*`/`priority-*` over `triage_route_threshold` | `/oss:triage` | `workspace_routes.triage_count` (`gh issue list --json labels`) |
+| `trap.d/` fragments over `curate_route_threshold` | `/oss:curate` | `workspace_routes.curate_count` (`trap_curate.waiting`) |
+| `changelog.d/` fragments over `release_route_threshold` | `/oss:release` | `workspace_routes.release_count` (`release_version._fragment_dir`/`_scan`) |
+| nothing above | `/oss:tick` | the default, and the only route that is work |
 
 The command is `/oss:curate`, not `/oss:trap`.
 
-Four constraints the two built routes did not have:
+Four constraints the two tooling routes above did not have, and how `workspace_routes.py` meets
+each:
 
-- **A threshold is a per-repo fact**, so it goes in `.oss.json` and never in shared code. An absent
-  key means the repo does not want the route.
+- **A threshold is a per-repo fact**, so it goes in `.oss.json` (`triage_route_threshold`,
+  `curate_route_threshold`, `release_route_threshold`) and never in shared code. An absent key means
+  the repo does not want the route -- `decide()` skips a route entirely rather than defaulting a
+  number, and none of this repository's own three keys is set today, on purpose: shipping the
+  mechanism and choosing this repo's own numbers are two different decisions.
 - **Every count needs a third state.** `11 waiting` and `could not read the directory` must not both
   render as under threshold. `over` / `under` / `could-not-count`, and the third neither routes nor
-  goes silent.
-- **Precedence must be decided**, because more than one fires: this repo is over the curate and the
-  release threshold at once. Not whichever check ran first.
-- **Each route needs #1064's receipt.** A count stuck over threshold is the shape of an unclearable
-  WARN -- 11 uncurated traps would pin every session to `/oss:curate`.
+  goes silent -- `_count_state` never returns `under` for a `None` count, and an invalid threshold
+  (negative, not an integer) is `could-not-count` too, never silently ignored.
+- **Precedence is decided**, because more than one can fire at once: `ROUTES = ("release", "triage",
+  "curate")` -- most-blocking first, per the issue's own argument (a release folds fragments and
+  moves the tag; a triage pass changes what the next tick can see; curate changes nothing
+  downstream) -- never whichever check ran first.
+- **Each route carries #1064's receipt.** `oss_state.workspace_route_check`/`_last_workspace_route`
+  are the doctor route's own mechanism, generalised: a route arms only when its signature (state
+  plus count) has moved since the receipt last recorded for that route, in this repo's own
+  `state_file`. A repo with no `state_file` configured still arms, every time, with `no-receipt` said
+  explicitly rather than silently re-firing forever with no visible reason.
 
 **The launcher must not become a second scheduler.** It picks the first command of one session; tick
 ordering stays in `skills/manager/phases/tick-order.md`. The test for a route is whether a maintainer
@@ -168,10 +179,9 @@ opening this repo today would type that command first.
 
 ## Still open
 
-- **Job 2 reads one bit of repo state.** Both inputs to the choice are facts about the *tooling*.
-  Not covered by the threshold shape above, and unresolved: a red or pending default branch, a green
-  PR waiting to merge, lanes already running -- real states, different first commands, no standing
-  count.
+- **Job 2 still does not read a red or pending default branch, a green PR waiting to merge, or
+  lanes already running.** Real states, different first commands, no standing count -- explicitly
+  out of scope for #1155's own threshold shape, and still undesigned.
 - **Everything measured is thrown away at the `exec`.** The doctor report goes to stderr; the route
   then hands the session `/oss:doctor`, which re-runs it. ~1.9 s of the ~3.2 s launch, paid twice,
   and the agent starts with nothing. The fix is a receipt the opening command reads.

@@ -1910,6 +1910,67 @@ DOCTOR_ROUTE_CHECK
     fi
 fi
 
+# --- #1155: triage/curate/release threshold routes, only once the two more --
+# specific routes above have both declined to move $prompt off /oss:tick. Each
+# is a standing count crossing a per-repo threshold this repo declares in
+# .oss.json -- absent means the repo does not want the route -- gated by the
+# same #1064-shaped receipt as the doctor route above, so a count stuck OVER
+# threshold does not repeat this route on every single launch forever.
+if [ -n "$python_bin" ] && [ "$prompt" = "/oss:tick" ]; then
+    workspace_routes_out=$("$python_bin" "$plugin_root/scripts/workspace_routes.py" \
+        --root "$repo_root" 2>&1) && workspace_routes_status=0 || workspace_routes_status=$?
+    if [ "$workspace_routes_status" -gt 3 ]; then
+        echo "oss-workspace: could not evaluate the #1155 threshold routes" \
+             "(exit $workspace_routes_status). Opening $prompt anyway." >&2
+        if [ -n "$workspace_routes_out" ]; then
+            printf '%s\n' "$workspace_routes_out" >&2
+        fi
+    else
+        printf '%s\n' "$workspace_routes_out" >&2
+        workspace_route_line=$(printf '%s\n' "$workspace_routes_out" \
+            | awk '/^ROUTE:/ { line = $0 } END { if (line != "") print line }')
+        case $workspace_route_line in
+            "ROUTE: release"*)
+                echo "oss-workspace: routing this session into /oss:release --" \
+                     "the changelog fragment count is over this repo's own" \
+                     "threshold." >&2
+                prompt="/oss:release"
+                ;;
+            "ROUTE: triage"*)
+                echo "oss-workspace: routing this session into /oss:triage --" \
+                     "open issues missing lane-*/priority-* labels are over" \
+                     "this repo's own threshold." >&2
+                prompt="/oss:triage"
+                ;;
+            "ROUTE: curate"*)
+                echo "oss-workspace: routing this session into /oss:curate --" \
+                     "trap.d/ fragments waiting are over this repo's own" \
+                     "threshold." >&2
+                prompt="/oss:curate"
+                ;;
+            "ROUTE: none"*|"")
+                # `ROUTE: none` covers both "nothing is over threshold" and
+                # "over threshold, but the receipt already recorded this exact
+                # state" -- the full line, already relayed above, says which.
+                # An empty line here means the script printed nothing this
+                # launcher could parse at all, which is its own unknown, not
+                # a clean one -- said explicitly rather than silently kept at
+                # $prompt.
+                if [ -z "$workspace_route_line" ]; then
+                    echo "oss-workspace: the #1155 threshold routes printed no" \
+                         "ROUTE line this launcher could parse. Opening" \
+                         "$prompt anyway." >&2
+                fi
+                ;;
+            *)
+                echo "oss-workspace: the #1155 threshold routes printed a line" \
+                     "this launcher does not recognise ($workspace_route_line)." \
+                     "Opening $prompt anyway." >&2
+                ;;
+        esac
+    fi
+fi
+
 # #629: exported only to relay one already-computed answer into the doctor
 # subprocess a few lines above -- never meant to reach the session itself. Left
 # exported, a `claude mcp get` answer read at session-open would go on
