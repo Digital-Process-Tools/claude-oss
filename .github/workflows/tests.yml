@@ -95,7 +95,7 @@ jobs:
       - name: Install test deps
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov markdown-it-py pyyaml ruff==0.16.3
+          pip install pytest pytest-cov pytest-xdist markdown-it-py pyyaml ruff==0.16.3
       # #1177: what `pytest -n auto` would request on THIS leg, from doctor.py's own
       # transcription of xdist's worker-count logic (#367), before any decision is taken
       # about parallelising this matrix. The runners' core counts have never been read
@@ -113,6 +113,25 @@ jobs:
       # one either, so the source this prints is the source `-n auto` would really use.
       - name: Report what `pytest -n auto` would request here
         run: python scripts/doctor.py --worker-sizing
+      # #1177 candidate 1: `-n auto --dist loadfile`. The probe added by #1189 has now
+      # reported on all three platforms of this matrix -- ubuntu 4 workers, windows 4,
+      # macOS 3, ubuntu's read from three legs of run 34056088247 -- so the parallelism
+      # available here is measured rather than taken from a documentation page.
+      #
+      # `--dist loadfile` and not the default `--dist load`: this suite's tests build git
+      # repositories, change working directory and manage worktrees, and keeping one
+      # file's tests on one worker is what lets those fixtures survive being run beside
+      # each other. It is the weaker parallelism and it is the one worth trying first.
+      #
+      # What this does NOT buy, so nobody reads the worker count as a speedup factor: a
+      # whole file lands on one worker, so the longest single FILE sets the floor.
+      # `tests/test_no_test_pins_the_current_version_350.py` alone was 25.33s of ubuntu
+      # 3.12's 234.23s of measured test time, and no number of workers divides that.
+      #
+      # The risk here is not wall clock, it is a suite that passes in a different order.
+      # A green first run is the outcome to distrust rather than the one to ship: a race
+      # that fires one run in ten arrives later as a flake nobody attaches to this change.
+      #
       # #1177 candidate 2: `addopts` in pyproject.toml carries `--cov=scripts
       # --cov-report=term-missing --cov-fail-under=85`, so coverage was computed on all
       # twelve legs and the 85% floor was evaluated twelve times -- and the twelve
@@ -145,7 +164,7 @@ jobs:
       # their own PATH. Changing the interpreter the suite runs under is a far larger
       # change than passing one flag, and this step has no need of it.
       - name: Run tests
-        run: pytest ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '--no-cov' || '' }}
+        run: pytest ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '--no-cov' || '' }} -n auto --dist loadfile
 
   shell:
     runs-on: ubuntu-latest
