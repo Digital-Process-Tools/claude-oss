@@ -42,12 +42,8 @@ def test_lane_setup_no_longer_retypes_its_own_copy():
     assert lane_setup._GROUP_STATES is select_issues_companions.GROUP_STATES
 
 
-def test_select_issues_solo_lane_other_group_uses_the_shared_constant():
-    """`_group_candidates`'s own #1130 solo-dispatch branch sets the
-    literal group state directly (it never calls `suggest_companions`) --
-    it must use the same named constant, not a hand-typed string that
-    could drift from it."""
-    board = [
+def _lane_other_board():
+    return [
         {
             "number": 1,
             "title": "t",
@@ -57,11 +53,36 @@ def test_select_issues_solo_lane_other_group_uses_the_shared_constant():
         }
     ]
 
-    def _no_op_checker(numbers, mode, run=None, repo=None):
-        return [
-            {"issue": n, "state": "unassigned", "assignees": [], "viewer": "bot"}
-            for n in numbers
-        ]
+
+def _no_op_checker(numbers, mode, run=None, repo=None):
+    return [
+        {"issue": n, "state": "unassigned", "assignees": [], "viewer": "bot"}
+        for n in numbers
+    ]
+
+
+def _held(repo_slug, worktree_root, exclude_issue=None, repo=None):
+    return {"state": "resolved", "held": {}, "detail": ""}
+
+
+_LANE_OTHER_CONFIG = {
+    "repo": "Digital-Process-Tools/claude-oss",
+    "worktree_root": "/tmp/wt",
+    "labels": {
+        "lanes": ["lane-dispatch"],
+        "filed_by_loop": "filed-by-loop",
+        "priority": ["priority-high", "priority-medium", "priority-low"],
+        "lane_other": "lane-other",
+    },
+}
+
+
+def test_select_issues_solo_lane_other_group_uses_the_shared_constant():
+    """`_group_candidates`'s own #1130 solo-dispatch branch sets the
+    literal group state directly (it never calls `suggest_companions`) --
+    it must use the same named constant, not a hand-typed string that
+    could drift from it."""
+    board = _lane_other_board()
 
     def _fetcher(repo_slug, per=100, run=None):
         return {
@@ -72,21 +93,46 @@ def test_select_issues_solo_lane_other_group_uses_the_shared_constant():
             "detail": "",
         }
 
-    def _held(repo_slug, worktree_root, exclude_issue=None, repo=None):
-        return {"state": "resolved", "held": {}, "detail": ""}
-
-    config = {
-        "repo": "Digital-Process-Tools/claude-oss",
-        "worktree_root": "/tmp/wt",
-        "labels": {
-            "lanes": ["lane-dispatch"],
-            "filed_by_loop": "filed-by-loop",
-            "priority": ["priority-high", "priority-medium", "priority-low"],
-            "lane_other": "lane-other",
-        },
-    }
     result = select_issues.select_fleet(
-        config, fetcher=_fetcher, held_fetcher=_held, checker=_no_op_checker
+        _LANE_OTHER_CONFIG,
+        fetcher=_fetcher,
+        held_fetcher=_held,
+        checker=_no_op_checker,
     )
     group = result["lanes"]["lane-other"]["groups"]["groups"][0]
     assert group["state"] == select_issues_companions.STATE_LANE_OTHER
+
+
+def test_select_issues_solo_lane_other_group_actually_reads_the_constant_at_call_time(
+    monkeypatch,
+):
+    """The positive control for the test above: an equality check against
+    `STATE_LANE_OTHER` passes identically whether `_group_candidates` reads
+    the shared constant or hardcodes the same string -- both currently
+    equal `"lane-other"`. Monkeypatching the module attribute proves
+    `select_issues.py` actually looks it up (`select_issues_companions.
+    STATE_LANE_OTHER`, an attribute access) rather than having inlined its
+    value at import time or hand-typed a literal that merely matches it
+    today."""
+    board = _lane_other_board()
+
+    def _fetcher(repo_slug, per=100, run=None):
+        return {
+            "state": "ok",
+            "issues": board,
+            "capped": False,
+            "cap_detail": "",
+            "detail": "",
+        }
+
+    monkeypatch.setattr(
+        select_issues_companions, "STATE_LANE_OTHER", "sentinel-lane-other"
+    )
+    result = select_issues.select_fleet(
+        _LANE_OTHER_CONFIG,
+        fetcher=_fetcher,
+        held_fetcher=_held,
+        checker=_no_op_checker,
+    )
+    group = result["lanes"]["lane-other"]["groups"]["groups"][0]
+    assert group["state"] == "sentinel-lane-other"

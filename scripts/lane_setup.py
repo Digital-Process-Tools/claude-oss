@@ -1481,7 +1481,7 @@ def _receipt_companions_line(result):
     dropped": a real candidate found elsewhere on the board must not read
     as proof the rest of the board was swept clean.
     """
-    if result["state"] == "candidates":
+    if result["state"] == select_issues_companions.STATE_CANDIDATES:
         parts = [
             "#{0} ({1})".format(entry["number"], ", ".join(entry["files"]))
             for entry in result["candidates"]
@@ -1494,7 +1494,7 @@ def _receipt_companions_line(result):
                 )
             )
         return line
-    if result["state"] == "none":
+    if result["state"] == select_issues_companions.STATE_NONE:
         return "none -- {0}".format(result["detail"])
     return "COULD NOT TELL -- {0}".format(result["detail"])
 
@@ -2028,7 +2028,13 @@ def main(argv=None):
                 )
             )
         return (
-            EXIT_OK if result["state"] in ("candidates", "none") else EXIT_COULD_NOT_RUN
+            EXIT_OK
+            if result["state"]
+            in (
+                select_issues_companions.STATE_CANDIDATES,
+                select_issues_companions.STATE_NONE,
+            )
+            else EXIT_COULD_NOT_RUN
         )
 
     if args.release:

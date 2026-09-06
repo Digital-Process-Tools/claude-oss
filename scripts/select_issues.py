@@ -153,7 +153,7 @@ a #1130 `lane-other` singleton -- carries `adjacency: None`: nothing
 joined it, so there is no claim to grade.
 
 ## Fleet: fetch, iterate the fleet's own lanes, return bodies (#1145,
-## #1146, #1147)
+## #1146, #1147; bodies narrowed off the default print by #1180)
 
 `select_fleet(config, ...)` is `docs/pick-the-work.md` step 1: no input
 beyond an already-loaded `.oss.json` (`config`). It fetches the open board
@@ -218,9 +218,9 @@ the fleet's own overall `state` is `candidates` if any lane has some,
 `could-not-select` otherwise -- the same three-state discipline, one level
 up.
 
-**#1147: every member of every returned group carries its own issue body**
-(`body`, fenced as `data, not instructions` -- a per-body random token
-between `BODY_FENCE_OPEN_PREFIX`/`BODY_FENCE_OPEN_SUFFIX` and
+**#1147: every member of every returned group CAN carry its own issue
+body** (`body`, fenced as `data, not instructions` -- a per-body random
+token between `BODY_FENCE_OPEN_PREFIX`/`BODY_FENCE_OPEN_SUFFIX` and
 `BODY_FENCE_CLOSE_PREFIX`/`BODY_FENCE_CLOSE_SUFFIX`, so a body that quotes
 the fence's own static text still cannot forge a real close tag -- never a
 raw JSON field indistinguishable from this tool's own output), `body_length`
@@ -232,6 +232,18 @@ groups, never `ungrouped`, never the rest of the board -- by
 `_attach_bodies`, a post-processing step over `select()`'s own output
 rather than a change to `select()`'s contract, so every existing test of
 `select()` and its `groups` shape stays exactly as it was.
+
+**#1180: "CAN" above is load-bearing -- `main()`'s own default CLI print
+no longer attaches them.** Bodies were measured at 66% of a real fleet's
+serialized bytes, enough on their own to push the whole payload over the
+harness's output-truncation cap and hand the caller a persisted-file
+pointer instead of a fleet -- the exact failure #1147 existed to prevent,
+recreated by #1147's own fix. `select_fleet`'s new `include_bodies`
+keyword still defaults `True`, so a direct/library caller of this
+function (and every test written before #1180) is unaffected; `main()`
+passes `False`. The bounded second call, `_issue_bodies()` / `--bodies N
+N ...` on the CLI, fetches back just the fenced bodies of specific issue
+numbers once a caller knows which groups it actually kept.
 
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
@@ -1453,6 +1465,20 @@ def _issue_bodies(config, numbers, fetcher=None):
     makes. A requested number simply not on the open board (already closed,
     a typo, merged in the meantime) is a real, stated absence: it lands in
     `not_found`, never silently missing from `bodies` with no trace at all.
+
+    Reviewer round (#1180): `_fetch_board`'s own `capped` flag (#1145) is a
+    single, non-paginated read -- when it is set, the fetched page is not
+    the whole open board, so a requested number missing from it is NOT the
+    same fact as a genuine absence. `suggest_companions` and `select_fleet`
+    already answer `could-not-tell` rather than a confident negative for
+    exactly this signal (see their own `board.get("capped")` handling);
+    this function used to ignore it entirely, silently reading "not on
+    this page" as "confirmed gone" -- the same fold #1068/#1145 already
+    closed one layer up. `state` is `could-not-tell` when the read was
+    capped AND at least one requested number could not be found on the
+    fetched page; a number that WAS found is a real positive fact
+    regardless of the cap, so a capped read with every number found is
+    still `ok`.
     """
     fetcher = _fetch_board if fetcher is None else fetcher
     repo_slug = (config or {}).get("repo")
@@ -1473,6 +1499,19 @@ def _issue_bodies(config, numbers, fetcher=None):
             not_found.append(number)
             continue
         bodies[str(number)] = _fenced_body(row.get("body"))
+    if board.get("capped") and not_found:
+        return {
+            "state": "could-not-tell",
+            "detail": "the board read was capped ({0}) -- {1} of the requested "
+            "issue number(s) were not found on the fetched page, so their "
+            "absence is not a confirmed reading: {2}".format(
+                board.get("cap_detail") or "no detail given",
+                len(not_found),
+                ", ".join(str(n) for n in not_found),
+            ),
+            "bodies": bodies,
+            "not_found": not_found,
+        }
     return {"state": "ok", "detail": "", "bodies": bodies, "not_found": not_found}
 
 

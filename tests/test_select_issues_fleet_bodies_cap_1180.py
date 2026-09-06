@@ -210,3 +210,47 @@ def test_issue_bodies_reports_could_not_fetch_when_the_board_read_fails():
     assert result["state"] == "could-not-fetch"
     assert result["bodies"] == {}
     assert "gh is not on PATH" in result["detail"]
+
+
+def test_issue_bodies_a_capped_read_cannot_confirm_a_requested_number_absent():
+    """A capped board read (#593's own `per=` ceiling) only ever names ONE
+    page -- a requested number missing from that page is not a confirmed
+    absence the way a genuinely uncapped read's `not_found` is. Reporting
+    it as a plain `not_found` on an `ok` state would repeat the exact
+    fold #1145/#1068 already fixed for `suggest_companions` and
+    `select_fleet` (both answer `could-not-tell` on a capped read, never a
+    confident negative)."""
+
+    def capped_fetch(repo_slug, per=100, run=None):
+        return {
+            "state": "ok",
+            "issues": [],
+            "capped": True,
+            "cap_detail": "capped at per=100 -- more open issues may exist",
+            "detail": "",
+        }
+
+    result = select_issues._issue_bodies(CONFIG, [1, 2], fetcher=capped_fetch)
+    assert result["state"] == "could-not-tell"
+    assert result["not_found"] == [1, 2]
+    assert "capped at per=100" in result["detail"]
+
+
+def test_issue_bodies_a_capped_read_with_every_number_found_is_still_ok():
+    """The cap only poisons the reading for numbers it could not find --
+    every requested number that WAS found on the fetched page is a real,
+    positive fact regardless of whether the read was capped."""
+
+    def capped_fetch(repo_slug, per=100, run=None):
+        return {
+            "state": "ok",
+            "issues": [{"number": 1, "title": "t", "body": "b"}],
+            "capped": True,
+            "cap_detail": "capped at per=100 -- more open issues may exist",
+            "detail": "",
+        }
+
+    result = select_issues._issue_bodies(CONFIG, [1], fetcher=capped_fetch)
+    assert result["state"] == "ok"
+    assert result["not_found"] == []
+    assert "1" in result["bodies"]

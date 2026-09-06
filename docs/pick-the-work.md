@@ -101,16 +101,19 @@ attached by default (`include_bodies=True`), unchanged.
 | | |
 | --- | --- |
 | **Who** | the LLM. This is the only step it judges. |
-| **Input** | the surviving groups' own issue bodies -- a second, bounded call (below), never the board. |
+| **Input** | the groups step 1 handed back -- their issue bodies fetched by a second, bounded call (below), never the board directly. |
 | **Output** | for each group: dispatch it, or drop it and say why. |
 
 **The bounded second call**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --bodies N N ...`,
-naming exactly the issue numbers in the groups step 1 handed back (never the whole board) -- one more
-`gh` read, bounded to a handful of numbers rather than the whole fleet, in exchange for a payload
-that fits. Returns `{"state": "ok" | "could-not-fetch", "bodies": {"<number>": {"body",
-"body_truncated", "body_length"}}, "not_found": [N, ...]}` -- the same fenced-body shape #1147
-already uses, keyed by issue number. `not_found` names a requested number that is not (or no longer)
-on the open board, a stated absence rather than a silently missing key.
+naming exactly the issue numbers in the groups step 1 handed back -- every group, not a
+pre-filtered subset, since reading the body is what this step's own veto judgement runs on. Never
+the whole board: one more `gh` read, bounded to a handful of numbers rather than the whole fleet, in
+exchange for a payload that fits. Returns `{"state": "ok" | "could-not-tell" | "could-not-fetch",
+"bodies": {"<number>": {"body", "body_truncated", "body_length"}}, "not_found": [N, ...]}` -- the
+same fenced-body shape #1147 already uses, keyed by issue number. `not_found` names a requested
+number that is not (or no longer) on the open board, a stated absence rather than a silently
+missing key; `could-not-tell` is that same absence when the board read was itself capped, so "not on
+this page" cannot be told apart from "genuinely gone" -- never folded into a confident `ok`.
 
 One question per group: **is this worth a lane?** Stale, settled elsewhere, needs the maintainer,
 wrong for the project. Nothing else -- not ranking, not grouping, not disjointness, all of which
