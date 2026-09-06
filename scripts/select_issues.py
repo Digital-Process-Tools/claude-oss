@@ -166,6 +166,30 @@ a tick that dispatches at most five lanes, most of them never used.
 `select_fleet` composes -- called once per lane label, with `payload
 ["lane_label"]` narrowing candidate generation to that one label (#1078).
 
+**"One group per lane label" means exactly one, not a partition of that
+label's own eligible candidates.** The first cut of this function returned
+every group `_group_candidates` could form within a label -- 23 groups
+across five lanes plus the no-lane-label bucket, measured live, for a
+fleet that can dispatch at most one developer per lane this tick. A
+lane's second, third and fourth groups are recomputed next tick against a
+board that has moved, so computing and returning them at all is pure
+waste -- exactly the "computed, rendered, never used" defect #1146 was
+filed to remove one level up. `_run_one`'s `cap_groups` truncates each
+real lane's `groups.groups` to its first entry -- `_group_candidates`
+already orders groups by rank, so the first is "the best-ranked eligible
+issue in this lane as lead, plus up to two companions by the existing
+adjacency rules," never a re-derivation. Nothing else changes:
+`candidates` still lists every eligible issue in the lane, capped group or
+not, and `ungrouped` is untouched -- the cap removes a group's number, not
+an issue's visibility.
+
+**The no-lane-label bucket is deliberately NOT capped yet
+(`cap_groups=False`).** Whether it should be capped the same way, or
+should return no group at all -- nothing disjoint-by-construction backs
+it, and #1130 already requires a `lane-other` issue to dispatch solo,
+never bundled -- is an open question this diff states rather than
+decides.
+
 **An issue carrying none of the declared lane labels does not vanish just
 because iteration is now label-driven.** It (and a `labels.lane_other`
 issue, which names no subsystem of its own -- #1130) surfaces under
@@ -1246,7 +1270,7 @@ def select_fleet(
 
     lane_labels = [l for l in (declared.get("lanes") or []) if isinstance(l, str)]
 
-    def _run_one(filtered_issues, lane_label):
+    def _run_one(filtered_issues, lane_label, cap_groups):
         payload = {
             "declared": declared,
             "issues": filtered_issues,
@@ -1270,12 +1294,32 @@ def select_fleet(
         # issues) must still answer `could-not-select`, per this function's
         # own docstring, never crash on the way there.
         if "groups" in result:
+            # Maintainer round (#1146): the design is ONE group per lane --
+            # the fleet -- never a partition of that lane's own eligible
+            # candidates. `_group_candidates` already orders `groups` by
+            # rank (it walks `candidates`, already ranked, forming one group
+            # per not-yet-taken lead), so `groups[0]` -- when there is one --
+            # is exactly "the best-ranked eligible issue in this lane as
+            # lead, plus up to two companions by the existing adjacency
+            # rules." Measured live: 23 groups across five real lanes plus
+            # the no-lane-label bucket, for a tick that can dispatch at most
+            # one developer per lane -- a lane's second, third and fourth
+            # groups cannot be dispatched this tick and are recomputed next
+            # tick against a board that has moved. Truncated BEFORE bodies
+            # are attached, so a dropped group's members never pay the body
+            # fetch/fence cost at all. `candidates` (every eligible issue in
+            # this lane, capped group or not) and `ungrouped` (never
+            # entered grouping at all, #267) are untouched by this cap --
+            # nothing here removes an issue from view, only from getting a
+            # group of its own this tick.
+            if cap_groups:
+                result["groups"]["groups"] = result["groups"]["groups"][:1]
             _attach_bodies(result["groups"], issues_by_number)
         return result
 
     lanes = {}
     for label in lane_labels:
-        lanes[label] = _run_one(issues, label)
+        lanes[label] = _run_one(issues, label, cap_groups=True)
 
     # #1146's own hidden judgement call: an issue carrying none of the
     # declared lane labels must stay reachable now that iteration is
@@ -1287,7 +1331,14 @@ def select_fleet(
     unrouted_issues = [
         row for row in issues if not (set(row.get("labels") or []) & labelled)
     ]
-    lanes[NO_LANE_LABEL_KEY] = _run_one(unrouted_issues, None)
+    # Maintainer round (#1146): whether THIS bucket should be capped to one
+    # group the same way a real lane now is -- or should return no group at
+    # all, since nothing disjoint-by-construction backs it and #1130 already
+    # requires a `lane-other` issue to be solo, never bundled -- is an open
+    # question, deliberately left open here (`cap_groups=False`, the
+    # pre-existing behaviour) rather than decided unilaterally. See the
+    # developer report for the reasoning weighed and not yet acted on.
+    lanes[NO_LANE_LABEL_KEY] = _run_one(unrouted_issues, None, cap_groups=False)
 
     states = [row["state"] for row in lanes.values()]
     if any(s == STATE_CANDIDATES for s in states):
