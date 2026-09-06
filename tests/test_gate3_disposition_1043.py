@@ -83,6 +83,19 @@ def test_round_two_findings_with_unknown_blocking_is_could_not_decide():
     assert verdict["disposition"] != "carry-forward-and-proceed"
 
 
+def test_round_two_findings_with_none_blocking_is_also_could_not_decide():
+    """The literal `None` -- the natural Python spelling of "never checked",
+    and the value the issue's own TDD section illustrates the sentinel
+    with -- must be caught the same way as the dedicated sentinel string.
+    Passing plain `None` must never silently fall through to False's
+    carry-forward-and-proceed."""
+    verdict = gate3_disposition.decide(
+        round_number=2, verdict="findings", has_blocking=None
+    )
+    assert verdict["disposition"] == "could-not-decide"
+    assert verdict["disposition"] != "carry-forward-and-proceed"
+
+
 def test_round_two_clean_proceeds():
     verdict = gate3_disposition.decide(
         round_number=2, verdict="clean", has_blocking=False

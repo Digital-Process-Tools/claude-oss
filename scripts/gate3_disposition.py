@@ -34,7 +34,7 @@ function with tests instead.
                                                      carries forward)
   2      findings        False         carry-forward-and-proceed
   2      findings        True          stop-tag
-  2      findings        unknown       could-not-decide
+  2      findings        unknown/None  could-not-decide
 
 `has_blocking` is read for round two only. A round-one `findings` verdict
 stops the tag regardless of whether anything in it blocks, because round
@@ -82,7 +82,10 @@ _KNOWN_VERDICTS = ("clean", "findings", "could-not-run")
 # never reached the auditor (`could not rank`), or the caller simply never
 # checked. `decide()` cannot tell those two apart from the value alone, and
 # does not try; both mean the same thing here, which is that "not blocking"
-# was never actually established and must not be assumed.
+# was never actually established and must not be assumed. `decide()` treats
+# plain `None` the same way -- it is the natural Python spelling of "never
+# checked", and a caller who passes it instead of this sentinel must get the
+# same `could-not-decide` rather than a silent, undocumented fallthrough.
 BLOCKING_UNKNOWN = "unknown"
 
 EXIT_PROCEED = 0
@@ -97,11 +100,12 @@ def decide(round_number, verdict, has_blocking):
     ``round_number`` is ``1`` or ``2``. ``verdict`` is the auditor's own
     verdict word (``clean`` / ``findings`` / ``could-not-run``).
     ``has_blocking`` is whether any finding in *this round* sits in a row
-    the ranking table marks blocking -- ``True``, ``False``, or
-    ``BLOCKING_UNKNOWN`` when that was never established. Ignored for every
-    verdict except a round-two ``findings``, where it is the only thing
-    that decides whether the tag may proceed -- and ``BLOCKING_UNKNOWN``
-    there decides ``could-not-decide`` rather than being read as ``False``.
+    the ranking table marks blocking -- ``True``, ``False``, or either
+    ``BLOCKING_UNKNOWN`` or plain ``None`` when that was never established.
+    Ignored for every verdict except a round-two ``findings``, where it is
+    the only thing that decides whether the tag may proceed -- and either
+    spelling of "unknown" there decides ``could-not-decide`` rather than
+    being read as ``False``.
     """
     if round_number not in (1, 2):
         return {
@@ -141,7 +145,7 @@ def decide(round_number, verdict, has_blocking):
             "maintainer a chance to fix before round two runs, and "
             "carry-forward is a round-two act, never a round-one one",
         }
-    if has_blocking == BLOCKING_UNKNOWN:
+    if has_blocking == BLOCKING_UNKNOWN or has_blocking is None:
         return {
             "disposition": DISPOSITION_COULD_NOT_DECIDE,
             "reason": "has_blocking is unknown for round-two findings: "
