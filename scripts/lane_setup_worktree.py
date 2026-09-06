@@ -616,30 +616,44 @@ def worktree_last_activity(path):
     *directory* (a plain `git init`, never a linked worktree) is the one shape
     where this still sees a commit's own object-database writes, incidentally.
 
-    **Known limitation, the same review round's second finding, left
-    undocumented rather than fixed here.** Only files are stat'ed, never a
-    directory's own `st_mtime` -- so a create-then-delete cycle that leaves no
-    file behind (a lock file, an atomic temp file cleaned up after itself)
-    bumps the containing directory's own mtime with nothing left for this walk
-    to see, and is invisible here. Folding directory mtimes in was weighed and
-    declined for this round: it changes what `empty` means (a directory that
-    holds only empty subdirectories would stop being `empty` the moment its own
-    entries are counted, including the top-level directory itself at the exact
-    moment `git worktree add` creates it) in a way this fix has not built or
-    tested a full matrix for. Reported rather than patched under time pressure
-    -- most genuine "still writing" activity leaves an edited file behind
-    regardless, so this is a narrower gap than it first reads as, not the
-    common case this signal exists to catch.
+    **#1140 folds every SUBdirectory's own mtime into the walk, closing the
+    gap the previous review round left as a known limitation.** Only files
+    were stat'ed before, never a directory's own `st_mtime` -- so a
+    create-then-delete cycle that leaves no file behind (a lock file, an
+    atomic temp file cleaned up after itself) bumped the containing
+    directory's own mtime with nothing left for a file-only walk to see,
+    reproduced live in #1120's own self-review: a directory's own mtime
+    advanced roughly a second after a create+delete cycle while this
+    function's reported mtime stayed unchanged. Every directory `os.walk`
+    visits below the root is now `lstat`'ed too, so that bump is seen even
+    when nothing survives inside it.
+
+    **The root path itself (`path` -- the directory passed in) is deliberately
+    still excluded.** Its own mtime is set the instant `git worktree add`
+    creates it, before any file exists inside it, and folding that in would
+    make every freshly created worktree read `resolved` from the moment it
+    exists rather than `empty` -- the other half of the question #1140's own
+    body raised, left open here rather than decided under this same fix: it
+    would need its own fixture matrix, and this repository's own rule is not
+    to widen a claim past what was actually built and tested for it.
+
+    Folding in SUBdirectory mtimes does settle the other half of that
+    question, though: a directory holding only empty subdirectories now
+    reports `resolved` (each subdirectory's own creation mtime), never
+    `empty` -- `empty` now means "no files anywhere below `path`, and no
+    subdirectory below `path` either", a narrower, more literal reading of
+    the word than before, not a looser one.
 
     Three states, this repository's own convention -- never two:
 
-      resolved         at least one file was stat'ed successfully; `mtime`
-                        carries the newest modification time seen, in epoch
-                        seconds.
-      empty             `path` exists, is a directory, and the walk completed,
-                         but found no files at all -- a worktree this fresh (or
-                         one holding only empty directories) has nothing to
-                         report yet, not a failure.
+      resolved         at least one file, or one SUBdirectory (#1140), was
+                        stat'ed successfully; `mtime` carries the newest
+                        modification time seen, in epoch seconds. Never the
+                        root path's own mtime -- see above.
+      empty             `path` exists, is a directory, holds no files and no
+                        subdirectories anywhere in the walk, and the walk
+                        completed -- a worktree this fresh has nothing to
+                        report yet, not a failure.
       could-not-tell    `path` is falsy, does not exist, is not a directory, or
                         the walk itself could not be completed cleanly (a
                         permission error partway through, a symlink loop
@@ -671,9 +685,22 @@ def worktree_last_activity(path):
         }
     newest = None
     walk_errors = []
+    root_norm = os.path.normpath(path)
     for dirpath, _dirnames, filenames in os.walk(
         path, onerror=walk_errors.append, followlinks=False
     ):
+        # #1140: every SUBdirectory this walk visits is stat'ed too, not only
+        # the files inside it -- the root itself (dirpath == root_norm, the
+        # walk's own first iteration) is excluded on purpose; see the
+        # docstring above for why.
+        if os.path.normpath(dirpath) != root_norm:
+            try:
+                found_dir = os.lstat(dirpath)
+            except (OSError, ValueError):
+                pass
+            else:
+                if newest is None or found_dir.st_mtime > newest:
+                    newest = found_dir.st_mtime
         for name in filenames:
             file_path = os.path.join(dirpath, name)
             try:
@@ -694,7 +721,7 @@ def worktree_last_activity(path):
         return {
             "state": "empty",
             "mtime": None,
-            "detail": "{0} contains no files.".format(path),
+            "detail": "{0} contains no files or subdirectories.".format(path),
         }
     return {"state": "resolved", "mtime": newest, "detail": ""}
 
