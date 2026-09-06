@@ -44,8 +44,9 @@ fixture-only failures, since fixed) on 3.12.
 
 ``safe_which`` now performs the directory-and-``PATHEXT`` walk itself,
 using only accessors whose behaviour does not vary across this repo's
-supported interpreters (``os.path.isfile``/``os.path.exists``,
-``os.access``, ``os.environ``) -- it never calls ``shutil.which`` at all.
+supported interpreters (``os.path.exists``, ``os.access``,
+``os.path.isdir``, ``os.environ``) -- it never calls ``shutil.which`` at
+all.
 For each real search directory (``path`` if given, else
 ``os.environ.get("PATH", os.defpath)``) it builds one or more candidate
 filenames from ``name``: on non-Windows platforms, just ``name`` itself;
