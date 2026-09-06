@@ -466,8 +466,10 @@ def test_cli_flag_does_not_run_the_normal_25_check_sequence(tmp_path):
 
 
 def test_parse_args_carries_the_new_flag():
-    root, plugin_root, install_audit, problems = doctor.parse_args(["--install-audit"])
+    root, plugin_root, install_audit, problems, _sizing = doctor.parse_args(
+        ["--install-audit"]
+    )
     assert install_audit is True
     assert problems == []
-    root, plugin_root, install_audit, problems = doctor.parse_args([])
+    root, plugin_root, install_audit, problems, _sizing = doctor.parse_args([])
     assert install_audit is False

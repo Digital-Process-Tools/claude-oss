@@ -1064,18 +1064,46 @@ def worker_sizing(topology, workers, xdist_installed):
     return lines
 
 
+def _worker_sizing_report():
+    """``(count, [(level, message), ...])`` -- the composition both callers need.
+
+    `check_interpreter_environment` and `run_worker_sizing` ask the same question of the
+    same three probes, and a second hand-written composition is a second place for the
+    `-n auto` transcription's argument order to drift.
+    """
+    physical, affinity, logical = _worker_inputs()
+    workers = xdist_auto_workers(None, physical, affinity, logical)
+    return workers[0], worker_sizing(cpu_topology(), workers, _xdist_installed())
+
+
+def run_worker_sizing():
+    """#1177's probe: the worker-sizing lines alone, then one VERDICT. Always 0.
+
+    Three verdict states, not two. `xdist_auto_workers` returns a count of None with
+    source `"unknown"` when nothing answered, and folding that into a number would be
+    this repository's own defect class installed in the one line a CI reader greps for:
+    a probe that could not count, reported as a machine with some particular count.
+    """
+    count, lines = _worker_sizing_report()
+    for level, message in lines:
+        report(level, message)
+    print(
+        "VERDICT: {}".format(
+            "worker sizing unknown -- nothing on this machine answered"
+            if count is None
+            else "worker sizing {} worker(s)".format(count)
+        )
+    )
+    return 0
+
+
 def check_interpreter_environment():
     """#367. Two facts about the environment this process runs in, both of which
     took a morning to find once and take one line to state.
     """
     for level, message in interpreter_architecture():
         report(level, message)
-    physical, affinity, logical = _worker_inputs()
-    for level, message in worker_sizing(
-        cpu_topology(),
-        xdist_auto_workers(None, physical, affinity, logical),
-        _xdist_installed(),
-    ):
+    for level, message in _worker_sizing_report()[1]:
         report(level, message)
 
 
@@ -8674,7 +8702,11 @@ class _Parser(argparse.ArgumentParser):
 
 
 def parse_args(argv):
-    """``(root, plugin_root, install_audit, problems)``. Never exits and never raises."""
+    """``(root, plugin_root, install_audit, problems, worker_sizing)``.
+
+    Never exits and never raises. `worker_sizing` is appended rather than inserted so
+    the four existing positions keep meaning what every call site already reads them as.
+    """
     parser = _Parser(
         prog="doctor.py",
         description="Diagnose an oss-managed repo. Always exits 0.",
@@ -8695,6 +8727,14 @@ def parse_args(argv):
         "harness.",
     )
     parser.add_argument(
+        "--worker-sizing",
+        action="store_true",
+        help="#1177: report what `pytest -n auto` would request on THIS machine and "
+        "nothing else -- the subject is the interpreter and its CPU, not the repo, so "
+        "--root is not consulted. Every leg of a CI matrix can print its own number "
+        "instead of the number a documentation page claims for that runner.",
+    )
+    parser.add_argument(
         "--install-audit",
         action="store_true",
         help="#287: run the install audit instead of the normal diagnosis -- is this "
@@ -8703,7 +8743,13 @@ def parse_args(argv):
     )
     try:
         parsed = parser.parse_args(list(argv))
-        return parsed.root, parsed.plugin_root, parsed.install_audit, []
+        return (
+            parsed.root,
+            parsed.plugin_root,
+            parsed.install_audit,
+            [],
+            parsed.worker_sizing,
+        )
     except ValueError as exc:
         return (
             None,
@@ -8713,6 +8759,7 @@ def parse_args(argv):
                 "argument: {}. Falling back to CLAUDE_PROJECT_DIR or the current "
                 "directory, so the tree below may not be the one you meant.".format(exc)
             ],
+            False,
         )
 
 
@@ -8850,9 +8897,19 @@ def main(argv=None):
     path as an unrecognised argument. A library entry point does not get to read the
     process's arguments; the script entry point at the bottom passes them in.
     """
-    root, plugin_root, install_audit, arg_problems = parse_args(
+    root, plugin_root, install_audit, arg_problems, worker_sizing_mode = parse_args(
         [] if argv is None else argv
     )
+
+    if worker_sizing_mode:
+        # #1177: the subject here is the machine, not a tree, so this returns before
+        # `resolve_project_dir` rather than after it. A probe that reported a project
+        # directory would invite the reading that the number below is a property of the
+        # repository it was run in; it is a property of the runner.
+        for problem in arg_problems:
+            report("FAIL", problem)
+        return run_worker_sizing()
+
     project_dir, resolution = resolve_project_dir(
         root, os.environ.get("CLAUDE_PROJECT_DIR"), os.getcwd()
     )

@@ -96,6 +96,23 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pytest pytest-cov markdown-it-py pyyaml ruff==0.16.3
+      # #1177: what `pytest -n auto` would request on THIS leg, from doctor.py's own
+      # transcription of xdist's worker-count logic (#367), before any decision is taken
+      # about parallelising this matrix. The runners' core counts have never been read
+      # here -- the 2-3x figure in #1177 is reasoned from a documentation page, and
+      # GitHub has changed those numbers before (public repositories went from 2 to 4
+      # vCPU in 2024). Twelve legs printing their own answer is the reading that
+      # argument needs, and it is worth keeping afterwards: the number a later
+      # regression would move is then in every run's log rather than in one issue.
+      #
+      # doctor.py exits 0 in every mode, so this can never fail a leg, and it reports
+      # `worker sizing unknown` rather than a number when nothing on the runner
+      # answered. Unconditional on purpose: a leg that skips it reports nothing, and
+      # the platforms this matrix exists for are exactly the ones whose sizing is not
+      # known here. psutil is deliberately not installed for it -- xdist would not find
+      # one either, so the source this prints is the source `-n auto` would really use.
+      - name: Report what `pytest -n auto` would request here
+        run: python scripts/doctor.py --worker-sizing
       - name: Run tests
         run: pytest
 
