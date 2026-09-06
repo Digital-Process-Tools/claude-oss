@@ -484,3 +484,75 @@ def test_local_families_outside_owned_reports_problem_for_unreadable_root(tmp_pa
     assert families == set()
     assert problem is not None
     assert "could not be walked" in problem
+
+
+# ------------------------------------------------------- #1089: owned-only, taken advice
+
+
+def test_owned_only_is_ok_when_a_codeql_workflow_already_exists(tmp_path):
+    """The issue's own worked example: claude-jit-context's codeql.yml has
+    been scoped to `languages: actions` since before this check shipped, and
+    the only CodeQL-supported language GitHub reports is entirely inside the
+    owned path. Taking the check's own advice must clear the WARN."""
+    oss_dir = tmp_path / ".oss"
+    oss_dir.mkdir()
+    (oss_dir / "assemble_changelog.py").write_text("# vendored\n", encoding="utf-8")
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "codeql.yml").write_text(
+        "name: CodeQL\non:\n  push:\nlanguages: actions\n", encoding="utf-8"
+    )
+    run = _languages_run({"Python": 154452, "Shell": 1511382})
+    state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "owned-only-covered"
+    assert "already exists" in detail
+
+
+def test_owned_only_stays_warn_when_no_workflow_mentions_codeql(tmp_path):
+    """Must-fire pair for the test above: no workflow at all -- the WARN
+    must not be cleared just because nothing was found."""
+    oss_dir = tmp_path / ".oss"
+    oss_dir.mkdir()
+    (oss_dir / "assemble_changelog.py").write_text("# vendored\n", encoding="utf-8")
+    run = _languages_run({"Python": 154452, "Shell": 1511382})
+    state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "owned-only"
+    assert "already exists" not in detail
+
+
+def test_owned_only_unreadable_workflows_dir_does_not_clear_the_warn(
+    tmp_path, monkeypatch
+):
+    """Three-state discipline: `_workflow_files_mention` returning `None`
+    (the workflows directory could not be read) is not evidence of an
+    absent workflow, and must not read as 'already covered'."""
+    oss_dir = tmp_path / ".oss"
+    oss_dir.mkdir()
+    (oss_dir / "assemble_changelog.py").write_text("# vendored\n", encoding="utf-8")
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+
+    def broken_listdir(path):
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr(doctor_check_codeql_scan.os, "listdir", broken_listdir)
+    run = _languages_run({"Python": 154452, "Shell": 1511382})
+    state, detail = doctor.codeql_scan_state(tmp_path, config=_config(), run=run)
+    assert state == "owned-only"
+    assert "could not be told" in detail
+
+
+def test_check_codeql_scan_reports_ok_when_owned_only_covered(tmp_path, capsys):
+    oss_dir = tmp_path / ".oss"
+    oss_dir.mkdir()
+    (oss_dir / "assemble_changelog.py").write_text("# vendored\n", encoding="utf-8")
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "codeql.yml").write_text(
+        "name: CodeQL\nlanguages: actions\n", encoding="utf-8"
+    )
+    run = _languages_run({"Python": 1000})
+    doctor.check_codeql_scan(tmp_path, config=_config(), run=run)
+    out = capsys.readouterr().out
+    assert out.startswith("OK ")
+    assert doctor.FINDINGS[-1][0] == "OK"

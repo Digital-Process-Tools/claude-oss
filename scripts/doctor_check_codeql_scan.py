@@ -58,9 +58,18 @@ def _gh_api(path, run):
     """Verbatim copy of the sibling modules' own `_gh_api` -- see
     `doctor_check_security_settings._gh_api` for the shared shape and #1019's
     decode fix."""
+    #: #1109: resolve `gh` via `shutil.which` before spawning it, the
+    #: same precedent `select_issues_claim_read._run` sets (#1069/PR #1107):
+    #: `subprocess.run(["gh", ...])` on Windows reaches `CreateProcess`,
+    #: which only auto-appends `.exe` for an extensionless name and never
+    #: `.cmd`/`.bat`, so a `gh.cmd` launcher on PATH is invisible to a bare
+    #: argv. `shutil.which` performs the full PATHEXT-aware search and
+    #: returns a spawnable path; when it resolves nothing the bare name is
+    #: kept so the existing `FileNotFoundError` handling below still fires.
+    gh_bin = shutil.which("gh") or "gh"
     try:
         done = run(
-            ["gh", "api", path],
+            [gh_bin, "api", path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=25,
@@ -387,7 +396,9 @@ def _default_setup_state(slug, run):
 
 
 def codeql_scan_state(project_dir, config=None, run=None):
-    """``(state, detail)`` -- one of the issue's four named outcomes:
+    """``(state, detail)`` -- one of these named outcomes (#1089 added the
+    fifth, ``owned-only-covered``; the original issue that shipped this
+    function named the other four):
 
     * ``"uncovered-outside-owned"`` -- a supported language exists outside
       the owned paths and GitHub's code-scanning default setup does not
@@ -396,7 +407,13 @@ def codeql_scan_state(project_dir, config=None, run=None):
       outside the owned paths and default setup already scans every one of
       them, so there is nothing to add;
     * ``"owned-only"`` -- the only supported language present is entirely
-      inside the owned paths;
+      inside the owned paths, and no CodeQL-mentioning workflow was found
+      that already takes the check's own advice;
+    * ``"owned-only-covered"`` (#1089) -- the only supported language
+      present is entirely inside the owned paths, but a workflow already
+      mentions CodeQL, so the recommendation this check would otherwise
+      make has already been taken (this check cannot verify what the
+      existing workflow actually scans);
     * ``"no-supported-language"`` -- CodeQL has no analyser for anything
       GitHub reports here;
     * ``"could-not-tell"`` -- the languages call failed, or the token
@@ -558,12 +575,22 @@ def codeql_scan_state(project_dir, config=None, run=None):
                 covered, owned_dir, note
             ),
         )
-    return (
-        "owned-only",
+    base_detail = (
         "the only CodeQL-supported language(s) present ({}) sit entirely inside {}, "
         "the path(s) this plugin owns and rewrites wholesale on every /oss:scaffold "
-        "run".format(sorted(supported_families), owned_dir),
+        "run".format(sorted(supported_families), owned_dir)
     )
+    existing = _workflow_files_mention(project_dir, "codeql")
+    if existing:
+        return (
+            "owned-only-covered",
+            base_detail
+            + " (a workflow mentioning CodeQL already exists; this check does not "
+            "verify what it scans)",
+        )
+    if existing is None:
+        base_detail += " (whether a CodeQL workflow already exists could not be told)"
+    return ("owned-only", base_detail)
 
 
 def check_codeql_scan(project_dir, config=None, run=None):
@@ -581,6 +608,9 @@ def check_codeql_scan(project_dir, config=None, run=None):
             "CodeQL coverage: {} -- consider adding a CodeQL workflow scoped to those "
             "language(s).".format(detail),
         )
+        return
+    if state == "owned-only-covered":
+        doctor.report("OK", "CodeQL coverage: {}".format(detail))
         return
     if state == "owned-only":
         doctor.report(

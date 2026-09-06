@@ -8,6 +8,7 @@ rather than assuming it.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -211,3 +212,77 @@ def test_check_asks_for_itself_when_nothing_precomputed_is_given(tmp_path):
         ),  # claude not on PATH -> could-not-ask -> not registered path -> silent
     )
     assert doctor.FINDINGS == []
+
+
+# --- #1125: the active install's own copy does not exist at all -------------
+
+
+def _half_installed_plugin_tree(root, version):
+    """Only the manifest -- no `notifiers/` directory at all, the truncated
+    plugin-cache unpack #1125 was filed from."""
+    manifest_dir = root / ".claude-plugin"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    (manifest_dir / "plugin.json").write_text(
+        json.dumps({"version": version}), encoding="utf-8"
+    )
+
+
+def test_skew_names_a_missing_active_target_and_reverses_the_remedy(tmp_path):
+    """Must-fire case: `active_roots` DOES resolve (a real `installPath` in
+    the install record), but the active tree is missing the consumer file
+    entirely -- a truncated unpack, not a permission problem. The pinned
+    copy is the only complete one on disk, so the line must say the target
+    is absent and must NOT suggest removing the registration."""
+    pinned_root = tmp_path / "cache" / "supertool" / "0.56.0"
+    consumer = _plugin_tree(pinned_root, "0.56.0")
+    active_root = tmp_path / "active" / "0.57.0"
+    _half_installed_plugin_tree(active_root, "0.57.0")
+    record = _install_record(tmp_path, "0.57.0")
+    state, detail = doctor.channel_consumer_pin_state(
+        consumer, record=record, cache_root=tmp_path / "cache"
+    )
+    assert state == "SKEW", (state, detail)
+    assert "no file at that path" in detail or "does not exist" in detail
+    assert "could not be established" not in detail
+    assert "re-register" not in detail.lower() or "do not" in detail.lower()
+
+
+def test_skew_unreadable_active_target_is_still_could_not_be_established(
+    tmp_path, monkeypatch
+):
+    """Must-not-fire pairing: a target that genuinely could not be read (a
+    permission error, not absence) must keep the existing 'could not be
+    established' wording rather than being reported as missing -- the same
+    three-state discipline (absence-produced-by-the-tool is not
+    absence-in-the-world) this repo names everywhere else.
+
+    Self-review finding (auditor spawn, PR review round): the fix under test
+    reads existence via `os.stat`, deliberately NOT `Path.is_file()` --
+    `is_file()` raises `PermissionError` through on Python 3.11/3.13 but
+    silently swallows the identical error on 3.14 and returns `False`,
+    indistinguishable from "does not exist" (the exact reversed-remedy
+    misreport this issue exists to prevent, reintroduced by interpreter
+    divergence CI's 3.9-3.12 matrix cannot see). So this pins the real
+    implementation seam, `os.stat`, rather than `Path.is_file` -- patching
+    the wrong callable would let this test pass while the shipped code still
+    carried the divergence."""
+    pinned_root = tmp_path / "cache" / "supertool" / "0.51.0"
+    consumer = _plugin_tree(pinned_root, "0.51.0")
+    active_root = tmp_path / "active" / "0.52.0"
+    active_consumer = _plugin_tree(active_root, "0.52.0")
+    record = _install_record(tmp_path, "0.52.0")
+
+    real_stat = os.stat
+
+    def broken_stat(path, *args, **kwargs):
+        if str(path) == str(active_consumer):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(doctor.os, "stat", broken_stat)
+    state, detail = doctor.channel_consumer_pin_state(
+        consumer, record=record, cache_root=tmp_path / "cache"
+    )
+    assert state == "SKEW", (state, detail)
+    assert "could not be established" in detail
+    assert "no file at that path" not in detail

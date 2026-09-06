@@ -57,9 +57,18 @@ def _gh_api(path, run):
     each per-check module keeps its own copy rather than sharing one, the
     convention this whole family already follows.
     """
+    #: #1109: resolve `gh` via `shutil.which` before spawning it, the
+    #: same precedent `select_issues_claim_read._run` sets (#1069/PR #1107):
+    #: `subprocess.run(["gh", ...])` on Windows reaches `CreateProcess`,
+    #: which only auto-appends `.exe` for an extensionless name and never
+    #: `.cmd`/`.bat`, so a `gh.cmd` launcher on PATH is invisible to a bare
+    #: argv. `shutil.which` performs the full PATHEXT-aware search and
+    #: returns a spawnable path; when it resolves nothing the bare name is
+    #: kept so the existing `FileNotFoundError` handling below still fires.
+    gh_bin = shutil.which("gh") or "gh"
     try:
         done = run(
-            ["gh", "api", path],
+            [gh_bin, "api", path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=25,

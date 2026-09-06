@@ -51,9 +51,18 @@ def _gh_api(path, run):
     ``exc`` is set only when the process itself failed to start -- the shape
     `doctor_check_branch_protection._gh_api` already uses for the same call.
     """
+    #: #1109: resolve `gh` via `shutil.which` before spawning it, the
+    #: same precedent `select_issues_claim_read._run` sets (#1069/PR #1107):
+    #: `subprocess.run(["gh", ...])` on Windows reaches `CreateProcess`,
+    #: which only auto-appends `.exe` for an extensionless name and never
+    #: `.cmd`/`.bat`, so a `gh.cmd` launcher on PATH is invisible to a bare
+    #: argv. `shutil.which` performs the full PATHEXT-aware search and
+    #: returns a spawnable path; when it resolves nothing the bare name is
+    #: kept so the existing `FileNotFoundError` handling below still fires.
+    gh_bin = shutil.which("gh") or "gh"
     try:
         done = run(
-            ["gh", "api", path],
+            [gh_bin, "api", path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=25,
