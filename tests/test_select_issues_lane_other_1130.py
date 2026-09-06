@@ -150,7 +150,21 @@ def test_lane_other_issue_is_never_offered_as_a_companion():
     """Symmetric half of the rule, paired with the must-fire test above (the
     genuinely bundleable pair DOES bundle): even when a lead's own
     `suggest_companions` sweep names the `lane-other` issue as an
-    overlapping candidate, it must never be pulled in as a member."""
+    overlapping candidate, it must never be pulled in as a member.
+
+    #1130 review round: the `lane-other` issue must outrank the querying
+    lead here (`priority-high` vs. `priority-low`) so it is PROCESSED
+    FIRST by `_group_candidates`'s own loop -- not because that ordering
+    matters to the rule (it must not: see the "regardless of iteration
+    order" claim below), but because a `lane-other` candidate that is
+    processed BEFORE the lead's own turn is already in the shared `taken`
+    set by the time the lead's `suggest_companions` sweep names it, and
+    the pre-existing `if cnum in taken: continue` guard would then hide a
+    missing `is_lane_other` check entirely -- the original version of this
+    test made exactly that mistake and stayed green with the `is_lane_other`
+    guard deleted. Ranking the `lane-other` issue LOWER instead means it is
+    still untaken when the lead's sweep runs, so only the dedicated guard
+    can be what excludes it."""
 
     def companions(repo, own_issue, claimed, board):
         if own_issue == 2:
@@ -170,8 +184,8 @@ def test_lane_other_issue_is_never_offered_as_a_companion():
     payload = {
         "declared": DECLARED,
         "issues": [
-            _issue(1, ["priority-high", "lane-other"]),
-            _issue(2, ["priority-medium"], lane_patterns=["scripts/shared.py"]),
+            _issue(1, ["priority-low", "lane-other"]),
+            _issue(2, ["priority-high"], lane_patterns=["scripts/shared.py"]),
         ],
     }
     result = select_issues.select(
@@ -180,11 +194,20 @@ def test_lane_other_issue_is_never_offered_as_a_companion():
         resolve_lane=_literal_resolve,
         suggest_companions=companions,
     )
+    # The lead (#2) must still be processed, and asked for companions,
+    # before #1's own turn -- confirming this test actually reaches the
+    # code path described above rather than #1 having already claimed
+    # itself solo first.
+    numbers_in_rank_order = [c["number"] for c in result["candidates"]]
+    assert numbers_in_rank_order[0] == 2
+
     groups = result["groups"]["groups"]
     for group in groups:
         numbers = [m["number"] for m in group["members"]]
         if 1 in numbers:
             assert numbers == [1]
+    lead_group = [g for g in groups if g["members"][0]["number"] == 2][0]
+    assert [m["number"] for m in lead_group["members"]] == [2]
 
 
 def test_a_lane_other_issue_never_gets_a_companion_itself():

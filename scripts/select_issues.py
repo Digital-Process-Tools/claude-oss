@@ -216,7 +216,12 @@ def _group_candidates(
                   `suggest_companions`'s own three-value answer for this
                   lead (`candidates` / `none` / `could-not-tell`) --
                   preserved per group rather than flattened into one verdict
-                  for the whole call, per the issue's own requirement.
+                  for the whole call, per the issue's own requirement. #1130
+                  adds a fourth value, `"lane-other"`, for the one case
+                  that never calls `suggest_companions` at all: a candidate
+                  whose issue carries the repo's configured `lane-other`
+                  label is routed straight to a solo group, by rule, before
+                  any board sweep runs.
                   `short_reason` is set (never guessed at, never blank) only
                   when the group has not reached `_GROUP_TARGET`: it says
                   which of the two distinct reasons applies -- no overlapping
