@@ -358,8 +358,12 @@ def classify_source(source, version):
     never quietly lose a literal; `test_the_split_loses_nothing` holds that.
 
     Parses `source` once and shares the tree between the literal scan and the
-    route scan -- `sweep()` calls this once per file, and each used to
-    `ast.parse` the same source independently (#933).
+    route scan -- callers used to `ast.parse` the same source independently for
+    each (#933). `sweep()` itself no longer calls this directly (#1108): it
+    delegates to `_build_corpus` + `sweep_from_corpus`, which call `_routes_tree`
+    once per file at corpus-build time and `_scan_tree` fresh per version, the
+    same split this function performs in one call. `classify_source` remains in
+    use by the tests below it that still want both halves in a single call.
     """
     tree = ast.parse(source)
     hits = _scan_tree(tree, version)
@@ -443,7 +447,7 @@ def sweep(version, root=None):
     Builds its own corpus fresh every call -- this is what every non-fixture
     caller (synthetic `tmp_path` roots in the tests below) still gets, unchanged.
     A caller sweeping the same real corpus at several versions in one test run
-    should use `real_corpus` (session-scoped fixture, below) plus
+    should use `real_corpus` (module-scoped fixture, below) plus
     `sweep_from_corpus` instead, which is exactly what this function does
     internally, just without sharing the corpus across calls.
     """
