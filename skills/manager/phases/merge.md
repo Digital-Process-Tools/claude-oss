@@ -55,6 +55,10 @@ Merge only when all hold: **CI fully green at leg level, the review passed, and 
 bugfix / docs / test / chore.** Then verify the merge landed — read `state` / `mergedAt` /
 `mergeCommit` back off the remote, because a zero exit is not a merge.
 
+**Waiting on that "fully green" -- rather than reading it off an already-concluded run -- is
+`skills/manager/phases/ci-green.md`'s subject, not this file's**: the `pr_green.py` call and its
+#1086 substring trap, never a hand-written wait loop.
+
 **Never auto-merge:** feature scope, public API or behaviour renames, external-contributor PRs,
 anything irreversible. **And do not invent gates** — parking a real bug as "the owner's call" when it
 is not on this list is just a way of not fixing things.

@@ -103,7 +103,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # another sentence restating the rule. Trimmed once already to fit as
     # much of the addition as possible; nothing else in this file was safe
     # to cut without losing a still-live rule, so the ceiling moves instead.
-    "agents/sub-manager.md": (15247, 16800),
+    # Re-baselined DOWN for #1162: 15247 B became 14666 B. The nine-line
+    # inline CI-wait block (the pr_green.py call, its four states, the
+    # #1086 substring trap) moved to skills/manager/phases/ci-green.md,
+    # shared now with agents/releaser.md, leaving a one-line pointer here.
+    # Ceiling left unchanged rather than brought down with it, the same as
+    # every other re-baseline in this file: a lower ceiling would only be
+    # spent again by the next addition without anyone choosing to.
+    "agents/sub-manager.md": (14666, 16800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -120,7 +127,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 10985 B after a reviewer spawn found the GATE: field's prose ("not
     # optional busywork") contradicted scripts/release_handback.py, which
     # treats it as optional. Budget unchanged; still under it.
-    "agents/releaser.md": (7053, 7800),
+    # Re-baselined for #1162: 7053 B became 7218 B -- a one-line pointer at
+    # skills/manager/phases/ci-green.md (#1162), the shared CI-green read
+    # sub-manager.md also now points at. Budget unchanged; 582 B of headroom
+    # remains.
+    "agents/releaser.md": (7218, 7800),
 }
 
 

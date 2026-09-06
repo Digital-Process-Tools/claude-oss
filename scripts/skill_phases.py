@@ -115,8 +115,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # per .claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md --
     # `Who decides`, `Operational hazards` and every per-phase directive block are
     # untouched. Ceiling comes down with the measurement (#958, #960).
+    # Re-baselined for #1162: 40700 B became 41261 B -- the "CI green" directive
+    # block and the new phase-file table row. Budget unchanged; comfortably
+    # under it.
     SPINE: (
-        40700,
+        41261,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -225,7 +228,7 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # already give for their own re-baselines: a ceiling left far above the file
     # is a saving spendable again without anybody choosing to.
     "skills/manager/phases/dispatch.md": (
-           52772,
+        52772,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -281,10 +284,24 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # concatenated after SKILL.md's own stop-boundary marker, and that
     # enumerated act may not appear on that side). Reworded to "a green
     # merge"; 17234 B became 17250 B. Budget unchanged.
+    # Re-baselined for #1162: 13985 B became 14230 B -- one paragraph pointing
+    # the "fully green" bullet at ci-green.md's own subject rather than
+    # restating it. Budget unchanged; comfortably under it.
     "skills/manager/phases/merge.md": (
-        13985,
+        14230,
         15400,
         "merging: the gates, the call itself, and what is still owed after green",
+    ),
+    # New for #1162: the pr_green.py wait and its #1086 substring trap used to
+    # live only in agents/sub-manager.md, so a releaser landing gate 3's own
+    # blocking fix had no instruction and no trap for the exact failure #1086
+    # already paid for. Shared here rather than copied into agents/releaser.md
+    # too, per CLAUDE.md's rule against a fact that lives in two places. ~10%
+    # headroom over the measured 2454 B, same terms as every other row.
+    "skills/manager/phases/ci-green.md": (
+        2454,
+        2700,
+        "the pr_green.py wait, its four states, and the #1086 substring trap -- shared by a sub-manager merging and a releaser landing gate 3's own fix",
     ),
     # Re-baselined for #1014: 10381 B on disk against a stale 10195 declared
     # baseline. Budget unchanged; comfortably under it either way.
