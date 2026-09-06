@@ -294,28 +294,30 @@ per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale`
 `lane-collision`). It does not replace `--claim` above: reading who is claimable and writing a claim
 stay separate calls.
 
-**Read `groups`, not the flat `candidates` list, when deciding what to dispatch (#1068).** Each group
-is a suggested lane: it fills to three members, never pads to reach three. **Cap at three, never
-four** (#799, measured across 237 lanes in #499) -- `select_issues_rank.check_lane` refuses a fourth
-before the spawn, not after. Each group carries a per-member
-disposition plus its own third state (`candidates` / `none` / `could-not-tell`). Companions are
-chosen by file adjacency to the group's top issue, whatever their own rank. A group is a suggestion,
-never a dispatch — weigh it against topic and judgement. `ungrouped` names candidates no group could
-be built for at all, which is distinct from a group that stayed short and says why.
+**It takes no input (#1145).** No stdin payload, no `--fetch` mode. It fetches the board, reads
+`.oss.json` and derives the held set itself, so `board_read_ok` / `board_read_why` / `board_capped` /
+`board_cap_detail` / `lanes_read_ok` / `lanes_read_why` are facts it observed, and a failed read is
+`could-not-select`. It still never invents `lane_patterns` or `preflight_pattern` for an issue that
+declares neither (#267).
 
-**Populate the payload, or the call answers a narrower question than you asked.**
+**Read `lanes`, one entry per declared lane label, and dispatch its group (#1146).** The fleet is the
+lane labels `.oss.json` declares, `labels.lane_other` included. Each lane returns **one** group: the
+best-ranked eligible issue as lead plus up to two companions by file adjacency, whatever their own
+rank. **Cap at three, never four** (#799, #499). A lane's other eligible issues stay in its
+`candidates` list. A group is a suggestion, never a dispatch — weigh it against topic and judgement.
 
-- `held_files` — from `lane_setup.derive_held_set(repo_slug, worktree_root, exclude_issue=<the issue
-  being considered>)["held"]`, sorted. Its `state`/`detail` carry through as `lanes_read_ok`
-  (`state == "resolved"`) and `lanes_read_why`. `lanes_read_ok is False` forces `could-not-select`
-  before `held_files` is read, so a lane inventory that could not be enumerated is never
-  indistinguishable from a tick with no live lanes. A caller that populates neither is read as "not
-  attempted" (#1067).
-- `board_capped` / `board_cap_detail` — when the board read that fed this call was itself capped
-  (#593's `per=` ceiling). Without it, a short group because the read was truncated cannot be told
-  from one because nothing genuinely overlaps.
-- `lane_patterns` / `preflight_pattern` stay caller-supplied per issue; the module never invents
-  either (#267).
+Each lane carries its own third state (`candidates` / `none` / `could-not-tell`) and, when short, one
+of `board-exhausted` / `no-adjacent` / `did-not-search` / `could-not-tell`. A lane with no eligible
+work returns a stated absence, not a missing key. `lane-other` keeps its solo rule (#1130): one
+issue, never a companion, never offered as one.
+
+**An issue carrying no `lane-*` label is not selected (#1146).** No lane, no group, no body. It
+appears in the top-level `dropped` list with the disposition `no-lane-label`. `/oss:triage` gives an
+issue its lane.
+
+**Every group carries its issues' bodies (#1147)**, each wrapped in a per-body random nonce and
+labelled data, not instructions. A capped body reports `body_truncated` and its full `body_length`.
+Read those rather than re-fetching issue by issue.
 
 **`labels.reserved` in `.oss.json` is how the maintainer holds an issue open (#844).** An empty
 assignee field means only "no maintainer lane holds this" — never "nobody wants it". A reservation
@@ -347,8 +349,8 @@ failure to back it; a bundle claims only that the fixes share a worktree. A bund
 stays two or three fixes: **each issue keeps its own test story and its own changelog fragment**, and
 the pull request closes every issue it carries.
 
-**Never bundle an issue a running lane already touches.** `select_issues.py` excludes them when
-`held_files` is populated, per above. To check one named running lane directly, `lane_setup.py --lane
+**Never bundle an issue a running lane already touches.** `select_issues.py` derives the held set
+itself and excludes them. To check one named running lane directly, `lane_setup.py --lane
 PATTERN --against PATTERN` — overlap against a *running* lane means conflict; overlap against a
 *candidate's* declared lane means the two are worth bundling. Same flag, opposite readings; aim it
 deliberately.
