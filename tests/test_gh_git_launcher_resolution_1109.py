@@ -153,3 +153,47 @@ def test_gh_api_never_spawns_a_bare_unresolved_name_when_which_finds_nothing(
         assert rc is None, (module.__name__, rc)
         assert out == "" and err == "", (module.__name__, out, err)
         assert isinstance(exc, FileNotFoundError), (module.__name__, exc)
+
+
+# --------------------------------------------------- doctor.py: check_gh_binary
+
+
+def test_check_gh_binary_resolves_gh_via_safe_which(monkeypatch, capsys):
+    """#1163: `check_gh_binary` was named as fixed by #1157's own changelog
+    fragment but still called bare `shutil.which("gh")` -- the exact gap
+    this file's other cases pin for the sibling call sites. This asserts
+    the real seam (`gh_which.safe_which`) is what `check_gh_binary` calls,
+    never `shutil.which` directly."""
+    monkeypatch.setattr(
+        doctor.gh_which, "safe_which", lambda name, path=None: _FAKE_GH_CMD
+    )
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("check_gh_binary must not call shutil.which directly")
+
+    monkeypatch.setattr(doctor.shutil, "which", _boom)
+    monkeypatch.setattr(doctor, "_gh_version_text", lambda resolved: "gh version 2.0.0")
+    monkeypatch.setattr(doctor.platform, "system", lambda: "Linux")
+
+    doctor.check_gh_binary()
+
+    out = capsys.readouterr().out
+    assert "gh version" in out
+
+
+def test_check_gh_binary_falls_back_when_safe_which_finds_nothing(monkeypatch, capsys):
+    """Positive control: `safe_which` returning `None` must still be
+    handled (no crash, and reported as gh missing), not just the resolved
+    case above."""
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: None)
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("check_gh_binary must not call shutil.which directly")
+
+    monkeypatch.setattr(doctor.shutil, "which", _boom)
+    monkeypatch.setattr(doctor.platform, "system", lambda: "Linux")
+
+    doctor.check_gh_binary()
+
+    out = capsys.readouterr().out
+    assert "gh" in out.lower()
