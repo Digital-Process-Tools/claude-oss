@@ -1258,8 +1258,13 @@ def check_gh_binary():
     run"; this answers the two questions that surfaced a two-year-old x86_64
     build running under Rosetta from a stale Intel Homebrew prefix while
     everything else on the machine was native arm64.
+
+    #1163: `shutil.which("gh")` directly -- even with a `path=` argument --
+    lets a `gh.cmd`/`gh.exe` committed to the root of the inspected repo win
+    over a real `PATH` entry on Windows; `gh_which.safe_which` is the one
+    place this repo resolves `gh`/`git` (see that module's docstring).
     """
-    resolved = shutil.which("gh")
+    resolved = gh_which.safe_which("gh")
     system = platform.system()
     host = None
     archs = None
