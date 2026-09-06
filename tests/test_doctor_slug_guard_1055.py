@@ -143,7 +143,7 @@ def test_malformed_repo_fallback_still_accepts_a_well_formed_slug(monkeypatch):
 #: by the LETTER `s`, not the whitespace shorthand -- `[^/\\s]` therefore
 #: excludes `/`, a literal backslash, and the letter `s`, but admits a real
 #: whitespace character. `oss_config.REPO_RE` carries the correctly-escaped
-#: `[^/\\\\s]` (one more backslash); the fallback above did not, so a
+#: `[^/\\\s]` (one more backslash); the fallback above did not, so a
 #: slug containing the letter `s` (including this repo's own slug) read as
 #: malformed while a slug containing a literal space read as well-formed --
 #: both backwards from what the check exists to do.
