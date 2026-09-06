@@ -622,11 +622,18 @@ def worktree_last_activity(path):
     create-then-delete cycle that leaves no file behind (a lock file, an
     atomic temp file cleaned up after itself) bumped the containing
     directory's own mtime with nothing left for a file-only walk to see,
-    reproduced live in #1120's own self-review: a directory's own mtime
-    advanced roughly a second after a create+delete cycle while this
-    function's reported mtime stayed unchanged. Every directory `os.walk`
-    visits below the root is now `lstat`'ed too, so that bump is seen even
-    when nothing survives inside it.
+    reproduced live in #1120's own self-review on one platform (macOS; not
+    re-confirmed on Linux or Windows before this fix): a directory's own
+    mtime advanced roughly a second after a create+delete cycle while this
+    function's reported mtime stayed unchanged. That a create-then-delete
+    cycle bumps a directory's own mtime at all is standard POSIX/NTFS
+    filesystem behaviour, so this is **reasoned** to hold across this
+    repository's own three-OS CI matrix, not independently **observed** on
+    each of them -- the new tests below force every mtime deterministically
+    with `os.utime` rather than depend on real-time filesystem precision,
+    so CI is the better detector for any actual platform divergence here.
+    Every directory `os.walk` visits below the root is now `lstat`'ed too,
+    so that bump is seen even when nothing survives inside it.
 
     **The root path itself (`path` -- the directory passed in) is deliberately
     still excluded.** Its own mtime is set the instant `git worktree add`
