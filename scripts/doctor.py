@@ -3594,6 +3594,7 @@ def channel_consumer_pin_state(target, record=None, cache_root=None):
         SUPERTOOL_ENTRY, record=record, cache_root=cache_root
     )
     same = None
+    active_target = None
     if active_roots:
         try:
             relative = Path(os.path.abspath(str(target))).relative_to(
@@ -3602,8 +3603,36 @@ def channel_consumer_pin_state(target, record=None, cache_root=None):
         except ValueError:
             relative = None
         if relative is not None:
-            same = _content_identical(target, active_roots[0] / relative)
-    if same is True:
+            active_target = active_roots[0] / relative
+    # #1125: `_content_identical`'s own `except OSError: return None` folds
+    # "the active install's copy does not exist at all" (a truncated
+    # plugin-cache unpack -- observed for real, no `notifiers/` directory
+    # whatsoever) into the same answer as "exists but could not be read for
+    # some other reason" -- both are "could not tell". The two call for
+    # opposite remedies: an unreadable-but-present file is a filesystem
+    # problem to investigate, while a genuinely absent one means the
+    # standard "remove the registration and let it re-register at the
+    # current path" advice would point the registration at nothing, and the
+    # pinned copy is the only complete one left on disk. So existence is
+    # checked on its own, before the hash comparison, and given its own
+    # sentence -- never folded back into "could not be established".
+    target_missing = False
+    if active_target is not None:
+        try:
+            target_missing = not active_target.is_file()
+        except OSError:
+            target_missing = False  # unreadable, not confirmed absent
+        else:
+            if not target_missing:
+                same = _content_identical(target, active_target)
+    if target_missing:
+        identity_clause = (
+            "the active install has no file at that path at all -- do not "
+            "remove the registration and let it re-register: that would "
+            "point it at a path with nothing there, and the pinned copy is "
+            "the only complete copy currently on disk"
+        )
+    elif same is True:
         identity_clause = (
             "byte-identical to the active install's copy at the same relative "
             "path -- cosmetic, re-register when convenient"
@@ -8307,11 +8336,22 @@ def label_vocabulary_state(project_dir, config=None, run=None):
         slug, reason = _origin_slug(project_dir, run=run)
         if slug is None:
             return "could-not-tell", reason
-    if shutil.which("gh") is None:
+    gh_bin = shutil.which("gh")
+    if gh_bin is None:
         return "could-not-tell", "gh is not on PATH"
     try:
         done = run(
-            ["gh", "label", "list", "--repo", slug, "--json", "name", "--limit", "200"],
+            [
+                gh_bin,
+                "label",
+                "list",
+                "--repo",
+                slug,
+                "--json",
+                "name",
+                "--limit",
+                "200",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
@@ -8367,11 +8407,22 @@ def lane_label_state(project_dir, config=None, run=None):
         slug, reason = _origin_slug(project_dir, run=run)
         if slug is None:
             return "could-not-tell", reason
-    if shutil.which("gh") is None:
+    gh_bin = shutil.which("gh")
+    if gh_bin is None:
         return "could-not-tell", "gh is not on PATH"
     try:
         done = run(
-            ["gh", "label", "list", "--repo", slug, "--json", "name", "--limit", "200"],
+            [
+                gh_bin,
+                "label",
+                "list",
+                "--repo",
+                slug,
+                "--json",
+                "name",
+                "--limit",
+                "200",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
