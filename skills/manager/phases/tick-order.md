@@ -310,7 +310,9 @@ tool, and you are gone by the time step 7 would run.
    (`select_issues_rank.py`, the same module the `--board` receipt above renders from) with the
    staleness (`select_issues_preflight.py`) and lane-collision (`select_issues_overlap.py`,
    `select_issues_companions.py`) checks and the assignee read (`select_issues_claim_read.py`) into
-   one call, board in, ranked claimable candidates out — those five are submodules now (#1069), none
+   one call. **It takes no input** (#1145): it fetches the board itself — issues, labels, bodies and
+   `author_association` — reads `.oss.json` and derives the held set, so there is no payload to build
+   and nothing for a caller to mis-shape. Those five are submodules now (#1069), none
    with a `__main__` of their own; `select_issues.py` is the one entry point. Three states,
    and the third must never render as the second: `candidates` (at least one issue survived, with
    the reason every dropped one was dropped), `none-available` (every input was read cleanly and
@@ -322,11 +324,16 @@ tool, and you are gone by the time step 7 would run.
    invent a preflight or lane pattern for an issue that named neither (#267). Three issues is the
    default rather than the ceiling, and a
    lane dispatched with fewer says why in one of `board-exhausted`, `no-adjacent`,
-   `did-not-search` or `could-not-tell` — and it fills a lane from `select_issues.py`'s own `groups`
-   output (#1068), which already runs the companion search per candidate against the open board and
-   returns each group's own third state (`candidates`/`none`/`could-not-tell`) and, for a short
-   group, why. Read `groups`, do not re-run the sweep by hand — and never fill from `--against`
-   between lanes already picked, which is the conflict check answering a different question (#918). A short lane with no reason is a defect in the tick -- and now one this loop
+   `did-not-search` or `could-not-tell`. **Read `lanes`** (#1146): one entry per declared lane label,
+   `labels.lane_other` included, each returning one group of up to three with its own third state
+   (`candidates`/`none`/`could-not-tell`) and, when short, why. The fleet is the declared lane count,
+   and the lanes are disjoint by construction because each label names a subsystem. Every group
+   carries the bodies of its own issues (#1147), fenced as untrusted and reporting `body_truncated`
+   when capped, so the veto reads what the call handed it rather than re-fetching issue by issue. An
+   issue with no `lane-*` label is not selected at all and appears in `dropped` with the disposition
+   `no-lane-label` — `/oss:triage` is what gives it a lane. Do not re-run the sweep by hand, and
+   never fill from `--against` between lanes already picked, which is the conflict check answering a
+   different question (#918). A short lane with no reason is a defect in the tick -- and now one this loop
    can detect rather than only state: record every dispatched lane's fill with `--lane-fill
    PRIMARY:COUNT[:REASON]` on the same `oss_state.py --decision` call (#852), which refuses the
    whole call outright when a short lane arrives with no reason, the same way `--tick-cost-first`
