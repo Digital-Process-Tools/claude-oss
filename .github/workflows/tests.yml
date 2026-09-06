@@ -113,8 +113,35 @@ jobs:
       # one either, so the source this prints is the source `-n auto` would really use.
       - name: Report what `pytest -n auto` would request here
         run: python scripts/doctor.py --worker-sizing
+      # #1177 candidate 2: `addopts` in pyproject.toml carries `--cov=scripts
+      # --cov-report=term-missing --cov-fail-under=85`, so coverage was computed on all
+      # twelve legs and the 85% floor was evaluated twelve times -- and the twelve
+      # numbers are never compared to each other, so eleven of those evaluations bought
+      # nothing a reader ever saw. #881 measured coverage at about 11% of wall time,
+      # which is ~600s of the matrix's ~5567s per run.
+      #
+      # The cost, stated rather than glossed: coverage is now measured on one OS and one
+      # interpreter, so a branch reachable only on Windows counts as uncovered. It was
+      # not measured on Windows before either in any way a reader saw -- each leg only
+      # ever checked its own number against 85 -- but the floor did at least have to be
+      # met there, and now it does not.
+      #
+      # One step and not two `if:`-guarded ones, deliberately. Two conditional steps that
+      # are both false is a leg that runs no tests at all and reports success, which is
+      # this repository's own defect class installed in the merge gate. This step is
+      # unconditional; only the flag varies, and the branch is taken inside the shell
+      # where both arms run pytest.
+      #
+      # The expression's true arm is `on` rather than the empty string on purpose: a
+      # GitHub `A && '' || B` ternary yields B when A is true, because '' is falsy. An
+      # empty true arm would have put `--no-cov` on all twelve legs and measured coverage
+      # nowhere, and the matrix would have been green throughout.
       - name: Run tests
-        run: pytest
+        env:
+          COV: ${{ (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') && 'on' || 'off' }}
+        shell: bash
+        run: |
+          if [ "$COV" = "on" ]; then pytest; else pytest --no-cov; fi
 
   shell:
     runs-on: ubuntu-latest
