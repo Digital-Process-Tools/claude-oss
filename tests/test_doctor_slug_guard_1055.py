@@ -137,3 +137,33 @@ def test_malformed_repo_fallback_still_accepts_a_well_formed_slug(monkeypatch):
     an ordinary slug when `oss_config` is unavailable."""
     monkeypatch.setattr(doctor, "oss_config", None)
     assert doctor._malformed_repo("owner/name") is False
+
+
+#: #1111: inside a character class, `\\s` is a literal backslash followed
+#: by the LETTER `s`, not the whitespace shorthand -- `[^/\\s]` therefore
+#: excludes `/`, a literal backslash, and the letter `s`, but admits a real
+#: whitespace character. `oss_config.REPO_RE` carries the correctly-escaped
+#: `[^/\\\\s]` (one more backslash); the fallback above did not, so a
+#: slug containing the letter `s` (including this repo's own slug) read as
+#: malformed while a slug containing a literal space read as well-formed --
+#: both backwards from what the check exists to do.
+REPO_RE_AGREEMENT_FIXTURE = [
+    ("Digital-Process-Tools/claude-oss", True),
+    ("owner/name", True),
+    ("someowner/-legit-repo", True),
+    ("ow ner/name", False),
+    ("owner/na me", False),
+]
+
+
+@pytest.mark.parametrize("slug,well_formed", REPO_RE_AGREEMENT_FIXTURE)
+def test_malformed_repo_fallback_agrees_with_REPO_RE(monkeypatch, slug, well_formed):
+    """The fallback regex must reject and accept the same slugs
+    `oss_config.REPO_RE` does -- a slug carrying the letter `s` (paired here
+    with a slug carrying a literal space, the must-fire control) is the
+    sharpest demonstration of the missing backslash."""
+    import oss_config
+
+    monkeypatch.setattr(doctor, "oss_config", None)
+    assert bool(oss_config.REPO_RE.match(slug)) is well_formed
+    assert doctor._malformed_repo(slug) is (not well_formed)
