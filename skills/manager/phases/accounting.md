@@ -76,9 +76,18 @@ window and an authorship rule left unstated make the ratio unreadable a week lat
 
 **The numerator is measured, never recalled (#762).** `labels.filed_by_loop` in `.oss.json` is a
 label name, declared per repo the same way `labels.priority` and `labels.lanes` already are, never
-invented here or hardcoded in this file. When it is declared, attach it to every issue this loop
-files, in the same `gh-issue-create` payload that creates the issue — that is what makes the count
-re-derivable by anyone reading the tracker rather than trusted from a tick's own memory.
+invented here or hardcoded in this file. When it is declared, attach it in the same
+`gh-issue-create` payload that creates the issue — but only to an issue the loop filed **on its own
+initiative**: a review finding, an audit round, a lane tripping over something mid-implementation.
+**Never attach it to an issue whose existence was decided together with the maintainer in a
+session**, even when the loop is the one that types it up and files it (#1083) — that issue is
+intake the loop did not generate, the same rule the paragraph above already states for a filing a
+maintainer made by hand. Provenance is judged **per issue, not per session**: a session that also
+covered ordinary review work can still produce a loop-initiated filing alongside a co-decided one,
+and each is labelled on its own facts. This creates no new label and no new state — a co-decided
+issue that goes unlabelled is indistinguishable from any other maintainer-filed issue, which is the
+correct reading, not a gap. Either way, the label is what makes the count re-derivable by anyone
+reading the tracker rather than trusted from a tick's own memory.
 
 **A repo with no declared `labels.filed_by_loop` gets `could-not-count`, never zero.** So does a
 window whose start predates the label's own introduction — issues filed before the mechanism
