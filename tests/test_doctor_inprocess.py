@@ -508,7 +508,10 @@ def test_a_root_that_is_a_directory_but_not_a_repo_warns(tmp_path):
 
 
 def test_check_tool_warns_when_absent(monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
+    """#1172: `check_tool` now routes every name through `gh_which.safe_which`,
+    not just `"gh"`/`"git"` -- patch that seam, not the bare `shutil.which`
+    it no longer calls."""
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: None)
     doctor.check_tool("nonexistent-tool", ["nonexistent-tool", "--version"])
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
@@ -549,7 +552,11 @@ def test_check_tool_warns_when_the_probe_cannot_spawn(monkeypatch):
 
 
 def test_check_tool_reports_ok_on_a_zero_exit(monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: sys.executable)
+    """#1172: same seam as the absent case above -- `check_tool` resolves
+    every name via `gh_which.safe_which` now."""
+    monkeypatch.setattr(
+        doctor.gh_which, "safe_which", lambda name, path=None: sys.executable
+    )
     doctor.check_tool("python", [sys.executable, "-c", "pass"])
     assert doctor.FINDINGS[-1][0] == "OK"
 
@@ -596,8 +603,13 @@ def test_check_tool_survives_a_banner_this_locale_cannot_decode(monkeypatch, tmp
     # interpreter path, so nothing should resolve a name against it -- pinning makes
     # that structural rather than argued. A suite that finds a real tool where its
     # fixture should have been has run something nobody asked for.
+    #
+    # #1172: `check_tool` resolves every name via `gh_which.safe_which` now,
+    # not the bare `shutil.which` -- patch that seam.
     monkeypatch.setenv("PATH", str(tmp_path))
-    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: sys.executable)
+    monkeypatch.setattr(
+        doctor.gh_which, "safe_which", lambda name, path=None: sys.executable
+    )
 
     emit_bad = [
         sys.executable,

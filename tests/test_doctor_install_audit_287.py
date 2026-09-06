@@ -114,7 +114,9 @@ def test_no_git_repository_at_all_is_could_not_tell(tmp_path):
 
 
 def test_git_absent_from_path_is_could_not_tell(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    """#1173: `_git_ls_files_tracked` resolves `git` via `gh_which.
+    safe_which` now, not a bare `shutil.which` -- patch that seam."""
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: None)
     doctor.check_oss_json_committed(tmp_path)
     assert any(
         state == "WARN" and "could not tell" in msg and "git is not on PATH" in msg
