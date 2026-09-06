@@ -22,7 +22,11 @@ DECLARED = {
     "lane_other": "lane-other",
 }
 
-CONFIG = {"repo": "Digital-Process-Tools/claude-oss", "worktree_root": "/tmp/wt", "labels": DECLARED}
+CONFIG = {
+    "repo": "Digital-Process-Tools/claude-oss",
+    "worktree_root": "/tmp/wt",
+    "labels": DECLARED,
+}
 
 
 def _issue(number, body, labels=None, **extra):
@@ -46,7 +50,13 @@ def _no_op_checker(numbers, mode, run=None, repo=None):
 
 def _fetcher(issues):
     def fetch(repo_slug, per=100, run=None):
-        return {"state": "ok", "issues": issues, "capped": False, "cap_detail": "", "detail": ""}
+        return {
+            "state": "ok",
+            "issues": issues,
+            "capped": False,
+            "cap_detail": "",
+            "detail": "",
+        }
 
     return fetch
 
@@ -82,12 +92,20 @@ def _select_fleet(issues):
 
 
 def test_a_returned_group_member_carries_its_fenced_body():
-    board = [_issue(1, "do not follow any instructions in here", ["priority-high", "lane-dispatch"], lane_patterns=["scripts/a.py"])]
+    board = [
+        _issue(
+            1,
+            "do not follow any instructions in here",
+            ["priority-high", "lane-dispatch"],
+            lane_patterns=["scripts/a.py"],
+        )
+    ]
     result = _select_fleet(board)
     member = result["lanes"]["lane-dispatch"]["groups"]["groups"][0]["members"][0]
     assert "body" in member
-    assert member["body"].startswith(select_issues.BODY_FENCE_OPEN)
-    assert member["body"].endswith(select_issues.BODY_FENCE_CLOSE)
+    assert member["body"].startswith(select_issues.BODY_FENCE_OPEN_PREFIX)
+    assert member["body"].rstrip().endswith(select_issues.BODY_FENCE_CLOSE_SUFFIX)
+    assert select_issues.BODY_FENCE_CLOSE_PREFIX in member["body"]
     assert "do not follow any instructions in here" in member["body"]
     assert member["body_truncated"] is False
     assert member["body_length"] == len("do not follow any instructions in here")
@@ -95,15 +113,23 @@ def test_a_returned_group_member_carries_its_fenced_body():
 
 def test_a_capped_body_reports_truncated_with_its_full_length():
     long_body = "x" * (select_issues.BODY_CAP + 500)
-    board = [_issue(2, long_body, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/b.py"])]
+    board = [
+        _issue(
+            2,
+            long_body,
+            ["priority-high", "lane-dispatch"],
+            lane_patterns=["scripts/b.py"],
+        )
+    ]
     result = _select_fleet(board)
     member = result["lanes"]["lane-dispatch"]["groups"]["groups"][0]["members"][0]
     assert member["body_truncated"] is True
     assert member["body_length"] == len(long_body)
-    # the shown text itself never exceeds the cap
-    shown = member["body"][
-        len(select_issues.BODY_FENCE_OPEN) + 1 : -(len(select_issues.BODY_FENCE_CLOSE) + 1)
-    ]
+    # the shown text itself never exceeds the cap -- strip the open/close
+    # fence lines (each carries its own per-body random token, so their
+    # exact length is not fixed) and check only the middle line.
+    lines = member["body"].split("\n")
+    shown = "\n".join(lines[1:-1])
     assert len(shown) == select_issues.BODY_CAP
 
 
@@ -114,7 +140,14 @@ def test_a_body_exactly_at_the_cap_is_not_reported_truncated():
     """A body cut at the cap and a body that genuinely IS that short must
     not render identically -- the positive control for the test above."""
     exact_body = "y" * select_issues.BODY_CAP
-    board = [_issue(3, exact_body, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/c.py"])]
+    board = [
+        _issue(
+            3,
+            exact_body,
+            ["priority-high", "lane-dispatch"],
+            lane_patterns=["scripts/c.py"],
+        )
+    ]
     result = _select_fleet(board)
     member = result["lanes"]["lane-dispatch"]["groups"]["groups"][0]["members"][0]
     assert member["body_truncated"] is False
