@@ -32,17 +32,25 @@
 #                      ruleset than CI checks it with, reintroducing the drift #1061
 #                      pins CI itself against.
 #
-# pytest-xdist is deliberately NOT here. It is optional worker-sizing guidance
-# (scripts/doctor.py's worker_sizing / _xdist_installed), never required by addopts or
-# by CI's own install step, and doctor.py reports its absence as an OK-level line
-# noting nothing here consumes the worker count -- never a failure -- so declaring it
-# required here would misstate that.
+#   pytest-xdist   -- required since #1177: CI's own install step installs it and every
+#                      leg runs `-n auto --dist loadfile`, so a contributor without it
+#                      does not reproduce the run CI makes. It was deliberately absent
+#                      before that, on the argument that it was optional worker-sizing
+#                      guidance (scripts/doctor.py's worker_sizing / _xdist_installed)
+#                      that nothing consumed; the workflow consumes it now, and that
+#                      argument went with it.
+#
+#                      doctor.py's own reporting is unchanged and still correct: it
+#                      reports the plugin's absence in THIS interpreter as an OK-level
+#                      line rather than a failure, because a diagnostic runs wherever
+#                      it is pointed and not only in a dev environment.
 #
 # `.github/workflows/tests.yml` installs this same set by hand in its own install step;
 # tests/test_dev_dependencies_611.py checks the two stay in agreement rather than
 # trusting that they do.
 pytest
 pytest-cov
+pytest-xdist
 markdown-it-py
 pyyaml
 ruff==0.16.3

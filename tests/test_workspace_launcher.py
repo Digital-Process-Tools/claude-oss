@@ -27,6 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # which is a collection error nobody would connect to this line.
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 
+import launcher_env  # noqa: E402
 import shell_probe  # noqa: E402
 
 LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
@@ -50,7 +51,7 @@ SHELL_REPORT = shell_probe.report(_ATTEMPTS)
 # is run by THIS process to `git init` a fixture, never handed to the shell, and
 # nothing in System32 is called `git`. Resolving it by name is measuring the right
 # thing here.
-GIT = shutil.which("git")
+GIT = launcher_env.GIT
 
 
 def _require_shell():
@@ -349,19 +350,8 @@ def run(
     # asserted on a codepage instead would be asserting on the runner.
     if env_extra:
         env.update(env_extra)
-    # Minimal PATH, deliberately: with the real claude reachable, the "missing
-    # claude" case found it and EXECUTED it -- a test suite that launches a live
-    # agent session in a temp directory. Only the stub, the interpreter and the
-    # system utilities the script needs are on PATH here.
-    #
-    # The interpreter's directory is on it because the launcher needs a python to
-    # read the channel name and find the consumer. `/usr/bin` and `/bin` are Git
-    # Bash's on Windows and hold no python at all, so pinning to those alone
-    # starved the launcher of one -- it then said so correctly, and the channel
-    # assertions failed against a fixture problem wearing a product bug's clothes.
-    env["PATH"] = os.pathsep.join(
-        [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
-    )
+    # Every entry, and why each one is there: `_pinned_path`.
+    env["PATH"] = launcher_env.pinned_path(bindir)
     done = subprocess.run(
         [BASH, str(launcher or LAUNCHER), *args],
         cwd=str(cwd),
@@ -593,9 +583,7 @@ def test_it_survives_being_run_through_a_symlink(tmp_path):
     bindir.mkdir(exist_ok=True)
     _stub_claude(bindir, repo / "argv.txt")
     env = dict(os.environ)
-    env["PATH"] = os.pathsep.join(
-        [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
-    )
+    env["PATH"] = launcher_env.pinned_path(bindir)
 
     done = subprocess.run(
         [BASH, str(link)],

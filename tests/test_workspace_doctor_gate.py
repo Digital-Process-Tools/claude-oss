@@ -32,6 +32,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # sys.path as a side effect, and that stops under `--import-mode=importlib`.
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 
+import launcher_env  # noqa: E402
 import shell_probe  # noqa: E402
 
 LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
@@ -148,9 +149,8 @@ def run(repo, plugin_root, env_extra=None):
     # otherwise turn every assertion in this file green without the launcher running
     # a single diagnostic.
     env.pop("OSS_WORKSPACE_SKIP_DOCTOR", None)
-    env["PATH"] = os.pathsep.join(
-        [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
-    )
+    # Every entry, and why each one is there: `launcher_env.pinned_path`.
+    env["PATH"] = launcher_env.pinned_path(bindir)
     if env_extra:
         env.update(env_extra)
     done = subprocess.run(
