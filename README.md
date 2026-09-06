@@ -49,6 +49,8 @@ command to wire up `oss-workspace` for the version you have installed. Run it fr
 - [docs/status.md](docs/status.md) — what installing this plugin does and does not put in motion.
 - [docs/pick-the-work.md](docs/pick-the-work.md) — how the loop decides what to build next: the
   five steps, who runs each, and what each one takes and returns.
+- [docs/open-the-workspace.md](docs/open-the-workspace.md) — how a maintainer session
+  starts: what the launcher sets up, and how it picks the opening command.
 - [docs/autonomy.md](docs/autonomy.md) — what "autonomous in somebody else's repo" would take, and
   does not.
 - [CLAUDE.md](CLAUDE.md) — what is not proven yet, measured and dated at each release.
