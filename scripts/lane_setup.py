@@ -138,12 +138,17 @@ PRIMARY:COUNT[:REASON]`) used to be typed by hand -- both `COUNT` and
 `REASON` already existed upstream, `COUNT` in this file's own claim result
 and `REASON` on whatever named the group short, and a human retyped them
 into agreement at the tick's own `--decision` call. `compose_lane_fill` (and
-`--claim`'s own `--short-reason` flag) closes that the same way #1143
-already closed it for the fleet-view label: `COUNT` comes from
+`--claim`'s own `--short-reason`/`--group-state` flags) closes that the same
+way #1143 already closed it for the fleet-view label: `COUNT` comes from
 `_claimed_issue_numbers`, never from the issue and `--claim-also` values
-requested, and `REASON` is carried straight through from `--short-reason`
-rather than retyped. Never invented when omitted -- a short lane whose
-caller passed no `--short-reason` renders a token with no reason at all, so
+requested. `REASON` used to require a human to translate the group's own
+free-text explanation into the closed vocabulary by hand; `--group-state`
+(#1153) does that translation mechanically for three of the four group
+`state` values, taking `select_issues.py`'s own `state` field unchanged
+rather than a retyped word, and `--short-reason` remains an explicit
+override for the fourth state and for a lane composed some other way.
+Never invented when neither is given -- a short lane with no derivable and
+no explicit reason renders a token with no reason at all, so
 `oss_state.py --decision`'s own refusal (#852) still fires on it downstream.
 
 Python 3.9 compatible: no match statements, no `X | Y` annotations.
@@ -539,7 +544,55 @@ def compose_claim_label(
     return result
 
 
-def compose_lane_fill(payload, short_reason=None):
+#: #1153: the four values `select_issues.py`'s own per-group `state` field
+#: takes -- `"candidates"`/`"none"`/`"could-not-tell"` from
+#: `select_issues_companions.suggest_companions`'s own three-value return,
+#: and `"lane-other"` set directly by `select_issues.py` for a solo #1130
+#: dispatch. `select_issues.py` exposes no importable constant naming this
+#: set the way `select_issues_rank.SHORT_REASONS` names its own vocabulary
+#: (checked: neither module declares one) -- this tuple is retyped here,
+#: once, rather than left implicit in the argparse `choices=` below and in
+#: `_GROUP_STATE_SHORT_REASONS`'s keys separately, so there is exactly one
+#: place in this file that could go stale rather than two. Closing the
+#: remaining gap -- a shared constant `select_issues.py` itself exports, so
+#: neither copy could ever drift from the actual producer -- would touch
+#: that module's own shape and is reported rather than done here (#1153).
+_GROUP_STATES = ("candidates", "none", "could-not-tell", "lane-other")
+
+#: Three of the four `_GROUP_STATES` translate onto
+#: `select_issues_rank.SHORT_REASONS` without guessing -- `"none"` and
+#: `"could-not-tell"` are literally what those two reasons already mean
+#: (#918: `no-adjacent` is "measured and found nothing adjacent",
+#: `could-not-tell` is "attempted and failed"), and `"lane-other"` never
+#: calls the board sweep at all (#1130), which is #918's own definition of
+#: `did-not-search`: "a computation nobody started". `"candidates"` (some
+#: companions found, group still short) is deliberately absent:
+#: `board-exhausted` is a claim about the WHOLE board's remaining disjoint
+#: candidate count (#871), which a single group's own `state` never
+#: establishes, so translating it would invent a reason nobody measured.
+_GROUP_STATE_SHORT_REASONS = {
+    "none": "no-adjacent",
+    "could-not-tell": "could-not-tell",
+    "lane-other": "did-not-search",
+}
+assert set(_GROUP_STATE_SHORT_REASONS) <= set(
+    _GROUP_STATES
+)  # #1153: one vocabulary, checked
+
+
+def group_short_reason(group_state):
+    """Translate a `select_issues.py` group's own ``state`` field into
+    ``select_issues_rank.SHORT_REASONS``'s closed vocabulary (#1153), or
+    ``None`` when there is no safe translation -- never a guess. See
+    ``_GROUP_STATE_SHORT_REASONS`` for which three of the four states
+    translate and why the fourth deliberately does not.
+    """
+    if group_state is None:
+        return None
+    return _GROUP_STATE_SHORT_REASONS.get(group_state)
+
+
+def compose_lane_fill(payload, short_reason=None, group_state=None):
     """Render step 5's ready ``--lane-fill PRIMARY:COUNT[:REASON]`` token
     from this ``--claim`` call's own held issues (#1148) -- so nothing is
     retyped by hand at ``oss_state.py --decision`` time the way it is today
@@ -553,10 +606,13 @@ def compose_lane_fill(payload, short_reason=None):
     assignee write failed is silently excluded from the count.
 
     ``short_reason`` is carried through from whatever named the group short
-    -- today typed by the caller at this call site (until ``select_issues.py``
-    itself puts the closed vocabulary directly on the group,
-    `docs/pick-the-work.md`'s own "designed, not built" row for #1143), so it
-    is entered once here rather than retyped again at step 5.
+    -- typed by the caller at this call site as an explicit override. When
+    it is omitted, ``group_state`` -- ``select_issues.py``'s own group
+    ``state`` field, unchanged -- is translated through `group_short_reason`
+    instead (#1153), so the closed-vocabulary word is derived mechanically
+    for three of the four states rather than retyped by a human reading the
+    group's free-text explanation. An explicit ``short_reason`` always wins
+    over ``group_state`` when both are given.
 
     **Never guessed at when omitted.** A short lane (fewer than
     ``select_issues_rank.MAX_LANE`` issues held) whose caller gave no
@@ -596,8 +652,11 @@ def compose_lane_fill(payload, short_reason=None):
         return result
 
     count = len(held)
-    if count < select_issues_rank.MAX_LANE and short_reason:
-        text = "{0}:{1}:{2}".format(primary, count, short_reason)
+    reason = (
+        short_reason if short_reason is not None else group_short_reason(group_state)
+    )
+    if count < select_issues_rank.MAX_LANE and reason:
+        text = "{0}:{1}:{2}".format(primary, count, reason)
     else:
         text = "{0}:{1}".format(primary, count)
 
@@ -1616,7 +1675,31 @@ def main(argv=None):
         "established no reason: the rendered token then carries no reason "
         "either, so oss_state.py --decision's own refusal (#852) still "
         "fires downstream on a short lane rather than being satisfied by "
-        "one invented here. Ignored without --claim.",
+        "one invented here. Always wins over --group-state when both are "
+        "given (#1153) -- an explicit correction outranks the mechanical "
+        "derivation. Ignored without --claim.",
+    )
+    parser.add_argument(
+        "--group-state",
+        default=None,
+        choices=_GROUP_STATES,
+        metavar="STATE",
+        help="given together with --claim: the group's own `state` field, "
+        "unchanged, from select_issues.py's own grouping JSON (#1153) -- so "
+        "the caller pastes what select_issues.py already printed instead of "
+        "translating it into --short-reason's closed vocabulary by hand. "
+        "Mechanically derives REASON for three of the four states -- "
+        "no-adjacent from 'none' (searched, found nothing adjacent, #918), "
+        "could-not-tell from 'could-not-tell' (searched, could not tell, "
+        "identical word), did-not-search from 'lane-other' (#1130 never "
+        "calls the board sweep at all, which is exactly #918's own "
+        "definition of did-not-search: 'a computation nobody started'). "
+        "The fourth, 'candidates' (some companions found, still short), has "
+        "no safe translation: board-exhausted is a claim about the WHOLE "
+        "board's remaining disjoint candidates (#871), which one group's "
+        "own state never establishes, so it is never guessed at -- give "
+        "--short-reason explicitly for that state instead. Ignored without "
+        "--claim.",
     )
     parser.add_argument(
         "--subagent-type",
@@ -1821,6 +1904,8 @@ def main(argv=None):
         parser.error("--brief requires --claim (#1143)")
     if args.short_reason is not None and not args.claim:
         parser.error("--short-reason requires --claim (#1148)")
+    if args.group_state is not None and not args.claim:
+        parser.error("--group-state requires --claim (#1153)")
     if args.subagent_type is not None and args.phrase is None:
         parser.error("--subagent-type requires --phrase (#1143)")
     if args.subagent_type is not None and args.brief is None:
@@ -2132,7 +2217,9 @@ def main(argv=None):
     # all: unlike the label, this needs no --phrase to be meaningful.
     lane_fill_result = None
     if args.claim:
-        lane_fill_result = compose_lane_fill(payload, short_reason=args.short_reason)
+        lane_fill_result = compose_lane_fill(
+            payload, short_reason=args.short_reason, group_state=args.group_state
+        )
         payload["lane_fill"] = lane_fill_result
 
     if args.json:
