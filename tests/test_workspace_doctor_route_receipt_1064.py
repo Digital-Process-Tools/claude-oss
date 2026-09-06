@@ -43,12 +43,20 @@ DOCTOR_MODE = 0o644
 # Everything the receipt logic actually imports by name: doctor.py for
 # `plugin_identity`, oss_config.py to resolve `state_file`, oss_state.py for the
 # receipt itself, select_issues_rank.py because oss_state.py imports it
-# unconditionally at module scope, and every `doctor_check_*.py` because
-# doctor.py imports each of THOSE unconditionally too (the per-check module
-# convention, #497/#630) -- omit even one and `import doctor` itself raises
-# ModuleNotFoundError, which is a real state this suite tests separately
-# (`real_modules=False`), not one to trip into by accident here.
-_REAL_MODULES = ["doctor.py", "oss_config.py", "oss_state.py", "select_issues_rank.py"]
+# unconditionally at module scope, gh_which.py because doctor.py (and every
+# `doctor_check_*.py`) now imports it unconditionally too (#1157), and every
+# `doctor_check_*.py` because doctor.py imports each of THOSE unconditionally
+# too (the per-check module convention, #497/#630) -- omit even one and
+# `import doctor` itself raises ModuleNotFoundError, which is a real state
+# this suite tests separately (`real_modules=False`), not one to trip into
+# by accident here.
+_REAL_MODULES = [
+    "doctor.py",
+    "oss_config.py",
+    "oss_state.py",
+    "select_issues_rank.py",
+    "gh_which.py",
+]
 _REAL_MODULES += sorted(
     p.name for p in (REPO_ROOT / "scripts").glob("doctor_check_*.py")
 )
