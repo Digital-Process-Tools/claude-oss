@@ -75,19 +75,35 @@ def _make_executable(path):
 
 
 def _planted_name(name):
-    """The three tests below run against the REAL platform (no `_force_
-    windows` monkeypatch), so a fixture must be shaped for whatever
-    platform actually executes it. On real Windows, `safe_which`'s own
-    Windows-shaped branch applies the real `PATHEXT` and deliberately never
-    probes a bare, unextended name -- see this module's own docstring and
-    `_windows_candidate_names` -- so an extensionless `gh` fixture is
-    unresolvable there by design and would make these three fail on real
-    Windows CI while passing everywhere else. Elsewhere, a bare name is
-    exactly what a real POSIX `gh` looks like. Return the name shaped for
-    whichever platform is actually running the test, so the assertion
-    keeps pinning exact resolution rather than being loosened to tolerate
-    either shape."""
-    return name + ".exe" if sys.platform == "win32" else name
+    """The name to plant for the three tests below, which run against the
+    REAL platform (no `_force_windows` monkeypatch) and so must shape their
+    fixture for whatever platform actually executes them.
+
+    On real Windows `safe_which` applies the real `PATHEXT` and never probes
+    a bare, unextended name, so an extensionless `gh` is unresolvable there
+    by design -- that is the correct production behaviour this file exists to
+    pin, and it is what made these three fail on real Windows CI (#1161)
+    while passing everywhere else.
+
+    The extension is taken from the FIRST `PATHEXT` entry rather than a
+    hardcoded `.exe`, because that is the one `safe_which` probes first and
+    is therefore guaranteed to be the one it matches -- and because it comes
+    from the same string the resolver reads, the planted name and the
+    resolved name carry identical case by construction. That matters: the
+    resolver hands back the case of the PATHEXT entry that matched, and
+    `PATHEXT` is conventionally UPPERCASE, so planting a hardcoded lowercase
+    `gh.exe` resolves on case-insensitive NTFS but comes back as `gh.EXE`
+    and fails an exact comparison. Deriving both sides from one source keeps
+    the assertion an exact string match rather than a case-folded one --
+    `os.path.normcase` was rejected here precisely because it keys off the
+    real platform, so it is identity on POSIX and could not be verified
+    anywhere but on Windows itself.
+    """
+    if sys.platform != "win32":
+        return name
+    pathext = os.environ.get("PATHEXT") or gh_which._WIN_DEFAULT_PATHEXT
+    entries = [ext for ext in pathext.split(";") if ext]
+    return name + entries[0] if entries else name
 
 
 def _force_windows(monkeypatch):
