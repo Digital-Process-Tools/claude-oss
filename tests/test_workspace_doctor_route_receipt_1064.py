@@ -3,12 +3,14 @@ word + plugin version), so a WARN nothing can clear (#1062 is the worked example
 does not pin every future launch to /oss:doctor forever.
 
 Unlike `tests/test_workspace_doctor_gate.py`, this drives the launcher against a
-REAL `scripts/doctor.py`/`oss_config.py`/`oss_state.py`/`select_issues_rank.py` copied
-into the fake plugin root -- the receipt logic imports those modules by name, and
-`test_workspace_doctor_gate.py`'s own stub-only plugin root deliberately has none
-of them, which is exactly the fixture asserting the launcher FAILS OPEN (routes,
-as though no receipt exists) when those modules cannot be found; the existing
-suite already covers that arm and stays green unmodified after this fix.
+REAL `scripts/doctor.py`/`oss_config.py`/`oss_state.py`/`select_issues_rank.py`/
+`gh_which.py`, plus every `doctor_check_*.py`, copied into the fake plugin root --
+the receipt logic imports those modules by name (see `_REAL_MODULES` below for
+exactly which and why), and `test_workspace_doctor_gate.py`'s own stub-only
+plugin root deliberately has none of them, which is exactly the fixture
+asserting the launcher FAILS OPEN (routes, as though no receipt exists) when
+those modules cannot be found; the existing suite already covers that arm and
+stays green unmodified after this fix.
 
 The diagnostic's own `VERDICT:` line still comes from a hand-written stub
 `doctor.sh`, same as the sibling suite -- only the plugin version comparison
@@ -43,13 +45,15 @@ DOCTOR_MODE = 0o644
 # Everything the receipt logic actually imports by name: doctor.py for
 # `plugin_identity`, oss_config.py to resolve `state_file`, oss_state.py for the
 # receipt itself, select_issues_rank.py because oss_state.py imports it
-# unconditionally at module scope, gh_which.py because doctor.py (and every
-# `doctor_check_*.py`) now imports it unconditionally too (#1157), and every
-# `doctor_check_*.py` because doctor.py imports each of THOSE unconditionally
-# too (the per-check module convention, #497/#630) -- omit even one and
-# `import doctor` itself raises ModuleNotFoundError, which is a real state
-# this suite tests separately (`real_modules=False`), not one to trip into
-# by accident here.
+# unconditionally at module scope, gh_which.py because doctor.py imports it
+# unconditionally at module scope too (#1157 -- only four of the
+# `doctor_check_*.py` modules import gh_which themselves, but doctor.py's own
+# unconditional import already forces it into this list regardless), and
+# every `doctor_check_*.py` because doctor.py imports each of THOSE
+# unconditionally too (the per-check module convention, #497/#630) -- omit
+# even one and `import doctor` itself raises ModuleNotFoundError, which is a
+# real state this suite tests separately (`real_modules=False`), not one to
+# trip into by accident here.
 _REAL_MODULES = [
     "doctor.py",
     "oss_config.py",
