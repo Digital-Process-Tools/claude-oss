@@ -98,23 +98,80 @@ def test_a_falsy_path_is_could_not_tell(tmp_path):
 
 
 def test_reruns_a_freshly_rewritten_file_forward_the_new_mtime(tmp_path):
-    """The exact #1120 shape: a file already scanned once is rewritten later --
-    the second scan must report the *new* mtime, not the first one it ever saw."""
+    """The exact #1120 shape: a file is rewritten between two calls -- the
+    second call must reflect the real, on-disk mtime the rewrite actually
+    produced, not a value memoized from the first call. There is no cache
+    anywhere in worktree_last_activity to memoize *from* (each call is a fresh
+    stat/walk), so this pins that absence of state directly: force the new
+    mtime forward with os.utime (portable across filesystems whose mtime
+    resolution is too coarse for two real writes a few milliseconds apart to
+    reliably differ), then confirm the second call reports exactly that value
+    rather than the first call's now-stale one -- a caching regression is the
+    only plausible bug this could still catch."""
     target = tmp_path / "rewritten.sh"
     target.write_text("first")
+    os.utime(str(target), (1000, 1000))
     first = lane_setup_worktree.worktree_last_activity(str(tmp_path))
     assert first["state"] == "resolved"
+    assert first["mtime"] == pytest.approx(1000, abs=0.01)
 
-    time.sleep(0.05)
     target.write_text("second")
-    now = time.time()
-    os.utime(str(target), (now, now))
+    os.utime(str(target), (2000, 2000))
 
     second = lane_setup_worktree.worktree_last_activity(str(tmp_path))
 
     assert second["state"] == "resolved"
-    assert second["mtime"] >= first["mtime"]
-    assert second["mtime"] == pytest.approx(now, abs=2)
+    assert second["mtime"] == pytest.approx(2000, abs=0.01)
+    assert second["mtime"] != first["mtime"]
+
+
+def test_an_empty_commit_in_a_real_worktree_is_invisible_to_the_scan(tmp_path):
+    """#1120 self-review found this directly: a git worktree add -cut tree
+    carries a .git FILE (a one-line gitdir: pointer), not a directory -- the
+    real index/refs/objects for a commit made there live under the MAIN
+    clone's own .git/worktrees/<name>/, entirely outside the path this
+    function scans. So a commit that touches no working-tree file is
+    invisible here. Pinned as a known limitation, not a bug: the docstring
+    says so explicitly, and this is the test that keeps that claim honest."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "-q", "-b", "main")
+    (origin / "a.txt").write_text("first")
+    _git(origin, "add", "a.txt")
+    _git(
+        origin,
+        "-c",
+        "user.email=t@example.invalid",
+        "-c",
+        "user.name=T",
+        "commit",
+        "-q",
+        "-m",
+        "first",
+    )
+    linked = tmp_path / "linked"
+    _git(origin, "worktree", "add", "-q", str(linked), "-b", "feature")
+    assert (linked / ".git").is_file(), "a linked worktree's own .git is a file"
+
+    before = lane_setup_worktree.worktree_last_activity(str(linked))
+    assert before["state"] == "resolved"
+
+    _git(
+        linked,
+        "-c",
+        "user.email=t@example.invalid",
+        "-c",
+        "user.name=T",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "empty",
+    )
+
+    after = lane_setup_worktree.worktree_last_activity(str(linked))
+    assert after["state"] == "resolved"
+    assert after["mtime"] == before["mtime"]
 
 
 # --- CLI: --activity ---------------------------------------------------------

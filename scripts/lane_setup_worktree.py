@@ -596,11 +596,40 @@ def worktree_last_activity(path):
     ignored file's own edit exactly as readily as a tracked one's, which matters
     because #1120's own rewritten fixture was a tracked file whose edit was
     unstaged -- a `git diff` alone would have seen it too, but a bare mtime scan
-    catches the identical case with no git invocation at all. `.git` itself is
-    included in the walk on purpose: a commit updates its index, refs and
-    objects, so the second incident folded into #1120 (a commit appearing that
-    the observing agent had not made) is visible here too, not only a raw file
-    edit.
+    catches the identical case with no git invocation at all.
+
+    **`.git` is walked, but this repository's own review round (#1120's own
+    self-review) found the original docstring here overclaimed what that buys.**
+    A worktree cut by `git worktree add` -- the only kind this repository's own
+    tooling produces -- carries a `.git` *file*, not a directory: a one-line
+    `gitdir:` pointer written once at creation and never touched again. The
+    actual index, refs, logs and objects for a commit made inside that worktree
+    live under the *main clone's* `.git/worktrees/<name>/`, entirely outside the
+    path this function scans. So a commit that touches no working-tree file (an
+    empty commit, an amend that changes only the message) is invisible here,
+    exactly the gap a reviewer reproduced directly: an empty commit inside a real
+    `git worktree add` tree left this function's own `mtime` unchanged. Walking
+    `.git` still costs nothing extra in that case -- it is a single small file,
+    not a subtree -- so it is left in the walk rather than special-cased out, but
+    nothing here should be read as "a hidden commit is covered": it is not, for
+    the one worktree shape this repository actually produces. A `.git`
+    *directory* (a plain `git init`, never a linked worktree) is the one shape
+    where this still sees a commit's own object-database writes, incidentally.
+
+    **Known limitation, the same review round's second finding, left
+    undocumented rather than fixed here.** Only files are stat'ed, never a
+    directory's own `st_mtime` -- so a create-then-delete cycle that leaves no
+    file behind (a lock file, an atomic temp file cleaned up after itself)
+    bumps the containing directory's own mtime with nothing left for this walk
+    to see, and is invisible here. Folding directory mtimes in was weighed and
+    declined for this round: it changes what `empty` means (a directory that
+    holds only empty subdirectories would stop being `empty` the moment its own
+    entries are counted, including the top-level directory itself at the exact
+    moment `git worktree add` creates it) in a way this fix has not built or
+    tested a full matrix for. Reported rather than patched under time pressure
+    -- most genuine "still writing" activity leaves an edited file behind
+    regardless, so this is a narrower gap than it first reads as, not the
+    common case this signal exists to catch.
 
     Three states, this repository's own convention -- never two:
 
