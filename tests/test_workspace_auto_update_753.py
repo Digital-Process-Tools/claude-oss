@@ -27,6 +27,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 
+import launcher_env  # noqa: E402
+
 from test_workspace_launcher import (  # noqa: E402
     BASH,
     LAUNCHER,
@@ -169,9 +171,8 @@ def _run_with_stub(
     # from each other, the same reason `test_workspace_launcher.py`'s own
     # `run()` defaults OSS_NO_AUTO_UPDATE on for tests that are not about it.
     env["OSS_WORKSPACE_SKIP_DOCTOR"] = "1"
-    env["PATH"] = os.pathsep.join(
-        [str(bindir), str(Path(sys.executable).parent), "/usr/bin", "/bin"]
-    )
+    # Every entry, and why each one is there: `launcher_env.pinned_path`.
+    env["PATH"] = launcher_env.pinned_path(bindir)
     done = subprocess.run(
         [BASH, str(LAUNCHER)],
         cwd=str(repo),
