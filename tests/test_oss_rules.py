@@ -10,6 +10,8 @@ git carries symlinks, so a clone could point rules anywhere. Copies into an owne
 are the supported shape.
 """
 
+import contextlib
+import os
 import shlex
 import shutil
 import subprocess
@@ -26,6 +28,46 @@ import oss_rules  # noqa: E402
 
 def _layer(root, dimension):
     return root / ".claude" / "jit-context" / dimension / oss_rules.LAYER
+
+
+@contextlib.contextmanager
+def _denied(path):
+    """Deny reads on `path`, or skip saying what went untested (#1116).
+
+    Same mechanism, same rationale as `tests/test_scaffold.py`'s `_denied` (#124):
+    the mode bit is not assumed to have taken -- root ignores it, some filesystems
+    ignore it, Windows' `os.chmod` only toggles a read-only attribute that does not
+    stop a directory listing -- so the deny is measured by attempting the exact
+    operation the code under test performs, rather than assumed from a platform
+    table. A separate copy rather than an import from `test_scaffold` because
+    these two test modules do not import each other anywhere else, and a first
+    cross-import for one helper is a bigger change than duplicating sixteen lines
+    that already have to stay in sync with their sibling if either ever changes
+    anyway.
+    """
+    os.chmod(str(path), 0o000)
+    try:
+        try:
+            os.listdir(str(path))
+        except PermissionError:
+            pass
+        except OSError as exc:
+            pytest.skip(
+                "chmod 000 on {} produced {} (errno {}) rather than a denied listing, so "
+                "the unreadable arm could not be set up and went untested".format(
+                    path, type(exc).__name__, exc.errno
+                )
+            )
+        else:
+            pytest.skip(
+                "chmod 000 on {} still allows listing it -- running as root, or a "
+                "filesystem/platform that does not enforce the mode bit. The unreadable "
+                "arm of this test went untested; the readable control still ran "
+                "elsewhere.".format(path)
+            )
+        yield
+    finally:
+        os.chmod(str(path), 0o755)
 
 
 #: Which column of an index row holds the entry FILENAME, per dimension. Measured against
@@ -997,6 +1039,264 @@ def test_install_refuses_a_symlinked_layer_and_leaves_its_target_untouched(tmp_p
     assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
     assert sorted(p.name for p in decoy.iterdir()) == ["00-index.tsv", "something.md"]
     assert link.is_symlink()  # the link itself is untouched too, not just its target
+
+
+def test_install_refuses_a_symlinked_jit_context_parent(tmp_path):
+    """#1116: #1110's guard checks `is_symlink()` on the LAYER component only
+    (`.../<dimension>/01-oss`). A symlink one level further up -- at
+    `.claude/jit-context` itself -- makes `layer` a real directory INSIDE the
+    link's target: `is_symlink()` is False, `exists()`/`is_dir()` are both True,
+    and the removal loop runs against the target, then `install()` writes there.
+
+    The decoy mirrors the full nesting the real layer needs (`paths/01-oss/`)
+    because the link is two levels above the layer this time, not at it.
+
+    The paired positive control, in this same fixture: a second repo with the
+    identical real, non-symlinked nesting (`.claude/jit-context/paths/01-oss/`)
+    must keep installing normally -- the case a containment fix could break by
+    rejecting ordinary parents along with symlinked ones.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    decoy = tmp_path / "decoy"
+    layer_target = decoy / "paths" / oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    victim = layer_target / "something.md"
+    victim.write_text("--- decoy content, not this plugin's ---\n", encoding="utf-8")
+    victim_index = layer_target / oss_rules.INDEX
+    victim_index.write_text("decoy\tindex\n", encoding="utf-8")
+
+    link = root / ".claude" / "jit-context"
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether install() refuses a symlinked jit-context "
+            "parent rather than writing through it".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert (
+        victim.read_text(encoding="utf-8")
+        == "--- decoy content, not this plugin's ---\n"
+    )
+    assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
+    assert sorted(p.name for p in layer_target.iterdir()) == [
+        "00-index.tsv",
+        "something.md",
+    ]
+    assert link.is_symlink()
+
+    control_root = tmp_path / "control-repo"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
+
+
+def test_install_refuses_a_symlinked_dot_claude_parent(tmp_path):
+    """#1116, one level further still: a symlink at `.claude` itself. Same
+    mechanism as the jit-context case above -- `layer` ends up a real directory
+    inside the link's target, three components below where the link sits.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    decoy = tmp_path / "decoy"
+    layer_target = decoy / "jit-context" / "paths" / oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    victim = layer_target / "something.md"
+    victim.write_text("--- decoy content, not this plugin's ---\n", encoding="utf-8")
+    victim_index = layer_target / oss_rules.INDEX
+    victim_index.write_text("decoy\tindex\n", encoding="utf-8")
+
+    link = root / ".claude"
+    try:
+        link.symlink_to(decoy, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether install() refuses a symlinked .claude parent "
+            "rather than writing through it".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert (
+        victim.read_text(encoding="utf-8")
+        == "--- decoy content, not this plugin's ---\n"
+    )
+    assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
+    assert sorted(p.name for p in layer_target.iterdir()) == [
+        "00-index.tsv",
+        "something.md",
+    ]
+    assert link.is_symlink()
+
+    control_root = tmp_path / "control-repo-2"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
+
+
+def test_install_refuses_a_symlinked_jit_context_parent_pointing_inside_the_repo(
+    tmp_path,
+):
+    """#1116, found in review of this fix's own first draft: a containment check
+    ("is the resolved layer still under root") is not enough. A parent symlinked to
+    ANOTHER REAL DIRECTORY INSIDE THE SAME REPOSITORY still resolves under root and
+    would pass a mere containment check, while still being exactly the
+    write-through-a-link case this whole issue is about -- the target here just
+    happens to also live inside the repo tree.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    other = root / "other-place"
+    layer_target = other / "paths" / oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    victim = layer_target / "something.md"
+    victim.write_text("--- decoy content, not this plugin's ---\n", encoding="utf-8")
+    victim_index = layer_target / oss_rules.INDEX
+    victim_index.write_text("decoy\tindex\n", encoding="utf-8")
+
+    link = root / ".claude" / "jit-context"
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(other, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether install() refuses a jit-context parent "
+            "symlinked to another directory inside the same repo".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert (
+        victim.read_text(encoding="utf-8")
+        == "--- decoy content, not this plugin's ---\n"
+    )
+    assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
+    assert link.is_symlink()
+
+    # Paired positive control, found missing on this test in a follow-up audit
+    # (#1116): as written, this test would also pass if install() were broken in
+    # some unrelated way that always raises. An ordinary, non-symlinked repo must
+    # keep installing normally.
+    control_root = tmp_path / "control-repo"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
+
+
+def test_install_refuses_rather_than_crashes_on_a_symlink_loop(tmp_path):
+    """#1116, found in review: a symlink LOOP (`.claude -> b`, `b -> .claude`) is a
+    third shape again, distinct from both a plain symlinked parent and one pointing
+    inside the repo. `Path.resolve()` handles a loop inconsistently across Python
+    versions -- raising `RuntimeError` on some, `OSError` on others, and silently
+    giving up and returning an unresolved (and here misleadingly "clean-looking")
+    path on at least one observed build, which would let a resolve()-based
+    containment check wave the loop through only for `layer.mkdir()` to blow up
+    later with an uncaught `OSError`. `install()` must refuse cleanly either way,
+    not raise a caller has no reason to expect from a rules layer install.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    claude = root / ".claude"
+    other_end = tmp_path / "loop-partner"
+    try:
+        claude.symlink_to(other_end, target_is_directory=True)
+        other_end.symlink_to(claude, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink loop here (errno "
+            "{}, {}): untested here is whether install() refuses a symlink loop "
+            "cleanly rather than crashing".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    # Paired positive control, found missing on this test in a follow-up audit
+    # (#1116): an ordinary, non-looped repo must keep installing normally.
+    control_root = tmp_path / "control-repo"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
+
+
+def test_install_refuses_rather_than_crashes_on_an_unreadable_ancestor(tmp_path):
+    """#1116, found in a follow-up audit: `is_symlink()` and `is_dir()` both raise
+    `PermissionError` for a candidate inside a directory this process cannot
+    search -- an ordinary condition (a restrictive umask, a directory owned by
+    another user, a shared CI cache), not an attack. Left uncaught, that used to
+    propagate straight out of `install()` as a raw `PermissionError`, breaking its
+    own documented "raises `RulesError`" contract. "Could not tell whether this is
+    a symlink" is not the same claim as "confirmed it is not one," so this must be
+    a refusal, not a silent pass-through and not a crash.
+
+    Paired positive control, same fixture: a repo with the identical real,
+    non-symlinked, fully-readable nesting must keep installing normally.
+    """
+    root = tmp_path / "repo"
+    claude = root / ".claude"
+    claude.mkdir(parents=True)
+
+    with _denied(claude):
+        with pytest.raises(oss_rules.RulesError):
+            oss_rules.install(root)
+
+    control_root = tmp_path / "control-repo"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
 
 
 def test_install_refuses_a_layer_checked_out_as_a_plain_file(tmp_path):

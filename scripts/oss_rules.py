@@ -880,6 +880,83 @@ def index_rows(dimension, rules):
     return rows
 
 
+class AncestorUnreadable(Exception):
+    """`_symlinked_ancestor` could not tell whether `path` (or something between
+    `root` and `path`) is a symlink, because the OS refused the lookup (#1116):
+    typically `PermissionError` from an ancestor directory this process cannot
+    search -- a restrictive umask, a directory owned by another user, a shared CI
+    cache, none of them adversarial. Neither "clean" (a real answer this function
+    could not have) nor "symlink" (the same) is honest here: this is the third
+    state the whole of this codebase is about, "we could not look," carried as an
+    exception rather than folded into a two-way return because both callers
+    already have a place to convert an exception into their own "could not tell"
+    shape (`RulesError` in `install()`, `CAUSE_DIRECTORY_UNWALKABLE` in
+    `scaffold._layer_scan()`) and neither has one for a third return value.
+    """
+
+    def __init__(self, path, cause):
+        self.path = path
+        self.cause = cause
+        super().__init__("{}: {}".format(path, cause))
+
+
+def _symlinked_ancestor(root, relative_parts):
+    """The first path, built by joining `relative_parts` onto `root` one at a time,
+    that is a symlink -- or `None` if none of them are (#1116). Raises
+    `AncestorUnreadable` if the OS refuses to answer for any candidate (#1116).
+
+    Checked top-down and stopped the moment a candidate does not exist as a
+    directory, because that means there is nothing further down to check: an
+    absent `.claude` cannot have a symlinked `jit-context` inside it. That
+    short-circuit is also what keeps this immune to a symlink LOOP
+    (`.claude -> b`, `b -> .claude`): `is_symlink()` on a candidate is an `lstat`
+    on an entry inside its own parent, which this function has already confirmed
+    is a real, non-symlinked directory before ever descending into it -- so the OS
+    never has to follow a link to find the next candidate, and never has the
+    chance to raise the loop-detection error `Path.resolve()` does, inconsistently
+    across Python versions -- a `Path.resolve()`-based version of this fix was
+    tried here first and abandoned over exactly that inconsistency: `RuntimeError`
+    on 3.11 (observed), a silent, unhelpful non-raising fallback that returns the
+    path UNRESOLVED on 3.13 (observed, on two different machines, for two
+    different loop shapes), and -- because that non-raising fallback would still
+    let install() proceed to a plain filesystem write against the very loop it
+    failed to detect -- an uncaught `OSError` several lines later, at
+    `layer.mkdir()`, once that write actually touches the loop (observed on
+    3.13). Windows reparse-point loop detection is reasoned, not observed, to
+    surface as a further `OSError` shape neither of the above. A containment
+    check against `Path.resolve()` was tried and abandoned for a second reason
+    too: it answers "does this stay under root", which a parent symlinked to
+    ANOTHER REAL DIRECTORY INSIDE THE SAME REPOSITORY still satisfies while still
+    being exactly the write-through-a-link case this exists to catch. Walking
+    components directly sidesteps both problems at once.
+
+    `is_symlink()` and `is_dir()` both raise `PermissionError` (an `OSError`) for
+    a candidate inside a directory this process cannot search (#1116) -- an
+    ordinary, non-adversarial condition (a restrictive umask, a shared CI cache),
+    not a defect in this walk. Left uncaught, that used to propagate straight
+    through both callers as a raw `PermissionError`, breaking `install()`'s own
+    "raises `RulesError`" contract and `_layer_scan()`'s own "never raises" one.
+    Caught here and re-raised as `AncestorUnreadable` so each caller converts it
+    into its own existing "could not tell" shape rather than crashing.
+    """
+    current = root
+    for part in relative_parts:
+        current = current / part
+        try:
+            is_link = current.is_symlink()
+        except OSError as exc:
+            raise AncestorUnreadable(current, exc)
+        if is_link:
+            return current
+        try:
+            is_directory = current.is_dir()
+        except OSError as exc:
+            raise AncestorUnreadable(current, exc)
+        if not is_directory:
+            return None
+    return None
+
+
 def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     """Replace this plugin's rule layer. Returns the paths written.
 
@@ -900,8 +977,11 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     layer ships either way -- omitting the rule would leave the reader with no statement
     at all, where the defect was a statement about a different repository.
 
-    Raises `RulesError` if any dimension's layer is a symlink (#1110): this module
-    never replaces a layer through a link, only a real directory it owns outright.
+    Raises `RulesError` if any dimension's layer, or any PARENT of it, is a symlink
+    (#1110, #1116), OR if this process could not determine that for any of them --
+    e.g. a `PermissionError` from an ancestor it cannot search (#1116): this module
+    never replaces a layer through a link, only a real directory it owns outright,
+    and "could not tell" is not the same claim as "confirmed real".
     """
     root = Path(repo_root)
     if root.exists() and not root.is_dir():
@@ -918,17 +998,35 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     # directory symlink -- so a `.claude/jit-context/<dimension>/01-oss` that is a
     # committed link would otherwise have its TARGET emptied of owned-shape files and
     # then written into, and `layer.mkdir(..., exist_ok=True)` would succeed because the
-    # link already exists (#1110). `is_symlink()` is checked ahead of and separately
-    # from `exists()`: it is true for a broken link too, which `exists()` alone would
-    # read as "layer absent" and walk straight past.
+    # link already exists (#1110).
     for dimension in rendered:
         layer = root / ".claude" / "jit-context" / dimension / LAYER
-        if layer.is_symlink():
+        try:
+            ancestor = _symlinked_ancestor(
+                root, (".claude", "jit-context", dimension, LAYER)
+            )
+        except AncestorUnreadable as exc:
+            # #1116: a candidate this process cannot search (an ordinary
+            # PermissionError, not a defect in the walk) used to propagate here as
+            # a raw exception, breaking this function's own "raises RulesError"
+            # contract above. "Could not tell whether this is a symlink" is not
+            # the same claim as "confirmed it is not one" -- writing through an
+            # ancestor nobody could actually inspect is exactly the risk this
+            # whole check exists to close, so this is a refusal, the same as a
+            # confirmed symlink, not a silent pass-through.
+            raise RulesError(
+                "{}: could not determine whether {} is a symlink ({}) -- "
+                "install() refuses rather than writing through a path it could "
+                "not inspect. Fix the permission and rerun.".format(
+                    dimension, exc.path, exc.cause
+                )
+            )
+        if ancestor is not None:
             raise RulesError(
                 "{}: {} is a symlink, not a directory this plugin owns -- install() "
                 "replaces the whole layer, which would delete and rewrite through the "
                 "link into whatever it points at. Remove the link (or move it aside if "
-                "it was committed on purpose) and rerun.".format(dimension, layer)
+                "it was committed on purpose) and rerun.".format(dimension, ancestor)
             )
         # A tracked symlink checked out with `core.symlinks=false` (the historical
         # Windows default without the privilege or Developer Mode) never becomes a
