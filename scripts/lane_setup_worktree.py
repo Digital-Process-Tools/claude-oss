@@ -705,8 +705,14 @@ def worktree_last_activity(path):
         if os.path.normpath(dirpath) != root_norm:
             try:
                 found_dir = os.lstat(dirpath)
-            except (OSError, ValueError):
-                pass
+            except (OSError, ValueError) as exc:
+                # #1159: a per-entry stat failure is the same "the walk could
+                # not complete cleanly" fact the directory-level `onerror`
+                # callback below already registers -- swallowing it here
+                # instead broke this function's own documented promise that
+                # a partial walk is `could-not-tell`, never a confident
+                # `resolved` built on whatever the walk happened to reach.
+                walk_errors.append(exc)
             else:
                 if newest is None or found_dir.st_mtime > newest:
                     newest = found_dir.st_mtime
@@ -714,7 +720,9 @@ def worktree_last_activity(path):
             file_path = os.path.join(dirpath, name)
             try:
                 found = os.lstat(file_path)
-            except (OSError, ValueError):
+            except (OSError, ValueError) as exc:
+                # #1159: same fix, same reason -- see the comment above.
+                walk_errors.append(exc)
                 continue
             if newest is None or found.st_mtime > newest:
                 newest = found.st_mtime
