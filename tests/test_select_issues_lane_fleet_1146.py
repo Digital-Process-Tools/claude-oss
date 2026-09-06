@@ -1,13 +1,11 @@
-"""#1146 -- `select_issues.select_fleet` returns one group per declared lane
-label, never a partition of the whole board -- iterating
-`.oss.json`'s `labels.lanes` instead of grouping every issue on the board
-into 18 near-useless buckets.
+"""#1146 -- `select_issues.select_fleet` returns one group per lane, never
+a partition of the whole board -- iterating `.oss.json`'s `labels.lanes`
+(plus `labels.lane_other`, a real sixth lane, #1130) instead of grouping
+every issue on the board into 18 near-useless buckets.
 
-The hidden judgement call this issue names: an issue carrying none of the
-declared lane labels must stay reachable once iteration is label-driven.
-It (and a `lane-other`-labelled issue, #1130) surfaces under
-`select_issues.NO_LANE_LABEL_KEY` -- a stated bucket, never a silent drop
-and never a sixth lane.
+An issue carrying no `lane-*` label at all is NOT a lane -- see
+tests/test_select_issues_lane_other_sixth_lane_1146.py for that half of
+the design (the `dropped` accounting, #1130's own settlement).
 """
 
 import sys
@@ -84,17 +82,13 @@ def _select_fleet(issues):
 # --------------------------------------------------------------- must-fire
 
 
-def test_one_key_per_declared_lane_label_plus_the_no_lane_label_bucket():
+def test_one_key_per_declared_lane_label_plus_lane_other():
     board = [
         _issue(1, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/a.py"]),
         _issue(2, ["priority-high", "lane-doctor"], lane_patterns=["scripts/b.py"]),
     ]
     result = _select_fleet(board)
-    assert set(result["lanes"].keys()) == {
-        "lane-dispatch",
-        "lane-doctor",
-        select_issues.NO_LANE_LABEL_KEY,
-    }
+    assert set(result["lanes"].keys()) == {"lane-dispatch", "lane-doctor", "lane-other"}
 
 
 def test_a_lane_label_with_no_eligible_work_is_a_stated_absence_not_a_missing_key():
@@ -102,34 +96,6 @@ def test_a_lane_label_with_no_eligible_work_is_a_stated_absence_not_a_missing_ke
     result = _select_fleet(board)
     assert "lane-doctor" in result["lanes"]
     assert result["lanes"]["lane-doctor"]["state"] == "none-available"
-
-
-def test_an_unlabelled_issue_stays_reachable_under_no_lane_label():
-    board = [_issue(3, ["priority-high"], lane_patterns=["scripts/c.py"])]
-    result = _select_fleet(board)
-    bucket = result["lanes"][select_issues.NO_LANE_LABEL_KEY]
-    assert bucket["state"] == "candidates"
-    assert [c["number"] for c in bucket["candidates"]] == [3]
-    # never counted into a declared lane just because it happened to be on the board
-    assert result["lanes"]["lane-dispatch"]["state"] == "none-available"
-
-
-def test_lane_other_is_never_a_sixth_lane_and_is_dispatched_solo():
-    board = [
-        _issue(4, ["priority-high", "lane-other"]),
-        _issue(5, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/d.py"]),
-    ]
-    result = _select_fleet(board)
-    assert set(result["lanes"].keys()) == {
-        "lane-dispatch",
-        "lane-doctor",
-        select_issues.NO_LANE_LABEL_KEY,
-    }
-    bucket = result["lanes"][select_issues.NO_LANE_LABEL_KEY]
-    groups = bucket["groups"]["groups"]
-    assert len(groups) == 1
-    assert groups[0]["state"] == "lane-other"
-    assert [m["number"] for m in groups[0]["members"]] == [4]
 
 
 # ------------------------------------------------------------ positive control

@@ -152,51 +152,57 @@ without an overlap at all -- a short group with nothing further to say, or
 a #1130 `lane-other` singleton -- carries `adjacency: None`: nothing
 joined it, so there is no claim to grade.
 
-## Fleet: fetch, iterate the declared lane labels, return bodies (#1145,
+## Fleet: fetch, iterate the fleet's own lanes, return bodies (#1145,
 ## #1146, #1147)
 
 `select_fleet(config, ...)` is `docs/pick-the-work.md` step 1: no input
 beyond an already-loaded `.oss.json` (`config`). It fetches the open board
 itself (`_fetch_board`, one `gh api graphql` call), derives the held set
-itself (`lane_setup.derive_held_set`), and returns **one group per
-declared lane label** (`config["labels"]["lanes"]`) instead of one
-partition of the whole board -- measured on the live board, 18 groups for
-a tick that dispatches at most five lanes, most of them never used.
-`select()` itself is unchanged and still the payload-driven primitive
-`select_fleet` composes -- called once per lane label, with `payload
-["lane_label"]` narrowing candidate generation to that one label (#1078).
+itself (`lane_setup.derive_held_set`), and returns **one group per lane**
+instead of one partition of the whole board -- measured on the live
+board, 18 groups for a tick that dispatches at most five lanes, most of
+them never used. `select()` itself is unchanged and still the
+payload-driven primitive `select_fleet` composes -- called once per lane,
+with `payload["lane_label"]` narrowing candidate generation to that one
+label (#1078).
 
-**"One group per lane label" means exactly one, not a partition of that
-label's own eligible candidates.** The first cut of this function returned
-every group `_group_candidates` could form within a label -- 23 groups
-across five lanes plus the no-lane-label bucket, measured live, for a
-fleet that can dispatch at most one developer per lane this tick. A
-lane's second, third and fourth groups are recomputed next tick against a
-board that has moved, so computing and returning them at all is pure
-waste -- exactly the "computed, rendered, never used" defect #1146 was
-filed to remove one level up. `_run_one`'s `cap_groups` truncates each
-real lane's `groups.groups` to its first entry -- `_group_candidates`
-already orders groups by rank, so the first is "the best-ranked eligible
-issue in this lane as lead, plus up to two companions by the existing
-adjacency rules," never a re-derivation. Nothing else changes:
-`candidates` still lists every eligible issue in the lane, capped group or
-not, and `ungrouped` is untouched -- the cap removes a group's number, not
-an issue's visibility.
+**The fleet is the declared lane labels (`config["labels"]["lanes"]`)
+PLUS `config["labels"]["lane_other"]`, read from config like every other
+label spelling -- never hardcoded.** `lane-other` is a real, sixth lane
+(#1130: "triaged, and no lane owns these files"), iterated exactly like
+any other label; `select()`'s existing `is_lane_other`/solo-group
+machinery (see "## Groups" above) already keeps it from ever gaining a
+companion, so no extra routing is needed here to preserve that rule.
 
-**The no-lane-label bucket is capped the same way, for the same reason
-(`cap_groups=True`):** a lane runs one developer at a time, and being a
-pseudo-lane does not exempt this bucket from that.
+**"One group per lane" means exactly one, not a partition of that
+lane's own eligible candidates.** An early cut of this function returned
+every group `_group_candidates` could form within a lane -- 23 groups
+across six lanes-worth of buckets, measured live, for a fleet that can
+dispatch at most one developer per lane this tick. A lane's second,
+third and fourth groups are recomputed next tick against a board that has
+moved, so computing and returning them at all is pure waste -- exactly
+the "computed, rendered, never used" defect #1146 was filed to remove one
+level up. `_run_one`'s `cap_groups` truncates every lane's own
+`groups.groups` to its first entry -- `_group_candidates` already orders
+groups by rank, so the first is "the best-ranked eligible issue in this
+lane as lead, plus up to two companions by the existing adjacency rules,"
+never a re-derivation. Nothing else changes: `candidates` still lists
+every eligible issue in the lane, capped group or not, and `ungrouped` is
+untouched -- the cap removes a group's number, not an issue's visibility.
 
-**An issue carrying none of the declared lane labels does not vanish just
-because iteration is now label-driven.** It (and a `labels.lane_other`
-issue, which names no subsystem of its own -- #1130) surfaces under
-`NO_LANE_LABEL_KEY`, run through the identical `select()` machinery as any
-declared lane -- never a sixth lane (nothing disjoint-by-construction backs
-it, per #1130's own reasoning), never silently dropped, never folded into
-a declared lane it happens to share the board with. A `lane-other` issue
-inside that bucket still gets `_group_candidates`'s existing solo-group
-treatment (see "## Groups" above) -- this adds no new routing for it, only
-a place for it to be reachable from.
+**An issue carrying no `lane-*` label at all is not a lane, gets no group
+and no body, and is dropped -- #1130's own settlement, corrected here
+after an earlier cut re-merged the two populations #1130 was filed to
+keep apart.** "Triaged, no lane owns this" (`lane-other`) and "nobody has
+triaged this yet" (no label at all) are different facts and must not
+render the same way; giving the second one a shared pseudo-lane with
+`lane-other` did exactly that. So an untagged issue never enters any
+`select()` call -- it is accounted for once, fleet-wide, in
+`select_fleet`'s own top-level `dropped` list, in the identical
+`{"number", "disposition", "why"}` shape `select()`'s own per-lane
+`dropped` already uses for `stale`/`assigned`/`lane-collision`: one more
+disposition value (`"no-lane-label"`), never a new structure. It is input
+to `/oss:triage`, not to a developer.
 
 **`STATE_COULD_NOT_SELECT` from #970 now covers the fetch too.** A failed
 or mis-shaped read of either the board or the held set forces
@@ -1168,16 +1174,6 @@ def _attach_bodies(groups_result, issues_by_number):
     return groups_result
 
 
-#: #1146: the bucket for an issue carrying none of the declared lane labels
-#: (never triaged into one, or triaged straight to `labels.lane_other`,
-#: which names no subsystem of its own -- #1130). Never a sixth lane: it
-#: carries no declared file set backing a disjointness claim the way the
-#: five real lanes do, and it is named so a reader can never mistake it for
-#: one. Still run through the identical `select()` machinery as any declared
-#: lane, so an issue here is exactly as reachable as one in any other group.
-NO_LANE_LABEL_KEY = "no-lane-label"
-
-
 def select_fleet(
     config,
     repo_root=".",
@@ -1193,8 +1189,10 @@ def select_fleet(
     first return value). Fetches the open board and the held set itself, then
     calls `select()` -- unchanged, still payload-driven -- once per lane
     label declared in `config["labels"]["lanes"]`, plus once more for
-    `NO_LANE_LABEL_KEY`. See the module docstring's "## Fleet" section for
-    the full reasoning; this docstring covers only the call's own shape.
+    `config["labels"]["lane_other"]` when the repo declares one: `lane-other`
+    is a real, dispatchable lane (#1130), never a bucket. See the module
+    docstring's "## Fleet" section for the full reasoning; this docstring
+    covers only the call's own shape.
 
     `fetcher`/`held_fetcher` default to `_fetch_board`/`lane_setup.
     derive_held_set` -- injectable exactly the way `select()`'s own `checker`
@@ -1204,22 +1202,33 @@ def select_fleet(
 
     Returns:
 
-      state              `"candidates"` if any lane label (or the
-                          no-lane-label bucket) has some, `"none-available"`
-                          only if every one of them read cleanly and found
-                          nothing, `"could-not-select"` otherwise -- and
-                          ALWAYS `"could-not-select"`, immediately, when the
-                          board or held-set fetch itself failed, before any
-                          lane label is attempted at all.
+      state              `"candidates"` if any lane has some, `"none-
+                          available"` only if every one of them read
+                          cleanly and found nothing, `"could-not-select"`
+                          otherwise -- and ALWAYS `"could-not-select"`,
+                          immediately, when the board or held-set fetch
+                          itself failed, before any lane is attempted.
       board_read_ok/why  observed facts about the fetch this call made,
                           never a caller's assertion (#1145's own point).
       board_capped/detail   whether the board read was capped (`per=`).
       lanes_read_ok/why  observed facts about the held-set derivation.
-      lanes             `{label: <select() result>, ..., NO_LANE_LABEL_KEY:
-                          <select() result>}` -- always every declared
-                          label's own key, even when its own state is
-                          `none-available` (a stated absence, never a
-                          missing key).
+      lanes             `{label: <select() result>, ...}` -- one key per
+                          declared lane label plus (when declared)
+                          `lane_other`, always present even when its own
+                          state is `none-available` (a stated absence,
+                          never a missing key). An issue with no lane label
+                          at all never appears here.
+      dropped           `[{"number", "disposition": "no-lane-label",
+                          "why"}, ...]` -- fleet-wide, computed once, for
+                          every issue on the board carrying none of the
+                          keys `lanes` iterates. The identical shape
+                          `select()`'s own per-lane `dropped` already uses
+                          for `stale`/`assigned`/`lane-collision`/etc, one
+                          more disposition value rather than a new
+                          structure (#1130's own settlement of the earlier
+                          `no-lane-label` pseudo-lane). Always present,
+                          `[]` when the fetch itself failed or nothing
+                          qualifies -- never a missing key.
     """
     fetcher = _fetch_board if fetcher is None else fetcher
     held_fetcher = lane_setup.derive_held_set if held_fetcher is None else held_fetcher
@@ -1241,6 +1250,7 @@ def select_fleet(
             "lanes_read_ok": None,
             "lanes_read_why": None,
             "lanes": {},
+            "dropped": [],
         }
 
     held = held_fetcher(
@@ -1259,13 +1269,31 @@ def select_fleet(
             "lanes_read_ok": False,
             "lanes_read_why": lanes_read_why,
             "lanes": {},
+            "dropped": [],
         }
 
     issues = board.get("issues") or []
     issues_by_number = {row.get("number"): row for row in issues}
     held_files = sorted((held.get("held") or {}).keys())
 
+    # Maintainer correction (#1146, #1130): the fleet is the declared lane
+    # labels PLUS `labels.lane_other` -- read from config, never hardcoded,
+    # the same rule every other label spelling in this module follows.
+    # `lane-other` is a real lane (#1130: "triaged, no lane owns these
+    # files"), not a bucket, and it is iterated exactly like any other
+    # label -- `select()`'s existing `is_lane_other`/solo-group machinery
+    # (see "## Groups" above) already keeps it from ever gaining a
+    # companion, so nothing extra is needed here to preserve that rule.
     lane_labels = [l for l in (declared.get("lanes") or []) if isinstance(l, str)]
+    lane_other_label = declared.get("lane_other")
+    lane_other_label = (
+        lane_other_label
+        if isinstance(lane_other_label, str) and lane_other_label
+        else None
+    )
+    fleet_labels = list(lane_labels)
+    if lane_other_label and lane_other_label not in fleet_labels:
+        fleet_labels.append(lane_other_label)
 
     def _run_one(filtered_issues, lane_label, cap_groups):
         payload = {
@@ -1298,41 +1326,41 @@ def select_fleet(
             # per not-yet-taken lead), so `groups[0]` -- when there is one --
             # is exactly "the best-ranked eligible issue in this lane as
             # lead, plus up to two companions by the existing adjacency
-            # rules." Measured live: 23 groups across five real lanes plus
-            # the no-lane-label bucket, for a tick that can dispatch at most
-            # one developer per lane -- a lane's second, third and fourth
-            # groups cannot be dispatched this tick and are recomputed next
-            # tick against a board that has moved. Truncated BEFORE bodies
-            # are attached, so a dropped group's members never pay the body
-            # fetch/fence cost at all. `candidates` (every eligible issue in
-            # this lane, capped group or not) and `ungrouped` (never
-            # entered grouping at all, #267) are untouched by this cap --
-            # nothing here removes an issue from view, only from getting a
-            # group of its own this tick.
+            # rules." Truncated BEFORE bodies are attached, so a dropped
+            # group's members never pay the body fetch/fence cost at all.
+            # `candidates` (every eligible issue in this lane, capped group
+            # or not) and `ungrouped` (never entered grouping at all, #267)
+            # are untouched by this cap -- nothing here removes an issue
+            # from view, only from getting a group of its own this tick.
             if cap_groups:
                 result["groups"]["groups"] = result["groups"]["groups"][:1]
             _attach_bodies(result["groups"], issues_by_number)
         return result
 
     lanes = {}
-    for label in lane_labels:
+    for label in fleet_labels:
         lanes[label] = _run_one(issues, label, cap_groups=True)
 
-    # #1146's own hidden judgement call: an issue carrying none of the
-    # declared lane labels must stay reachable now that iteration is
-    # label-driven -- filtered here (never inside `select()`, which only
-    # knows how to narrow TO one label, #1078) to the complement of every
-    # declared label, so it also picks up a `labels.lane_other` issue (which
-    # carries no declared lane label either) without any extra routing.
-    labelled = set(lane_labels)
-    unrouted_issues = [
-        row for row in issues if not (set(row.get("labels") or []) & labelled)
+    # Maintainer correction (#1146, #1130): "no lane label at all" is NOT a
+    # lane and is never dispatched -- #1130 was filed precisely because a
+    # deliberate triage refusal and an issue nobody has read were rendering
+    # identically under one shared pseudo-lane, which is exactly what the
+    # first cut of this function re-created. An untagged issue never enters
+    # any `select()` call (no group, no body); it is accounted for once,
+    # fleet-wide, in the same `{"number", "disposition", "why"}` shape
+    # `select()`'s own per-lane `dropped` list already uses for `stale` /
+    # `assigned` / `lane-collision` -- one more disposition value, not a
+    # new structure.
+    fleet_label_set = set(fleet_labels)
+    dropped = [
+        {
+            "number": row.get("number"),
+            "disposition": "no-lane-label",
+            "why": "carries no lane-* label -- not yet triaged; /oss:triage assigns one (#1130)",
+        }
+        for row in issues
+        if not (set(row.get("labels") or []) & fleet_label_set)
     ]
-    # Maintainer round 2 (#1146): capped the same way a real lane is, for the
-    # same reason -- a lane runs one developer at a time, and being a
-    # pseudo-lane does not exempt this bucket from that. The rest stay
-    # visible in `candidates` and are recomputed next tick, identically.
-    lanes[NO_LANE_LABEL_KEY] = _run_one(unrouted_issues, None, cap_groups=True)
 
     states = [row["state"] for row in lanes.values()]
     if any(s == STATE_CANDIDATES for s in states):
@@ -1362,6 +1390,7 @@ def select_fleet(
         "lanes_read_ok": True,
         "lanes_read_why": None,
         "lanes": lanes,
+        "dropped": dropped,
     }
 
 
