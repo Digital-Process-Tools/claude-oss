@@ -2135,6 +2135,29 @@ def validate(config):
                         "labels.reserved: expected a label name (string) or null "
                         "for 'not declared', got {!r}".format(reserved)
                     )
+            # #1130: `lane-other` -- the GitHub label a triager applies to an
+            # issue it examined and matched to none of the real lanes. It is
+            # a per-repo fact like every other label spelling, checked on
+            # the same opt-in, null-is-fine terms as `filed_by_loop` and
+            # `reserved` above -- a repo that has not declared one yet is
+            # not a typo, it is `_derive_lane_patterns_from_labels`'s own
+            # "not configured" posture at derivation time. Deliberately NOT
+            # cross-checked against `labels.lanes` or `labels.lane_patterns`
+            # here: it is the catch-all marked apart from the five real
+            # lanes, never a sixth peer, and `_derive_lane_patterns_from_
+            # labels` is what refuses it a file set regardless of what
+            # either of those two happens to contain.
+            if "lane_other" in labels:
+                lane_other = labels["lane_other"]
+                if lane_other is not None and (
+                    isinstance(lane_other, bool)
+                    or not isinstance(lane_other, str)
+                    or not lane_other.strip()
+                ):
+                    problems.append(
+                        "labels.lane_other: expected a label name (string) or null "
+                        "for 'not declared', got {!r}".format(lane_other)
+                    )
             # #1129: the per-repo fact `select_issues.py` needs to derive a
             # candidate's `lane_patterns` from its `lane-*` label when the
             # issue carries none of its own -- optional, additive, and
