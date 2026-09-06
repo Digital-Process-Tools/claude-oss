@@ -326,8 +326,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # prose each release, after a releaser misread the round-two
     # carry-forward rule as applying to round one and shipped over a
     # round-one findings verdict. Budget unchanged; still under it.
+    # Re-baselined for #1158: 8930 B became 9170 B -- has_blocking gained a
+    # third state (BLOCKING_UNKNOWN / None -> could-not-decide) alongside
+    # True/False, so gate3_disposition.py's own paragraph here now names it.
+    # Budget unchanged; still comfortably under it.
     "skills/manager/phases/release.md": (
-        8930,
+        9170,
         9800,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),

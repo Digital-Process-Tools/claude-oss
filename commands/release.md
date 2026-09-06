@@ -126,13 +126,13 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gate3_disposition.py" \
      --round <1 or 2> --verdict <clean|findings|could-not-run> \
-     --blocking <yes if any finding this round sits in a blocking row, else no>
+     --blocking <yes / no / unknown -- does a finding sit in a blocking row>
    ```
 
    Quote its `DISPOSITION:` line in the release report. `proceed` and `carry-forward-and-proceed`
-   let the tag move; `stop-tag` does not; `could-not-decide` means the round number or the verdict
-   word you passed was not one of the shapes this gate defines — fix the call and re-run rather
-   than treating it as a pass.
+   let the tag move; `stop-tag` does not; `could-not-decide` means the round, verdict, or
+   `--blocking` was not a shape this gate defines -- `unknown` for round two included -- so fix
+   the call and re-run rather than treating it as a pass.
 
    - **`findings`, round one** — stop the tag, file them, **and delegate the blocking rows in the
      same tick**. They are ordinary work with an unusually good brief attached; the audit already

@@ -34,17 +34,28 @@ function with tests instead.
                                                      carries forward)
   2      findings        False         carry-forward-and-proceed
   2      findings        True          stop-tag
+  2      findings        unknown/None  could-not-decide
 
 `has_blocking` is read for round two only. A round-one `findings` verdict
 stops the tag regardless of whether anything in it blocks, because round
 one's whole job is to give the maintainer a chance to fix before round two
 runs -- carrying forward is a round-two act, never a round-one one.
 
-Three states, not two: an input this module does not recognise (a verdict
-word outside the three the auditor's report format defines, or a round
-number outside 1/2) is `could-not-decide`, not a default of either
-`proceed` or `stop-tag`. Guessing which one is the safer failure invents a
-policy nobody wrote down; naming the unrecognised input is a fact.
+`has_blocking` is itself three-state, not two (#1158): `True`/`False` say a
+rank was established either way, and `BLOCKING_UNKNOWN` says one never was
+-- the ranking table never reached the auditor, or the caller never
+checked. Passing that sentinel for a round-two `findings` verdict answers
+`could-not-decide` rather than being folded into `False` (non-blocking).
+Silently reading "unknown" as "no" is exactly the defect class this
+repository is named after: an absence produced by the tool, rendered as an
+absence in the world.
+
+Three states, not two, for the whole decision as well: an input this module
+does not recognise (a verdict word outside the three the auditor's report
+format defines, or a round number outside 1/2) is `could-not-decide`, not a
+default of either `proceed` or `stop-tag`. Guessing which one is the safer
+failure invents a policy nobody wrote down; naming the unrecognised input is
+a fact.
 
 Exit codes, because a shell reads those and never reads prose:
 
@@ -66,6 +77,17 @@ DISPOSITION_COULD_NOT_DECIDE = "could-not-decide"
 
 _KNOWN_VERDICTS = ("clean", "findings", "could-not-run")
 
+# The third state for `has_blocking` (#1158): `True`/`False` say a rank was
+# established either way, and this sentinel says one never was -- the table
+# never reached the auditor (`could not rank`), or the caller simply never
+# checked. `decide()` cannot tell those two apart from the value alone, and
+# does not try; both mean the same thing here, which is that "not blocking"
+# was never actually established and must not be assumed. `decide()` treats
+# plain `None` the same way -- it is the natural Python spelling of "never
+# checked", and a caller who passes it instead of this sentinel must get the
+# same `could-not-decide` rather than a silent, undocumented fallthrough.
+BLOCKING_UNKNOWN = "unknown"
+
 EXIT_PROCEED = 0
 EXIT_STOP_TAG = 1
 EXIT_USAGE_ERROR = 2
@@ -78,9 +100,12 @@ def decide(round_number, verdict, has_blocking):
     ``round_number`` is ``1`` or ``2``. ``verdict`` is the auditor's own
     verdict word (``clean`` / ``findings`` / ``could-not-run``).
     ``has_blocking`` is whether any finding in *this round* sits in a row
-    the ranking table marks blocking -- ignored for every verdict except a
-    round-two ``findings``, where it is the only thing that decides
-    whether the tag may proceed.
+    the ranking table marks blocking -- ``True``, ``False``, or either
+    ``BLOCKING_UNKNOWN`` or plain ``None`` when that was never established.
+    Ignored for every verdict except a round-two ``findings``, where it is
+    the only thing that decides whether the tag may proceed -- and either
+    spelling of "unknown" there decides ``could-not-decide`` rather than
+    being read as ``False``.
     """
     if round_number not in (1, 2):
         return {
@@ -120,6 +145,14 @@ def decide(round_number, verdict, has_blocking):
             "maintainer a chance to fix before round two runs, and "
             "carry-forward is a round-two act, never a round-one one",
         }
+    if has_blocking == BLOCKING_UNKNOWN or has_blocking is None:
+        return {
+            "disposition": DISPOSITION_COULD_NOT_DECIDE,
+            "reason": "has_blocking is unknown for round-two findings: "
+            "whether anything in this round sits in a blocking row was "
+            "never established, and an unranked or could-not-rank finding "
+            "must never be read as non-blocking",
+        }
     if has_blocking:
         return {
             "disposition": DISPOSITION_STOP_TAG,
@@ -147,8 +180,10 @@ def _blocking_argument(text):
         return True
     if folded in ("no", "false", "0"):
         return False
+    if folded in ("unknown", BLOCKING_UNKNOWN):
+        return BLOCKING_UNKNOWN
     raise argparse.ArgumentTypeError(
-        "--blocking expects yes/no, got {0!r}".format(text)
+        "--blocking expects yes/no/unknown, got {0!r}".format(text)
     )
 
 
@@ -165,7 +200,10 @@ def main(argv=None):
         "--blocking",
         type=_blocking_argument,
         required=True,
-        help="yes/no -- does any finding in this round sit in a blocking row",
+        help="yes/no/unknown -- does any finding in this round sit in a "
+        "blocking row; unknown means that was never established (an "
+        "unranked or could-not-rank finding), and must not be answered no "
+        "on its behalf",
     )
     parser.add_argument(
         "--json", action="store_true", help="emit JSON instead of prose"
