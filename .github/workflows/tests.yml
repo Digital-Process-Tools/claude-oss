@@ -129,19 +129,23 @@ jobs:
       # One step and not two `if:`-guarded ones, deliberately. Two conditional steps that
       # are both false is a leg that runs no tests at all and reports success, which is
       # this repository's own defect class installed in the merge gate. This step is
-      # unconditional; only the flag varies, and the branch is taken inside the shell
-      # where both arms run pytest.
+      # unconditional; only the flag varies.
       #
-      # The expression's true arm is `on` rather than the empty string on purpose: a
-      # GitHub `A && '' || B` ternary yields B when A is true, because '' is falsy. An
-      # empty true arm would have put `--no-cov` on all twelve legs and measured coverage
-      # nowhere, and the matrix would have been green throughout.
+      # The condition is INVERTED so that the empty string is only ever the RESULT and
+      # never an arm: GitHub evaluates `A && '' || B` to B when A is true, because '' is
+      # falsy, and that spelling would have put `--no-cov` on all twelve legs, measured
+      # coverage nowhere, and stayed green throughout. Written this way, `X && '--no-cov'
+      # || ''` yields `--no-cov` when X holds and '' when it does not, with no falsy arm
+      # to get wrong.
+      #
+      # And NO `shell:` override. The first version of this step branched inside `bash`,
+      # which on the Windows legs replaced the default shell for the whole test run --
+      # and pytest under Git Bash resolves a different `git` than pytest under
+      # PowerShell, which broke 123 tests across four launcher suites whose fixtures pin
+      # their own PATH. Changing the interpreter the suite runs under is a far larger
+      # change than passing one flag, and this step has no need of it.
       - name: Run tests
-        env:
-          COV: ${{ (matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12') && 'on' || 'off' }}
-        shell: bash
-        run: |
-          if [ "$COV" = "on" ]; then pytest; else pytest --no-cov; fi
+        run: pytest ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '--no-cov' || '' }}
 
   shell:
     runs-on: ubuntu-latest
