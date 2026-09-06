@@ -52,6 +52,14 @@ Gates, each a call and not a feeling:
    findings → **stop the tag** and file, **in round one**; **could not run → stop the tag and say
    so.** Neither one stops the loop; the continuation for each is below. Round two is
    different and deliberately so: what it finds is filed and the release ships over it.
+
+   **This is a computed disposition, not a judgement call made fresh each release (#1043).** A
+   release shipped over a round-one `findings` verdict, reasoned as "no blocking finding, so
+   nothing was on the release's critical path" -- round two's own rule, applied one round early.
+   `scripts/gate3_disposition.py` takes the round, the auditor's verdict word and whether any
+   finding in this round sits in a blocking row, and answers `proceed` / `stop-tag` /
+   `carry-forward-and-proceed` / `could-not-decide`. Run it and quote its `DISPOSITION:` line in
+   the release report rather than re-deriving the rule from memory under narrative pressure.
    **Two audit rounds, hard cap** — a
    competent audit of any non-trivial delta always finds something, so an unbounded "findings → stop"
    makes every release hostage to diminishing returns. After round two, file the rest against the

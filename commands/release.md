@@ -154,6 +154,22 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    default branch, an empty pull request board and four freshly filed blockers nobody had started.
    So every blocking arm has a continuation, and none of them is an ending:
 
+   **Compute the disposition; do not re-derive it from memory (#1043).** A release shipped over a
+   round-one `findings` verdict on the reasoning "no blocking finding, so nothing was on the
+   release's critical path" — round two's own carry-forward rule, applied one round early, which
+   made a round-one `findings` verdict indistinguishable from `clean`. Run it after every round:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gate3_disposition.py" \
+     --round <1 or 2> --verdict <clean|findings|could-not-run> \
+     --blocking <yes if any finding this round sits in a blocking row, else no>
+   ```
+
+   Quote its `DISPOSITION:` line in the release report. `proceed` and `carry-forward-and-proceed`
+   let the tag move; `stop-tag` does not; `could-not-decide` means the round number or the verdict
+   word you passed was not one of the shapes this gate defines — fix the call and re-run rather
+   than treating it as a pass.
+
    - **`findings`, round one** — stop the tag, file them, **and delegate the blocking rows in the
      same tick**. They are ordinary work with an unusually good brief attached; the audit already
      did the pre-flight.
@@ -428,8 +444,27 @@ changelog, the version-site files, anything else this run wrote — and stage th
 each one explicitly before a pathless commit.
 
 Fold the changelog if this repo uses fragments (`/oss:changelog`), commit with `commit_subject` —
-or with `chore(release): {version}` when it is null, per the rule above — and tag. Then **verify
-the tag exists on the remote**:
+or with `chore(release): {version}` when it is null, per the rule above — and tag.
+
+**This commit lands on the default branch outside a pull request, and `CLAUDE.md`'s "Who decides"
+table lists that as a stop row with no content exception (#1119).** That tension is not resolved
+here — routing the release commit through a pull request, writing a narrow documented exception, or
+removing bypass privileges from the release path are three different fixes and none is decided.
+What is closed is narrower: on an account holding bypass privileges, GitHub's branch protection
+does not refuse this push — it silently records a bypass and lets it through, announced only in the
+push's own stderr (`remote: Bypassed rule violations for refs/heads/main: ...`). **Capture the
+push's own output and check it — do not read a quiet push as a clean one:**
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/push_bypass.py" <<< "$PUSH_RECEIPT"
+```
+
+where `$PUSH_RECEIPT` is the combined stdout/stderr the push actually produced. `bypassed` is not a
+stop — this gate does not decide that — but it is a fact that must reach the release report in
+those words, never rendered the same as `clean`. `could-not-tell` (nothing was captured) is a
+third answer and must not read as either.
+
+Then **verify the tag exists on the remote**:
 
 ```bash
 git ls-remote --tags origin <tag>

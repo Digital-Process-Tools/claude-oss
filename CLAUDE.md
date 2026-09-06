@@ -265,7 +265,7 @@ from being invisible.
 | `agents/release-auditor.md` | 18,550 B | 19,700 B |
 | `agents/triager.md` | 18,384 B | 19,500 B |
 | `agents/sub-manager.md` | 18,691 B | 18,700 B |
-| `agents/releaser.md` | 9,215 B | 9,560 B |
+| `agents/releaser.md` | 10,713 B | 11,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -284,6 +284,14 @@ for exactly one turn. The fix is a self-validation step -- run the draft handbac
 `tick_handback.py` before sending it, rather than trust memory under narrative pressure -- and
 nothing already in the file argued that point either, so there was nothing safe to cut in its
 place.
+
+**#1041 raised `agents/releaser.md`'s ceiling from 9,560 B to 11,800 B**: 9,215 B became
+10,713 B. The addition gives a releaser a fourth report state, `RELEASE: paused`, the same
+shape #818 already gave a sub-manager reaching a CI wait -- observed three times in one
+release closing on an unkeepable "I'll resume once CI reports back" instead of a state a
+scheduler could act on. Nothing already in the file argued that point, so there was nothing
+safe to cut in its place; the ceiling carries the same ~10% headroom the other re-baselines
+in this table use.
 
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
@@ -338,7 +346,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/handback.md` | 19,598 B | 20,700 B |
 | `skills/manager/phases/accounting.md` | 22,789 B | 24,500 B |
 | `skills/manager/phases/tick-order.md` | 39,460 B | 43,100 B |
-| `skills/manager/phases/release.md` | 10,381 B | 11,200 B |
+| `skills/manager/phases/release.md` | 11,037 B | 11,200 B |
 | `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
 | `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
 | `skills/manager/phases/merge.md` | 17,250 B | 18,300 B |

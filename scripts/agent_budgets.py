@@ -109,7 +109,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # restating them (per #673's lesson about two documents drifting).
     # Re-baselined for #1014: 9215 B on disk against a stale 8691 declared
     # baseline.
-    "agents/releaser.md": (9215, 9560),
+    # Raised for #1041: 9215 B became 10713 B, past the 9560 B ceiling. The
+    # addition gives the releaser a fourth report state, RELEASE: paused,
+    # the same shape #818 already gave a sub-manager reaching a CI wait --
+    # observed three times in one release closing on an unkeepable "I'll
+    # resume once CI reports back" instead. Nothing already in the file
+    # argued that point, so there was nothing safe to cut to make room;
+    # the ceiling moves to 11800 B, ~10% headroom over the new size.
+    "agents/releaser.md": (10713, 11800),
 }
 
 
