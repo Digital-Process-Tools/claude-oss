@@ -124,7 +124,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # attach-the-label rule ("every time"), which directly contradicted
         # accounting.md's own new provenance directive; a self-review found
         # it and it was corrected here rather than left standing.
-        41367,
+        # Re-baselined for #1190's own self-review round: 41367 B became
+        # 41601 B -- the CI-wait bullet under "Operational hazards" still
+        # stated #818's "always hand back" rule as the whole answer,
+        # contradicting the new decision procedure agents/sub-manager.md
+        # gained the same round. Budget unchanged; comfortably under it.
+        41601,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -314,7 +319,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # too, per CLAUDE.md's rule against a fact that lives in two places. ~10%
     # headroom over the measured 2454 B, same terms as every other row.
     "skills/manager/phases/ci-green.md": (
-        2454,
+        # Re-baselined for #1190's own self-review round: 2454 B became
+        # 2646 B -- a one-sentence pointer noting a sub-manager's own
+        # WAIT-OBSERVABLE additionally folds in fleet occupancy, since a
+        # releaser has no fleet to report on. Budget unchanged.
+        2646,
         2700,
         "the pr_green.py wait, its four states, and the #1086 substring trap -- shared by a sub-manager merging and a releaser landing gate 3's own fix",
     ),

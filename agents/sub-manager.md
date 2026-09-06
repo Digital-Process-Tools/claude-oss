@@ -147,14 +147,31 @@ REASON: <one line: you could not even begin the tick -- the worktree could not b
 cut, a spawn was refused, the state file could not be read>
 ```
 
-**A fourth shape, for a CI wait (#818).** You have no `ScheduleWakeup` and cannot receive channel
-events -- so when this tick's own work is mid-merge and the only thing left is waiting on CI, hand
-the wait back rather than polling yourself or blocking your own turn on `gh run watch`:
+**A fourth shape, for a CI wait -- one decision procedure, not two rules that used to
+contradict each other (#818 said hand back always, #1086 gave you a waiter; #1190 replaces both).**
+Run this in order the moment the only thing left this tick looks like "wait on CI":
+
+1. **Is a lane label free with candidates still sitting in it?** Re-select from the fleet payload
+   rather than assuming its composition from tick start -- a merge just now may have freed one.
+   Dispatch into it instead of waiting at all.
+2. **Else, does anything need to reach you during the wait** (a maintainer ruling, a status probe)?
+   If not, call `pr_green.py NUM --wait --timeout N` per `skills/manager/phases/ci-green.md`.
+   `green` or `red` resolves the wait inside this turn at no extra cost; a `pending` past the
+   timeout has not resolved it and falls through to step 3 rather than being read as green.
+3. **Else hand back** -- because nothing was dispatchable, something must stay reachable mid-wait,
+   or step 2's own `--wait` expired still `pending`. You have no `ScheduleWakeup` and cannot
+   receive channel events, so hand back rather than polling yourself or blocking your own turn on
+   `gh run watch`. Fold the fleet's occupancy into
+   `WAIT-OBSERVABLE` alongside what clears it -- `"checks green on #NUM, fleet full"` against
+   `"checks green on #NUM, lane-scaffold idle"` -- so the scheduler can tell "waiting with nothing
+   else to do" from "waiting while a lane sits idle" apart. **Keep the whole value on the one
+   physical line the field is parsed as** -- a value that wraps onto a second line is read only up
+   to the first newline, silently dropping the occupancy half:
 
 ```
 TICK: paused
 WAIT-DISPATCH: <one line: what this tick set in motion -- a PR number, a branch>
-WAIT-OBSERVABLE: <one line: what clears it -- checks green, a leg failing, a merge>
+WAIT-OBSERVABLE: <one line: what clears it, and the fleet's occupancy, together>
 ```
 
 This is not `TICK: blocked` -- `blocked` reads as this tick's work having stopped, and a paused

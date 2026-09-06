@@ -41,4 +41,6 @@ one call.
 a releaser has `ScheduleWakeup` or can receive channel events, and each already has a report shape
 for exactly this: `TICK: paused` / `RELEASE: paused` with `WAIT-DISPATCH:` (what this run set in
 motion) and `WAIT-OBSERVABLE:` (what clears it -- checks green, a leg failing). `--wait` polls
-within one call and one `--timeout`; it does not survive past the turn that made it.
+within one call and one `--timeout`; it does not survive past the turn that made it. **A
+sub-manager's own `WAIT-OBSERVABLE` folds in one more fact, the fleet's occupancy** (#1190) --
+`agents/sub-manager.md` carries that convention, since a releaser has no fleet to report on.

@@ -39,7 +39,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import agent_budgets  # noqa: E402
+import audit_shared  # noqa: E402
 import command_budgets  # noqa: E402
+import developer_phases  # noqa: E402
 import skill_phases  # noqa: E402
 
 
@@ -82,6 +84,13 @@ def _declared_pairs():
             for rel, (baseline, _budget, _governs) in skill_phases.DOCUMENTS.items()
         }
     )
+    pairs.update(
+        {
+            rel: baseline
+            for rel, (baseline, _budget, _governs) in developer_phases.DOCUMENTS.items()
+        }
+    )
+    pairs[audit_shared.FRAGMENT] = audit_shared.BASELINE
     return pairs
 
 
