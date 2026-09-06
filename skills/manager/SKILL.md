@@ -31,6 +31,7 @@ lives in its own file, and is read when the loop enters that phase**, not before
 | Review | `skills/manager/phases/review.md` | a pull request is open and the diff is yours |
 | Findings | `skills/manager/phases/findings.md` | a finding has to be ranked, or filed on another board |
 | Merge | `skills/manager/phases/merge.md` | green, and once before the first tick of a new install |
+| CI green | `skills/manager/phases/ci-green.md` | you have to know whether a pull request has gone green -- merging, or a releaser landing gate 3's own fix |
 | Release | `skills/manager/phases/release.md` | a release trigger fired |
 | Accounting | `skills/manager/phases/accounting.md` | a tick is closing, and at every release tag |
 | Tick order | `skills/manager/phases/tick-order.md` | a sub-manager's tick begins -- steps 1-6, and what ends one (#1037) |
@@ -375,6 +376,13 @@ on every tick whether or not one is reached. Read `skills/manager/phases/merge.m
 first merge of a new install and again whenever a merge behaves unexpectedly: it carries the
 full argument, the opt-outs and their blast radii, the exact spelling to type, and the
 branch-deletion rules `|cleanup` refuses to apply.
+
+## CI green: one call, never a hand-written wait
+
+**Never grep a CI status line for the word "green" (#1086).** Whether it is this tick's own merge
+or a releaser landing gate 3's own blocking fix, read `skills/manager/phases/ci-green.md` before
+waiting on a pull request: the `pr_green.py` call itself, its four exit-code states, and the
+`NOT ALL GREEN` substring trap a hand-written loop falls into.
 
 ## A green run on your own platform is the weakest evidence available
 

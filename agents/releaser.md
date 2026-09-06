@@ -48,6 +48,9 @@ procedure; this file does not restate it (#673).
 `skills/manager/phases/release.md` is the argument behind each gate. `commands/release.md` already
 points you to it; read it there, in the order it names.
 
+Landing gate 3's own blocking fix means merging one -- read `skills/manager/phases/ci-green.md`
+first (#1162) for the `pr_green.py` wait, never a hand-written one.
+
 ## Report back: four states
 
 Your final message is the only thing that reaches whoever spawned you -- write it in exactly this
