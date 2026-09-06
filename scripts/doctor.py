@@ -3616,15 +3616,28 @@ def channel_consumer_pin_state(target, record=None, cache_root=None):
     # pinned copy is the only complete one left on disk. So existence is
     # checked on its own, before the hash comparison, and given its own
     # sentence -- never folded back into "could not be established".
+    # Self-review finding: `Path.is_file()` is exactly the swallow-varies-
+    # by-interpreter trap `_safe_is_file`'s own docstring names for this
+    # file's OTHER checks (#341/#359) -- on 3.11/3.13 a permission error on
+    # the containing directory raises `PermissionError` through it, while on
+    # 3.14 the same error is swallowed internally and it returns `False`
+    # indistinguishably from "does not exist". That would have reintroduced
+    # this issue's own reversed remedy on exactly the interpreter this
+    # repo's CI matrix does not cover (3.9-3.12 only -- see CLAUDE.md's
+    # Python-floor section). `os.stat` is a thin wrapper around the raw
+    # syscall with no such swallow on any supported interpreter, so
+    # existence is read from THAT instead, the same shape
+    # `_workflow_files_mention` already uses for its own three-state read.
     target_missing = False
     if active_target is not None:
         try:
-            target_missing = not active_target.is_file()
+            os.stat(str(active_target))
+        except FileNotFoundError:
+            target_missing = True
         except OSError:
-            target_missing = False  # unreadable, not confirmed absent
+            pass  # unreadable for some other reason, not confirmed absent
         else:
-            if not target_missing:
-                same = _content_identical(target, active_target)
+            same = _content_identical(target, active_target)
     if target_missing:
         identity_clause = (
             "the active install has no file at that path at all -- do not "

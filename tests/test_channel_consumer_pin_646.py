@@ -8,6 +8,7 @@ rather than assuming it.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -253,21 +254,32 @@ def test_skew_unreadable_active_target_is_still_could_not_be_established(
     permission error, not absence) must keep the existing 'could not be
     established' wording rather than being reported as missing -- the same
     three-state discipline (absence-produced-by-the-tool is not
-    absence-in-the-world) this repo names everywhere else."""
+    absence-in-the-world) this repo names everywhere else.
+
+    Self-review finding (auditor spawn, PR review round): the fix under test
+    reads existence via `os.stat`, deliberately NOT `Path.is_file()` --
+    `is_file()` raises `PermissionError` through on Python 3.11/3.13 but
+    silently swallows the identical error on 3.14 and returns `False`,
+    indistinguishable from "does not exist" (the exact reversed-remedy
+    misreport this issue exists to prevent, reintroduced by interpreter
+    divergence CI's 3.9-3.12 matrix cannot see). So this pins the real
+    implementation seam, `os.stat`, rather than `Path.is_file` -- patching
+    the wrong callable would let this test pass while the shipped code still
+    carried the divergence."""
     pinned_root = tmp_path / "cache" / "supertool" / "0.51.0"
     consumer = _plugin_tree(pinned_root, "0.51.0")
     active_root = tmp_path / "active" / "0.52.0"
     active_consumer = _plugin_tree(active_root, "0.52.0")
     record = _install_record(tmp_path, "0.52.0")
 
-    real_is_file = Path.is_file
+    real_stat = os.stat
 
-    def broken_is_file(self):
-        if self == active_consumer:
-            raise PermissionError(13, "Permission denied", str(self))
-        return real_is_file(self)
+    def broken_stat(path, *args, **kwargs):
+        if str(path) == str(active_consumer):
+            raise PermissionError(13, "Permission denied", str(path))
+        return real_stat(path, *args, **kwargs)
 
-    monkeypatch.setattr(doctor.Path, "is_file", broken_is_file)
+    monkeypatch.setattr(doctor.os, "stat", broken_stat)
     state, detail = doctor.channel_consumer_pin_state(
         consumer, record=record, cache_root=tmp_path / "cache"
     )

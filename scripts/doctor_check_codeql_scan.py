@@ -396,7 +396,9 @@ def _default_setup_state(slug, run):
 
 
 def codeql_scan_state(project_dir, config=None, run=None):
-    """``(state, detail)`` -- one of the issue's four named outcomes:
+    """``(state, detail)`` -- one of these named outcomes (#1089 added the
+    fifth, ``owned-only-covered``; the original issue that shipped this
+    function named the other four):
 
     * ``"uncovered-outside-owned"`` -- a supported language exists outside
       the owned paths and GitHub's code-scanning default setup does not
