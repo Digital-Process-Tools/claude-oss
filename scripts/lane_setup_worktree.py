@@ -574,6 +574,102 @@ def worktree_occupancy(path):
     return True
 
 
+def worktree_last_activity(path):
+    """The most recent modification time seen anywhere under `path`, recursively --
+    #1120: the one activity signal code without a process table can offer.
+
+    #1120's own incident named the failure mode directly: a scheduler's liveness
+    probe (a diff-unchanged timer plus an unanswered status probe) declared a
+    developer agent dead while a sandboxed process invisible to `ps`/`lsof` was
+    still writing to its own worktree. That probe, and the `git-worktrees` op's
+    own "occupied"/"idle"/"cannot tell" verdict, are both computed entirely
+    outside this repository -- neither is imported here, and nothing in this file
+    set ever inspects a process table -- so there is no probe here to harden
+    directly. What this closes instead is the one corroborating signal this
+    repository's own code CAN produce on its own: before re-dispatching a second
+    agent into a worktree a scheduler has just called dead, a sub-manager can ask
+    whether anything under that worktree has been touched recently at all.
+
+    A plain recursive `os.stat` walk, deliberately not git-aware: it needs no
+    prior snapshot to compare against (unlike `tree_snapshot.py`'s before/after
+    comparison, which this does not replace), and it sees an untracked or
+    ignored file's own edit exactly as readily as a tracked one's, which matters
+    because #1120's own rewritten fixture was a tracked file whose edit was
+    unstaged -- a `git diff` alone would have seen it too, but a bare mtime scan
+    catches the identical case with no git invocation at all. `.git` itself is
+    included in the walk on purpose: a commit updates its index, refs and
+    objects, so the second incident folded into #1120 (a commit appearing that
+    the observing agent had not made) is visible here too, not only a raw file
+    edit.
+
+    Three states, this repository's own convention -- never two:
+
+      resolved         at least one file was stat'ed successfully; `mtime`
+                        carries the newest modification time seen, in epoch
+                        seconds.
+      empty             `path` exists, is a directory, and the walk completed,
+                         but found no files at all -- a worktree this fresh (or
+                         one holding only empty directories) has nothing to
+                         report yet, not a failure.
+      could-not-tell    `path` is falsy, does not exist, is not a directory, or
+                        the walk itself could not be completed cleanly (a
+                        permission error partway through, a symlink loop
+                        `os.walk` cannot resolve) -- never collapsed into
+                        `empty`, which is a confident answer this state is not.
+                        A partial walk is reported as `could-not-tell` even
+                        when it already found *some* files, because what it
+                        could not reach might have been the most recent one.
+
+    Same `os.stat`-in-a-try shape as `worktree_occupancy` right above, for the
+    same reason CLAUDE.md gives for avoiding `Path.exists()` / `Path.is_dir()`:
+    their `OSError`-swallowing behaviour is not stable across 3.10-3.14.
+    """
+    if not path:
+        return {"state": "could-not-tell", "mtime": None, "detail": "no path given."}
+    try:
+        top = os.stat(path)
+    except (OSError, ValueError) as exc:
+        return {
+            "state": "could-not-tell",
+            "mtime": None,
+            "detail": "{0}: {1}".format(type(exc).__name__, exc),
+        }
+    if not stat.S_ISDIR(top.st_mode):
+        return {
+            "state": "could-not-tell",
+            "mtime": None,
+            "detail": "{0} is not a directory.".format(path),
+        }
+    newest = None
+    walk_errors = []
+    for dirpath, _dirnames, filenames in os.walk(
+        path, onerror=walk_errors.append, followlinks=False
+    ):
+        for name in filenames:
+            file_path = os.path.join(dirpath, name)
+            try:
+                found = os.lstat(file_path)
+            except (OSError, ValueError):
+                continue
+            if newest is None or found.st_mtime > newest:
+                newest = found.st_mtime
+    if walk_errors:
+        return {
+            "state": "could-not-tell",
+            "mtime": None,
+            "detail": "the walk under {0} could not complete: {1}".format(
+                path, "; ".join(str(exc) for exc in walk_errors)
+            ),
+        }
+    if newest is None:
+        return {
+            "state": "empty",
+            "mtime": None,
+            "detail": "{0} contains no files.".format(path),
+        }
+    return {"state": "resolved", "mtime": newest, "detail": ""}
+
+
 # Lines the condensed board keeps: a header, the data-provenance disclaimer, one line
 # per worktree (the state word starts at column 0 -- "occupied", "idle", "cannot tell"
 # -- so it is never itself indented), and the final tally. Everything indented under an

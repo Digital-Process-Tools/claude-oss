@@ -108,6 +108,7 @@ import os  # noqa: F401 (re-exported as lane_setup.os for existing monkeypatch-b
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -167,6 +168,7 @@ from lane_setup_worktree import (  # noqa: E402,F401
     remote_problem,
     resolve_base,
     resolve_stacked_base,
+    worktree_last_activity,
     worktree_occupancy,
 )
 from select_issues_overlap import (  # noqa: E402,F401
@@ -266,6 +268,7 @@ def compute(
     stack_on=None,
     also_claim=None,
     claim_checker=None,
+    activity=False,
 ):
     """Everything a lane brief needs, in one payload. `config.state` gates the exit.
 
@@ -325,6 +328,20 @@ def compute(
     `claim_checker` is injectable the same way `select_issues.py`'s own
     `select()` injects `checker`, so a test never needs a live `gh` session.
     Ignored when `claim` is False, the ordinary probing case.
+
+    `activity` (#1120) is opt-in and off by default, the same posture
+    `derive_held` takes: a plain recursive mtime scan (`worktree_last_activity`)
+    over a real worktree can be an arbitrarily large walk, and this is the
+    unconditional read path every plain `lane_setup.py <issue>` call takes, so
+    it is never paid unless asked for. Computed only when the worktree is
+    positively confirmed to already exist (`worktree["exists"] is True`) --
+    there is nothing to scan for a worktree not yet cut, and scanning a path
+    this call could not even confirm exists would answer a question that was
+    never asked. `payload["worktree"]["last_activity"]` is always present as a
+    key, `None` when not requested or not applicable, never omitted -- the
+    same "always the key, sometimes the value" shape `derived_held` already
+    uses, so a JSON consumer never has to guess whether the absence means "not
+    asked" or "asked and found nothing".
     """
     repo = Path(repo)
     config_path = repo / CONFIG_NAME
@@ -391,6 +408,11 @@ def compute(
         config, issue, origin=worktree_origin
     )
     worktree["exists"] = lane_setup_worktree.worktree_occupancy(worktree.get("path"))
+    worktree["last_activity"] = (
+        lane_setup_worktree.worktree_last_activity(worktree.get("path"))
+        if activity and worktree["exists"] is True
+        else None
+    )
 
     board = read_board(repo)
 
@@ -674,6 +696,15 @@ def receipt(payload):
                 "{0} [{1}]{2}".format(worktree["path"], exists_text, origin_note),
             )
         )
+        activity = worktree.get("last_activity")
+        if activity is not None:
+            if activity["state"] == "resolved":
+                age = max(0, int(time.time() - activity["mtime"]))
+                lines.append("  activity: last touched {0}s ago".format(age))
+            elif activity["state"] == "empty":
+                lines.append("  activity: no files found yet")
+            else:
+                lines.append("  activity: UNKNOWN -- {0}".format(activity["detail"]))
 
     board = payload["board"]
     lines.append("board     :")
@@ -1177,6 +1208,20 @@ def main(argv=None):
         "--suggest-companions).",
     )
     parser.add_argument(
+        "--activity",
+        action="store_true",
+        help="#1120: alongside the default setup-facts read (and --claim), scan "
+        "the derived worktree recursively for its most recent modification time "
+        "and render it as a `last touched Ns ago` line -- a corroborating "
+        "activity signal for a sub-manager doubting a scheduler's own 'dead' "
+        "verdict before re-dispatching a second agent into the same tree. Only "
+        "computed when the worktree is positively confirmed to already exist; "
+        "a plain recursive stat walk, so this is opt-in and never paid by the "
+        "unconditional call every plain lane_setup.py <issue> already makes. "
+        "Refused together with --release, --check-vanished, --suggest-companions "
+        "and --label, none of which render a worktree line.",
+    )
+    parser.add_argument(
         "--suggest-companions",
         type=int,
         default=None,
@@ -1228,6 +1273,7 @@ def main(argv=None):
             ("--derive-held", args.derive_held),
             ("--against", bool(args.against)),
             ("--check-vanished", args.check_vanished),
+            ("--activity", args.activity),
         ):
             if flag_value:
                 parser.error(
@@ -1258,6 +1304,7 @@ def main(argv=None):
             ("--release", args.release),
             ("--derive-held", args.derive_held),
             ("--against", bool(args.against)),
+            ("--activity", args.activity),
         ):
             if flag_value:
                 parser.error(
@@ -1273,6 +1320,13 @@ def main(argv=None):
 
     if args.derive_held and args.against:
         parser.error("--derive-held and --against are mutually exclusive (#558)")
+
+    if args.release and args.activity:
+        parser.error(
+            "--release and --activity are mutually exclusive -- --release "
+            "does not render a worktree line for --activity to attach to "
+            "(#1120)"
+        )
 
     if args.claim and not args.lane and not args.release:
         # #788: the documented dispatch-time call used to be `--claim` with no
@@ -1301,6 +1355,7 @@ def main(argv=None):
             ("--against", bool(args.against)),
             ("--check-vanished", args.check_vanished),
             ("--suggest-companions", args.suggest_companions is not None),
+            ("--activity", args.activity),
         ):
             if flag_value:
                 parser.error(
@@ -1561,6 +1616,7 @@ def main(argv=None):
         claim=args.claim,
         stack_on=args.stack_on,
         also_claim=args.claim_also,
+        activity=args.activity,
     )
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
