@@ -2135,6 +2135,50 @@ def validate(config):
                         "labels.reserved: expected a label name (string) or null "
                         "for 'not declared', got {!r}".format(reserved)
                     )
+            # #1129: the per-repo fact `select_issues.py` needs to derive a
+            # candidate's `lane_patterns` from its `lane-*` label when the
+            # issue carries none of its own -- optional, additive, and
+            # null-is-fine on the same terms as `filed_by_loop`/`reserved`
+            # above: a repo that has not declared a mapping yet is not a
+            # typo, it is `select()`'s own "unknown, never an empty file
+            # set" fallback at derivation time. A repo that HAS declared it
+            # gets checked shape: an object whose keys are lane label names
+            # and whose values are non-empty lists of pattern strings -- an
+            # empty list is refused rather than silently accepted, because
+            # an empty pattern list and "not declared" would otherwise read
+            # identically to `select()` while meaning two different things
+            # here.
+            if "lane_patterns" in labels:
+                lane_patterns = labels["lane_patterns"]
+                if lane_patterns is not None:
+                    if not isinstance(lane_patterns, dict):
+                        problems.append(
+                            "labels.lane_patterns: expected an object mapping a "
+                            "lane label name to a list of glob patterns, or null "
+                            "for 'not declared', got {!r}".format(lane_patterns)
+                        )
+                    else:
+                        for lane_name, patterns in lane_patterns.items():
+                            if not isinstance(lane_name, str) or not lane_name.strip():
+                                problems.append(
+                                    "labels.lane_patterns: every key must be a "
+                                    "non-empty lane label name, got {!r}".format(
+                                        lane_name
+                                    )
+                                )
+                                continue
+                            if (
+                                not isinstance(patterns, list)
+                                or not patterns
+                                or not all(
+                                    isinstance(p, str) and p.strip() for p in patterns
+                                )
+                            ):
+                                problems.append(
+                                    "labels.lane_patterns.{0}: expected a "
+                                    "non-empty list of glob pattern strings, got "
+                                    "{1!r}".format(lane_name, patterns)
+                                )
 
     for field in ("version_sites", "docs_targets"):
         if field in config and not isinstance(config[field], list):

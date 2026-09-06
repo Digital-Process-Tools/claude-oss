@@ -18,7 +18,39 @@
   "labels": {
     "priority": ["priority-high", "priority-medium", "priority-low"],
     "lanes": ["lane-dispatch", "lane-doctor", "lane-prose", "lane-release", "lane-scaffold"],
-    "filed_by_loop": "filed-by-loop"
+    "filed_by_loop": "filed-by-loop",
+    "lane_patterns": {
+      "lane-dispatch": [
+        "scripts/select_issues*.py",
+        "scripts/lane_setup*.py",
+        "scripts/ranking_table.py",
+        "scripts/tick_handback.py",
+        "scripts/review_return.py"
+      ],
+      "lane-doctor": [
+        "scripts/doctor.py",
+        "scripts/doctor_check_*.py",
+        "scripts/oss-workspace",
+        "bin/oss-workspace"
+      ],
+      "lane-prose": [
+        "skills/manager",
+        "agents",
+        "commands",
+        "CLAUDE.md"
+      ],
+      "lane-release": [
+        "scripts/release_*.py",
+        "scripts/assemble_changelog.py",
+        "scripts/release_delta.py",
+        "scripts/release_publish.py",
+        "scripts/release_version.py"
+      ],
+      "lane-scaffold": [
+        "scripts/scaffold.py",
+        "scripts/oss_rules.py"
+      ]
+    }
   },
   "milestones": [],
   "release": {

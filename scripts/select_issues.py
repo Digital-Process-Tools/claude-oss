@@ -35,12 +35,27 @@ claimed).
 
 ## What this deliberately does NOT do
 
-**The lane pattern stays an input, never a guess.** #267 settled that an
-issue's files are not derivable from its body, so this module never invents
-`lane_patterns` or a `preflight_pattern` for an issue that did not carry
-one -- an issue with neither is simply never checked for staleness or
+**The lane pattern stays an input, never a guess -- from an issue's body.**
+#267 settled that an issue's files are not derivable from its body, so this
+module never invents `lane_patterns` or a `preflight_pattern` for an issue
+that did not carry one and whose `lane-*` label a repo has not mapped
+either -- an issue with neither is simply never checked for staleness or
 collision, which is the correct answer for an issue nobody has looked at
 that closely yet, not a silent `stale: no` or `lane-collision: no`.
+
+**#1129 adds one narrow, declared exception to that rule, never a second
+way to guess.** An issue with no `lane_patterns` of its own falls back to
+`_derive_lane_patterns_from_labels`: its `lane-*` GitHub label, resolved
+through a mapping a human wrote into `.oss.json`'s `labels.lane_patterns` --
+never text an issue itself wrote. No lane label, an uncovered one, two
+differently-mapped labels on the same issue, or no mapping declared at all
+still resolve to `None` -- the identical "not derivable" posture as before,
+never an empty file set (which would read as disjoint with every other
+lane and falsely bundle an unexamined issue into one of them). A derived
+set is coarser than a declared one -- a lane label names a whole
+subsystem, not one issue's own files -- so every candidate carries
+`lane_patterns_source` (`"declared"` / `"derived-from-label"` / `None`),
+never folding the two together.
 
 **This module never calls `gh` for the board itself.** The same separation
 `select_issues_rank.py` and `lane_setup.py --suggest-companions` already use: the
@@ -277,6 +292,46 @@ def _group_candidates(
     return groups, ungrouped
 
 
+def _derive_lane_patterns_from_labels(labels, lane_pattern_map):
+    """#1129: an issue's `lane_patterns` when it declares none of its own,
+    derived from whichever of its GitHub labels the repo's declared
+    `.oss.json` `labels.lane_patterns` mapping covers -- the fix for
+    `select_issues.py` forming zero groups on every real board, because not
+    one real issue carries a literal `lane_patterns` and #267 rightly
+    forbids inventing one from an issue's body.
+
+    Three states, never two, matching this issue's own governing rule for a
+    single lane one level down (`_lane_resolved_to_nothing`): a lane label
+    covered by the mapping derives that lane's patterns; no lane label, a
+    lane label the mapping does not cover, two DIFFERENTLY-mapped lane
+    labels on the same issue (ambiguous -- guessing which one applies is
+    exactly the invention #267 forbids), or no mapping declared at all are
+    all `None` -- **unknown**, never `[]`. An empty file set would read as
+    disjoint with every other lane on the board and falsely bundle an
+    unexamined issue into one of them, which is worse than the "not
+    checked" this module already renders for an issue with no
+    `lane_patterns` at all.
+
+    A lane label is coarser than an issue -- the mapping names a whole
+    subsystem's files, not this one issue's -- so a derived set is a weaker
+    claim than a declared one. The caller (`select()`) records that as
+    `lane_patterns_source`, never folding the two together, so a reader can
+    tell a measured disjointness from an inferred one.
+    """
+    if not isinstance(lane_pattern_map, dict) or not lane_pattern_map:
+        return None
+    matched = None
+    for label in labels or []:
+        patterns = lane_pattern_map.get(label)
+        if not patterns:
+            continue
+        candidate = list(patterns)
+        if matched is not None and matched != candidate:
+            return None
+        matched = candidate
+    return matched
+
+
 def select(
     payload, checker=None, search=None, resolve_lane=None, suggest_companions=None
 ):
@@ -400,6 +455,14 @@ def select(
     # whose lane pattern was neither refused nor resolved-to-nothing, which is
     # exactly the set grouping is safe to use.
     resolved_files_by_number = {}
+    # #1129: parallel to `resolved_files_by_number` -- which of a
+    # candidate's two possible producers actually supplied its
+    # `lane_patterns`, so the result can say so rather than let a measured
+    # disjointness and an inferred one render identically. `None` covers
+    # both "no lane_patterns at all" and every one of #1129's own unknown
+    # cases (no lane label, an uncovered one, no declared mapping, or an
+    # ambiguous match across two differently-mapped labels on one issue).
+    lane_patterns_source_by_number = {}
 
     for item in ranked:
         number = item.get("number")
@@ -434,6 +497,24 @@ def select(
                 continue
 
         lane_patterns = item.get("lane_patterns")
+        lane_patterns_source = "declared" if lane_patterns else None
+        if not lane_patterns:
+            # #1129: an issue with no explicit `lane_patterns` of its own --
+            # every real issue on every real board -- falls back to whatever
+            # `_derive_lane_patterns_from_labels` can read off its `lane-*`
+            # label through the repo's own declared mapping. `derived` is
+            # `None` for every one of #1129's own unknown cases, never `[]`;
+            # `lane_patterns`/`lane_patterns_source` are simply left as they
+            # were (falsy / `None`) when it is, which is the exact "an issue
+            # nobody has looked at that closely yet" posture this module's
+            # own docstring already promises for an issue with no
+            # `lane_patterns` at all.
+            derived = _derive_lane_patterns_from_labels(
+                item.get("labels"), declared.get("lane_patterns")
+            )
+            if derived:
+                lane_patterns = derived
+                lane_patterns_source = "derived-from-label"
         if lane_patterns:
             resolved = resolve_lane(Path("."), lane_patterns)
             refused = [
@@ -488,6 +569,7 @@ def select(
                     )
                     continue
             resolved_files_by_number[number] = resolved["files"]
+            lane_patterns_source_by_number[number] = lane_patterns_source
 
         survivors.append((item, answer))
 
@@ -553,6 +635,12 @@ def select(
                     "author": answer["author"],
                     "band": answer["band"],
                     "why": answer["why"],
+                    # #1129: `"declared"` (the issue's own `lane_patterns`),
+                    # `"derived-from-label"` (#1129's own fallback), or `None`
+                    # -- no `lane_patterns` at all, declared or derived. A
+                    # reader must never have to guess which producer a
+                    # candidate's resolved files came from.
+                    "lane_patterns_source": lane_patterns_source_by_number.get(number),
                 }
             )
 
