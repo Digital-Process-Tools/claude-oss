@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -1337,3 +1338,76 @@ def test_install_still_replaces_an_ordinary_real_directory_layer(tmp_path):
     assert not stale.exists()
     assert (layer / oss_rules.INDEX).exists()
     assert not layer.is_symlink()
+
+
+def test_install_refuses_a_layer_symlinked_between_the_two_passes(tmp_path):
+    """#1118: `install()`'s up-front pass validates every dimension's ancestor chain
+    before anything is removed, then a second pass mutates each dimension with no
+    re-check immediately before its own write. A symlink introduced after the
+    up-front pass finishes -- or between one dimension's mutation and the next --
+    used to be written through undetected.
+
+    `_symlinked_ancestor` is patched to report "clean" for every dimension's
+    up-front check, then "symlinked" the next time it is asked about `paths` --
+    simulating a symlink that lands in the gap between the two passes. A fixed
+    `install()` re-validates immediately before each dimension's own mutation and
+    must refuse rather than write through it; nothing should be mutated.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    fake_link = root / ".claude" / "jit-context" / "paths" / oss_rules.LAYER
+
+    calls = {"n": 0}
+
+    def fake_symlinked_ancestor(root_arg, relative_parts):
+        calls["n"] += 1
+        # The first pass over the three dimensions (paths, vocabulary, tools) must
+        # see a clean tree, or this would be indistinguishable from the up-front
+        # pass doing its ordinary job -- the whole point is that the SECOND look
+        # is the one that catches it.
+        if calls["n"] <= 3:
+            return None
+        # The first re-check in the mutate pass (dimension "paths", again) now
+        # reports a symlink -- as if one appeared in the gap between the passes.
+        return fake_link
+
+    with mock.patch.object(
+        oss_rules, "_symlinked_ancestor", side_effect=fake_symlinked_ancestor
+    ):
+        with pytest.raises(oss_rules.RulesError):
+            oss_rules.install(root)
+
+    # Refused before any dimension's own mutation ran: nothing was created.
+    assert not _layer(root, "paths").exists()
+    assert not _layer(root, "vocabulary").exists()
+    assert not _layer(root, "tools").exists()
+    assert calls["n"] >= 4
+
+
+def test_install_completes_normally_when_no_symlink_appears_between_the_passes(
+    tmp_path,
+):
+    """Positive control for the test above: the same patched `_symlinked_ancestor`
+    seam, but reporting "clean" on every call rather than switching to "symlinked"
+    partway through. A harness that always refuses -- or that never actually re-checks
+    anything -- would make the negative test above pass for the wrong reason; this
+    proves the seam itself is not what is forcing the refusal.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    calls = {"n": 0}
+
+    def fake_symlinked_ancestor(root_arg, relative_parts):
+        calls["n"] += 1
+        return None
+
+    with mock.patch.object(
+        oss_rules, "_symlinked_ancestor", side_effect=fake_symlinked_ancestor
+    ):
+        oss_rules.install(root)
+
+    assert _layer(root, "paths").exists()
+    assert _layer(root, "vocabulary").exists()
+    assert _layer(root, "tools").exists()
+    assert calls["n"] >= 4

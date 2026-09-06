@@ -957,6 +957,51 @@ def _symlinked_ancestor(root, relative_parts):
     return None
 
 
+def _refuse_if_symlinked(root, dimension, layer):
+    """Raise `RulesError` if `layer` -- or any parent between `root` and it -- is a
+    symlink, or if this process could not tell (#1110, #1116). Shared by `install()`'s
+    up-front pass and its immediate-before-mutation re-check (#1118) so both call sites
+    raise the identical refusal rather than drifting into two messages for one check.
+    """
+    try:
+        ancestor = _symlinked_ancestor(
+            root, (".claude", "jit-context", dimension, LAYER)
+        )
+    except AncestorUnreadable as exc:
+        # #1116: a candidate this process cannot search (an ordinary
+        # PermissionError, not a defect in the walk) used to propagate here as
+        # a raw exception, breaking install()'s own "raises RulesError"
+        # contract. "Could not tell whether this is a symlink" is not
+        # the same claim as "confirmed it is not one" -- writing through an
+        # ancestor nobody could actually inspect is exactly the risk this
+        # whole check exists to close, so this is a refusal, the same as a
+        # confirmed symlink, not a silent pass-through.
+        raise RulesError(
+            "{}: could not determine whether {} is a symlink ({}) -- "
+            "install() refuses rather than writing through a path it could "
+            "not inspect. Fix the permission and rerun.".format(
+                dimension, exc.path, exc.cause
+            )
+        )
+    if ancestor is not None:
+        raise RulesError(
+            "{}: {} is a symlink, not a directory this plugin owns -- install() "
+            "replaces the whole layer, which would delete and rewrite through the "
+            "link into whatever it points at. Remove the link (or move it aside if "
+            "it was committed on purpose) and rerun.".format(dimension, ancestor)
+        )
+    # A tracked symlink checked out with `core.symlinks=false` (the historical
+    # Windows default without the privilege or Developer Mode) never becomes a
+    # directory symlink at all -- git writes a plain text file holding the link's
+    # target path instead. `is_symlink()` is False for that file and `exists()` is
+    # True, so without this check the caller's `layer.iterdir()` would raise an
+    # uncaught `NotADirectoryError`. Not the write-through-the-link defect #1110
+    # is about (there is no real directory to empty), but the same refusal-not-a-
+    # traceback contract this check exists to keep.
+    elif layer.exists() and not layer.is_dir():
+        raise RulesError("{}: {} is not a directory".format(dimension, layer))
+
+
 def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     """Replace this plugin's rule layer. Returns the paths written.
 
@@ -999,48 +1044,29 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     # committed link would otherwise have its TARGET emptied of owned-shape files and
     # then written into, and `layer.mkdir(..., exist_ok=True)` would succeed because the
     # link already exists (#1110).
+    #
+    # #1118: this up-front pass buys the all-or-nothing property -- a symlink caught on
+    # the third dimension must not leave the first two already replaced -- but a symlink
+    # introduced AFTER this pass finishes (or between one dimension's own check here and
+    # its mutation below) would still be written through undetected. `_refuse_if_
+    # symlinked` is called a second time immediately before each dimension's own mutating
+    # step, below, to shrink that window from "between the two whole passes" to "between
+    # one check and the write it guards" -- the residual, uncloseable single-check-to-
+    # single-write gap is exactly what the comment on that second call names.
     for dimension in rendered:
         layer = root / ".claude" / "jit-context" / dimension / LAYER
-        try:
-            ancestor = _symlinked_ancestor(
-                root, (".claude", "jit-context", dimension, LAYER)
-            )
-        except AncestorUnreadable as exc:
-            # #1116: a candidate this process cannot search (an ordinary
-            # PermissionError, not a defect in the walk) used to propagate here as
-            # a raw exception, breaking this function's own "raises RulesError"
-            # contract above. "Could not tell whether this is a symlink" is not
-            # the same claim as "confirmed it is not one" -- writing through an
-            # ancestor nobody could actually inspect is exactly the risk this
-            # whole check exists to close, so this is a refusal, the same as a
-            # confirmed symlink, not a silent pass-through.
-            raise RulesError(
-                "{}: could not determine whether {} is a symlink ({}) -- "
-                "install() refuses rather than writing through a path it could "
-                "not inspect. Fix the permission and rerun.".format(
-                    dimension, exc.path, exc.cause
-                )
-            )
-        if ancestor is not None:
-            raise RulesError(
-                "{}: {} is a symlink, not a directory this plugin owns -- install() "
-                "replaces the whole layer, which would delete and rewrite through the "
-                "link into whatever it points at. Remove the link (or move it aside if "
-                "it was committed on purpose) and rerun.".format(dimension, ancestor)
-            )
-        # A tracked symlink checked out with `core.symlinks=false` (the historical
-        # Windows default without the privilege or Developer Mode) never becomes a
-        # directory symlink at all -- git writes a plain text file holding the link's
-        # target path instead. `is_symlink()` is False for that file and `exists()` is
-        # True, so without this check `layer.iterdir()` two lines below would raise an
-        # uncaught `NotADirectoryError`. Not the write-through-the-link defect #1110
-        # is about (there is no real directory to empty), but the same refusal-not-a-
-        # traceback contract this loop exists to keep, on the same "layer" variable.
-        elif layer.exists() and not layer.is_dir():
-            raise RulesError("{}: {} is not a directory".format(dimension, layer))
+        _refuse_if_symlinked(root, dimension, layer)
 
     for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER
+        # Re-checked immediately before this dimension's own mutation, not just in the
+        # up-front pass above: a symlink introduced in the gap between the two passes, or
+        # while an earlier dimension in this same loop was being mutated, is exactly what
+        # the up-front pass alone cannot catch (#1118). This does not close the race fully
+        # -- nothing short of an fd-based `openat` walk would, since a symlink could still
+        # land in the instant between this call returning and `layer.iterdir()` below
+        # running -- but it removes the multi-dimension window, which is the wide half.
+        _refuse_if_symlinked(root, dimension, layer)
         if layer.exists():
             for child in layer.iterdir():
                 if not owned_shape(child.name):
