@@ -24,7 +24,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import brief_schema  # noqa: E402
+import lane_setup_brief_schema as brief_schema  # noqa: E402
 
 from test_brief_schema_967 import GOOD  # noqa: E402
 
