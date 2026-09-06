@@ -23,6 +23,7 @@ import atexit
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -38,6 +39,7 @@ import scaffold  # noqa: E402
 from test_changelog_gate import (  # noqa: E402
     BASH,
     GENERATED_WORKFLOW,
+    SHELL_REPORT,
     _child_env,
     _config,
     _gate_script,
@@ -241,8 +243,77 @@ def _path_only(*tools):
         found = shutil.which(tool)
         if found is None:
             pytest.skip("{} is not on PATH at all -- untested here".format(tool))
-        (Path(directory) / tool).symlink_to(found)
+        _expose(Path(directory) / tool, found)
+    _require_runnable(directory, tools)
     return directory
+
+
+def _expose(link, target):
+    """Make `target` reachable as `link`, by symlink where that works and by a
+    forwarding shim where it does not.
+
+    A symlink alone is what this did, and #1177 is what that cost: under pytest-xdist
+    the Windows legs resolved `git` to `C:\\Program Files\\Git\\mingw64\\bin\\git.EXE`, the
+    extensionless symlink to it did not execute, and the gate script died at
+    `changed=$(git diff ...)` with 127 -- `command not found`, not a git that ran and
+    failed. The test read as the jq guard breaking; git was the missing tool.
+
+    A shim is spelled `exec "<abs>" "$@"` so the child runs the SAME binary this process
+    resolved, rather than a second `git` some other PATH entry might answer with.
+    """
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        # Windows without the privilege, or a filesystem with no symlinks. Not a
+        # failure: the shim below is the fallback, not a lesser fixture.
+        pass
+    else:
+        return
+    link.write_text('#!/bin/sh\nexec "{}" "$@"\n'.format(target), encoding="utf-8")
+    link.chmod(link.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _require_runnable(directory, tools):
+    """Establish that the exposed tools actually RUN under the PATH the child gets.
+
+    The three states this repository asks of every check, applied to a fixture: the
+    tools run, the tools do not run (skip, saying so), or the shell needed to find out
+    is missing (skip, saying that instead). Asserting on the gate's behaviour with a
+    fixture whose tools cannot be executed measures the fixture, and reports it as a
+    finding about the gate -- which is precisely what #1177's Windows legs did for a
+    round.
+    """
+    if BASH is None:
+        pytest.skip(SHELL_REPORT)
+    for tool in tools:
+        # 127 is the whole question, and the probe must not ask a bigger one. `sed
+        # --version` exits 1 on BSD sed with no output -- a tool that runs perfectly
+        # well -- so a probe asserting exit 0 skips on macOS for a reason that has
+        # nothing to do with whether the shell can execute the file. Only
+        # `command not found` disqualifies the fixture; every other status means the
+        # binary ran and answered.
+        probe = subprocess.run(
+            [
+                BASH,
+                "-c",
+                "{} --version </dev/null >/dev/null 2>&1; echo $?".format(tool),
+            ],
+            env=dict(os.environ, PATH=str(directory)),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            errors="replace",
+        )
+        status = probe.stdout.strip().splitlines()[-1] if probe.stdout.strip() else ""
+        if status == "127":
+            pytest.skip(
+                "{} was resolved to {} and exposed in {}, and the shell still answers "
+                "127 (command not found) for it under that directory alone -- the "
+                "fixture could not be built, so the gate's jq handling went untested "
+                "here rather than being reported as broken".format(
+                    tool, shutil.which(tool), directory
+                )
+            )
 
 
 def test_a_missing_jq_does_not_crash_the_payload_fallback(tmp_path):
