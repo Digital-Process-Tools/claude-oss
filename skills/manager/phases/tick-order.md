@@ -370,13 +370,12 @@ tool, and you are gone by the time step 7 would run.
    op makes still applies. Settle this before the first tick rather than at the merge step, where
    the review is already spent — see *Before the first tick* in `skills/manager/phases/merge.md`.
 
-   **Compose each spawn's `description` with `scripts/lane_setup.py --label`, not by hand (#539,
-   folded in for #1069).** `python3
-   "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label <every issue this
-   lane carries, comma-separated> "<phrase>"` prints `Lane <primary> x<N>  <phrase>`
-   and refuses to print anything when the bundle is incomplete — *Run a fleet, not a queue* in
+   **Never compose a spawn's `description` or its `Agent(...)` call by hand (#539, #989, #1143).**
+   The same `--claim` call that claims the lane renders both, with the multiplier derived from the
+   issues actually claimed — `Lane <primary> x<N>  <phrase>` — and refuses to render on a structural
+   brief finding or an unknown `subagent_type`. *Run a fleet, not a queue* in
    `skills/manager/phases/dispatch.md` has the full convention. Paste its stdout as the `Agent`
-   call's `description`.
+   call.
 
 6. **Write one state entry, and record the intake ratio with it.** The decision and the one reason
    for it. Reasoning that only matters to a pull request belongs in that pull request.

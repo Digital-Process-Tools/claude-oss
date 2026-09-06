@@ -18,7 +18,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import brief_schema  # noqa: E402
+import lane_setup_brief_schema as brief_schema  # noqa: E402
 
 GOOD = """
 # Brief: fix the thing (#123)
@@ -236,12 +236,19 @@ def test_an_undecodable_brief_is_could_not_read(tmp_path):
     assert brief_schema.check_path(path)["state"] == brief_schema.STATE_COULD_NOT_READ
 
 
-def test_exit_code_is_non_zero_for_findings_and_for_could_not_read(tmp_path, capsys):
+def test_check_path_states_for_ok_findings_and_could_not_read(tmp_path):
+    """#1143: `main`/argparse is gone -- `lane_setup.py --claim` is the one
+    entry point that reaches `check_path` now (see its own "No longer a
+    standalone CLI" docstring section). What used to be an exit-code
+    assertion over `main` is the same three states read off `check_path`
+    directly."""
     good = tmp_path / "good.md"
     good.write_text(GOOD, encoding="utf-8")
-    assert brief_schema.main([str(good)]) == 0
+    assert brief_schema.check_path(good)["state"] == brief_schema.STATE_OK
     bad = tmp_path / "bad.md"
     bad.write_text("nothing", encoding="utf-8")
-    assert brief_schema.main([str(bad)]) == 1
-    assert brief_schema.main([str(tmp_path / "absent.md")]) == 1
-    capsys.readouterr()
+    assert brief_schema.check_path(bad)["state"] == brief_schema.STATE_FINDINGS
+    assert (
+        brief_schema.check_path(tmp_path / "absent.md")["state"]
+        == brief_schema.STATE_COULD_NOT_READ
+    )

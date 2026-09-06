@@ -32,8 +32,8 @@ OSS_CONFIG = REPO_ROOT / "scripts" / "oss_config.py"
 # unconditionally at module scope, so all have to be vendored alongside it
 # for `import lane_setup` to resolve here.
 LANE_SETUP_SUBMODULES = [
+    "lane_setup_brief_schema.py",
     "lane_setup_claim.py",
-    "lane_setup_label.py",
     "lane_setup_patterns.py",
     "lane_setup_worktree.py",
     "select_issues_claim_read.py",

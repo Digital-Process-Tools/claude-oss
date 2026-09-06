@@ -18,7 +18,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import lane_setup_label as fl  # noqa: E402
+import lane_setup as fl  # noqa: E402
 
 
 def test_single_issue_lane_carries_no_multiplier():

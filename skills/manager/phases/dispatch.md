@@ -60,14 +60,19 @@ every rule written into `agents/developer.md`.
 unprompted, that all three of its `Agent()` calls omitted `subagent_type: "oss:developer"` and ran
 as `general-purpose`, caught only because the tick happened to notice. Prose read once at the top of
 a phase file is not present at the moment a call is typed by hand, turn after turn, so the fix is not
-a stronger sentence here -- it is not composing the call by hand at all. `scripts/lane_setup_label.py`
-already refuses to compose a *description* from an incomplete issue bundle (#539); its
-`agent_call` does the same for the **whole call**:
+a stronger sentence here -- it is not composing the call by hand at all. `--claim` renders the whole
+`Agent(...)` call from the issues it just claimed (#539, #989, #1143), so the label's multiplier is
+what was actually assigned rather than what was retyped:
 
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --label 534,537,495 "auto-update path" oss:developer --model sonnet
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --claim --lane <pattern> \
+        --claim-also 537 --claim-also 495 --phrase "auto-update path" \
+        --subagent-type oss:developer --model sonnet --brief <brief-file>
     -> Agent(subagent_type: "oss:developer", model: "sonnet", run_in_background: false, description: "Lane 534 x3  auto-update path", prompt: "<brief>")
 
-Paste that line and fill in `prompt` with the brief -- the one part only the caller can write.
+Paste that line and fill in `prompt` with the brief -- the one part only the caller can write. An
+issue that did not come back `claimed` is not in the label: a lane whose third issue failed renders
+`x2`. It refuses to render at all on a structural brief finding, on a `subagent_type` outside
+`KNOWN_AGENT_TYPES`, and when the primary issue is not held.
 Give it no fourth argument and it prints the description alone, unchanged from before. An omitted
 `subagent_type` is a Python `TypeError` at the call site if you call `agent_call` directly, or a CLI
 usage refusal; a misspelled one (`general-purpose` included, the historical failure's own value)
@@ -75,6 +80,16 @@ refuses against `KNOWN_AGENT_TYPES` rather than rendering a call that quietly sp
 agent. This does not prevent a call typed by hand anyway -- nothing in this repository can intercept
 the real `Agent(...)` call before it runs, the same limit the model-choice recording above already
 states -- it makes the correct call cheaper to produce than a wrong one typed from memory.
+
+**Fallback mode, for a lane composed some other way: `--label`.** When the issues were claimed
+outside this call -- an already-running lane relabelled, a bundle assembled by hand -- the label is
+rendered on its own from a primary and an explicit list, with no claim and no `Agent(...)` line:
+
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --label 534,537,495 "auto-update path"
+    -> Lane 534 x3  auto-update path
+
+It takes the list on trust, which is exactly what `--claim` above removes, so prefer `--claim`
+whenever this call is the one doing the claiming.
 
 **A spawn whose `subagent_type` does not resolve is `could not run`, and the fallback is to brief
 `general-purpose` with a pointer to the definition file.** A newly written agent file not
@@ -345,14 +360,10 @@ data — carry that caveat with the number, and never turn it into a refusal to 
 **The fleet-view label names what a lane covers, not what it starts with (#539).** The count is the
 load-bearing half — a reader scanning four rows should see `x3, x1, x1, x1` without reading any
 phrase — so the multiplier spelling is the convention: `Lane 534 x3  auto-update path`, never
-`Lane 534 (+537, +495)  …`. Compose it rather than typing it:
-
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label <issue1,issue2,...> "<phrase>"
-
-and paste its stdout as the `Agent` call's `description`. `--label` refuses to print anything when the
-caller has not named every issue the lane carries, so a lane dispatched through it cannot silently
-fall back to the thin label. A lane briefed by hand without running it is the one case this cannot
-catch.
+`Lane 534 (+537, +495)  …`. `--claim` composes it from the issues it just claimed (#1143), so the
+count is derived from what was assigned rather than from a list retyped into a second call, and an
+issue that failed to claim is not in it. A lane briefed by hand without running `--claim` is the one
+case this cannot catch.
 
 Launch every dispatched lane — bundled or not — in a single message so they run concurrently.
 
@@ -477,11 +488,13 @@ gates *removing* a worktree that already merged; `--stack-on` gates *creating* o
 never substitute for each other -- a lane briefed with a stacked base still goes through the same
 worktree-removal read at cleanup time, unchanged.
 
-Every brief carries these eight, and `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brief_schema.py" <brief-file>` checks the draft before
-the spawn — `ok` / a row per missing element / `could-not-read`. Four are checked structurally and
-four are presence only, and the receipt says which: **a brief that passes is not a brief that was
-reviewed** (#967). `brief_schema.py` is the symmetric half of `scripts/report_schema.py`: one checks
-what goes into a lane, the other what comes back out of it.
+Every brief carries these eight, and `lane_setup.py --brief <brief-file>` checks the draft as part of
+rendering the call — `ok` / a row per missing element / `could-not-read`. Four are checked
+structurally and four are presence only, and the receipt says which: **a brief that passes is not a
+brief that was reviewed** (#967). It refuses to render the `Agent(...)` line on a structural finding
+and renders it, findings printed, on a presence-only one. `scripts/lane_setup_brief_schema.py` is a
+module, not a command (#1143); `scripts/report_schema.py` is its symmetric half on the return path:
+one checks what goes into a lane, the other what comes back out of it.
 
 1. **Use supertool, as an instruction not a note.** Paste verbatim:
 
@@ -555,7 +568,7 @@ what goes into a lane, the other what comes back out of it.
    `{{PASTE THE FULL CONTENTS OF <scratchpad path> HERE}}` instead of the real blockquote content,
    caught it only after all three `Agent()` calls had already returned, and found `SendMessage`
    unavailable to correct any of them (#1022) -- so this is only catchable before the call.
-   `brief_schema.py` (above) now flags any literal `{{...}}` in the draft file structurally; this
+   the brief check (above) flags any literal `{{...}}` in the draft file structurally; this
    item is the same check performed by eye for a brief composed and sent without ever touching a
    file, which the validator cannot reach.
 
