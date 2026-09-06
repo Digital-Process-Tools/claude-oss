@@ -7,6 +7,368 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-09-06
+
+### Added
+
+- `agents/releaser.md` gains a fourth report state, `RELEASE: paused`, for
+  a release mid-flight on a CI wait -- the same shape #818 already gave a
+  sub-manager, naming what the run set in motion (`WAIT-DISPATCH:`) and
+  what clears it (`WAIT-OBSERVABLE:`) instead of closing with an unkeepable
+  promise to resume once CI reports back. `scripts/release_handback.py`
+  classifies a releaser's own report the same disciplined way
+  `scripts/tick_handback.py` already classifies a sub-manager's, which
+  nothing did before this (#1041).
+
+- Added `lane-other`, a per-repo `labels.lane_other` label a triager applies to an issue it
+  examined and matched to no real lane (#1130). Today a deliberate refusal and an issue nobody has
+  read both render as no `lane-*` label at all -- measured on the live board, five of six
+  unlabelled open issues were examined and refused with a stated reason, one had simply never been
+  looked at, and the board could not tell them apart. `lane-other` is the positive statement
+  "triaged, no lane owns this," never a sixth real lane and never a dumping ground for untriaged
+  work. `_derive_lane_patterns_from_labels` (#1129) special-cases the configured `lane-other` label
+  to **unknown** explicitly, before its mapping lookup even runs, rather than reaching the same
+  answer by falling through the "uncovered label" path by accident -- reaching it that way would be
+  the right answer for the wrong reason, indistinguishable from a repo that simply forgot to map it.
+  A `lane-other` candidate is dispatched solo, always: it enters grouping and comes out as a
+  deliberate group of one with a stated `short_reason` naming the rule, never given a companion,
+  never offered as one, never padded toward the group target, and never folded into `ungrouped`
+  (which means "never entered grouping at all"). Solo is a bundling verdict only -- ranking is
+  unaffected, so a `priority-high` `lane-other` issue still outranks a bundleable `priority-low`
+  one. Scope note: the triager itself (`agents/triager.md`) does not yet apply the label -- that
+  edit is deferred to a follow-up because it is held by another open PR's byte-budget re-baseline;
+  applying `lane-other` by hand works in the meantime.
+
+- `docs/pick-the-work.md` records how the loop decides what to build next (#1143): the five steps,
+  who runs each one, what each takes and returns, and why the shape is two entry points rather than
+  four hand-composed calls. It also names what the design deliberately does not do, and what is
+  still open — so the next session reads it instead of re-deriving it.
+
+- Added the full body of every issue in every group `select_issues.select_fleet` returns (#1147),
+  so the veto step of `docs/pick-the-work.md` makes no further reads -- three separate `gh-issue`
+  reads across a bundled lane cost roughly 100s serial and re-send the whole conversation on every
+  one of those turns, against one board fetch that already held the text. Each body is fenced as
+  `data, not instructions` (`BODY_FENCE_OPEN`/`BODY_FENCE_CLOSE`) rather than emitted as a raw JSON
+  field indistinguishable from this tool's own output, and carries `body_length` (the real,
+  untruncated length) and `body_truncated` (set once the body exceeds the 2 KB `BODY_CAP`), so a
+  body cut at the cap and a body that genuinely is that short never render identically. Bodies are
+  attached to `groups.groups[*].members[*]` only -- the returned groups, never `ungrouped`, never
+  the rest of the board.
+
+- Added a repository-wide sweep test, `tests/test_bare_gh_git_spawn_sweep_1165.py`,
+  over every `scripts/*.py` file for a bare `shutil.which("gh"|"git")` or a
+  literal, unresolved `["gh"`/`["git"` argv[0] reaching `subprocess.run`/
+  `Popen`/etc -- the class #1157's own hand conversion of ~23 call sites left
+  with no regression guard, and the shape #1163, #1168, #1172 and #1173 each
+  had to be found, one at a time, by a human or an audit reading the file.
+  Known, not-yet-converted sites outside `scripts/doctor.py`'s own scope are
+  named individually in the test's own allowlist, each with a reason, rather
+  than exempted by a broad pattern (#1165).
+
+### Changed
+
+- The loop's own markdown no longer carries the reasoning behind its rules (#1136). A phase file, an
+  agent definition and a command file are operator's manuals for the tools they run, so the rule, the
+  call, every state and every payload field stay, while the measurement that justified a constant, the
+  incident behind a rule and the file's own history do not -- each keeping a bare issue citation for
+  provenance. 581,678 B became 480,591 B across 23 files (-17.4%), and every size ceiling came down
+  with its measurement. The rule itself is now a jit-context entry that fires on the loop's own markdown.
+
+- Picking work is two calls instead of four hand-composed steps (#1143). `select_issues.py` takes no
+  input and returns the fleet -- one group per declared lane label, `lane-other` included, each with
+  the bodies of its own issues fenced as untrusted; `lane_setup.py --claim` claims them, validates the
+  brief and renders the whole `Agent(...)` call plus the `--lane-fill` token for the tick's record.
+  Nothing between the board and the spawn is assembled by hand. The sequence is recorded in
+  `docs/pick-the-work.md`, which also names what has not yet been observed in a live tick.
+
+- Changed `select_issues.py` to fetch its own board and its own held-set inventory (#1145)
+  instead of requiring a caller-built payload on stdin. It used to refuse to call `gh` for the
+  board itself while making a forge call for assignees anyway (`select_issues_claim_read.check`) --
+  an inconsistency, not a principle, and the one part of the call nothing here could verify. A
+  payload built by hand with the top-level key `labels` instead of `declared` answered
+  `none-available` on a board carrying 24 live candidates, when nothing was wrong with the board at
+  all. `select()` itself keeps its old, payload-driven contract unchanged -- `checker`/`search`/
+  `resolve_lane`/`suggest_companions` still injectable exactly as before -- and the new
+  `select_fleet()` is what fetches (via `_fetch_board`, one `gh api graphql` call) and derives the
+  held set (`lane_setup.derive_held_set`) before calling it. The stdin payload path is removed, not
+  supplemented: there is no `--fetch` mode and no board-in alternative. #970's founding rule now
+  covers the fetch too -- a failed or mis-shaped read of either input is `could-not-select` for the
+  whole fleet, never `none-available`. Scope note: `--board`'s own, older stdin-payload receipt
+  mode is unchanged; the prose sites documenting the removed stdin contract are a follow-up round.
+
+- Changed `select_issues.select_fleet` to return one group per lane instead of one partition of
+  the whole board (#1146). On the live 38-issue board the old shape returned 18 groups for a tick
+  that dispatches at most five lanes -- most of them computed, rendered, and never used, and
+  handing an agent 18 options invited it to re-rank them instead of doing the veto it should be
+  doing. "One group per lane" means exactly one: `_run_one`'s `cap_groups` truncates every lane's
+  `groups.groups` to its single best-ranked group -- lead plus up to two companions by the existing
+  adjacency rules -- before bodies are attached, since a lane runs one developer at a time and a
+  lane's second, third and fourth groups would only be recomputed next tick against a board that
+  has moved. Nothing is lost: every eligible issue in the lane still appears in its `candidates`
+  list, and `ungrouped` (declares no files, #267) is untouched -- the cap removes a group's number,
+  not an issue's visibility. `select()` itself is unchanged, called once per lane with its existing
+  `lane_label` filter (#1078) narrowing candidate generation.
+- The fleet is the declared lane labels (`.oss.json`'s `labels.lanes`) plus `labels.lane_other`,
+  read from config like every other label spelling -- never hardcoded. `lane-other` is a real,
+  sixth lane (#1130: "triaged, and no lane owns these files"), iterated exactly like any other
+  label and still dispatched solo, never a companion, never offered as one. An issue carrying no
+  `lane-*` label at all -- "nobody has triaged this yet" -- is a DIFFERENT fact from `lane-other`
+  and must not render the same way: an earlier cut of this fix gave both a shared pseudo-lane,
+  which is precisely the re-merge #1130 was filed to prevent. It is corrected here: an untagged
+  issue is not a lane, gets no group and no body, and is accounted for once, fleet-wide, in
+  `select_fleet`'s own top-level `dropped` list -- the identical `{"number", "disposition", "why"}`
+  shape `select()`'s own per-lane `dropped` already uses for `stale`/`assigned`/`lane-collision`,
+  one more disposition value (`"no-lane-label"`) rather than a new structure. It is input to
+  `/oss:triage`, not to a developer. A lane with no eligible issue still gets its own key with a
+  stated `none-available`, never a missing one. Confirmed live: the fleet now returns one group
+  per declared lane -- `lane-other` currently a stated absence, since no issue on the board carries
+  it yet -- and the seven previously mis-bucketed issues are reported as dropped, untagged.
+
+### Fixed
+
+- Gate 3's round-two carry-forward rule (a non-blocking finding may ship)
+  had been applied to a round-one `findings` verdict, making round one
+  indistinguishable from clean. The disposition is now computed by
+  `scripts/gate3_disposition.py` from the round number, the auditor's
+  verdict and whether any finding sits in a blocking row, rather than
+  re-derived from prose under narrative pressure -- `commands/release.md`
+  and `skills/manager/phases/release.md` both point at it (#1043).
+
+- Fixed the CodeQL `owned-only` `doctor` WARN so a repo that already took its own advice
+  (a workflow scoped to `languages: actions`, or no CodeQL workflow at all) can actually clear it.
+  The `owned-only` branch of `codeql_scan_state` used to return before ever checking whether a
+  `.github/workflows/*.y*ml` file already mentioned CodeQL, so `claude-jit-context`'s `codeql.yml`
+  -- `actions`-scoped since before this check shipped -- still triggered the WARN on every run. It
+  now calls the same `_workflow_files_mention` sniff the sibling `uncovered-outside-owned` path
+  already used, and reports `OK` (a new `owned-only-covered` state) when a match is found, with the
+  same honest caveat the sibling path already carries: this only confirms a workflow mentioning
+  CodeQL exists, never what it actually scans. A workflows directory that could not be read still
+  keeps the WARN rather than reading as "no workflow" (#1089).
+
+- Fixed `doctor`'s `gh`-spawning call sites so a `gh` installed only as a `.cmd`/`.bat` launcher
+  resolves on Windows: `label_vocabulary_state` and `lane_label_state` in `scripts/doctor.py`, and
+  the shared `_gh_api` helper each of `scripts/doctor_check_branch_protection.py`,
+  `scripts/doctor_check_codeql_scan.py`, `scripts/doctor_check_security_alerts.py` and
+  `scripts/doctor_check_security_settings.py` carries its own verbatim copy of. `CreateProcess`
+  only auto-appends `.exe` for an extensionless name on Windows and never `.cmd`/`.bat`, so a bare
+  `["gh", ...]` argv never found a `gh.cmd` launcher on `PATH`, and every one of these sites reads a
+  present-but-unspawnable `gh` as an absent one -- the same shape #1069/PR #1107 already fixed in
+  `select_issues_claim_read._run`. Each site now resolves the binary via `shutil.which` first and
+  falls back to the bare name when nothing resolves, so the existing `FileNotFoundError` handling
+  is unchanged when `gh` is genuinely absent. `scripts/oss_config.py`'s own `_run` helper is the
+  issue's third named call site and is NOT touched by this fix -- that file was held by a concurrent
+  lane for the duration of this one -- so #1109 is only partially closed here; the `oss_config.py`
+  half remains open as a follow-up (#1109).
+
+- A release commit's push to the default branch could go through on a
+  branch-protection bypass with nothing reporting it: the bypass is
+  announced only in the push's own stderr, and it rendered identically to a
+  clean push. `scripts/push_bypass.py` scans a push's captured output for
+  GitHub's own bypass marker and reports `clean` / `bypassed` /
+  `could-not-tell`, wired into the release procedure's own push step. The
+  three-way governance question `#1119` raises (route the release commit
+  through a pull request, write a narrow documented exception, or remove
+  bypass privileges) is still open; this closes the detection half only
+  (#1119).
+
+- Added an opt-in `lane_setup.py --activity` mode, alongside a new
+  `worktree_last_activity` helper: a plain recursive mtime scan over a lane's own
+  worktree, rendered as `last touched Ns ago` in the setup receipt. Investigated in
+  full: the scheduler's own liveness verdict ("dead"/"killed") and the
+  `git-worktrees` board's "occupied"/"idle"/"cannot tell" read are both computed
+  entirely outside this repository, so there was no probe here to harden directly.
+  This adds the one corroborating signal this repository's own code can produce --
+  a sub-manager doubting a "dead" verdict can now check whether the worktree it is
+  about to re-dispatch a second agent into has been touched at all recently, before
+  doing so (#1120).
+
+- Fixed the `paths/00-manual` jit-context index row for `issue-selection-goal.md`, which still
+  carried the pre-#1069 pattern `(^|/)scripts/(select_issues|dispatch_rank|lane_setup|issue_claim|preflight_check)\.py$`
+  after the entry's own `match:` was widened to `(^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$`.
+  The rule that fired was the stale one: it matched three script names #1069 deleted and did not
+  match the `select_issues_*` / `lane_setup_*` submodules the new pattern covers, so a session
+  editing one of those got no rule at all (#1123).
+
+- Fixed the `channel consumer pin` `doctor` check so a missing active-install copy is never read
+  as an ordinary "could not be established" hash comparison. `channel_consumer_pin_state`'s SKEW
+  detail used to fold "the active install's file could not be read for some other reason" and "the
+  active install has no such file at all" into the same answer, because `_content_identical`'s own
+  `except OSError: return None` cannot tell them apart. A repo whose active install tree was missing
+  `notifiers/` entirely (a truncated plugin-cache unpack, observed for real) got the generic
+  wording, which reads exactly like ordinary drift and invites the standard "remove the registration
+  and let it re-register at the current path" remedy -- a remedy that would break a working channel,
+  since the pinned copy was the only complete one on disk. Existence is now checked before the hash
+  comparison and given its own sentence: when the active install's consumer path does not exist,
+  the line says so explicitly and reverses the remedy, rather than reporting an unresolved
+  comparison. A target that exists but genuinely could not be read (a permission error) still keeps
+  the original "could not be established" wording (#1125).
+
+- Fixed `scripts/select_issues.py` forming zero groups on every real board (#1129): the
+  per-issue file set `groups` (#1068) bundles on, `lane_patterns`, had no producer -- not one real
+  issue carries it as a literal, and #267 rightly forbids inventing it from an issue's body. It is
+  now derived, as a fallback only, from an issue's `lane-*` GitHub label through a mapping declared
+  in `.oss.json`'s new `labels.lane_patterns` key (additive: `labels.lanes` is unchanged). Three
+  states, never two: a lane label covered by the mapping derives that lane's patterns; no lane
+  label, an uncovered lane label, ambiguous labels, or no declared mapping at all resolve to
+  **unknown**, never to an empty file set -- an empty set reads as disjoint with everything and
+  would falsely bundle an unexamined issue into any lane. Explicit per-issue `lane_patterns` always
+  wins over a derived one, and every candidate now carries `lane_patterns_source`
+  (`"declared"` / `"derived-from-label"` / `None`) so a reader can tell a measured disjointness
+  from an inferred one.
+
+- Fixed grouping computing overlap broad-against-narrow (#1135): a lead's own file set came
+  from its `lane-*` label's globs -- a whole subsystem -- while `select_issues_companions.
+  suggest_companions` derived each OTHER open issue's set from paths named literally, in backticks,
+  in its own title and body (#851). A lead labelled `lane-dispatch` therefore claimed all of that
+  lane's files and swallowed anything else in the subsystem; measured on the live board, the
+  precise overlaps were exactly the pairs where at least one side carried no lane label and its
+  files came from its body instead. The lead now gets the identical body-declared extraction first,
+  falling back to its label's globs only when the issue's own title and body name no path at all --
+  precedence is now three deep and strict: an issue's own explicit `lane_patterns`, then a path
+  declared in its own body (`lane_patterns_source: "derived-from-body"`), then its label's globs
+  (`"derived-from-label"`), then unknown (`None`), never `[]` at any step. A bundled group now also
+  carries `adjacency` (`"measured"` or `"label-derived"`), so a group joined by an actual shared
+  file and a group joined only because both issues carry the same lane label no longer render
+  identically.
+
+- `lane_setup_worktree.worktree_last_activity()` now folds every
+  SUBdirectory's own mtime into its walk, not only the files it finds --
+  closing the gap where a create-then-delete cycle that leaves no surviving
+  file (a lock file, an atomic temp file cleaned up after itself) bumped a
+  directory's own mtime with nothing left for a file-only scan to see. The
+  root path's own mtime stays deliberately excluded, since it is set the
+  instant `git worktree add` creates it, before any file exists inside it --
+  folding that in too is left open, per the issue's own body (#1140).
+
+- `lane_setup.py --claim` now emits step 5's ready `--lane-fill
+  PRIMARY:COUNT[:REASON]` token alongside the `Agent(...)` line it already
+  renders, so nothing is retyped by hand at `oss_state.py --decision` time
+  -- `docs/pick-the-work.md` step 5 is paste only, and this is what makes it
+  true for the fill token the same way #1143 already made it true for the
+  fleet-view label. `COUNT` comes from the claim's own held issues, never
+  from what was requested; the new `--short-reason` flag carries the group's
+  own established reason through, and a short lane whose caller gave none
+  renders a token with no reason at all, so `oss_state.py --decision`'s own
+  refusal (#852) still fires on it downstream rather than being satisfied
+  by an invented one (#1148).
+
+- Fixed the `gh`/`git`/`supertool`-spawning call sites that resolved a
+  binary via a bare `shutil.which(name)` -- with no `path=` argument -- ahead
+  of a spawn: the seven #1109 had just added
+  (`scripts/doctor.py`'s `label_vocabulary_state` and `lane_label_state`,
+  the shared `_gh_api` helper each of `scripts/doctor_check_branch_protection.py`,
+  `scripts/doctor_check_codeql_scan.py`,
+  `scripts/doctor_check_security_alerts.py`,
+  `scripts/doctor_check_security_settings.py` carries its own verbatim copy
+  of, and `scripts/select_issues.py`'s `_run_gh`), five pre-existing sites
+  doing the identical thing (`scripts/select_issues_claim_read.py`,
+  `scripts/lane_setup_worktree.py`, `scripts/lane_setup_claim.py`,
+  `scripts/plugin_update.py`, `scripts/release_delta.py`), and -- found
+  during this fix's own self-review -- five more of the same shape
+  (`scripts/rename_changelog_fragment.py`, `scripts/release_publish.py`,
+  `scripts/pr_green.py`, `scripts/cohort_freeze.py`,
+  `scripts/lane_setup.py`'s `read_board`), plus the four `doctor_check_*.py`
+  modules' own separate `shutil.which("gh") is None` availability gates. A
+  bare `shutil.which(name)` -- even with a `path=` argument -- inserts the
+  current working directory ahead of a real `PATH` entry on Windows whenever
+  the queried name has no directory component, regardless of what `path`
+  was passed: unconditionally on Python 3.9-3.11, and by default on 3.12+
+  (gated on `NoDefaultCurrentDirectoryInExePath`, unset by default). A
+  `gh.cmd` or `git.cmd` committed to the root of a repository this loop
+  inspects was therefore resolved and executed ahead of the real binary on
+  every `doctor` run and every tick. Every site now resolves through one
+  new shared helper, `scripts/gh_which.safe_which`, which walks the real
+  search path itself and probes only explicit directory-plus-filename
+  candidates, so there is nothing left for an implicit
+  current-directory search to reach. Every migrated call site also
+  stopped falling back to spawning the bare, unresolved name when
+  `safe_which` finds nothing: that fallback -- kept only to reuse existing
+  `FileNotFoundError` handling -- would still let `CreateProcess`'s own
+  cwd-first search on Windows find a planted same-named `.exe`, independent
+  of `shutil.which` entirely, once the intended `.cmd`/`.bat` mitigation was
+  already the point of this fix (#1157). A first version of
+  `safe_which` closed the gap this way, joining each real search directory
+  onto `name` and handing the joined candidate to `shutil.which` -- reasoning
+  that a candidate carrying a directory component always takes the branch
+  that skips curdir-insertion. That is true, but real CI on this fix's own
+  pull request found a second, independent defect in the same reasoning: on
+  Python 3.9-3.11 (three of this repo's four matrix interpreters), the
+  directory-component branch of `shutil.which` is a single, unextended
+  access check against the literal joined path, with no re-application of
+  `PATHEXT` to the basename at all -- only 3.12+ splits the candidate back
+  apart and reapplies `PATHEXT`. So the first version of `safe_which`
+  silently failed to find a real `gh.exe`/`gh.cmd` in ANY directory on
+  Windows for those three interpreters. `safe_which` now performs the
+  directory-and-`PATHEXT` walk itself, using only accessors
+  (`os.path.exists`, `os.access`, `os.path.isdir`, `os.environ`) whose
+  behaviour does not
+  vary across this repo's supported interpreters, and never calls
+  `shutil.which` at all.
+
+  Correction (found by #1163's own self-review): the sentence above once
+  named `scripts/doctor.py`'s `check_gh_binary`/`tool_binary_architecture`
+  among the sites converted here. Neither was -- `check_gh_binary` still
+  called bare `shutil.which("gh")` until #1163 fixed it, and
+  `tool_binary_architecture` still does (its only caller gates it on
+  `platform.system() == "Darwin"`, where the Windows curdir-insertion this
+  fix closes does not occur, so it was deliberately left as-is rather than
+  converted). See #1163.
+
+  Second correction (found by #1168's own release-audit round): the
+  sentence above still overclaimed "every site now resolves through one
+  new shared helper" after #1163's own correction landed --
+  `scripts/doctor.py`'s `check_tool("gh", ...)` (called from `main()`
+  four lines before `check_gh_binary`) was never converted either, and
+  reached the identical bare-`shutil.which("gh")` pattern independently.
+  See #1168, which also fixed `check_tool`'s sibling call for `"git"`.
+  At least two more bare-spawn sites remain, tracked separately and not
+  fixed by #1168 (#1165, #1170).
+
+- Fixed `scripts/doctor.py`'s `check_gh_binary` still calling bare
+  `shutil.which("gh")` rather than `gh_which.safe_which`, even though
+  `changelog.d/1157.fixed.md` named this exact function as already
+  converted -- on Windows, `shutil.which` resolves a bare name against the
+  current working directory ahead of a real `PATH` entry, so a `gh.cmd`
+  planted at the root of an inspected repository would be executed by
+  `/oss:doctor` (#1163). `tool_binary_architecture`'s own bare `which("file")` call
+  was left untouched: its only caller gates on `platform.system() ==
+  "Darwin"`, where the curdir-insertion this fix closes does not occur, and
+  `file` is not normally on a Windows PATH in the first place.
+
+- Removed `tests/_durprobe_910_c52a1564/`, a scratch test-probe directory (#1164)
+  accidentally committed by an unrelated docs commit, and added a
+  `_durprobe_910_*/` line to `.gitignore` beside the existing
+  `_durprobe_881_*/` entry so `tests/test_duration_report_plugin_910.py`'s
+  own probe artifacts can't recur this.
+
+- Fixed `scripts/doctor.py`'s `check_tool("gh", ["gh", "auth", "status"])`
+  still calling bare `shutil.which("gh")` and spawning the unresolved
+  argv, four lines before `check_gh_binary`'s own #1163 fix in the same
+  `main()` -- so the Windows curdir-execution threat #1163 named as closed
+  ("a `gh.cmd` planted at the root of an inspected repository would be
+  executed by `/oss:doctor`") was still live via this sibling call, which
+  runs first (#1168). `check_tool` now resolves `"gh"` and `"git"` (the
+  issue's own suggested second site) through `gh_which.safe_which`, the
+  same seam `check_gh_binary` and `select_issues._run_gh` already use,
+  substituting the resolved path into the spawned argv and falling back
+  to the existing "not on PATH" finding when nothing resolves. Every other
+  name `check_tool` is called with (`"supertool"`) is unaffected.
+
+- Fixed `scripts/doctor.py`'s `check_tool` special-casing `"gh"`/`"git"` onto
+  `gh_which.safe_which` and leaving every other name (`"supertool"`, spawned
+  from `main()` four lines below the same call) resolving via a bare
+  `shutil.which` -- the identical Windows curdir-execution threat #1163 and
+  #1168 closed for their own two names, left open for the one the block's
+  own else-arm still special-cased away (#1172). Also fixed four more bare
+  `gh`/`git` spawns reachable from `main()`: `published_versions`
+  (`gh api ...`), `_git_head`, `_git_ls_files_tracked` and `_origin_slug`
+  (each `git ...`) -- every one gated a spawn on
+  `shutil.which("gh"|"git") is None` and then discarded the result, handing
+  the literal, unresolved name to `subprocess.run` regardless (#1173). All
+  five now resolve through `gh_which.safe_which` and spawn the resolved
+  path, the same seam every other converted site in this codebase already
+  uses; `scripts/doctor.py` itself now carries zero sites of either shape.
+
 ## [0.25.0] - 2026-09-06
 
 ### Added
@@ -8768,7 +9130,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.26.0
 [0.25.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.25.0
 [0.24.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.24.0
 [0.23.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.23.0
