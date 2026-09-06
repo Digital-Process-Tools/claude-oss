@@ -132,6 +132,11 @@ jobs:
       # A green first run is the outcome to distrust rather than the one to ship: a race
       # that fires one run in ten arrives later as a flake nobody attaches to this change.
       #
+      # What xdist did NOT cause, recorded because this change was blamed for it for two
+      # rounds: the 123 launcher-suite failures on the Windows legs came from the
+      # `shell: bash` the coverage step briefly carried, and reproduced on a serial run
+      # with no workers in the log at all. See that step's own comment.
+      #
       # #1177 candidate 2: `addopts` in pyproject.toml carries `--cov=scripts
       # --cov-report=term-missing --cov-fail-under=85`, so coverage was computed on all
       # twelve legs and the 85% floor was evaluated twelve times -- and the twelve
