@@ -57,8 +57,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # than re-discovered by hand again. Budgets (the ceilings) are unchanged;
     # every file measured here was already comfortably under its own.
     "agents/developer.md": (40118, 44100),
-    "agents/auditor.md": (14174, 15600),
-    "agents/release-auditor.md": (14953, 16400),
+    # Re-baselined DOWN for #1071: the prose shared with agents/release-
+    # auditor.md (the total Bash grant's explanation, how a read happens,
+    # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
+    # file) moved to agents/audit/shared.md, a fragment with two parents
+    # rather than one, budgeted separately in scripts/audit_shared.py since
+    # neither agent_budgets.BUDGETS nor developer_phases.DOCUMENTS fits a
+    # file with no single spine. 14174 B became 12963 B. Ceiling left
+    # unchanged; a lower ceiling would only be spent again without anyone
+    # choosing to.
+    "agents/auditor.md": (12963, 15600),
+    # Re-baselined DOWN for #1071, the same extraction: 14953 B became
+    # 13992 B. Ceiling left unchanged for the same reason.
+    "agents/release-auditor.md": (13992, 16400),
     "agents/triager.md": (15082, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
@@ -110,7 +121,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Ceiling left unchanged rather than brought down with it, the same as
     # every other re-baseline in this file: a lower ceiling would only be
     # spent again by the next addition without anyone choosing to.
-    "agents/sub-manager.md": (14666, 16800),
+    # Re-baselined for #1190: 14666 B became 15571 B. The CI-wait passage
+    # (#818) and the pr_green.py pointer (#1086) contradicted each other --
+    # one said always hand back, the other handed over a waiter -- and a
+    # sub-manager that followed #818 six times in one tick paid ~11k tokens
+    # per resume for it. Replaced with one ordered procedure (re-select a
+    # freed lane, else `pr_green.py --wait` inside the turn, else hand back
+    # with the fleet's occupancy folded into WAIT-OBSERVABLE) rather than a
+    # third rule beside the two. Ceiling left unchanged; 1229 B of headroom
+    # remains.
+    "agents/sub-manager.md": (15571, 16800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

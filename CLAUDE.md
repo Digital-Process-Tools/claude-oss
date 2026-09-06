@@ -264,10 +264,10 @@ from being invisible.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer.md` | 40,118 B | 44,100 B |
-| `agents/auditor.md` | 14,174 B | 15,600 B |
-| `agents/release-auditor.md` | 14,953 B | 16,400 B |
+| `agents/auditor.md` | 12,963 B | 15,600 B |
+| `agents/release-auditor.md` | 13,992 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
-| `agents/sub-manager.md` | 14,666 B | 16,800 B |
+| `agents/sub-manager.md` | 15,571 B | 16,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
@@ -279,6 +279,25 @@ count it saved. The budget is a visible number, not a mandate to shrink.
 an existing paragraph to fit the new one: the addition states the worktree-boundary rule a
 spawned auditor failed to hold (#972's own incident), and nothing already in the file argued
 that point, so there was nothing safe to cut in its place.
+
+**#1071 re-baselined `agents/auditor.md` and `agents/release-auditor.md` down, without touching
+either ceiling.** Measured on `main` at `ef9a1bc`: the two files shared 286 8-grams, ~10% of
+each -- the total `Bash` grant's explanation, how a read happens through `supertool`, and "test
+behaviour is reasoned, not run" were near-verbatim in both, because both are audit spawns with
+the same operating shape underneath different jobs (one annotates a PR's diff, the other blocks
+a release over the whole delta). That shared prose moved to `agents/audit/shared.md` -- the
+loop's first **multi-parent** fragment, since every extraction before this one had exactly one
+spine (`SKILL.md` over `phases/*.md`, `agents/developer.md` over `agents/developer/*.md`). Each
+agent kept its own decision (the worktree-boundary check for `auditor.md`, the tagging/
+publishing exception for `release-auditor.md`) and now points at the fragment for the argument.
+Living one directory down (`agents/audit/` rather than `agents/`) keeps it off the non-recursive
+`agents/*.md` glob `tests/test_agent_definition_budget_491.py` and `tests/test_agent_grant_is_
+total.py` both use, the same reason `agents/developer/*.md` sits below `agents/` rather than
+beside it. Its own budget lives in `scripts/audit_shared.py` rather than in either
+`agent_budgets.BUDGETS` (one-to-one with a real, frontmatter-bearing agent definition) or
+`developer_phases.DOCUMENTS` (one spine, not two) -- neither fits a file with no single parent.
+14,174 B became 12,963 B for `auditor.md`, 14,953 B became 13,992 B for `release-auditor.md`;
+both ceilings are unchanged and both files sit further under them than before.
 
 **#1048 raised `agents/sub-manager.md`'s ceiling from 17,000 B to 18,700 B**, after trimming the
 new paragraph once to fit as much of it as possible: a sub-manager closed a handback promising its
@@ -296,6 +315,15 @@ reaching a CI wait -- observed three times in one release closing on an unkeepab
 resume once CI reports back" instead of a state a scheduler could act on. Nothing already
 in the file argued that point, so there was nothing safe to cut in its place; the ceiling
 carries the same ~10% headroom the other re-baselines in this table use.
+
+**#1190 re-baselined `agents/sub-manager.md` without raising its ceiling**: 14,666 B became
+15,571 B, still under the 16,800 B budget. #818 ("hand a CI wait back, always") and #1086
+("call `pr_green.py --wait` instead") were two rules about the same moment that disagreed, and
+a sub-manager that followed #818 six times in one tick paid ~11k tokens per resume finding no
+other work to dispatch into a lane freed mid-wait. One paragraph replaces both with an ordered
+procedure -- re-select a freed lane first, else wait inside the turn with `pr_green.py --wait`,
+else hand back with the fleet's occupancy folded into `WAIT-OBSERVABLE` -- rather than a third
+rule stacked beside the two it removes.
 
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
@@ -328,6 +356,13 @@ only the lane can report.
 | `agents/developer/report.md` | 17,401 B | 19,100 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
+
+**#1114: `tests/test_baseline_matches_disk_1014.py` did not cover `developer_phases.DOCUMENTS`,
+and its two rows had already drifted from disk by the time the gap was found.** #1014 closed
+this exact gap for `agent_budgets.BUDGETS`, `skill_phases.DOCUMENTS` and `command_budgets.
+BUDGETS` -- a fourth module with the identical `check()` shape existed already and was not
+added to the comparison. Extended rather than re-derived; both rows above matched disk again
+by the time this landed, so no number in the table changed.
 
 ## The manager skill is a spine plus one file per phase
 
