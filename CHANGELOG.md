@@ -7,6 +7,291 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-09-06
+
+### Added
+
+- Added grouping to `scripts/select_issues.py` (#1068): a `candidates` result now also carries
+  `groups` -- suggested dispatchable lanes composed from `lane_setup.suggest_companions`, targeting
+  three members without padding, each member's own disposition and each group's own third state
+  (`candidates`/`none`/`could-not-tell`) preserved, and a short group naming why it is short. An
+  issue declaring no files is returned ungrouped rather than guessed into one (#267).
+
+- Added `scripts/prose_script_refs.py` and `tests/test_prose_script_refs_1070.py` (#1070):
+  guards that every `scripts/<name>.py` this plugin's own prose (`agents/`, `skills/`,
+  `commands/`) tells an agent to run actually exists on disk, and that every `--flag` a
+  documented command line hands one is a flag that script's own parser accepts. Mirrors
+  `tests/test_shipped_op_spellings.py` and `scripts/doctor_check_supertool_ops.py` (#197,
+  #582), which do the identical shape for supertool op spellings, aimed at this repo's own
+  scripts instead -- the calls prose makes far more often. Flags are derived by parsing each
+  script's source with `ast`, never by importing and running it, so scripts that build an
+  `argparse.ArgumentParser` and scripts that parse `sys.argv` by hand (`plugin_update.py`,
+  `select_issues.py`, `fleet_label.py`) are both covered without executing any side effects.
+  State-word vocabulary comparison (Tier 3) is explicitly out of scope, per the issue's own
+  reasoning.
+
+- Added an optional `lane_label` filter to `scripts/select_issues.py`'s `select()` payload (#1078):
+  when set, candidate generation narrows to issues carrying that one GitHub lane label (e.g.
+  `lane-dispatch`) before ranking runs, while the existing declared-file disjointness sweep stays
+  the admission check that decides which of the label-filtered issues actually ride together in
+  one developer lane. Absent, selection is unchanged. The label lane and the developer lane are
+  never conflated in the new code or its docstrings.
+
+- The status line reports two new counts instead of the removed `tick` field (#1079,
+  per the maintainer's own ruling on the issue): `0np 1nl` -- open issues carrying no
+  declared priority label, then open issues carrying no declared lane label, reported
+  separately rather than summed, since `dispatch_rank.py` cannot rank the first and the
+  second is simply one no triage sweep has placed -- and `trap 3` -- the number of
+  fragments in `trap.d/` awaiting `/oss:curate`, excluding `.gitkeep`. The unlabelled
+  counts are cached alongside the rest of the board, per this file's own no-network-call-
+  at-render rule; the trap count is a plain filesystem listing taken at render time. Both
+  fold to `?`, never `0`, when they could not be measured -- an unreadable `trap.d/`, or
+  a repository declaring no priority (or lane) spellings at all. `next_tick`,
+  `_scan_transcript`, `_tail_lines`, `_wakeup_input`, `_tick_field` and `_duration` are
+  removed with the field they served -- the last caller of each is gone, per this
+  repository's own rule against a helper kept alive for nobody.
+
+- Added `scripts/pr_green.py` (#1086): one call, several pull requests, states as exit codes
+  (`green`/`red`/`pending`/`could-not-read`) rather than prose an `until ... grep` loop has to
+  match -- the exact substring-collision bug `NOT ALL GREEN` contains `ALL GREEN` is removed
+  rather than guarded against. Scans in order and stops at the first pull request that is not
+  pending, with no wait-for-all; a `red` result carries the branch, the failing legs by name, the
+  sha they ran on and the shortest decisive failure line, enough to brief a developer from one
+  call. `agents/sub-manager.md` is wired to call it instead of hand-writing a CI wait loop.
+
+### Changed
+
+- Investigated #1045 (`--suggest-companions` reportedly citing the same file for every candidate):
+  could not reproduce against `scripts/lane_setup.py:suggest_companions`, including a fresh repro
+  with four candidates (two overlapping, one non-overlapping, one with no backtick-quoted path at
+  all) -- each candidate correctly returned its own overlap, and the fileless one correctly landed
+  in `undetermined` rather than as a false candidate. No code change; left open rather than closed,
+  since the original report was itself never independently reproduced.
+
+- Wire `ruff-format` as a supertool write-time formatter in `.supertool.json`, and format the
+  whole tree once so future diffs carry no formatting churn -- 401 of 550 Python files were
+  reformatted in that one pass. `.oss/` is excluded on both the lint and format sides
+  (`extend-exclude` plus `force-exclude` in `pyproject.toml`), because it is an owned path this
+  plugin replaces wholesale on every `/oss:scaffold` run: anything written there is reverted at
+  the next scaffold, and shows up as drift in `/oss:doctor`'s `owned files` line until it is.
+  Measured before excluding it: `ruff check .oss/` reported 0 findings, so
+  `scripts/ruff_ratchet.py`'s baseline of 99 is unchanged, before and after the reformat
+  (#1062).
+
+- Changed the selection family from five scripts (`dispatch_rank.py`, `preflight_check.py`,
+  `issue_claim.py`, `lane_setup.py`, `fleet_label.py`) into two entry points with no other
+  `__main__` in the family (#1069): `select_issues.py` (READ -- board in, ranked claimable
+  candidates out, now also reachable for the whole-board ranking receipt via `--board`, a
+  dispatched lane's size check via `--check-lane`, and a pre-flight code probe via
+  `--preflight`) and `lane_setup.py` (TAKE IT AND SET IT UP -- `--claim` now writes the
+  GitHub assignee for the primary issue and every `--claim-also` companion AND registers
+  the lane in one call, rolling the assignee write(s) back when the registration fails
+  (named states: `claimed` / `already-claimed` / `could-not-claim-assignee` /
+  `assignee-rolled-back` / `rollback-failed-assignee-still-set`); `--release` is the
+  mirror, releasing the lane record and the GitHub assignee together, closing the gap a
+  jit-context rule used to patch with a prose reminder to release by hand; `--label`
+  folds in `fleet_label.py`'s own composition, unchanged). Every renamed or folded
+  submodule (`select_issues_rank.py`, `select_issues_preflight.py`,
+  `select_issues_claim_read.py`, `select_issues_overlap.py`,
+  `select_issues_companions.py`, `lane_setup_claim.py`, `lane_setup_worktree.py`,
+  `lane_setup_patterns.py`, `lane_setup_label.py`) carries no `__main__`, following the
+  `doctor_check_*` precedent. All ~20 prose call sites across `SKILL.md`,
+  `phases/dispatch.md`, `phases/tick-order.md` and `phases/handback.md` were rewritten in
+  the same change; `scripts/prose_script_refs.py`'s own full-repo survey names zero
+  findings before and after.
+
+- Write down the merge policy: green and mergeable means merge, with no pre-merge rebase, `git
+  merge origin/main`, force-push or fresh matrix run unless something other than staleness demands
+  one. The default branch's own `push` run is the real backstop for a moved base, so a pre-merge
+  rebase was duplicating a run already being paid for rather than adding coverage (#1085).
+- Fix `skills/manager/phases/merge.md`'s #1007 worktree HEAD-comparison guard: the `git-worktrees`-
+  first fallback could never fire, because that op never emits a commit SHA and always answers with
+  a merged/occupancy verdict instead -- so the guard meant to catch a commit landing between a
+  tick's last look and a force-remove was nominally on and effectively off. The SHA comparison
+  (`git -C <worktree> rev-parse HEAD`) now runs unconditionally before any such force-remove,
+  never as a fallback (#1056).
+- State the four (really five) cases for whether a pending vs red default branch should block
+  dispatch, merge or release in `skills/manager/phases/dispatch.md` -- `gh-branch`'s `NOT GREEN`
+  covers both a failed leg and a leg that has not concluded, and those call for opposite behaviour.
+  A pending default branch never blocks dispatch or merge; a red one blocks dispatch; only the
+  release gate waits on the default branch at all; and the tick's own last merge is watched to
+  conclusion before the tick closes (#1084).
+
+- The scheduler no longer treats a `TICK: paused` handback as a resting state. `commands/tick.md`
+  step 7 now says that a wait a poller already covers is not a reason to idle: the event arrives
+  whether or not the session holds still, so the board is read and anything open and unstarted is
+  dispatched while the wait runs (#1087).
+
+### Fixed
+
+- Fixed `/oss:scaffold --apply` deleting a `01-oss` rule-layer file it had already
+  identified as another writer's -- `oss_rules.install()` used to `rmtree` the whole
+  layer before rewriting it, so a file like `claude-jit-context`'s own `01-paths.tsv`
+  was removed even though the scaffold's own warning said it belonged to a different
+  generator (#1042). `install()` now only removes files in a shape it could have
+  shipped itself (a `.md` rule or the index); everything else is left in place, and
+  the `--apply` receipt reports it as `kept` rather than `removed`.
+
+- `doctor_check_codeql_scan._local_families_outside_owned` walked the checkout with
+  `os.walk`'s default `onerror=None`, which silently swallows every `scandir` failure --
+  an unreadable subtree rendered identically to a genuinely empty one, so the documented
+  `problem` third state never fired and a checkout the tool could not read produced a
+  confident, wrong `owned-only`/`uncovered-outside-owned` verdict. `os.walk` is now given
+  an `onerror` callback that re-raises, making the existing `except OSError` arm
+  reachable (#1054).
+
+- `_resolve_slug` in `doctor_check_codeql_scan.py`, `doctor_check_security_settings.py`,
+  `doctor_check_security_alerts.py` and `doctor_check_branch_protection.py` interpolated
+  `.oss.json`'s `repo` into a `gh api repos/{}/...` call after nothing but an
+  `isinstance(str)` check -- a traversal-shaped slug (`"../secret"`, `"..%2f/x"`,
+  `"-X/POST"`, `"a/.."`) passed `oss_config.repo_problem` and would have reached `gh api`
+  unguarded. All four now route through a new shared `doctor._malformed_repo`, which
+  reuses `oss_config.repo_problem`'s `owner/name` shape check and additionally refuses a
+  literal `.`/`..` segment, a percent-encoded segment, and a segment starting with `-`
+  (#1055). `statusline._gh_rollups` picked up the same guard -- the one `repo`-only call
+  site #1051's own sweep did not reach.
+
+- Reject a `{m,n}` interval in `user_visible_paths` whose magnitude exceeds 32767, GNU
+  grep's documented `RE_DUP_MAX` -- the grep that actually runs the generated
+  changelog-gate guard, always on `ubuntu-latest` -- `oss_config._brace_interval_problem`
+  previously validated only the arrangement of an interval, not its magnitude, so a value
+  like `a{99999}` was accepted and then silently and permanently disabled the gate at
+  release time (`grep -Eq` exits 2, SYNTAX ERROR, which the guard cannot tell apart from
+  a genuine no-match) (#1058).
+- Stop `user_visible_paths_problem` from crashing with an uncaught `OverflowError` on a
+  `{...}` repetition count so large it exceeds Python's own `re` module's internal limit
+  -- found in self-review while testing #1058's magnitude check -- and return the same
+  stated refusal every other malformed regex value gets instead.
+
+- Stop misreading a `{` inside a POSIX ERE bracket expression (e.g. `[{]`) as an
+  interval opener in `user_visible_paths` -- `oss_config._brace_interval_problem`
+  now tracks bracket-expression state while scanning, honouring the leading `]`
+  or `^]` a bracket expression may start with, so a legitimate pattern like
+  `[{]` is accepted instead of refused for a syntax error that is not true of it
+  (#1059). Landed in the same scanning rewrite as #1058's magnitude check,
+  since both live in the same character-by-character loop; this entry adds the
+  dedicated regression tests.
+
+- Correct `oss_config._brace_interval_problem`'s docstring: it claimed an unbalanced
+  `a{` (no closing `}`) exits 2, SYNTAX ERROR, on BSD grep like a three-part interval
+  does. Re-measured directly on BSD grep 2.6.0-FreeBSD (macOS): `a{1,2,3}` still exits
+  2, but a bare `a{` exits 1, an ordinary no-match. The refusal itself is unchanged --
+  refusing a bare `a{` remains the conservative reading -- only the documented
+  evidence for it is fixed (#1060).
+
+- `scripts/ruff_ratchet.py` now gates on a set diff, not a bare count (#1061). A pull
+  request that fixed one pre-existing finding while introducing a different, unrelated one
+  used to leave the total count unchanged and the `lint` leg green -- exactly the case a
+  ratchet exists to catch. `scripts/ruff_ratchet_baseline.txt`, a checked-in snapshot of
+  every finding on this tree keyed by file, rule code and ruff's own message text, replaces
+  the frozen `BASELINE` integer; `--write-baseline` regenerates it. `ruff` is also now
+  pinned to an exact version (`ruff==0.16.3`) in both `.github/workflows/tests.yml` install
+  steps and in `requirements-dev.txt`, so a ruff release changing its own selected ruleset
+  cannot masquerade as a code regression.
+
+- Ask GitHub whether code-scanning **default setup** is configured before `/oss:doctor`'s
+  `CodeQL coverage` line recommends a CodeQL workflow. Default setup ships no workflow file
+  into the repository, so the local checkout walk this check performed could not tell a fully
+  scanned repository from an unscanned one -- and the remedy it printed, acted on, would have
+  displaced the scanner already running, since default and advanced setup are mutually
+  exclusive on GitHub. `GET /repos/{owner}/{repo}/code-scanning/default-setup` now answers in
+  three states: `configured` covering every locally-found family is `OK`; `configured` missing
+  one is still a `WARN` naming the gap; and a 403, a refused call or an unparseable body is
+  `could not tell`, never folded into either (#1062).
+
+- Fixed a stale committed copy of `.claude/jit-context/vocabulary/01-oss/00-index.tsv`
+  (a trailing tab on every row that `scripts/oss_rules.py`'s generator no longer
+  writes) and added `tests/test_rule_layer_sync_1063.py`, which regenerates every
+  `01-oss` rule-layer file this repository ships and compares it against what is
+  actually committed, so a future drift between the generator and the tracked copy
+  fails a test instead of shipping silently (#1063).
+
+- `bin/oss-workspace`'s #764 pre-launch route into `/oss:doctor` now carries a receipt (the verdict word plus the plugin version) recorded via `scripts/oss_state.py`. A WARN nothing can clear no longer pins every future launch to `/oss:doctor` -- the route arms only when there is no receipt, or when the verdict or the plugin version has moved since the one recorded. The `could not run` and unrecognised-verdict arms stay unrouted and unreceipted. (#1064)
+
+- Every forge-side `WARN` `scripts/doctor.py` can emit for a disabled security setting (secret scanning, secret scanning push protection, automated security fixes, Dependabot alerts, and the code-scanning/Dependabot/secret-scanning alert scanners) now names a runnable `gh api` command alongside the settings-page URL, so an agent -- not only a human -- can clear it in one call. `doctor.py`'s own module docstring is narrowed to the rule the code already follows: a per-line remedy belongs in `doctor.py`, the overall next command belongs in `commands/doctor.md`. Branch protection stays URL-only, deliberately: a safe generic command would need the CI check names this diagnostic has no reliable local source for. The CodeQL coverage false-positive WARN (#1062) is unchanged by this pull request and tracked separately. (#1065)
+
+- Fixed `scripts/select_issues.py`'s lane-collision path silently rendering a read failure as a
+  clean answer instead of `could-not-select` (#1067): `held_files` now carries an explicit
+  `lanes_read_ok`/`lanes_read_why` pair (documented producer: `lane_setup.derive_held_set`, named
+  beside the dispatch directive in `skills/manager/phases/dispatch.md`); the #998 refused-pattern
+  dark-input guard fires regardless of whether `held_files` happens to be populated; and a lane
+  pattern that resolves to zero files on disk is reported dark rather than passing as disjoint from
+  every live lane.
+
+- Fixed `lane_setup.py --claim` (#1069) failing to write the GitHub assignee on
+  Windows: every `gh` call in `select_issues_claim_read.py` passed the bare
+  string `"gh"` to `subprocess.run`, which on Windows reaches `CreateProcess`
+  with no directory and no extension -- and `CreateProcess` only auto-appends
+  `.exe`, never `.cmd`/`.bat`, so a `gh` resolvable only as a batch launcher was
+  read as absent and the claim's assignee half failed with
+  `could-not-claim-assignee` (observed on `pytest (windows-latest, 3.9/3.11/
+  3.12)`, PR #1107). `_run` now resolves the binary via `shutil.which` first,
+  the same precedent `lane_setup.py`'s own `read_board` already sets for
+  `supertool` (#317), and spawns the resolved path.
+
+- Fixed `doctor.py`'s label vocabulary check (#1075): zero lane labels used to render inside the
+  same `OK` line as a fully populated vocabulary (`OK ... 0 lane label(s). The triager can tag from
+  this today.`), distinguished only by a number a reader had to notice, and the sentence was false
+  the moment the vocabulary was empty. The lane half now gets its own line and its own three states
+  (`satisfied` / `none-declared` / `could-not-tell`, via the new `lane_label_state`), separate from
+  the priority verdict, and says what a lane label is for and what having none costs.
+
+- Fixed `lane_setup.py`'s derived guard set (#1094): `skills/manager/SKILL.md` and every
+  `skills/manager/phases/*.md` file now trigger `tests/test_command_references.py`, whose own
+  boundary-enumeration check reads all of them concatenated together -- a single touched phases
+  file can break it while `SKILL.md` itself stays byte-identical, which is exactly what reached CI
+  first on PR #1091 (7 of 18 legs red) instead of a lane's own narrowed local run. `known_guards()`
+  now enumerates six distinct guard tests, not five.
+
+- Corrected a stale citation in `.claude/jit-context/tools/00-manual/ci-evidence-is-about-one-commit.md`
+  (#1095): the rerun/stale-base rule cited `#1004`, an unrelated release-marker edit, where it
+  should have cited `#389` -- the same fix `skills/manager/phases/merge.md` already carries
+  since PR #1091.
+
+- Fixed `/oss:scaffold --apply` deleting a symlinked `01-oss` layer's TARGET (#1110):
+  `oss_rules.install()` checked whether each CHILD of a dimension's rule layer was a
+  symlink, but never asked the same question about the layer directory itself, so a
+  repository whose `.claude/jit-context/<dimension>/01-oss` is a committed directory
+  symlink had the link's target emptied of owned-shape files and rewritten -- and
+  `scaffold`'s preview printed the victim's files as `remove` rows before the write ever
+  ran. `install()` now refuses (`RulesError`) the moment any dimension's layer is a
+  symlink, before anything is removed for any dimension; `/oss:scaffold --apply` catches
+  that refusal and reports `FAIL` rather than a traceback; and `scaffold._layer_scan`
+  reports a symlinked layer as unreadable (`layer-symlinked`) instead of following it
+  into whatever it points at.
+
+- Fixed `/oss:scaffold --apply` writing through a symlinked *parent* of the rule layer
+  (#1116): #1110 refused a layer that was itself a symlink
+  (`.claude/jit-context/<dimension>/01-oss`), but `is_symlink()` answers about the final
+  path component only -- a symlink one or two levels higher, at `.claude/jit-context` or
+  at `.claude` itself, still left `layer` a real directory *inside the link's target*,
+  so the removal loop deleted the target's owned-shape files and `install()` wrote
+  there instead of into the managed repository. `scaffold._layer_scan`'s preview
+  followed the same link and printed the target's files as `remove` rows a maintainer
+  approves believing they describe their own repository. Both now walk every path
+  component from `.claude` down to the layer and refuse (as `RulesError` /
+  `layer-symlinked`, same as before) the moment any of them is a symlink, catching a
+  symlink at any parent depth rather than adding a third and fourth per-component
+  check. This also catches two cases a first, `Path.resolve()`-based version of this
+  fix (caught in review before landing) missed or mishandled: a parent symlinked to
+  *another real directory inside the same repository* -- which a containment check
+  alone would wave through, since it never leaves the repository root -- and a
+  symlink *loop*, which made `resolve()` itself behave inconsistently across Python
+  versions (raising, or silently giving up and returning a misleading answer) instead
+  of the clean refusal both functions otherwise guarantee. A further audit of this
+  fix's own redesign found a third gap: `is_symlink()`/`is_dir()` both raise
+  `PermissionError` for a candidate inside a directory this process cannot search
+  (a restrictive umask, a directory owned by another user, a shared CI cache -- none
+  of it adversarial), which used to propagate uncaught and crash both `install()`
+  and a non-mutating `--apply` preview. Now caught and converted into each
+  function's own existing refusal shape (`RulesError`, or `layer-symlinked`'s
+  sibling cause `directory-unwalkable`): "could not tell whether this is a symlink"
+  is treated as a refusal, not as "confirmed it is not one." No behaviour change for
+  the ordinary case, including a repository that keeps `.claude` itself as a
+  legitimate symlink onto another volume: that was already written through silently
+  before this fix and is refused now, same as a symlinked `.claude/jit-context` or
+  layer.
+
 ## [0.24.0] - 2026-09-05
 
 ### Added
@@ -8483,7 +8768,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.24.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.25.0...HEAD
+[0.25.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.25.0
 [0.24.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.24.0
 [0.23.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.23.0
 [0.22.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.22.0

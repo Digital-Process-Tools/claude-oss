@@ -566,44 +566,56 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.24.0` because that is the newest tag this repository has cut** --
-bumped by a developer lane (fix/1067, #1067/#1068) rather than inside the v0.24.0 release commit
-itself, after `tests/test_claude_md_currency.py` caught the gap: two changelog fragments landed on
-this branch, which armed the check, and the section still named `v0.23.0` though `v0.24.0` had
-already shipped -- meaning the release process's own stated exception (update this marker "inside
-the release commit") did not happen for v0.24.0. Filed as its own follow-up rather than patched
-silently; see the note below.
+**The marker below names `v0.25.0`, and it was written inside the v0.25.0 release commit** --
+the first time this section's own stated exception was actually honoured. For `v0.24.0` it was not:
+a developer lane (fix/1067, #1067/#1068) bumped it afterwards, caught by
+`tests/test_claude_md_currency.py` when two changelog fragments armed the check against a section
+still naming `v0.23.0`.
 
-**Only the version citation was re-derived here, not the substantive numbers below it, and that
-distinction matters more than usual this time.** Confirmed `v0.24.0` is commit `ef9a1bc` (`git
-rev-parse v0.24.0`), and that `git rev-list --count v0.23.0..v0.24.0` returns **17** commits (a
-merged-PR-equivalent proxy, not the same measurement the release session itself runs against
-squash-merge history -- treat this as reasoned, not the gate-3-audit-rounds/cohort-freeze figures a
-real release cut would produce). Never piping `git log` through `wc` for a count:
-`tests/test_git_count_proxy_236.py` guards against exactly that shape, because an empty range reads
-as `1` rather than `0` through the maintainer's own shell proxy, and zero is exactly the value a
-delta count needs to be able to say. **Gate 3's audit rounds, the cohort freeze, and the reach probe
-below were NOT re-derived for v0.24.0** -- they still describe `v0.23.0` (measured at `b45ef51`) and
-are left exactly as the v0.23.0 release session wrote them, because fabricating re-derived numbers
-without actually running gate 3's audit or a fresh cohort count would be worse than leaving last
-release's numbers correctly labelled as such. **The delta count, gate 3's audit rounds and the
-cohort freeze, as last actually measured, at `v0.23.0`:** **10** merged pull requests against
-`v0.22.0..HEAD`; gate 3's audit, **two rounds run to the hard cap** — round one, 4 findings, filed as
-`#1013`, `#1014`, `#1015`, `#1016`; round two, 4 more findings over the same delta, filed as `#1017`,
-`#1018`, `#1019`, `#1020` — none in either round landed in a ranking-table row marked blocking, so
-both rounds were filed rather than stopping the tag, per gate 3's own stated rule; and the cohort
-freeze, cohort-19 at **16** open issues against cohort-18's 8 — a cohort that grew rather than
-shrank, stated plainly rather than smoothed over, because 8 of the 16 are that release's own
-round-1 and round-2 findings landing in the same minute as the freeze that counts them. **The reach
-probe was not re-derived at v0.23.0 either** — it is still `v0.21.0`'s, measured at `c565488`,
+**The delta count, gate 3's audit rounds and the cohort freeze WERE re-derived for `v0.25.0`. The
+reach probe and the field readings were not.** Keeping those two halves apart is the point of this
+paragraph.
+
+**Delta, taken two ways that agree.** `v0.24.0` is commit `ef9a1bc`; `git rev-parse v0.24.0` returns
+`f7975de`, which is the annotated *tag object* rather than the commit -- the prior version of this
+paragraph cited that command as though it produced the commit, and it does not. **20** merged pull
+requests against `v0.24.0..HEAD`, reported `[EXACT]` from the forge's own search index, and `git
+rev-list --count v0.24.0..HEAD` independently returns **20**; the release op ran that cross-check
+itself and reported `RAN and AGREED`. Never piping `git log` through `wc` for a count:
+`tests/test_git_count_proxy_236.py` guards that shape, because an empty range reads as `1` rather
+than `0` through the maintainer's own shell proxy, and zero is exactly the value a delta count needs
+to be able to say. **That trap fired for real in this release, one command over**: `wc -l` over
+`gh-issues`'s own output read **32** open issues where there were **30**, because it counted the
+op's two header lines. The second route -- `gh-labels`'s own "over all 30 of them" -- is what caught
+it, which is the whole argument for taking a freeze two ways.
+
+**Gate 3, and this is the first release where its blocking arm actually fired.** Two rounds, the
+hard cap. Round one: 4 findings -- `#1110` (`containment (write)`, **blocking**), `#1111`, `#1112`,
+`#1113` -- plus `#1114` out of delta. Round two, over the range recomputed after `#1110`'s fix
+landed: 1 finding, `#1116`, **also `containment (write)`, also blocking**, and it was the round-one
+fix's own gap one directory up. **Neither blocking finding was filed-and-shipped; both stopped the
+tag and were fixed and merged before it moved** -- the rule's stated behaviour, never exercised here
+until now. A third audit, dispatched *outside* the gate because its two-round cap was already spent
+and the lane had flagged its own missing review round, found 3 more; one of them, `#1118`, carries an
+auditor's `containment (write)` rank **overturned** to `fails-to-preserve`, with the reasoning
+written into the issue so it can be re-argued rather than rediscovered. The uncomfortable half:
+**the two defects that came nearest to shipping were caught after the cap, not by it.**
+
+**Cohort freeze: cohort-21 at 30 open issues, against cohort-20's 12.** It grew, and by a lot.
+Stated plainly rather than smoothed over: **7 of the 30 are this release's own findings** (`#1109`,
+`#1111`, `#1112`, `#1113`, `#1114`, `#1118`, and `#1116` before it closed), so the review layer that
+produces them is working and the drain is not keeping pace. That is now two consecutive cohorts that
+grew for this same reason, which is a trend rather than an artefact.
+
+**The reach probe was NOT re-derived at `v0.25.0`** -- it is still `v0.21.0`'s, measured at `c565488`,
 eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of the field
 readings were not either: the owned-files table, the two installs and the `doctor` run are still
-`v0.17.0`'s, measured at `ad38b93` and now carried through **seven** tags (`v0.18.0` through
-`v0.24.0`). `#815` tracks re-deriving them, and a seventh release disclosing the identical,
+`v0.17.0`'s, measured at `ad38b93` and now carried through **eight** tags (`v0.18.0` through
+`v0.25.0`). `#815` tracks re-deriving them, and an eighth release disclosing the identical,
 unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low priority
 against everything else this loop spends a tick on, or the disclosure is not actually driving
 anyone to close it. Both are worth naming and neither is decided here — the honest content of this
-paragraph is the count itself, seven releases running, not a conclusion drawn from it. **The
+paragraph is the count itself, eight releases running, not a conclusion drawn from it. **The
 readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
 marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release
 commit, per this section's own stated exception, so a developer lane does not have to catch the gap
