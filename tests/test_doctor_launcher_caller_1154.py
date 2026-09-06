@@ -98,6 +98,32 @@ def test_update_with_no_caller_given_records_none(tmp_path):
     assert document.get("caller") != "launcher"
 
 
+def test_a_debounced_hook_call_does_not_overwrite_the_launchers_caller(tmp_path):
+    """MUST FIRE, the self-review finding: `bin/oss-workspace` writes a real
+    receipt with `caller="launcher"`; `hooks/session-start-update.sh` typically
+    fires moments later in the SAME session and lands inside the debounce
+    window with no `--caller` of its own. The debounced document must still
+    say `caller == "launcher"` -- it is echoing the launcher's real check, not
+    performing a new one as the hook -- or the very next `/oss:doctor` in that
+    session reads it as the hook's and gives the false `/reload-plugins`
+    advice #1154 exists to remove."""
+    launcher_receipt = {
+        "state": "updated",
+        "plugin": "oss",
+        "from": "0.11.0",
+        "to": "0.12.0",
+        "at": 1000.0,
+        "caller": "launcher",
+    }
+    debounced = plugin_update.update(
+        root=tmp_path,
+        receipt=launcher_receipt,
+        now=1005.0,  # 5s later -- inside DEBOUNCE_SECONDS (120)
+    )
+    assert debounced.get("debounced") is True
+    assert debounced.get("caller") == "launcher", debounced
+
+
 def test_main_forwards_a_caller_flag_to_update(tmp_path, monkeypatch):
     """`main()` is what `bin/oss-workspace` actually invokes -- the `--caller`
     argv flag must reach `update()` as the `caller=` keyword."""

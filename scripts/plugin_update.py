@@ -726,13 +726,18 @@ def update(
             # expires DEBOUNCE_SECONDS after the last REAL check regardless of how
             # many debounced calls happened in between.
             document["debounced"] = True
-            # `caller` reflects who is asking THIS call, not who ran the real check
-            # being debounced (#1154): the debounced document is what a caller
-            # standing right now receives, and it is that caller's own session
-            # doctor.check_auto_update reasons about -- so a stale "hook" left over
-            # from the last real check must not survive a debounced call the
-            # launcher makes moments before `exec claude`.
-            document["caller"] = caller
+            # `caller` stays whatever `dict(receipt)` above already copied through
+            # (#1154, self-review finding): it names who ran the REAL check this
+            # debounced call is echoing, not who happens to be asking right now.
+            # The launcher writes `caller="launcher"` on its synchronous, pre-`exec`
+            # call; `hooks/session-start-update.sh` typically fires moments later in
+            # the SAME session and lands inside the debounce window with no
+            # `--caller` of its own -- overwriting `caller` with THIS call's `None`
+            # would silently turn the receipt back into one `doctor.check_auto_update`
+            # reads as the hook's, reintroducing the exact false "/reload-plugins"
+            # claim this issue exists to remove, in the one sequence that matters
+            # most (an auditor spawn reproduced this end-to-end before this comment
+            # existed).
             document["detail"] = (
                 "a receipt from {:.0f}s ago is inside the {}s debounce window, so "
                 "nothing was re-checked; last result: {}".format(

@@ -8246,6 +8246,16 @@ def dependency_resolution_state(
     ``None``, which skips it entirely -- every existing caller of this function
     passes neither, and a stat-based check appearing under their feet would be a
     silent behaviour change for callers that never asked for it.
+
+    ``record`` (the install-record FILE this function's own `active_versions` call
+    reads) and ``plugins_root`` (the plugins ROOT DIRECTORY `resolved_plugin_root`
+    reads `installed_plugins.json` and `cache/` beneath) must name the same
+    install root for the `broken-install` check to mean anything -- a caller
+    supplying one but not the other could have `active_versions` and
+    `resolved_plugin_root` disagree about which version is "active". Today's one
+    caller, `check_dependency_resolution`, never supplies `plugins_root`
+    independently of `record`, so this cannot currently happen; noted here for the
+    next caller that might (self-review finding, #1126).
     """
     active = active_versions(names, record=record)
     repos = {} if repos is None else repos
