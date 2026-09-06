@@ -311,3 +311,168 @@ def test_compute_claim_with_a_failing_companion_composes_x2_end_to_end(tmp_path,
     label = lane_setup.compose_claim_label(payload, "auto-update path")
     assert label["state"] == "rendered"
     assert label["text"] == "Lane 1 x2  auto-update path"
+
+
+# --------------------------------------------------------------- review findings (#1143 self-review)
+
+
+def test_brief_without_subagent_type_is_refused_at_the_argparse_level():
+    """Self-review finding (Explore + oss:auditor, #1143): --brief's own help
+    text says 'required together with --subagent-type', but only the reverse
+    direction was ever enforced -- a --brief given without --subagent-type
+    was silently accepted and never read at all, which contradicts the
+    documented contract and gives no diagnostic that the brief was never
+    checked."""
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "999",
+            "--claim",
+            "--lane",
+            "a.py",
+            "--phrase",
+            "x",
+            "--brief",
+            "/does/not/matter.md",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode == 2
+    assert "--brief requires --subagent-type" in result.stdout
+
+
+def test_phrase_and_subagent_type_without_brief_is_still_refused():
+    """Positive control paired with the test above: the pre-existing
+    direction (--subagent-type requires --brief) must not regress."""
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "999",
+            "--claim",
+            "--lane",
+            "a.py",
+            "--phrase",
+            "x",
+            "--subagent-type",
+            "oss:developer",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode == 2
+    assert "--subagent-type requires --brief" in result.stdout
+
+
+def test_claim_with_phrase_alone_is_not_refused_at_the_argparse_level():
+    """Positive control: --claim --phrase with neither --subagent-type nor
+    --brief is a legitimate call (label-only render) and must not be caught
+    by either new refusal."""
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "999",
+            "--claim",
+            "--lane",
+            "a.py",
+            "--phrase",
+            "x",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert result.returncode != 2
+
+
+def test_main_end_to_end_refuses_the_agent_call_on_a_structural_brief_finding(
+    tmp_path, monkeypatch
+):
+    """Self-review finding (Explore, #1143): the new argparse validation and
+    the final print/exit-code block in main() had zero coverage through
+    main()/argv -- only the library functions were exercised directly. This
+    drives the whole CLI path, including the exit-code override, for the
+    refusal case."""
+    import json
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    worktree_root = tmp_path / "worktrees"
+    config = {
+        "repo": "example/example",
+        "default_branch": "main",
+        "branch_pattern": "fix/{issue}",
+        "test_command": "true",
+        "docs_targets": [],
+        "changelog_dir": "changelog.d",
+    }
+    (repo / lane_setup.CONFIG_NAME).write_text(json.dumps(config))
+
+    monkeypatch.setattr(
+        lane_setup,
+        "resolve_base",
+        lambda *a, **k: {
+            "state": "resolved",
+            "remote": "origin",
+            "ref": "origin/main",
+            "sha": "a" * 40,
+            "detail": "",
+        },
+    )
+    monkeypatch.setattr(lane_setup, "branch_occupancy", lambda *a, **k: (False, False))
+    monkeypatch.setattr(
+        lane_setup, "read_board", lambda repo: {"state": "ok", "lines": [], "detail": ""}
+    )
+    real_load = lane_setup.oss_config.load
+
+    def fake_load(path):
+        cfg, problems = real_load(path)
+        if cfg is not None:
+            cfg = dict(cfg)
+            cfg["worktree_root"] = str(worktree_root)
+        return cfg, problems
+
+    monkeypatch.setattr(lane_setup.oss_config, "load", fake_load)
+    monkeypatch.setattr(
+        lane_setup.select_issues_claim_read,
+        "check",
+        lambda numbers, mode, repo=None: (
+            [_row(n, claim_read.STATE_CLAIMED) for n in numbers]
+            if mode == "claim"
+            else [_row(n, claim_read.STATE_RELEASED) for n in numbers]
+        ),
+    )
+
+    brief = tmp_path / "brief.md"
+    brief.write_text("nothing useful here at all", encoding="utf-8")
+
+    exit_code = lane_setup.main(
+        [
+            "1",
+            "--repo",
+            str(repo),
+            "--claim",
+            "--lane",
+            "a.py",
+            "--phrase",
+            "auto-update path",
+            "--subagent-type",
+            "oss:developer",
+            "--brief",
+            str(brief),
+        ]
+    )
+    assert exit_code == lane_setup.EXIT_COULD_NOT_RUN

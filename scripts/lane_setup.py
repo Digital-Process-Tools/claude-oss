@@ -1720,6 +1720,14 @@ def main(argv=None):
             "--subagent-type requires --brief -- rendering a call that "
             "dispatches means checking the brief it dispatches first (#1143)"
         )
+    if args.brief is not None and args.subagent_type is None:
+        # Self-review finding (Explore + oss:auditor, #1143): the reverse of
+        # the check above was never enforced, so a --brief given without
+        # --subagent-type was silently accepted and never read at all --
+        # compose_claim_label only ever calls check_path when subagent_type
+        # is given. --brief's own help text already promised this direction;
+        # nothing checked it.
+        parser.error("--brief requires --subagent-type (#1143)")
 
     if args.label:
         for flag_name, flag_value in (
