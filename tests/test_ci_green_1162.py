@@ -25,7 +25,6 @@ restate. This module pins:
   what `CLAUDE.md`'s standing rule against duplicated facts forbids.
 """
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -35,6 +34,27 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import skill_phases  # noqa: E402
 
 CI_GREEN = "skills/manager/phases/ci-green.md"
+
+
+def _grep_rl(pattern, dirs):
+    """Pure-Python equivalent of `grep -rl PATTERN DIRS...` -- no external
+    binary, so this cannot fail with an unspawnable-tool error on a runner
+    that lacks (or PATH-hides) a `grep` executable (#1162 self-review)."""
+    named = set()
+    for d in dirs:
+        base = ROOT / d
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            if pattern in text:
+                named.add(str(path.relative_to(ROOT).as_posix()))
+    return named
 
 
 def test_ci_green_phase_file_exists_and_is_registered():
@@ -55,14 +75,7 @@ def test_ci_green_pins_the_not_all_green_substring_trap():
 
 
 def test_pr_green_named_in_the_shared_file_and_both_agents():
-    out = subprocess.run(
-        ["grep", "-rl", "pr_green", "agents", "skills", "commands"],
-        cwd=str(ROOT),
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
-    named = set(out.splitlines())
+    named = _grep_rl("pr_green", ["agents", "skills", "commands"])
     assert CI_GREEN in named, named
     assert "agents/sub-manager.md" in named, named
     assert "agents/releaser.md" in named, named
