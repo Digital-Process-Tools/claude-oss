@@ -429,18 +429,24 @@ def _render(entry):
         for leg in entry["failing"]:
             lines.append(
                 "  FAILED {0} (workflow: {1}, conclusion: {2})".format(
-                    _flatten(leg["name"]), leg.get("workflow") or "?", leg["conclusion"]
+                    _flatten(leg["name"]),
+                    _flatten(leg.get("workflow") or "?"),
+                    leg["conclusion"],
                 )
             )
             if leg.get("log_line"):
                 lines.append("    {0}".format(leg["log_line"]))
         return "\n".join(lines)
     # STATE_PENDING
+    # #1113 self-review: `pending_legs` entries come from the identical
+    # forge-controlled `name`/`context` source as `leg["name"]` above --
+    # flattened for the same reason.
     return "#{0} | PENDING | branch: {1} | sha: {2} | still running: {3}".format(
         entry["pr"],
         entry.get("branch", "?"),
         entry.get("sha", "?"),
-        ", ".join(entry.get("pending_legs", [])) or "(rollup not yet reported)",
+        ", ".join(_flatten(leg) for leg in entry.get("pending_legs", []))
+        or "(rollup not yet reported)",
     )
 
 
