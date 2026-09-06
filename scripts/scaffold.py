@@ -2010,26 +2010,32 @@ def _layer_scan(repo_root, dimensions):
     target's contents are never listed at all.
     """
     root = Path(repo_root)
-    root_resolved = root.resolve()
     found = []
     unreadable = []
+    # `RULES_LAYER_DIR` split into its own literal components, because
+    # `oss_rules._symlinked_ancestor` must check each one individually (`.claude`,
+    # then `jit-context`, then the dimension, then the layer) rather than joining
+    # `.claude/jit-context` in one step -- checking the combined path in one lstat
+    # would still have to traverse through `.claude` to reach the entry, which is
+    # exactly the loop-risking traversal the component walk exists to avoid (#1116).
+    layer_dir_parts = tuple(RULES_LAYER_DIR.split("/"))
     for dimension in sorted(dimensions):
         relative = "{}/{}/{}".format(RULES_LAYER_DIR, dimension, oss_rules.LAYER)
         layer_dir = root / RULES_LAYER_DIR / dimension / oss_rules.LAYER
-        if layer_dir.is_symlink():
-            unreadable.append(_unreadable(relative, CAUSE_LAYER_SYMLINKED))
-            continue
-        # `is_symlink()` above answers about `layer_dir`'s own final component only
-        # (#1116): a symlink at a PARENT -- `.claude/jit-context/<dimension>`,
+        # `is_symlink()` on `layer_dir` alone answers about its final path component
+        # only (#1116): a symlink at a PARENT -- `.claude/jit-context/<dimension>`,
         # `.claude/jit-context`, or `.claude` itself -- leaves `layer_dir` a real
-        # directory INSIDE the link's target, so `is_symlink()` is False and
-        # `os.listdir` below would follow it there, reporting the target's own files
-        # as `remove` rows for a repository that does not own them (#1110's exact
-        # shape, one parent higher). `resolve()` follows every symlink in the path,
-        # not just the last component, so this catches all three depths at once.
-        try:
-            layer_dir.resolve().relative_to(root_resolved)
-        except ValueError:
+        # directory INSIDE the link's target, so `os.listdir` below would follow it
+        # there, reporting the target's own files as `remove` rows for a repository
+        # that does not own them (#1110's exact shape, one parent higher).
+        # `_symlinked_ancestor` walks every component top-down and stops before ever
+        # descending into a symlinked one, which is what makes it immune to a
+        # symlink LOOP too -- see its own docstring for why a `resolve()`-based
+        # containment check was tried here first and abandoned.
+        ancestor = oss_rules._symlinked_ancestor(
+            root, layer_dir_parts + (dimension, oss_rules.LAYER)
+        )
+        if ancestor is not None:
             unreadable.append(_unreadable(relative, CAUSE_LAYER_SYMLINKED))
             continue
         try:

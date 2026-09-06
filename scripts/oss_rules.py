@@ -880,6 +880,45 @@ def index_rows(dimension, rules):
     return rows
 
 
+def _symlinked_ancestor(root, relative_parts):
+    """The first path, built by joining `relative_parts` onto `root` one at a time,
+    that is a symlink -- or `None` if none of them are (#1116).
+
+    Checked top-down and stopped the moment a candidate does not exist as a
+    directory, because that means there is nothing further down to check: an
+    absent `.claude` cannot have a symlinked `jit-context` inside it. That
+    short-circuit is also what keeps this immune to a symlink LOOP
+    (`.claude -> b`, `b -> .claude`): `is_symlink()` on a candidate is an `lstat`
+    on an entry inside its own parent, which this function has already confirmed
+    is a real, non-symlinked directory before ever descending into it -- so the OS
+    never has to follow a link to find the next candidate, and never has the
+    chance to raise the loop-detection error `Path.resolve()` does, inconsistently
+    across Python versions -- a `Path.resolve()`-based version of this fix was
+    tried here first and abandoned over exactly that inconsistency: `RuntimeError`
+    on 3.11 (observed), a silent, unhelpful non-raising fallback that returns the
+    path UNRESOLVED on 3.13 (observed, on two different machines, for two
+    different loop shapes), and -- because that non-raising fallback would still
+    let install() proceed to a plain filesystem write against the very loop it
+    failed to detect -- an uncaught `OSError` several lines later, at
+    `layer.mkdir()`, once that write actually touches the loop (observed on
+    3.13). Windows reparse-point loop detection is reasoned, not observed, to
+    surface as a further `OSError` shape neither of the above. A containment
+    check against `Path.resolve()` was tried and abandoned for a second reason
+    too: it answers "does this stay under root", which a parent symlinked to
+    ANOTHER REAL DIRECTORY INSIDE THE SAME REPOSITORY still satisfies while still
+    being exactly the write-through-a-link case this exists to catch. Walking
+    components directly sidesteps both problems at once.
+    """
+    current = root
+    for part in relative_parts:
+        current = current / part
+        if current.is_symlink():
+            return current
+        if not current.is_dir():
+            return None
+    return None
+
+
 def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     """Replace this plugin's rule layer. Returns the paths written.
 
@@ -900,8 +939,9 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     layer ships either way -- omitting the rule would leave the reader with no statement
     at all, where the defect was a statement about a different repository.
 
-    Raises `RulesError` if any dimension's layer is a symlink (#1110): this module
-    never replaces a layer through a link, only a real directory it owns outright.
+    Raises `RulesError` if any dimension's layer, or any PARENT of it, is a symlink
+    (#1110, #1116): this module never replaces a layer through a link, only a real
+    directory it owns outright.
     """
     root = Path(repo_root)
     if root.exists() and not root.is_dir():
@@ -918,26 +958,18 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     # directory symlink -- so a `.claude/jit-context/<dimension>/01-oss` that is a
     # committed link would otherwise have its TARGET emptied of owned-shape files and
     # then written into, and `layer.mkdir(..., exist_ok=True)` would succeed because the
-    # link already exists (#1110). `is_symlink()` is checked ahead of and separately
-    # from `exists()`: it is true for a broken link too, which `exists()` alone would
-    # read as "layer absent" and walk straight past.
-    # `is_symlink()` on `layer` alone answers about its final path component only
-    # (#1116): a symlink at any PARENT -- `.claude/jit-context/<dimension>`,
-    # `.claude/jit-context`, or `.claude` itself -- leaves `layer` a real directory
-    # INSIDE the link's target, so `is_symlink()` is False and `exists()`/`is_dir()`
-    # are both True, walking straight past every check below and into the removal
-    # loop against a directory this repository does not own. Resolved once, outside
-    # the loop, because it names the same tree on every dimension.
-    root_resolved = root.resolve()
-
+    # link already exists (#1110).
     for dimension in rendered:
         layer = root / ".claude" / "jit-context" / dimension / LAYER
-        if layer.is_symlink():
+        ancestor = _symlinked_ancestor(
+            root, (".claude", "jit-context", dimension, LAYER)
+        )
+        if ancestor is not None:
             raise RulesError(
                 "{}: {} is a symlink, not a directory this plugin owns -- install() "
                 "replaces the whole layer, which would delete and rewrite through the "
                 "link into whatever it points at. Remove the link (or move it aside if "
-                "it was committed on purpose) and rerun.".format(dimension, layer)
+                "it was committed on purpose) and rerun.".format(dimension, ancestor)
             )
         # A tracked symlink checked out with `core.symlinks=false` (the historical
         # Windows default without the privilege or Developer Mode) never becomes a
@@ -949,24 +981,6 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
         # traceback contract this loop exists to keep, on the same "layer" variable.
         elif layer.exists() and not layer.is_dir():
             raise RulesError("{}: {} is not a directory".format(dimension, layer))
-        # The containment check (#1116): resolve `layer` and confirm the result is
-        # still under `root`. `Path.resolve()` follows every symlink in the path, not
-        # just the last component, so a symlinked `jit-context` or `.claude` above
-        # resolves `layer` to somewhere under the LINK'S TARGET instead -- caught here
-        # regardless of whether `layer` itself exists yet, because `layer.mkdir(...)`
-        # below would otherwise silently create and write through a symlinked parent
-        # even when there is no pre-existing layer directory to empty first.
-        resolved_layer = layer.resolve()
-        try:
-            resolved_layer.relative_to(root_resolved)
-        except ValueError:
-            raise RulesError(
-                "{}: {} resolves to {}, outside {} -- a parent directory in this path "
-                "is a symlink, and install() replaces the whole layer, which would "
-                "delete and rewrite through the link into whatever it points at. "
-                "Remove the link (or move it aside if it was committed on purpose) "
-                "and rerun.".format(dimension, layer, resolved_layer, root_resolved)
-            )
 
     for dimension, layer_rules in rendered.items():
         layer = root / ".claude" / "jit-context" / dimension / LAYER

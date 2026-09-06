@@ -1118,6 +1118,81 @@ def test_install_refuses_a_symlinked_dot_claude_parent(tmp_path):
     assert (control_layer / oss_rules.INDEX).exists()
 
 
+def test_install_refuses_a_symlinked_jit_context_parent_pointing_inside_the_repo(
+    tmp_path,
+):
+    """#1116, found in review of this fix's own first draft: a containment check
+    ("is the resolved layer still under root") is not enough. A parent symlinked to
+    ANOTHER REAL DIRECTORY INSIDE THE SAME REPOSITORY still resolves under root and
+    would pass a mere containment check, while still being exactly the
+    write-through-a-link case this whole issue is about -- the target here just
+    happens to also live inside the repo tree.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    other = root / "other-place"
+    layer_target = other / "paths" / oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    victim = layer_target / "something.md"
+    victim.write_text("--- decoy content, not this plugin's ---\n", encoding="utf-8")
+    victim_index = layer_target / oss_rules.INDEX
+    victim_index.write_text("decoy\tindex\n", encoding="utf-8")
+
+    link = root / ".claude" / "jit-context"
+    link.parent.mkdir(parents=True)
+    try:
+        link.symlink_to(other, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether install() refuses a jit-context parent "
+            "symlinked to another directory inside the same repo".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+    assert (
+        victim.read_text(encoding="utf-8")
+        == "--- decoy content, not this plugin's ---\n"
+    )
+    assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
+    assert link.is_symlink()
+
+
+def test_install_refuses_rather_than_crashes_on_a_symlink_loop(tmp_path):
+    """#1116, found in review: a symlink LOOP (`.claude -> b`, `b -> .claude`) is a
+    third shape again, distinct from both a plain symlinked parent and one pointing
+    inside the repo. `Path.resolve()` handles a loop inconsistently across Python
+    versions -- raising `RuntimeError` on some, `OSError` on others, and silently
+    giving up and returning an unresolved (and here misleadingly "clean-looking")
+    path on at least one observed build, which would let a resolve()-based
+    containment check wave the loop through only for `layer.mkdir()` to blow up
+    later with an uncaught `OSError`. `install()` must refuse cleanly either way,
+    not raise a caller has no reason to expect from a rules layer install.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    claude = root / ".claude"
+    other_end = tmp_path / "loop-partner"
+    try:
+        claude.symlink_to(other_end, target_is_directory=True)
+        other_end.symlink_to(claude, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink loop here (errno "
+            "{}, {}): untested here is whether install() refuses a symlink loop "
+            "cleanly rather than crashing".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    with pytest.raises(oss_rules.RulesError):
+        oss_rules.install(root)
+
+
 def test_install_refuses_a_layer_checked_out_as_a_plain_file(tmp_path):
     """A tracked symlink checked out with `core.symlinks=false` (the historical
     Windows default lacking the privilege or Developer Mode) never becomes a

@@ -1615,6 +1615,75 @@ def test_layer_scan_reports_a_symlinked_dot_claude_parent_as_unreadable(tmp_path
     ], unreadable
 
 
+def test_layer_scan_reports_a_jit_context_symlink_pointing_inside_the_repo(tmp_path):
+    """#1116, found in review of this fix's own first draft: a mere containment
+    check ("is the resolved path still under root") is not enough -- a parent
+    symlinked to another real directory INSIDE the same repository still resolves
+    under root and would slip past a containment-only check while still being the
+    write-through-a-link case this exists to catch.
+    """
+    other = tmp_path / "repo" / "other-place"
+    layer_target = other / "paths" / scaffold.oss_rules.LAYER
+    layer_target.mkdir(parents=True)
+    (layer_target / "something.md").write_text("decoy\n", encoding="utf-8")
+
+    root = tmp_path / "repo"
+    link = root / scaffold.RULES_LAYER_DIR
+    link.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        link.symlink_to(other, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink here (errno {}, {}): "
+            "untested here is whether _layer_scan refuses a jit-context parent "
+            "symlinked to another directory inside the same repo".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    present, unreadable = scaffold._layer_scan(root, {"paths": {}})
+
+    assert present == [], present
+    relative = "{}/paths/{}".format(scaffold.RULES_LAYER_DIR, scaffold.oss_rules.LAYER)
+    assert unreadable == [
+        {"path": relative, "cause": scaffold.CAUSE_LAYER_SYMLINKED}
+    ], unreadable
+
+
+def test_layer_scan_reports_a_symlink_loop_as_unreadable_not_a_crash(tmp_path):
+    """#1116, found in review: a symlink LOOP is a third shape again, and
+    `_layer_scan`'s own docstring promises it "never raises" -- a promise a
+    `resolve()`-based check could break, since `resolve()` handles a loop
+    inconsistently across Python versions (see `oss_rules._symlinked_ancestor`'s
+    docstring). `_layer_scan` has no `try/except` at its call site
+    (`scaffold.py`'s `plan_rules()`), so an uncaught exception here crashes even a
+    non-mutating preview run.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    claude = root / ".claude"
+    other_end = tmp_path / "loop-partner"
+    try:
+        claude.symlink_to(other_end, target_is_directory=True)
+        other_end.symlink_to(claude, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(
+            "this platform would not create a directory symlink loop here (errno "
+            "{}, {}): untested here is whether _layer_scan reports a symlink loop "
+            "cleanly rather than crashing".format(
+                getattr(exc, "errno", None), type(exc).__name__
+            )
+        )
+
+    present, unreadable = scaffold._layer_scan(root, {"paths": {}})
+
+    assert present == [], present
+    relative = "{}/paths/{}".format(scaffold.RULES_LAYER_DIR, scaffold.oss_rules.LAYER)
+    assert unreadable == [
+        {"path": relative, "cause": scaffold.CAUSE_LAYER_SYMLINKED}
+    ], unreadable
+
+
 def test_layer_scan_still_lists_an_ordinary_real_directory_layer(tmp_path):
     """The positive control for the test above: this confirms `_layer_scan` still does
     its normal job -- listing stale files as `present` -- for a real directory, so
