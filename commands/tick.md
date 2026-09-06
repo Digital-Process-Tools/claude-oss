@@ -103,9 +103,13 @@ Seven answers, not three, and only one of them is the ordinary case:
   own fresh context: re-deriving the release state (the trigger, the config, the range) from the
   repo is what a releaser's own first step is for, and handing it a summary this session already
   holds risks handing it something already stale by the time it reads it. `agents/releaser.md`
-  reports one of three states — `RELEASE: released` / `refused` / `could-not-run` — never a
-  `TICK:` handback, so read it directly rather than through `scripts/tick_handback.py`, which
-  classifies a sub-manager's report and knows nothing about a releaser's.
+  reports one of four states — `RELEASE: released` / `refused` / `could-not-run` / `paused` — never
+  a `TICK:` handback. Classify it with `scripts/release_handback.py` (#1041), the same shape
+  `scripts/tick_handback.py` gives a sub-manager's report, rather than reading it by eye. A `paused`
+  releaser names what it set in motion and what clears it (`WAIT-DISPATCH:`/`WAIT-OBSERVABLE:`), the
+  same two facts a `paused` sub-manager hands back below — wait on the named observable and resume
+  the same releaser with `SendMessage`, never a fresh spawn: a fresh one re-derives from gate 1
+  instead of the gate it actually paused at.
 - **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
   names it — the same naming step 7 below always asked of a tick that ends blocked.
 - **`paused`** — the `WAIT-DISPATCH:` and `WAIT-OBSERVABLE:` lines name what this tick set in motion

@@ -273,8 +273,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     ),
     # Re-baselined for #1014: 10381 B on disk against a stale 10195 declared
     # baseline. Budget unchanged; comfortably under it either way.
+    # Re-baselined for #1043: 10381 B became 11037 B -- gate 3's disposition
+    # (round + verdict + blocking -> proceed/stop-tag/carry-forward) is now
+    # computed by scripts/gate3_disposition.py rather than re-derived from
+    # prose each release, after a releaser misread the round-two
+    # carry-forward rule as applying to round one and shipped over a
+    # round-one findings verdict. Budget unchanged; still under it.
     "skills/manager/phases/release.md": (
-        10381,
+        11037,
         11200,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
