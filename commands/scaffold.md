@@ -5,16 +5,12 @@ allowed-tools: Bash
 
 A maintained repo needs more than a loop pointed at it: a CLAUDE.md so the next agent starts
 oriented, a security policy so a reporter knows where to go, issue and PR templates so a report
-arrives with what it needs. These drift between sibling repos exactly the way the loop itself did —
-one repo ends up with none of it, another with a differently-worded copy.
+arrives with what it needs.
 
 This is **not** part of `/oss:setup`. Setup writes one untracked local file and changes nothing
 tracked, so it is safe to run anywhere. Scaffolding writes files *into* the repo, which is a real
-change that wants a branch, a diff and a review.
-
-Setup does end by running the **plan** below — the read-only invocation, never `--apply` — so the
-furniture gap reaches the maintainer measured rather than recommended (#136). The plan writes
-nothing, so that costs the boundary nothing. Every write lives here.
+change that wants a branch, a diff and a review. Setup does end by running the **plan** below — the
+read-only invocation, never `--apply` (#136). Every write lives here.
 
 ## Show first
 
@@ -29,9 +25,7 @@ A repo that already has every default still gets three `replace` lines for the t
 file; that is the destructive half of the apply, previewed.
 
 The `PLAN:` line counts the rule layer too — `…, 3 declined (already covered elsewhere), 7 rule
-file(s) replaced in the 01-oss layer`. Until #182 it did not, so a run against a repo with every
-default present and a changelog gate already running printed `PLAN: 0 to create, 11 already present,
-3 declined` for a run whose only effect was to delete and rewrite the layer.
+file(s) replaced in the 01-oss layer` (#182).
 
 One `layer` line follows the rows and says which of the changelog rule's four sentences the preview
 picked and where that answer came from — including when the answer depends on a file *this run would
@@ -39,9 +33,9 @@ create*, which it says rather than guessing at. A layer directory that could not
 own `layer` line, because what would be deleted from it is unknown rather than nothing.
 
 The plan runs the same four checks the apply does, and one of them — `label` — reads the
-repo's label list from the forge. So the preview is read-only but no longer strictly
+repo's label list from the forge. So the preview is read-only but not strictly
 offline: it can make one `gh` call, capped at 20 seconds, and it says so in the line when
-it could not. That is the price of the preview reporting the same thing the apply will.
+it could not.
 
 That names the plan but not the content, and the content is what actually needs a look. Get it with
 `--show`:
@@ -54,17 +48,14 @@ Prints the full body of every file `apply` would actually write — nothing writ
 plan alone. That covers both halves of `apply`: files it would **create** (a template absent today)
 and files it would **replace** (everything in OWNED — `.oss/README.md`, `.oss/assemble_changelog.py`,
 `.github/workflows/oss-changelog.yml` — plus every file in the `01-oss` rule layer, all rewritten on
-every single run whether or not a template is missing). Each line says which: a repo that already has
-every default still gets three `replace` lines for the trio and one per rule file out of a bare
-`--show`, because that is the destructive half of `apply` and the one a preview is for. The rule
-bodies are printed in full, and that is the point of printing them — they are markdown a hook injects
-into a model's context on a match, so they are the generated content most worth reading before it
-lands. Name one file (`--show CLAUDE.md`, or `--show .claude/jit-context/paths/01-oss/oss-config.md`)
-to see just that one, including a file already `present`,
-when the question is what the default itself contains rather than whether it would be written.
-`--show` and `--apply` refuse to run together — show, read it, then apply as a separate step. Relay
-the plan and what each generated file would contain before going further — a default that nobody read
-is not a default, it is a surprise.
+every single run whether or not a template is missing). Each line says which. The rule bodies are
+printed in full, because they are markdown a hook injects into a model's context on a match, so they
+are the generated content most worth reading before it lands. Name one file (`--show CLAUDE.md`, or
+`--show .claude/jit-context/paths/01-oss/oss-config.md`) to see just that one, including a file
+already `present`, when the question is what the default itself contains rather than whether it would
+be written. `--show` and `--apply` refuse to run together — show, read it, then apply as a separate
+step. Relay the plan and what each generated file would contain before going further — a default that
+nobody read is not a default, it is a surprise.
 
 ## Then write
 
@@ -80,40 +71,28 @@ The owned changelog trio follows the same rule from a different direction: befor
 run looks for a changelog gate this repo already runs under a different name — another workflow
 mentioning `assemble_changelog`, naming the fragment directory, or referencing the `no-changelog`
 label; or an `assemble_changelog*` file anywhere in the tree. A hit **declines** the trio instead of
-writing it, and prints why, next to a `changelog` finding that names what it found. Two gates
-checking the same thing on every pull request — two jobs both named `fragment`, two assemblers, a
-check count that moves by one with nothing pointing at it — is not a corrected default, it is the
-defect #86 and #105 both filed. `--force-owned` writes the trio anyway, for a maintainer who checked
-the match by hand and decided it is not a real conflict; nothing here creates that decision for you.
-A workflow that could not be read counts the same as one that matched — the direction that matters is
-never writing a second gate on top of a working one, so an unreadable file is treated as a possible
-collision rather than a clean repo.
+writing it, and prints why, next to a `changelog` finding that names what it found (#86, #105).
+`--force-owned` writes the trio anyway, for a maintainer who checked the match by hand and decided it
+is not a real conflict; nothing here creates that decision for you. A workflow that could not be read
+counts the same as one that matched — the direction that matters is never writing a second gate on
+top of a working one, so an unreadable file is treated as a possible collision rather than a clean
+repo.
 
-Same for a **directory** the walk could not enter (#124). That used to be unreportable rather than
-untreated: `Path.rglob` swallows a permission error mid-walk and simply yields nothing for the
-subtree, so "read the whole tree, no gate here" and "could not finish reading the tree" arrived as
-the identical answer and the trio was written on the strength of it. The walk now names what it
-could not enter, and the plan `decline`s with that as the reason.
+Same for a **directory** the walk could not enter (#124): the walk names what it could not enter, and
+the plan `decline`s with that as the reason.
 
-The same walk stopped counting things that are not gates. Derived and vendored trees are not
-evidence that anything runs — the skip list already said so for `dist`, `build`, `node_modules` and
-a virtualenv, and `__pycache__` was the Python one it was missing, so a gitignored
-`assemble_changelog.*.pyc` used to decline the trio on its own once the source beside it was
-deleted. Skips now match at every depth rather than on the first path component. A dangling symlink
-is not a gate either; a name that cannot be stat'd at all is reported as unreadable rather than as
-one.
+The same walk does not count things that are not gates. Derived and vendored trees are not evidence
+that anything runs — `dist`, `build`, `node_modules`, a virtualenv and `__pycache__` are skipped, at
+every depth rather than on the first path component. A dangling symlink is not a gate either; a name
+that cannot be stat'd at all is reported as unreadable rather than as one.
 
-`--force-owned` overrides that too — an unreadable subtree is a fact about the process's privileges,
-not about the repository, and the maintainer holding the credentials it lacks is exactly who can
-settle it. But the two overrides are **not** the same decision and the receipt says which one you
-made: forcing past a gate that was seen reads *overrides the changelog gate detected under a
-different name*, and forcing past a tree that was not fully read reads *overrides an incomplete read
-of this repository … the collision check could not run — it was overridden, not answered.*
+`--force-owned` overrides that too, and the two overrides are **not** the same decision — the receipt
+says which one you made: forcing past a gate that was seen reads *overrides the changelog gate
+detected under a different name*, and forcing past a tree that was not fully read reads *overrides an
+incomplete read of this repository … the collision check could not run — it was overridden, not
+answered.*
 
-All three paths honour the flag (#125). It reached `--apply` alone until then, so the dry run printed
-three `decline` lines each advising the flag that had just been passed, and `--show` previewed
-nothing for the three files the next command was about to overwrite — which is precisely the preview
-a maintainer runs *because* they are about to force past a collision.
+All three paths — the plan, `--show` and `--apply` — honour the flag (#125).
 
 The full list, so a plan line is never the first time you hear of a file:
 
@@ -159,17 +138,11 @@ already has everything.
 
 `--apply` writes `.supertool.json` with `"presets": ["git", "github", "watch"]`, and roughly thirty
 `git-*` and `gh-*` ops come into existence the moment it lands. `watch` is in that list because it
-is what provides `radar`: the template registers a radar tier, and until #191 it registered one with
-no route to the op that reads it, so every scaffolded repo got a board that could never publish and
-looked exactly like one that did. Loading the preset spawns nothing — the ops become available and a
-poller starts only when something asks for one. **The op listing you are working from was
-captured at session start, before that file existed, and is never refreshed.** The session that
-installs the config is the one that cannot see what it installed.
-
-What that feels like is a run of raw commands rejected one at a time — `gh label list`,
-`gh issue create`, `git commit`, `git push` each bounced by the guard with the op named. The
-messages are good and the guard is right; the cost is one round trip per discovery, and `ops` is
-~30KB so the blind route is not cheap either.
+is what provides `radar`: the template registers a radar tier, and a tier with no route to the op
+that reads it is a board that can never publish (#191). Loading the preset spawns nothing — the ops
+become available and a poller starts only when something asks for one. **The op listing you are
+working from was captured at session start, before that file existed, and is never refreshed.** The
+session that installs the config is the one that cannot see what it installed.
 
 Re-read the inventory once, immediately after `--apply`:
 
@@ -211,10 +184,8 @@ nothing schedules the run. `/oss:doctor` is what closes that gap: its `owned fil
 say whether re-running here would change **what a file does** — naming the regions, such as
 `on.pull_request.types` — or only its comments and prose, so the maintainer can tell a
 broken changelog gate from a reworded paragraph before deciding. It does not claim to know
-whether a difference means their copy is old or means somebody edited it; nothing in a
-managed repo records which plugin version wrote the file. Re-running discards a deliberate
-edit either way, which is what the ownership table above already says and what the doctor
-line repeats at the moment it matters.
+whether a difference means their copy is old or means somebody edited it. Re-running
+discards a deliberate edit either way.
 
 The generated workflow installs that script's parser before running it. Without the
 install step the checker reports `skipped` and exits non-zero — which is the checker
@@ -232,21 +203,14 @@ to `changelog.d/` when that is null — which is also the directory the generate
 names in that case, so the two cannot drift apart.
 
 **That fallback is deliberately not written back into `.oss.json` (#299).** `changelog_dir`
-stays null on a repo scaffolded this way, and that leaves it reading, to a config file, as
-"fragments were never adopted" — the same value a repo that hand-edits `CHANGELOG.md` and
-has never run this command carries. Writing the key here would settle it, but `.oss.json` is
-a **tracked file somebody owns**, and this plugin's ownership contract says a default must
-never win against a decision a person made; nothing else this command runs ever writes into
-it, and making an exception for one key is a design decision, not a bug fix. So the two
-readers that treat null as "not adopted" — `/oss:changelog` and `scripts/release_version.py`
-— instead recognise the fallback on disk: `oss_config.scaffolded_changelog_gate` answers
-whether *this* repo's own `.github/workflows/oss-changelog.yml` exists, which is the one
-signal a forge gives this plugin to claim a workflow by (subdirectories under
-`.github/workflows/` are unsupported, and a symlink there fails outright — see the `ours`
-row in the ownership table above).
+stays null on a repo scaffolded this way. `.oss.json` is a **tracked file somebody owns**, and a
+default must never win against a decision a person made. So the two readers that treat null as "not
+adopted" — `/oss:changelog` and `scripts/release_version.py` — instead recognise the fallback on
+disk: `oss_config.scaffolded_changelog_gate` answers whether *this* repo's own
+`.github/workflows/oss-changelog.yml` exists, which is the one signal a forge gives this plugin to
+claim a workflow by.
 
-It answers in **six** states, not two (#325, #328, #343, #347), and "present or absent" stopped
-being the contract the moment scaffold could write a gate policing something other than the default:
+It answers in **six** states, not two (#325, #328, #343, #347):
 
 - `present` — our gate is on disk and its own `--dir` names `changelog.d/`, so null falls back to
   `changelog.d/` exactly as this command does.
@@ -256,24 +220,15 @@ being the contract the moment scaffold could write a gate policing something oth
   workflow's own `--dir`, not the default.
 - `present-refused-dir` — our gate is on disk and readable, and the directory its `--dir` names is
   one the `.oss.json` entrance refuses outright: absolute, a `..` chain, or something a shell reads
-  as an instruction. The workflow is a **tracked, owned** file, so that value arrives by ordinary
-  contribution just as `changelog_dir` does, and it reaches a fold that deletes every fragment in
-  whatever it names (#343). Every reader refuses and says what it refused; none repairs the value.
+  as an instruction. It reaches a fold that deletes every fragment in whatever it names (#343).
+  Every reader refuses and says what it refused; none repairs the value.
 - `present-bare-dir` — our gate is on disk and readable, and a `--dir` flag on it carries no argument
-  at all (#347). A hand-edited workflow used to let the extractor's whitespace class cross the
-  newline after a bare `--dir` and misread the *following* flag as the directory. Distinct from
-  `present-refused-dir`: there a value was captured and refused on content; here nothing was
-  captured, so there is no value for that rule to have an opinion about -- one value, one rule, per
-  #345, is exactly why this is its own state rather than a second rule on the same value.
+  at all (#347). Distinct from `present-refused-dir`: there a value was captured and refused on
+  content; here nothing was captured, so there is no value for that rule to have an opinion about.
 - `absent` — null still means what it always meant.
 - `unknown` — the workflow could not be read, or its `--dir` lines disagree with each other. Every
   reader refuses and says why, rather than picking a directory nobody confirmed. Distinct from
   `present-refused-dir`: there the gate was read perfectly well and said something inadmissible.
-
-Every document that restates this contract is listed in
-`tests/test_gate_state_consumers_328.py`, which derives the state list from the function itself and
-fails when a consumer has no arm for one of them — because #325 added the fourth state to two
-documents of four, and neither of the other two failed while it was wrong.
 
 That README is a default like any other: created once when absent, never overwritten, and
 previewable before it is written with
@@ -307,24 +262,15 @@ any directory, and a file-writing tool should not fire a request about whatever 
 config happens to carry.
 
 When the origin names some other repo, the reason line quotes it with any userinfo and
-any query string redacted — a remote can carry a token in either, and this line is the one
-most likely to be pasted somewhere. A spelling whose credentials could not be recognised
-is reported as not shown rather than quoted. The neighbouring arm, where git could not
-read the origin at all, redacts the same shapes out of git's own error text, but it prints
-that text rather than withholding it: suppressing the line would cost the reader the error
-itself.
+any query string redacted — a remote can carry a token in either. A spelling whose
+credentials could not be recognised is reported as not shown rather than quoted. The
+neighbouring arm, where git could not read the origin at all, redacts the same shapes out
+of git's own error text, but it prints that text rather than withholding it.
 
-The label is still **not created**. The trade is not "intrusive versus restrained" — a
-gate installed without its hatch is an incomplete install, and that objection is correct.
-It is that every other thing this command produces is a file in a checkout: previewable
-with `--show` before it exists, visible in a diff, revertible with git. A label has none
-of the three, and `--apply` has no undo for it. Making `--apply` write to the forge would
-also make it fail where scaffolding is most useful — an unauthenticated machine, a fork
-you cannot administer — turning a working file write into a half-finished run.
-
-So the affordance gap the check closes is the one that actually bit: nobody learned the
-label was missing until the first pull request that needed it. Now the scaffold run says
-it, at scaffold time, next to the command:
+The label is still **not created**. Every other thing this command produces is a file in a
+checkout: previewable with `--show` before it exists, visible in a diff, revertible with git. A
+label has none of the three, and `--apply` has no undo for it. So the scaffold run says it, at
+scaffold time, next to the command:
 
 ```bash
 gh label create no-changelog --description "Change is invisible to users"
@@ -338,9 +284,7 @@ tests not run at all, and `/oss:manager` merges on green — so green there is a
 rather than a result. **No test workflow is generated.** The runner, the matrix, the
 language version and whether a failure blocks a merge are all decisions nothing here has
 measured, and a `ubuntu-latest` single-version guess shipped into a repo about
-cross-platform behaviour would be actively misleading. The input to the *report* is
-measured — `test_command` was executed and observed to pass — which is why it is stated
-insistently and still not acted on.
+cross-platform behaviour would be actively misleading.
 
 `changelog` — this repo already runs a changelog gate under a different name, so the owned trio
 was **declined**: not written, and named as such in the plan (`decline` rather than `replace`) as
@@ -352,22 +296,19 @@ same as a repo with no gate. `--force-owned` overrides both, and the finding the
 written anyway rather than continuing to claim it was not. See "Only missing files are created"
 above for the full contract.
 
-`tests` reports a third state from the same walk: `.github/workflows/` that cannot be listed no
-longer reads as a repo with no CI, and `test_command … and nothing in .github/workflows/ runs it` is
-no longer printed about workflows nothing read.
+`tests` reports a third state from the same walk: `.github/workflows/` that cannot be listed does
+not read as a repo with no CI, and `test_command … and nothing in .github/workflows/ runs it` is
+not printed about workflows nothing read.
 
 That third state is one name over three situations — the directory would not open, a name in it
-would not stat, or a file would not read — so each path it names now carries which one it was:
-`.github/workflows/ci.yml (file-unreadable)`. Two of the three name the *same* path, and printing
-the path alone made them the same sentence, which is a different thing to go and check in each case.
-The state stays one because the remedy is one; the cause travels beside it, and on the finding as a
-machine-readable `causes` list (#134).
+would not stat, or a file would not read — so each path it names carries which one it was:
+`.github/workflows/ci.yml (file-unreadable)`. The state stays one because the remedy is one; the
+cause travels beside it, and on the finding as a machine-readable `causes` list (#134).
 
-There is no longer a `ci` finding about a leg count. It reported `ci.required_checks` as stale, and
-#113 deleted that key rather than guarding it — the only quantity derivable offline is the workflow
-*job declaration* count, which a build matrix, a reusable workflow or an organisation/app-level check
-multiplies or adds to invisibly. This repo's own config was the proof: three declarations against
-fourteen check runs. Count the legs on the pull request, with `gh pr checks`.
+There is no `ci` finding about a leg count (#113). The only quantity derivable offline is the
+workflow *job declaration* count, which a build matrix, a reusable workflow or an
+organisation/app-level check multiplies or adds to invisibly. Count the legs on the pull request,
+with `gh pr checks`.
 
 `/oss:doctor` repeats the `tests` finding on every run, and adds one of its own when `.oss.json`
 still carries the deleted `ci` block.
@@ -387,24 +328,18 @@ nothing a human wrote lives there.
 Write your own rules in `00-manual/`. If you want to change one of ours, copy it there and edit the
 copy; the next install will not fight you for it.
 
-**And it is previewed, which it was not until #182.** Being replaced wholesale on every run is
-precisely what makes "what would this change" a non-trivial question here *every* time, and the layer
-was the only wholesale-replaced target the preview could not answer it for. It now previews the same
-way the trio does, with two additions the trio does not need. A file in the layer today that this
-version no longer ships previews as `remove`, because the layer is deleted before it is rewritten —
-and `--apply` prints a matching `removed` line, so the promise and the receipt agree. And the
-changelog rule's body depends on a gate read and an assembler lookup that `--apply` performs *after*
-its own writes, so the preview renders against the tree **as it will be after those writes**, and its
-`layer` line says which input came from the plan rather than from disk. A preview that quietly picked
-one of the four sentences in the table below would be a second confident wrong answer rather than a
-fix for the first.
+**And it is previewed** (#182), with two additions the trio does not need. A file in the layer today
+that this version no longer ships previews as `remove`, because the layer is deleted before it is
+rewritten — and `--apply` prints a matching `removed` line, so the promise and the receipt agree.
+And the changelog rule's body depends on a gate read and an assembler lookup that `--apply` performs
+*after* its own writes, so the preview renders against the tree **as it will be after those writes**,
+and its `layer` line says which input came from the plan rather than from disk.
 
-A symlink into the plugin checkout would have been simpler and is refused by the rules engine on
-purpose — git carries symlinks, so a clone would need only one committed link to point rules at
-anything on the machine.
+A symlink into the plugin checkout is refused by the rules engine on purpose — git carries symlinks,
+so a clone would need only one committed link to point rules at anything on the machine.
 
-**The layer ships whole, and the changelog rule is told why the checker is not there.** Since #117 the
-run hands `oss_rules.install()` the same gate detection the trio's decision came from, and the rule's
+**The layer ships whole, and the changelog rule is told why the checker is not there.** The run hands
+`oss_rules.install()` the same gate detection the trio's decision came from (#117), and the rule's
 could-not-locate branch renders one of four sentences rather than one:
 
 | What the run established | What the rule says |
@@ -414,15 +349,9 @@ could-not-locate branch renders one of four sentences rather than one:
 | the tree could not be fully read | why it is missing is **unknown**, which is not the same as this repo having no gate. It declines again until the read succeeds |
 | nothing checked | why it is missing **was not established** — running the scaffold may or may not rewrite this rule |
 
-The rule is not omitted in the declined case, which was the other candidate shape: an omitted rule
-leaves the reader with no statement at all, where the defect was a statement about a *different*
-repository. The layer's own ownership contract is unchanged — it is still replaced wholesale.
-
-What this composition produced before #117 is worth keeping in view, because neither half contained
-it. `/oss:scaffold` declined the trio (#116/#126), and the rule told every reader that
-`/oss:scaffold` vendors the checker and would rewrite the rule — naming the command that had just
-declined and would decline again. The sentence was false in exactly the repo the decline creates, and
-rendered identically to the same sentence in a repo where it is true.
+The rule is not omitted in the declined case: an omitted rule leaves the reader with no statement at
+all, where the defect was a statement about a *different* repository. The layer's own ownership
+contract is unchanged — it is still replaced wholesale.
 
 `--force-owned` is the one case where the gate state is deliberately not passed through: the trio was
 *written*, so a `found` reaching the rule would report a decline that did not happen.
@@ -433,8 +362,7 @@ these are files everyone reads, and the review is the point.
 ## Description and topics
 
 Files are only half the furniture. A repo also has a one-line description and a topic list, and both
-are empty by default — an absence nobody notices, because it looks like every other new repo. They
-are also the only thing a person sees before deciding whether to click.
+are empty by default. They are also the only thing a person sees before deciding whether to click.
 
 ```bash
 gh repo view --json description,repositoryTopics
@@ -445,9 +373,7 @@ reads topics from `repositoryTopics` — the shape `gh` actually returns — and
 **missing**; it never proposes a description or a topic. A finding can also come back `unknown`
 rather than `missing`, when the probe did not carry a shape the function could check at all — that is
 not the same as the repo having no topics, and it is relayed as "could not be determined," never
-folded into a confident "missing." A generated description is written in the voice of a tool that has
-not read the code, and a guessed topic list is how a repo ends up tagged for something it does not
-do. Write them yourself:
+folded into a confident "missing." Write them yourself:
 
 ```bash
 gh repo edit --description '...'
@@ -478,10 +404,7 @@ maintainer who stops here sees no failure at all — a furnished repo, a clean r
 started.
 
 **This seam is still carried by prose, and that is a weaker guarantee than the one upstream of it.**
-`/oss:setup` no longer merely names this command: since #136 it ends by running this command's own
-read-only plan, so the furniture gap arrives there as a measured list. The same treatment does not
-transfer here, because a tick is not read-only — it comments, labels, delegates and merges — and so
-it **cannot be previewed**. There is no dry run to print, which means nothing here can measure
-whether the loop was ever started. A repo that stops at this line looks exactly like one that ran a
-tick and found nothing to do, and no check in this repository can currently tell those apart. Said
-out loud so the closed seam upstream is not read as both seams closed.
+`/oss:setup` ends by running this command's own read-only plan (#136), so the furniture gap arrives
+there as a measured list. The same treatment does not transfer here, because a tick is not read-only
+— it comments, labels, delegates and merges — and so it **cannot be previewed**. There is no dry run
+to print, which means nothing here can measure whether the loop was ever started.

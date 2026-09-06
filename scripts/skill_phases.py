@@ -111,9 +111,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # -- the dispatch table's --label cell moved from four named flags back
     # to positional arguments (fleet_label.py's own old shape), a net
     # shrink even after the mode-selecting --label token. Budget unchanged.
+    # Re-baselined DOWN for #1136: 45029 B became 40700 B. The rationale was cut
+    # per .claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md --
+    # `Who decides`, `Operational hazards` and every per-phase directive block are
+    # untouched. Ceiling comes down with the measurement (#958, #960).
     SPINE: (
-        45029,
-        46900,
+        40700,
+        44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48
@@ -209,9 +213,20 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # positional arguments, matching fleet_label.py's own old call length
     # plus the one unavoidable --label mode-selector token. A net shrink.
     # Budget unchanged.
+    # Re-baselined DOWN for #1136: 58916 B became 51277 B, a 54% cut to the
+    # selection band (14240 B to 6601 B). That band was written when a session
+    # drove selection by hand across four scripts; #970 composed them into
+    # select_issues.py, #1068 added groups and #1129 gave grouping a file set it
+    # could derive, and the prose was never cut back to match. A phase file is an
+    # operator's manual for the tools its phase runs -- why three issues per lane
+    # beats four belongs beside _GROUP_TARGET = 3, not here, and each incident
+    # stays recorded in its own issue. The ceiling comes down with the
+    # measurement rather than staying at 64200 B, for the reason #958 and #960
+    # already give for their own re-baselines: a ceiling left far above the file
+    # is a saving spendable again without anybody choosing to.
     "skills/manager/phases/dispatch.md": (
-        58916,
-        64200,
+           51776,
+        57000,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared
@@ -220,21 +235,21 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # (issue_claim.py --release folded into lane_setup.py --release, the
     # mirror of --claim) grew by 229 B. Budget unchanged; comfortably under it.
     "skills/manager/phases/handback.md": (
-        19598,
-        20700,
+        16347,
+        18000,
         "a lane reported back: reading the report, pushing, opening the pull request",
     ),
     # Raised (#960): measured 13,992 B against the prior 12,800 B budget -- the
     # spine's cross-platform band moved in, being what a reviewer audits a diff
     # against rather than something every tick needs loaded.
     "skills/manager/phases/review.md": (
-        13992,
-        15400,
+        10353,
+        11400,
         "reviewing a returned diff, and what an issue body filed out of one looks like",
     ),
     "skills/manager/phases/findings.md": (
-        11620,
-        12800,
+        9326,
+        10300,
         "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board",
     ),
     # Re-baselined for #1029: 14455 B on disk against a stale 13198 declared
@@ -267,8 +282,8 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # enumerated act may not appear on that side). Reworded to "a green
     # merge"; 17234 B became 17250 B. Budget unchanged.
     "skills/manager/phases/merge.md": (
-        17250,
-        18300,
+        13985,
+        15400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),
     # Re-baselined for #1014: 10381 B on disk against a stale 10195 declared
@@ -280,8 +295,8 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # carry-forward rule as applying to round one and shipped over a
     # round-one findings verdict. Budget unchanged; still under it.
     "skills/manager/phases/release.md": (
-        11037,
-        11200,
+        8930,
+        9800,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
     # Raised (#960): measured 22,237 B against the prior 16,600 B budget. Two
@@ -301,8 +316,8 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # mentions renamed to select_issues_rank.py in the same call-site rewrite.
     # Budget unchanged; comfortably under it.
     "skills/manager/phases/accounting.md": (
-        22789,
-        24500,
+        17705,
+        19500,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
     # New for #1037: `commands/tick.md` used to inject its own numbered steps 1-6
@@ -319,8 +334,8 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # --label worked example moved from named flags to positional arguments.
     # Budget unchanged.
     "skills/manager/phases/tick-order.md": (
-        39460,
-        43100,
+        32800,
+        36100,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
 }

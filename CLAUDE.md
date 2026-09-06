@@ -263,12 +263,12 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 47,822 B | 52,600 B |
-| `agents/auditor.md` | 17,121 B | 18,400 B |
-| `agents/release-auditor.md` | 18,550 B | 19,700 B |
-| `agents/triager.md` | 18,384 B | 19,500 B |
-| `agents/sub-manager.md` | 18,691 B | 18,700 B |
-| `agents/releaser.md` | 10,985 B | 11,800 B |
+| `agents/developer.md` | 40,118 B | 44,100 B |
+| `agents/auditor.md` | 14,174 B | 15,600 B |
+| `agents/release-auditor.md` | 14,953 B | 16,400 B |
+| `agents/triager.md` | 15,082 B | 16,600 B |
+| `agents/sub-manager.md` | 15,247 B | 16,800 B |
+| `agents/releaser.md` | 7,053 B | 7,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -323,9 +323,9 @@ only the lane can report.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer/review.md` | 12,806 B | 14,100 B |
-| `agents/developer/review-return.md` | 15,440 B | 17,000 B |
-| `agents/developer/report.md` | 20,665 B | 22,700 B |
+| `agents/developer/review.md` | 9,550 B | 10,500 B |
+| `agents/developer/review-return.md` | 11,249 B | 12,400 B |
+| `agents/developer/report.md` | 17,401 B | 19,100 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
 
@@ -345,18 +345,20 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 45,029 B | 46,900 B |
-| `skills/manager/phases/dispatch.md` | 58,916 B | 64,200 B |
-| `skills/manager/phases/handback.md` | 19,598 B | 20,700 B |
-| `skills/manager/phases/accounting.md` | 22,789 B | 24,500 B |
-| `skills/manager/phases/tick-order.md` | 39,460 B | 43,100 B |
-| `skills/manager/phases/release.md` | 11,037 B | 11,200 B |
-| `skills/manager/phases/review.md` | 13,992 B | 15,400 B |
-| `skills/manager/phases/findings.md` | 11,620 B | 12,800 B |
-| `skills/manager/phases/merge.md` | 17,250 B | 18,300 B |
+| `skills/manager/SKILL.md` | 40,700 B | 44,800 B |
+| `skills/manager/phases/dispatch.md` | 51,776 B | 57,000 B |
+| `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
+| `skills/manager/phases/accounting.md` | 17,705 B | 19,500 B |
+| `skills/manager/phases/tick-order.md` | 32,800 B | 36,100 B |
+| `skills/manager/phases/release.md` | 8,930 B | 9,800 B |
+| `skills/manager/phases/review.md` | 10,353 B | 11,400 B |
+| `skills/manager/phases/findings.md` | 9,326 B | 10,300 B |
+| `skills/manager/phases/merge.md` | 13,985 B | 15,400 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
+
+**#1136 cut the rationale out of the loop's own markdown: 581,678 B became 480,591 B across 23 files, -17.4%.** The rule applied, written down as `.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`: **a loop markdown file is an operator's manual for the tools its phase runs.** The rule, the call, every state and every payload field stay; the measurement that justified a constant belongs beside the constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each rule keeps a bare issue citation for provenance. `dispatch.md`'s selection band was the worked example -- 14,240 B to 6,601 B, prose still explaining how to drive by hand the four scripts `select_issues.py` had already composed (#970, #1068, #1129). Every ceiling came down with its measurement rather than being left where it was (#958, #960). Four content guards refused cuts that went too far and every one was right: the bundle cap rule, the #499 citation, the `27m36s` threshold, and an unhyphenated `could not tell` -- each restored as a rule, without its narrative.
 
 **This table is where #675 was found.** `dispatch.md` measured 25,980 B (LF, 338 lines) — 120 B
 under its 26,100 B budget — and 26,318 B as a Windows checkout's CRLF, 218 B *over* the same budget,
