@@ -308,3 +308,162 @@ def test_cli_short_reason_rejects_an_unknown_word():
     )
     assert result.returncode == 2
     assert "invalid choice" in result.stdout
+
+
+# --------------------------------------------------------------- #1153: --group-state derives REASON
+
+
+def test_compose_lane_fill_derives_no_adjacent_from_group_state_none(tmp_path):
+    """The group's own `state` field ("none": searched, found nothing
+    adjacent) mechanically derives `no-adjacent` -- no retyping, and no
+    --short-reason on the call at all."""
+    checker = _mixed_checker(fail_issue=3)
+    result = lane_setup_claim.claim_and_register(
+        str(tmp_path / "registry"),
+        1,
+        "fix/1",
+        str(tmp_path / "wt"),
+        also_claim=[2, 3],
+        checker=checker,
+    )
+    fill = lane_setup.compose_lane_fill(_payload(1, result), group_state="none")
+    assert fill["state"] == "rendered"
+    assert fill["text"] == "1:2:no-adjacent"
+
+
+def test_compose_lane_fill_derives_could_not_tell_from_group_state(tmp_path):
+    checker = _mixed_checker(fail_issue=3)
+    result = lane_setup_claim.claim_and_register(
+        str(tmp_path / "registry"),
+        1,
+        "fix/1",
+        str(tmp_path / "wt"),
+        also_claim=[2, 3],
+        checker=checker,
+    )
+    fill = lane_setup.compose_lane_fill(
+        _payload(1, result), group_state="could-not-tell"
+    )
+    assert fill["state"] == "rendered"
+    assert fill["text"] == "1:2:could-not-tell"
+
+
+def test_compose_lane_fill_derives_did_not_search_from_lane_other(tmp_path):
+    """`lane-other` never calls the board sweep at all (#1130) -- that is
+    exactly `did-not-search`'s own definition (#918: "a computation nobody
+    started"), so it derives cleanly without needing --short-reason."""
+    checker = _mixed_checker(fail_issue=3)
+    result = lane_setup_claim.claim_and_register(
+        str(tmp_path / "registry"),
+        1,
+        "fix/1",
+        str(tmp_path / "wt"),
+        also_claim=[2, 3],
+        checker=checker,
+    )
+    fill = lane_setup.compose_lane_fill(_payload(1, result), group_state="lane-other")
+    assert fill["state"] == "rendered"
+    assert fill["text"] == "1:2:did-not-search"
+
+
+def test_compose_lane_fill_never_invents_board_exhausted_from_candidates_state(
+    tmp_path,
+):
+    """The hidden judgment call: `state == "candidates"` (some companions
+    found, but the group still ran short) has no safe closed-vocabulary
+    translation -- `board-exhausted` is a claim about the WHOLE board's
+    remaining disjoint candidate count (#871), which a single group's own
+    `state` never establishes. Never guessed at: the token carries no
+    reason at all, exactly like passing no --group-state."""
+    checker = _mixed_checker(fail_issue=3)
+    result = lane_setup_claim.claim_and_register(
+        str(tmp_path / "registry"),
+        1,
+        "fix/1",
+        str(tmp_path / "wt"),
+        also_claim=[2, 3],
+        checker=checker,
+    )
+    fill = lane_setup.compose_lane_fill(_payload(1, result), group_state="candidates")
+    assert fill["state"] == "rendered"
+    assert fill["text"] == "1:2"
+
+
+def test_compose_lane_fill_short_reason_overrides_group_state(tmp_path):
+    """An explicit --short-reason is a caller's own correction and always
+    wins over the mechanical derivation -- the same fallback role #1143
+    already gave --label over --claim's own render."""
+    checker = _mixed_checker(fail_issue=3)
+    result = lane_setup_claim.claim_and_register(
+        str(tmp_path / "registry"),
+        1,
+        "fix/1",
+        str(tmp_path / "wt"),
+        also_claim=[2, 3],
+        checker=checker,
+    )
+    fill = lane_setup.compose_lane_fill(
+        _payload(1, result),
+        short_reason="board-exhausted",
+        group_state="none",
+    )
+    assert fill["state"] == "rendered"
+    assert fill["text"] == "1:2:board-exhausted"
+
+
+def test_compose_lane_fill_drops_group_state_reason_for_a_full_lane(tmp_path):
+    """Positive control paired with the full-lane test above: a mechanically
+    derivable reason must not land on a full lane's token either."""
+    checker = _always(claim_read.STATE_CLAIMED)
+    result = lane_setup_claim.claim_and_register(
+        str(tmp_path / "registry"),
+        1,
+        "fix/1",
+        str(tmp_path / "wt"),
+        also_claim=[2, 3],
+        checker=checker,
+    )
+    fill = lane_setup.compose_lane_fill(_payload(1, result), group_state="none")
+    assert fill["text"] == "1:3"
+
+
+def test_cli_claim_accepts_group_state(tmp_path):
+    """CLI-level, the same conservative shape as the --short-reason CLI test
+    above: the claim itself needs a real GitHub call to fully succeed, so
+    this only asserts --group-state is a real, accepted flag (never refused
+    as unknown, never refused for missing --claim when --claim is present)."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "999",
+            "--claim",
+            "--lane",
+            "a.py",
+            "--phrase",
+            "x",
+            "--group-state",
+            "none",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+    )
+    assert "unrecognized arguments" not in result.stdout
+    assert "--group-state requires --claim" not in result.stdout
+
+
+def test_cli_group_state_requires_claim():
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts" / "lane_setup.py"),
+            "999",
+            "--group-state",
+            "none",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "--group-state requires --claim" in result.stderr

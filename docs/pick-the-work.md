@@ -24,7 +24,7 @@ a document that reads as current when it is aspirational is this repository's ow
 | `select_issues.py` fetches its own board; no stdin payload | **built** (#1145) |
 | One group per lane label, rather than a partition of the board | **built** (#1146) |
 | Issue bodies returned with each group | **built** (#1147) |
-| `--claim` emits step 5's own `--lane-fill` token | **built** (#1148) -- `COUNT` is fully mechanical (the claim's own held issues); `REASON` is carried through from a `--short-reason` flag the caller still passes by hand, since the group does not yet hand its own closed-vocabulary reason to `--claim` |
+| `--claim` emits step 5's own `--lane-fill` token | **built** (#1148) -- `COUNT` is fully mechanical (the claim's own held issues); `REASON` is derived from a `--group-state` flag carrying the group's own `state` field for three of its four values, or an explicit `--short-reason` override for the fourth (#1153) |
 
 **Every row is built. None of it has been observed in a live tick.** The five steps below were
 tested, and each was run against the real board by hand during the round that built them, but no
@@ -125,12 +125,17 @@ was reviewed*.
 never flattened into one verdict.
 
 **It also emits step 5's `--lane-fill PRIMARY:COUNT[:REASON]` token** (#1148), with `COUNT` from the
-claim's own held issues -- nobody computes that by hand any more. `REASON` is carried through from a
-`--short-reason` flag the caller still passes at this call, since `select_issues.py` does not yet put
-the closed-vocabulary reason directly on the group (see the "designed, not built" rows above); once
-it does, the caller passes the group's own reason straight through instead of deriving one itself.
-Never invented when omitted: a short lane whose caller gives no `--short-reason` renders a token with
-no reason at all, so step 5's own `--decision` refusal (#852) still fires on it downstream.
+claim's own held issues -- nobody computes that by hand any more. `REASON` comes from `--group-state`
+(#1153): the caller pastes the group's own `state` field from step 1's own JSON, unchanged, and
+`--claim` mechanically derives `no-adjacent` (from `none`), `could-not-tell` (from `could-not-tell`)
+or `did-not-search` (from `lane-other`) -- three of the four closed-vocabulary words, each an exact
+match for what that `state` value already means. The fourth, `state == "candidates"` (some companions
+found, the group still ran short), has no safe translation: `board-exhausted` is a claim about the
+WHOLE board's remaining disjoint candidates (#871), which a single group's own `state` never
+establishes, so it is never guessed at there -- an explicit `--short-reason` is still required for
+that one state, and always overrides `--group-state` when both are given. Never invented when
+neither is given: a short lane with no derivable and no explicit reason renders a token with no
+reason at all, so step 5's own `--decision` refusal (#852) still fires on it downstream.
 
 ---
 
