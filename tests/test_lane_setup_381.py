@@ -330,7 +330,13 @@ def test_the_repo_argument_is_always_preceded_by_dash_C(tmp_path, monkeypatch):
         seen["argv"] = list(argv)
         return _Done()
 
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/" + name)
+    # #1157: patches `lane_setup.gh_which.safe_which` rather than
+    # `lane_setup.shutil.which` -- `lane_setup_worktree._git` (re-exported
+    # as `lane_setup._git`) no longer calls `shutil.which` directly, and
+    # `gh_which` is one shared module object across every importer.
+    monkeypatch.setattr(
+        lane_setup.gh_which, "safe_which", lambda name, path=None: "/usr/bin/" + name
+    )
     monkeypatch.setattr(lane_setup.subprocess, "run", _fake_run)
 
     lane_setup._git("-repo", "rev-parse", "HEAD")

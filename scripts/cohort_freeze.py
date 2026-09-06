@@ -80,13 +80,13 @@ with its own argument, not smuggled in here. This module only makes a
 
 import argparse
 import json
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import gh_which  # noqa: E402
 import oss_config  # noqa: E402
 
 CONFIG_NAME = ".oss.json"
@@ -766,7 +766,9 @@ def main(argv=None):
         _emit(payload, args.as_json)
         return _exit_code(payload["state"])
 
-    gh = args.gh or shutil.which("gh")
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    gh = args.gh or gh_which.safe_which("gh")
     if not gh:
         payload = {
             "state": STATE_COULD_NOT_READ,

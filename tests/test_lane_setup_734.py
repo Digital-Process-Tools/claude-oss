@@ -317,11 +317,17 @@ def test_derive_held_set_forwards_repo_so_a_merged_lane_stops_blocking(
     merged-and-cleaned-up lane must not survive into the combined held set
     once `repo` is given, so a sibling lane checking availability against it
     reads `available` rather than `BLOCKED`."""
-    real_which = lane_setup.shutil.which
+    # #1157: patches `lane_setup.gh_which.safe_which` rather than
+    # `lane_setup.shutil.which` -- neither `held_from_open_prs` (`gh`) nor
+    # `_git` (`git`) call `shutil.which` directly any more, and `gh_which`
+    # is one shared module object across every importer.
+    real_safe_which = lane_setup.gh_which.safe_which
     monkeypatch.setattr(
-        lane_setup.shutil,
-        "which",
-        lambda name: "/usr/bin/gh" if name == "gh" else real_which(name),
+        lane_setup.gh_which,
+        "safe_which",
+        lambda name, path=None: (
+            "/usr/bin/gh" if name == "gh" else real_safe_which(name, path=path)
+        ),
     )
     real_run = subprocess.run
 

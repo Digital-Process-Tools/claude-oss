@@ -16,11 +16,11 @@ Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 
 import json
 import os
-import shutil
 import stat
 import subprocess
 import time
 
+import gh_which
 import lane_setup_worktree
 import select_issues_claim_read
 
@@ -614,7 +614,9 @@ def held_from_open_prs(repo_slug):
     """
     if not repo_slug:
         return {"state": "could-not-derive", "held": {}, "detail": "no repo configured"}
-    gh = shutil.which("gh")
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    gh = gh_which.safe_which("gh")
     if gh is None:
         return {"state": "could-not-derive", "held": {}, "detail": "gh is not on PATH"}
     try:

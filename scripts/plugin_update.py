@@ -51,11 +51,12 @@ Python 3.9 compatible.
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+import gh_which
 
 #: Where the receipt lives: machine state, never inside a managed repository.
 RECEIPT_NAME = "auto-update.json"
@@ -508,21 +509,38 @@ def resolved_plugin_root(name, project_root, plugins_root=None):
 def _run(command, timeout=180):
     """``(ok, output)``. A missing binary and a non-zero exit are both `not ok`.
 
-    The first token is resolved via `shutil.which()` before being handed to
-    `subprocess.run()`, and the RESOLVED path -- not the bare name -- is what
-    actually gets executed. Windows' own process creation (what
-    `subprocess.run` uses with `shell=False`, the default here) does not
-    perform the PATHEXT search that turns a bare `claude` into `claude.cmd`;
-    only `which()` does. Running the bare name through `subprocess.run()`
-    unresolved reproduces the exact "could not find claude" failure on
-    Windows that a real `claude.cmd` install would otherwise resolve fine --
-    the same mismatch found and fixed in
+    The first token is resolved via `gh_which.safe_which()` before being
+    handed to `subprocess.run()`, and the RESOLVED path -- not the bare
+    name -- is what actually gets executed. Windows' own process creation
+    (what `subprocess.run` uses with `shell=False`, the default here) does
+    not perform the PATHEXT search that turns a bare `claude` into
+    `claude.cmd`; only `which()`-shaped resolution does. Running the bare
+    name through `subprocess.run()` unresolved reproduces the exact "could
+    not find claude" failure on Windows that a real `claude.cmd` install
+    would otherwise resolve fine -- the same mismatch found and fixed in
     `doctor_check_mcp_channel_registration.mcp_channel_registration_state`
     and `channel_consumer_census_state` (#753/#810's own Windows CI failure).
-    A name that `which()` cannot resolve at all is left as-is, so the
-    eventual `OSError` still names the exact string that was tried.
+
+    #1157: `shutil.which()` alone is not enough -- see `gh_which.py`'s own
+    docstring for why a bare `shutil.which(name)`, `path=` argument or not,
+    still lets a same-named `.cmd`/`.bat` at the inspected repo's own root
+    win over a real `PATH` entry on Windows. `gh_which.safe_which` closes
+    that gap. A name that cannot be resolved at all on the real `PATH` is
+    NEVER spawned unresolved either way -- see the branch below -- so the
+    eventual `FileNotFoundError`-shaped failure still names the exact
+    string that was tried, without ever reaching `subprocess.run`.
     """
-    resolved = shutil.which(command[0]) if command else None
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    resolved = gh_which.safe_which(command[0]) if command else None
+    if command and resolved is None:
+        # #1157: never fall back to spawning the bare, unresolved name --
+        # see `select_issues._run_gh`'s identical fix for why: `safe_which`
+        # already searched every real `PATH` entry, and a bare-name spawn
+        # on Windows would still let CreateProcess's own cwd-first search
+        # find a planted same-named `.exe`.
+        exc = FileNotFoundError(2, "No such file or directory", command[0])
+        return False, "{}: {}".format(type(exc).__name__, exc)
     argv = [resolved] + list(command[1:]) if resolved else list(command)
     try:
         result = subprocess.run(

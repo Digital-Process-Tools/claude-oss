@@ -39,10 +39,10 @@ cannot be told apart from a 403 alone.
 
 import json
 import re
-import shutil
 import subprocess
 
 import doctor
+import gh_which
 
 
 def _gh_api(path, run):
@@ -56,10 +56,25 @@ def _gh_api(path, run):
     #: `subprocess.run(["gh", ...])` on Windows reaches `CreateProcess`,
     #: which only auto-appends `.exe` for an extensionless name and never
     #: `.cmd`/`.bat`, so a `gh.cmd` launcher on PATH is invisible to a bare
-    #: argv. `shutil.which` performs the full PATHEXT-aware search and
-    #: returns a spawnable path; when it resolves nothing the bare name is
-    #: kept so the existing `FileNotFoundError` handling below still fires.
-    gh_bin = shutil.which("gh") or "gh"
+    #: argv. #1157: a bare `shutil.which("gh")` -- even with a `path=`
+    #: argument -- still lets a `gh.cmd` committed to the inspected repo's
+    #: own root win over a real `PATH` entry on Windows, because the
+    #: curdir insertion fires whenever the queried NAME has no directory
+    #: part, regardless of `path`. `gh_which.safe_which` closes that; see
+    #: its docstring for the mechanism. When it resolves nothing, the
+    #: function below returns the same failure shape a real spawn attempt
+    #: would raise, WITHOUT ever calling `run` with a bare, unresolved
+    #: name -- see the comment on that branch for why.
+    gh_bin = gh_which.safe_which("gh")
+    if gh_bin is None:
+        # #1157: never fall back to spawning the bare, unresolved
+        # name -- `safe_which` already searched every real `PATH`
+        # entry, and a bare-name spawn on Windows would still let
+        # `CreateProcess`'s own cwd-first search find a planted
+        # same-named `.exe`. Reproduces the exact `(None, "", "",
+        # exc)` shape a real spawn attempt would raise below,
+        # without ever calling `run`.
+        return None, "", "", FileNotFoundError(2, "No such file or directory", "gh")
     try:
         done = run(
             [gh_bin, "api", path],
@@ -194,7 +209,9 @@ def security_alert_state(project_dir, scanner, config=None, run=None):
             )
         )
     run = subprocess.run if run is None else run
-    if shutil.which("gh") is None:
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see
+    # `doctor_check_branch_protection.py`'s identical gate for why.
+    if gh_which.safe_which("gh") is None:
         return "could-not-tell", "gh is not on PATH"
     slug, reason = _resolve_slug(project_dir, config, run)
     if slug is None:

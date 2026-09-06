@@ -274,9 +274,15 @@ def test_run_resolves_the_binary_via_which_before_spawning_it(monkeypatch):
 
     `lane_setup.py.read_board` already resolves `supertool` via
     `shutil.which` before spawning it, for the identical PATHEXT gap (#317).
-    This pins `_run` doing the same for `gh`: given a `shutil.which` that
-    resolves to some other, fully-qualified path, `subprocess.run` must be
-    called with *that* path, not the bare name.
+    This pins `_run` doing the same for `gh`: given a `gh_which.safe_which`
+    that resolves to some other, fully-qualified path, `subprocess.run`
+    must be called with *that* path, not the bare name.
+
+    #1157: patches `issue_claim.gh_which.safe_which` rather than
+    `issue_claim.shutil.which` -- `_run` no longer calls `shutil.which`
+    directly (a bare `shutil.which(name)`, `path=` or not, still lets a
+    `gh.cmd` at the inspected repo's own root win over a real `PATH` entry
+    on Windows; see `scripts/gh_which.py`'s docstring for the mechanism).
     """
     calls = []
 
@@ -291,28 +297,38 @@ def test_run_resolves_the_binary_via_which_before_spawning_it(monkeypatch):
 
     monkeypatch.setattr(issue_claim.subprocess, "run", fake_run)
     monkeypatch.setattr(
-        issue_claim.shutil, "which", lambda name: r"C:\fake\bin\gh.cmd"
+        issue_claim.gh_which,
+        "safe_which",
+        lambda name, path=None: r"C:\fake\bin\gh.cmd",
     )
     ok, out, detail = issue_claim._run(["gh", "api", "user", "--jq", ".login"])
     assert ok, detail
-    assert calls == [
-        [r"C:\fake\bin\gh.cmd", "api", "user", "--jq", ".login"]
-    ], calls
+    assert calls == [[r"C:\fake\bin\gh.cmd", "api", "user", "--jq", ".login"]], calls
 
 
-def test_run_still_attempts_the_bare_name_when_which_finds_nothing(monkeypatch):
-    """Positive-control pairing for the test above: when the binary is
-    genuinely absent, `_run` must not resolve to `None` (which would crash
-    `subprocess.run` with a `TypeError` rather than reporting `could-not-*`)
-    -- it falls back to the bare name, so `subprocess`'s own
-    `FileNotFoundError` still reaches the existing "is not on PATH" detail."""
+def test_run_never_spawns_a_bare_unresolved_name_when_which_finds_nothing(
+    monkeypatch,
+):
+    """#1157 self-review finding (both spawned reviewers, independently
+    confirmed): the prior version of this control let `_run` fall back to
+    spawning the bare, unresolved name and relied on `subprocess`'s own
+    `FileNotFoundError` to reach `could-not-*` -- exactly the shape a
+    planted same-named `.exe` at the inspected repo's own root can hijack
+    via `CreateProcess`'s own cwd-first search on Windows. `_run` must
+    never call `subprocess.run` at all once `safe_which` has already
+    searched every real `PATH` entry and found nothing."""
 
     def fake_run(args, **kwargs):
-        assert args[0] == "gh", args
-        raise FileNotFoundError(2, "No such file or directory")
+        raise AssertionError(
+            "subprocess.run must never be called with an unresolved name: {}".format(
+                args
+            )
+        )
 
     monkeypatch.setattr(issue_claim.subprocess, "run", fake_run)
-    monkeypatch.setattr(issue_claim.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        issue_claim.gh_which, "safe_which", lambda name, path=None: None
+    )
     ok, out, detail = issue_claim._run(["gh", "api", "user", "--jq", ".login"])
     assert not ok
     assert "not on PATH" in detail

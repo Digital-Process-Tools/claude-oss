@@ -740,7 +740,12 @@ def test_main_could_not_read_exit_code(monkeypatch, tmp_path):
         raise OSError("no gh")
 
     monkeypatch.setattr(cohort_freeze.subprocess, "run", fake_run)
-    monkeypatch.setattr(cohort_freeze.shutil, "which", lambda name: "gh")
+    # #1157: patches `cohort_freeze.gh_which.safe_which` rather than
+    # `cohort_freeze.shutil.which` -- `cohort_freeze.py` no longer calls
+    # `shutil.which` directly.
+    monkeypatch.setattr(
+        cohort_freeze.gh_which, "safe_which", lambda name, path=None: "gh"
+    )
     code = cohort_freeze.main(
         ["--repo", str(tmp_path), "--tag", TAG, "--cohort", "16", "--json"]
     )
@@ -750,7 +755,9 @@ def test_main_could_not_read_exit_code(monkeypatch, tmp_path):
 def test_main_could_not_read_when_gh_missing(tmp_path, monkeypatch):
     config = tmp_path / ".oss.json"
     config.write_text(json.dumps({"repo": REPO}), encoding="utf-8")
-    monkeypatch.setattr(cohort_freeze.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        cohort_freeze.gh_which, "safe_which", lambda name, path=None: None
+    )
     code = cohort_freeze.main(["--repo", str(tmp_path), "--tag", TAG, "--cohort", "16"])
     assert code == cohort_freeze.EXIT_COULD_NOT_READ
 
@@ -761,7 +768,9 @@ def test_main_repo_resolution_rejects_missing_config(tmp_path):
 
 
 def test_main_accepts_explicit_slug(monkeypatch):
-    monkeypatch.setattr(cohort_freeze.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        cohort_freeze.gh_which, "safe_which", lambda name, path=None: None
+    )
     code = cohort_freeze.main(["--repo", REPO, "--tag", TAG, "--cohort", "16"])
     # gh missing either way -- this only proves the slug itself was accepted
     # without needing a .oss.json on disk, not that the freeze ran.

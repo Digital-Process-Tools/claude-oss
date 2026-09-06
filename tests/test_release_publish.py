@@ -860,7 +860,12 @@ def test_a_dry_run_with_no_gh_anywhere_is_could_not_run(tmp_path, capsys, monkey
     says publish must never be reported as one that chose not to.
     """
     repo = _repo(tmp_path / "repo", create_release=True, draft=False, latest=True)
-    monkeypatch.setattr(release_publish.shutil, "which", lambda name: None)
+    # #1157: patches `release_publish.gh_which.safe_which` rather than
+    # `release_publish.shutil.which` -- `release_publish.py` no longer
+    # calls `shutil.which` directly.
+    monkeypatch.setattr(
+        release_publish.gh_which, "safe_which", lambda name, path=None: None
+    )
     code = release_publish.main(
         ["--repo", str(repo), "--version", "0.3.0", "--tag", "v0.3.0"]
     )

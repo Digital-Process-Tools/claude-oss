@@ -59,6 +59,8 @@ PLUGIN_ROOT = SCRIPT_DIR.parent
 
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import gh_which  # noqa: E402 -- #1157: the one place `gh`/`git` is resolved
+
 # --- the per-check module convention (#497, #630) ---------------------------
 #
 # **A new check goes in its own `scripts/doctor_check_<subject>.py`, not here.**
@@ -8349,7 +8351,11 @@ def label_vocabulary_state(project_dir, config=None, run=None):
         slug, reason = _origin_slug(project_dir, run=run)
         if slug is None:
             return "could-not-tell", reason
-    gh_bin = shutil.which("gh")
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a bare `shutil.which("gh")` (with or
+    # without a `path=` argument) lets a `gh.cmd` at the root of the
+    # inspected repo win over a real `PATH` entry on Windows.
+    gh_bin = gh_which.safe_which("gh")
     if gh_bin is None:
         return "could-not-tell", "gh is not on PATH"
     try:
@@ -8420,7 +8426,8 @@ def lane_label_state(project_dir, config=None, run=None):
         slug, reason = _origin_slug(project_dir, run=run)
         if slug is None:
             return "could-not-tell", reason
-    gh_bin = shutil.which("gh")
+    # #1157: see `label_vocabulary_state` above -- same reason, same fix.
+    gh_bin = gh_which.safe_which("gh")
     if gh_bin is None:
         return "could-not-tell", "gh is not on PATH"
     try:

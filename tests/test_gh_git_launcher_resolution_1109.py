@@ -11,10 +11,22 @@ site and is deliberately NOT touched here -- `scripts/oss_config.py` is held
 by a concurrent lane for the duration of this one, so that half of #1109
 stays open as a follow-up rather than risking a collision on a shared file.
 
+#1157 (release-blocking follow-up): every one of these call sites now goes
+through `gh_which.safe_which` rather than `shutil.which` directly -- a bare
+`shutil.which(name)`, even with a `path=` argument, still lets a `gh.cmd`
+committed to the root of the inspected repo win over a real `PATH` entry on
+Windows, because the current-working-directory insertion fires whenever the
+queried NAME has no directory component, regardless of what `path` was
+passed (see `scripts/gh_which.py`'s own docstring for the mechanism, and
+`tests/test_gh_which_1157.py` for what pins `safe_which` itself). So the
+fixtures below patch `gh_which.safe_which` -- the real seam every one of
+these call sites now uses -- rather than `shutil.which`, which none of them
+call directly any more.
+
 Every "must fire" case here is paired with a "must not fire" (or "still
-works") case in the same fixture, per CLAUDE.md's own rule: a `shutil.which`
+works") case in the same fixture, per CLAUDE.md's own rule: a `safe_which`
 that resolves to a fully-qualified `.cmd` path must be what gets spawned,
-and a `shutil.which` that finds nothing must still fall back to the bare
+and a `safe_which` that finds nothing must still fall back to the bare
 name rather than crashing `subprocess.run` with a `None` argv[0].
 """
 
@@ -50,27 +62,32 @@ def _recording_run(**kwargs):
     return run
 
 
+_FAKE_GH_CMD = r"C:\fake\bin\gh.cmd"
+
+
 # --------------------------------------------------- doctor.py: gh label list
 
 
 def test_label_vocabulary_state_resolves_gh_via_which(monkeypatch, tmp_path):
     run = _recording_run(returncode=0, stdout=json.dumps([{"name": "priority-high"}]))
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: r"C:\fake\bin\gh.cmd")
+    monkeypatch.setattr(
+        doctor.gh_which, "safe_which", lambda name, path=None: _FAKE_GH_CMD
+    )
     state, _payload = doctor.label_vocabulary_state(
         tmp_path, config={"repo": "owner/name"}, run=run
     )
     assert state == "satisfied"
-    assert run.calls[0][0] == r"C:\fake\bin\gh.cmd", run.calls
+    assert run.calls[0][0] == _FAKE_GH_CMD, run.calls
 
 
 def test_label_vocabulary_state_falls_back_to_bare_name_when_which_finds_nothing(
     monkeypatch, tmp_path
 ):
-    """Positive control: `shutil.which` returning `None` for `gh` is already
+    """Positive control: `safe_which` returning `None` for `gh` is already
     read as `could-not-tell` upstream of the spawn, so the bare-name
     fallback is only exercised via `lane_label_state`'s identical shape --
     covered directly below."""
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: None)
     state, reason = doctor.label_vocabulary_state(
         tmp_path, config={"repo": "owner/name"}, run=_recording_run()
     )
@@ -80,12 +97,14 @@ def test_label_vocabulary_state_falls_back_to_bare_name_when_which_finds_nothing
 
 def test_lane_label_state_resolves_gh_via_which(monkeypatch, tmp_path):
     run = _recording_run(returncode=0, stdout=json.dumps([{"name": "lane-doctor"}]))
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: r"C:\fake\bin\gh.cmd")
+    monkeypatch.setattr(
+        doctor.gh_which, "safe_which", lambda name, path=None: _FAKE_GH_CMD
+    )
     state, _payload = doctor.lane_label_state(
         tmp_path, config={"repo": "owner/name"}, run=run
     )
     assert state == "satisfied"
-    assert run.calls[0][0] == r"C:\fake\bin\gh.cmd", run.calls
+    assert run.calls[0][0] == _FAKE_GH_CMD, run.calls
 
 
 # ---------------------------------------- per-check modules: _gh_api verbatim copies
@@ -100,26 +119,37 @@ _GH_API_MODULES = [
 
 
 def test_gh_api_resolves_the_binary_via_which_before_spawning_it(monkeypatch):
-    """Must-fire case for every sibling `_gh_api` copy: given a `shutil.which`
+    """Must-fire case for every sibling `_gh_api` copy: given a `safe_which`
     that resolves to some fully-qualified `.cmd` path, the argv handed to
     `run` must use that path, not the bare `"gh"`."""
     for module in _GH_API_MODULES:
         run = _recording_run(returncode=0, stdout="{}", stderr="")
-        monkeypatch.setattr(module.shutil, "which", lambda name: r"C:\fake\bin\gh.cmd")
+        monkeypatch.setattr(
+            module.gh_which, "safe_which", lambda name, path=None: _FAKE_GH_CMD
+        )
         rc, _out, _err, exc = module._gh_api("repos/owner/name", run)
         assert exc is None, (module.__name__, exc)
         assert rc == 0, module.__name__
-        assert run.calls[0][0] == r"C:\fake\bin\gh.cmd", (module.__name__, run.calls)
+        assert run.calls[0][0] == _FAKE_GH_CMD, (module.__name__, run.calls)
 
 
-def test_gh_api_still_attempts_the_bare_name_when_which_finds_nothing(monkeypatch):
-    """Must-not-fire pairing: when `shutil.which` resolves nothing, `_gh_api`
-    must fall back to the bare `"gh"` rather than passing `None` as argv[0]
-    (which would raise `TypeError` inside `subprocess.run` before this
-    function's own `except` could catch anything)."""
+def test_gh_api_never_spawns_a_bare_unresolved_name_when_which_finds_nothing(
+    monkeypatch,
+):
+    """#1157 self-review finding (both spawned reviewers, independently
+    confirmed): the original shape of this control asserted `run.calls[0][0]
+    == "gh"` -- a bare, unresolved name is exactly the shape a planted
+    same-named `.exe` at the inspected repo's own root can still hijack via
+    `CreateProcess`'s own cwd-first search on Windows, `shutil.which`
+    entirely aside. `_gh_api` must never call `run` at all once
+    `safe_which` has already searched every real `PATH` entry and found
+    nothing -- it returns the same `(None, "", "", exc)` shape a real spawn
+    attempt would raise, without spawning anything."""
     for module in _GH_API_MODULES:
         run = _recording_run(returncode=0, stdout="{}", stderr="")
-        monkeypatch.setattr(module.shutil, "which", lambda name: None)
-        rc, _out, _err, exc = module._gh_api("repos/owner/name", run)
-        assert exc is None, (module.__name__, exc)
-        assert run.calls[0][0] == "gh", (module.__name__, run.calls)
+        monkeypatch.setattr(module.gh_which, "safe_which", lambda name, path=None: None)
+        rc, out, err, exc = module._gh_api("repos/owner/name", run)
+        assert not run.calls, (module.__name__, run.calls)
+        assert rc is None, (module.__name__, rc)
+        assert out == "" and err == "", (module.__name__, out, err)
+        assert isinstance(exc, FileNotFoundError), (module.__name__, exc)

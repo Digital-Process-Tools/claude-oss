@@ -152,13 +152,13 @@ Python 3.9 compatible: no match statements, no `X | Y` annotations.
 import argparse
 import json
 import os  # noqa: F401 (re-exported as lane_setup.os for existing monkeypatch-based tests -- see the module docstring)
-import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gh_which  # noqa: E402  (path insert above must run first)
 import lane_setup_brief_schema  # noqa: E402  (path insert above must run first)
 import lane_setup_claim  # noqa: E402
 import lane_setup_patterns  # noqa: E402
@@ -630,7 +630,9 @@ def _condense_board(raw):
 
 def read_board(repo):
     """The live worktree board, condensed. `could-not-run` is a state, not a crash."""
-    supertool = shutil.which("supertool")
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    supertool = gh_which.safe_which("supertool")
     if supertool is None:
         return {
             "state": "could-not-run",
