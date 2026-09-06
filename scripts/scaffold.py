@@ -2032,9 +2032,19 @@ def _layer_scan(repo_root, dimensions):
         # descending into a symlinked one, which is what makes it immune to a
         # symlink LOOP too -- see its own docstring for why a `resolve()`-based
         # containment check was tried here first and abandoned.
-        ancestor = oss_rules._symlinked_ancestor(
-            root, layer_dir_parts + (dimension, oss_rules.LAYER)
-        )
+        try:
+            ancestor = oss_rules._symlinked_ancestor(
+                root, layer_dir_parts + (dimension, oss_rules.LAYER)
+            )
+        except oss_rules.AncestorUnreadable:
+            # #1116: a candidate this process cannot search (an ordinary
+            # PermissionError, not a defect in the walk) used to propagate here as
+            # a raw exception, breaking this function's own "never raises"
+            # contract. Reported the same way an ordinary unwalkable directory is
+            # a few lines below -- "could not tell" is its own state, not a
+            # confirmed-clean layer.
+            unreadable.append(_unreadable(relative, CAUSE_DIRECTORY_UNWALKABLE))
+            continue
         if ancestor is not None:
             unreadable.append(_unreadable(relative, CAUSE_LAYER_SYMLINKED))
             continue

@@ -1649,6 +1649,23 @@ def test_layer_scan_reports_a_jit_context_symlink_pointing_inside_the_repo(tmp_p
         {"path": relative, "cause": scaffold.CAUSE_LAYER_SYMLINKED}
     ], unreadable
 
+    # Paired positive control, found missing on this test in a follow-up audit
+    # (#1116): as written, this test would also pass if _layer_scan() were broken
+    # in some unrelated way that always reports everything unreadable. An
+    # ordinary, non-symlinked layer must keep scanning normally.
+    control_root = tmp_path / "control-repo"
+    control_layer = (
+        control_root / scaffold.RULES_LAYER_DIR / "paths" / scaffold.oss_rules.LAYER
+    )
+    control_layer.mkdir(parents=True)
+    (control_layer / "stale.md").write_text("stale\n", encoding="utf-8")
+
+    control_present, control_unreadable = scaffold._layer_scan(
+        control_root, {"paths": {}}
+    )
+    assert control_present == ["{}/stale.md".format(relative)], control_present
+    assert control_unreadable == [], control_unreadable
+
 
 def test_layer_scan_reports_a_symlink_loop_as_unreadable_not_a_crash(tmp_path):
     """#1116, found in review: a symlink LOOP is a third shape again, and
@@ -1682,6 +1699,58 @@ def test_layer_scan_reports_a_symlink_loop_as_unreadable_not_a_crash(tmp_path):
     assert unreadable == [
         {"path": relative, "cause": scaffold.CAUSE_LAYER_SYMLINKED}
     ], unreadable
+
+    # Paired positive control, found missing on this test in a follow-up audit
+    # (#1116): an ordinary, non-looped layer must keep scanning normally.
+    control_root = tmp_path / "control-repo"
+    control_layer = (
+        control_root / scaffold.RULES_LAYER_DIR / "paths" / scaffold.oss_rules.LAYER
+    )
+    control_layer.mkdir(parents=True)
+    (control_layer / "stale.md").write_text("stale\n", encoding="utf-8")
+
+    control_present, control_unreadable = scaffold._layer_scan(
+        control_root, {"paths": {}}
+    )
+    assert control_present == ["{}/stale.md".format(relative)], control_present
+    assert control_unreadable == [], control_unreadable
+
+
+def test_layer_scan_reports_rather_than_crashes_on_an_unreadable_ancestor(tmp_path):
+    """#1116, found in a follow-up audit: `is_symlink()` and `is_dir()` both raise
+    `PermissionError` for a candidate inside a directory this process cannot
+    search -- an ordinary condition, not an attack. `_layer_scan`'s own docstring
+    promises "Never raises," and its sole caller has no `try/except` at all, so an
+    uncaught `PermissionError` here used to crash even a non-mutating preview run.
+
+    Paired positive control, same fixture: a repo with the identical real,
+    non-symlinked, fully-readable nesting must keep scanning normally.
+    """
+    root = tmp_path / "repo"
+    claude = root / ".claude"
+    claude.mkdir(parents=True)
+
+    with _denied(claude):
+        present, unreadable = scaffold._layer_scan(root, {"paths": {}})
+
+    assert present == [], present
+    relative = "{}/paths/{}".format(scaffold.RULES_LAYER_DIR, scaffold.oss_rules.LAYER)
+    assert unreadable == [
+        {"path": relative, "cause": scaffold.CAUSE_DIRECTORY_UNWALKABLE}
+    ], unreadable
+
+    control_root = tmp_path / "control-repo"
+    control_layer = (
+        control_root / scaffold.RULES_LAYER_DIR / "paths" / scaffold.oss_rules.LAYER
+    )
+    control_layer.mkdir(parents=True)
+    (control_layer / "stale.md").write_text("stale\n", encoding="utf-8")
+
+    control_present, control_unreadable = scaffold._layer_scan(
+        control_root, {"paths": {}}
+    )
+    assert control_present == ["{}/stale.md".format(relative)], control_present
+    assert control_unreadable == [], control_unreadable
 
 
 def test_layer_scan_still_lists_an_ordinary_real_directory_layer(tmp_path):

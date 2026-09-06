@@ -10,6 +10,8 @@ git carries symlinks, so a clone could point rules anywhere. Copies into an owne
 are the supported shape.
 """
 
+import contextlib
+import os
 import shlex
 import shutil
 import subprocess
@@ -26,6 +28,46 @@ import oss_rules  # noqa: E402
 
 def _layer(root, dimension):
     return root / ".claude" / "jit-context" / dimension / oss_rules.LAYER
+
+
+@contextlib.contextmanager
+def _denied(path):
+    """Deny reads on `path`, or skip saying what went untested (#1116).
+
+    Same mechanism, same rationale as `tests/test_scaffold.py`'s `_denied` (#124):
+    the mode bit is not assumed to have taken -- root ignores it, some filesystems
+    ignore it, Windows' `os.chmod` only toggles a read-only attribute that does not
+    stop a directory listing -- so the deny is measured by attempting the exact
+    operation the code under test performs, rather than assumed from a platform
+    table. A separate copy rather than an import from `test_scaffold` because
+    these two test modules do not import each other anywhere else, and a first
+    cross-import for one helper is a bigger change than duplicating sixteen lines
+    that already have to stay in sync with their sibling if either ever changes
+    anyway.
+    """
+    os.chmod(str(path), 0o000)
+    try:
+        try:
+            os.listdir(str(path))
+        except PermissionError:
+            pass
+        except OSError as exc:
+            pytest.skip(
+                "chmod 000 on {} produced {} (errno {}) rather than a denied listing, so "
+                "the unreadable arm could not be set up and went untested".format(
+                    path, type(exc).__name__, exc.errno
+                )
+            )
+        else:
+            pytest.skip(
+                "chmod 000 on {} still allows listing it -- running as root, or a "
+                "filesystem/platform that does not enforce the mode bit. The unreadable "
+                "arm of this test went untested; the readable control still ran "
+                "elsewhere.".format(path)
+            )
+        yield
+    finally:
+        os.chmod(str(path), 0o755)
 
 
 #: Which column of an index row holds the entry FILENAME, per dimension. Measured against
@@ -1161,6 +1203,22 @@ def test_install_refuses_a_symlinked_jit_context_parent_pointing_inside_the_repo
     assert victim_index.read_text(encoding="utf-8") == "decoy\tindex\n"
     assert link.is_symlink()
 
+    # Paired positive control, found missing on this test in a follow-up audit
+    # (#1116): as written, this test would also pass if install() were broken in
+    # some unrelated way that always raises. An ordinary, non-symlinked repo must
+    # keep installing normally.
+    control_root = tmp_path / "control-repo"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
+
 
 def test_install_refuses_rather_than_crashes_on_a_symlink_loop(tmp_path):
     """#1116, found in review: a symlink LOOP (`.claude -> b`, `b -> .claude`) is a
@@ -1191,6 +1249,54 @@ def test_install_refuses_rather_than_crashes_on_a_symlink_loop(tmp_path):
 
     with pytest.raises(oss_rules.RulesError):
         oss_rules.install(root)
+
+    # Paired positive control, found missing on this test in a follow-up audit
+    # (#1116): an ordinary, non-looped repo must keep installing normally.
+    control_root = tmp_path / "control-repo"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
+
+
+def test_install_refuses_rather_than_crashes_on_an_unreadable_ancestor(tmp_path):
+    """#1116, found in a follow-up audit: `is_symlink()` and `is_dir()` both raise
+    `PermissionError` for a candidate inside a directory this process cannot
+    search -- an ordinary condition (a restrictive umask, a directory owned by
+    another user, a shared CI cache), not an attack. Left uncaught, that used to
+    propagate straight out of `install()` as a raw `PermissionError`, breaking its
+    own documented "raises `RulesError`" contract. "Could not tell whether this is
+    a symlink" is not the same claim as "confirmed it is not one," so this must be
+    a refusal, not a silent pass-through and not a crash.
+
+    Paired positive control, same fixture: a repo with the identical real,
+    non-symlinked, fully-readable nesting must keep installing normally.
+    """
+    root = tmp_path / "repo"
+    claude = root / ".claude"
+    claude.mkdir(parents=True)
+
+    with _denied(claude):
+        with pytest.raises(oss_rules.RulesError):
+            oss_rules.install(root)
+
+    control_root = tmp_path / "control-repo"
+    control_root.mkdir()
+    control_layer = _layer(control_root, "paths")
+    control_layer.mkdir(parents=True)
+    stale = control_layer / "stale.md"
+    stale.write_text("---\ntitle: old\nmatch: x\n---\n", encoding="utf-8")
+
+    oss_rules.install(control_root)
+
+    assert not stale.exists()
+    assert (control_layer / oss_rules.INDEX).exists()
 
 
 def test_install_refuses_a_layer_checked_out_as_a_plain_file(tmp_path):

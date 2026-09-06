@@ -880,9 +880,30 @@ def index_rows(dimension, rules):
     return rows
 
 
+class AncestorUnreadable(Exception):
+    """`_symlinked_ancestor` could not tell whether `path` (or something between
+    `root` and `path`) is a symlink, because the OS refused the lookup (#1116):
+    typically `PermissionError` from an ancestor directory this process cannot
+    search -- a restrictive umask, a directory owned by another user, a shared CI
+    cache, none of them adversarial. Neither "clean" (a real answer this function
+    could not have) nor "symlink" (the same) is honest here: this is the third
+    state the whole of this codebase is about, "we could not look," carried as an
+    exception rather than folded into a two-way return because both callers
+    already have a place to convert an exception into their own "could not tell"
+    shape (`RulesError` in `install()`, `CAUSE_DIRECTORY_UNWALKABLE` in
+    `scaffold._layer_scan()`) and neither has one for a third return value.
+    """
+
+    def __init__(self, path, cause):
+        self.path = path
+        self.cause = cause
+        super().__init__("{}: {}".format(path, cause))
+
+
 def _symlinked_ancestor(root, relative_parts):
     """The first path, built by joining `relative_parts` onto `root` one at a time,
-    that is a symlink -- or `None` if none of them are (#1116).
+    that is a symlink -- or `None` if none of them are (#1116). Raises
+    `AncestorUnreadable` if the OS refuses to answer for any candidate (#1116).
 
     Checked top-down and stopped the moment a candidate does not exist as a
     directory, because that means there is nothing further down to check: an
@@ -908,13 +929,30 @@ def _symlinked_ancestor(root, relative_parts):
     ANOTHER REAL DIRECTORY INSIDE THE SAME REPOSITORY still satisfies while still
     being exactly the write-through-a-link case this exists to catch. Walking
     components directly sidesteps both problems at once.
+
+    `is_symlink()` and `is_dir()` both raise `PermissionError` (an `OSError`) for
+    a candidate inside a directory this process cannot search (#1116) -- an
+    ordinary, non-adversarial condition (a restrictive umask, a shared CI cache),
+    not a defect in this walk. Left uncaught, that used to propagate straight
+    through both callers as a raw `PermissionError`, breaking `install()`'s own
+    "raises `RulesError`" contract and `_layer_scan()`'s own "never raises" one.
+    Caught here and re-raised as `AncestorUnreadable` so each caller converts it
+    into its own existing "could not tell" shape rather than crashing.
     """
     current = root
     for part in relative_parts:
         current = current / part
-        if current.is_symlink():
+        try:
+            is_link = current.is_symlink()
+        except OSError as exc:
+            raise AncestorUnreadable(current, exc)
+        if is_link:
             return current
-        if not current.is_dir():
+        try:
+            is_directory = current.is_dir()
+        except OSError as exc:
+            raise AncestorUnreadable(current, exc)
+        if not is_directory:
             return None
     return None
 
@@ -940,8 +978,10 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     at all, where the defect was a statement about a different repository.
 
     Raises `RulesError` if any dimension's layer, or any PARENT of it, is a symlink
-    (#1110, #1116): this module never replaces a layer through a link, only a real
-    directory it owns outright.
+    (#1110, #1116), OR if this process could not determine that for any of them --
+    e.g. a `PermissionError` from an ancestor it cannot search (#1116): this module
+    never replaces a layer through a link, only a real directory it owns outright,
+    and "could not tell" is not the same claim as "confirmed real".
     """
     root = Path(repo_root)
     if root.exists() and not root.is_dir():
@@ -961,9 +1001,26 @@ def install(repo_root, fragments_dir=None, untagged=None, gate=None):
     # link already exists (#1110).
     for dimension in rendered:
         layer = root / ".claude" / "jit-context" / dimension / LAYER
-        ancestor = _symlinked_ancestor(
-            root, (".claude", "jit-context", dimension, LAYER)
-        )
+        try:
+            ancestor = _symlinked_ancestor(
+                root, (".claude", "jit-context", dimension, LAYER)
+            )
+        except AncestorUnreadable as exc:
+            # #1116: a candidate this process cannot search (an ordinary
+            # PermissionError, not a defect in the walk) used to propagate here as
+            # a raw exception, breaking this function's own "raises RulesError"
+            # contract above. "Could not tell whether this is a symlink" is not
+            # the same claim as "confirmed it is not one" -- writing through an
+            # ancestor nobody could actually inspect is exactly the risk this
+            # whole check exists to close, so this is a refusal, the same as a
+            # confirmed symlink, not a silent pass-through.
+            raise RulesError(
+                "{}: could not determine whether {} is a symlink ({}) -- "
+                "install() refuses rather than writing through a path it could "
+                "not inspect. Fix the permission and rerun.".format(
+                    dimension, exc.path, exc.cause
+                )
+            )
         if ancestor is not None:
             raise RulesError(
                 "{}: {} is a symlink, not a directory this plugin owns -- install() "
