@@ -4,13 +4,9 @@
 of the tick, and again as the tick closes for "What ends a tick" below.
 
 `commands/tick.md` stays the file `/oss:tick` documents and is what the scheduler itself is injected
-with. It carries the spawn of `oss:sub-manager`, the seven-state handback classification and step
-7 (arming the next wakeup) -- the three things the scheduler itself executes. This file carries the
-whole of a sub-manager's own order of operations, split out for #1037: the scheduler used to load
-steps 1 through 6 in full on every tick, ~13k tokens of a ~52k-byte file, for content only a
-sub-manager's own context ever runs -- the same shape #695 already measured and split for the
-manager skill, one file over. Nothing about *how* a tick runs changed; only which file carries it,
-and `agents/sub-manager.md` points here directly rather than at `commands/tick.md` for these steps.
+with: the spawn of `oss:sub-manager`, the seven-state handback classification and step 7 (arming the
+next wakeup). This file carries the whole of a sub-manager's own order of operations (#1037), and
+`agents/sub-manager.md` points here directly for these steps.
 
 **Say whether you read it.** Three states, the same three everything else in this loop uses:
 `read`, `not-read` with the reason, or `could-not-read`. A phase entered without its file is a set
@@ -33,22 +29,18 @@ tool, and you are gone by the time step 7 would run.
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --last
    ```
 
-   **Actually run it, here, before any work.** This step used to print `--help`, which reads the
-   CLI and not the file — so the first thing that touched the state file was step 6, and a repo
-   whose file the script cannot use spent a whole tick before finding out (#149). A `FAIL` on this
-   line names what is wrong and what to run; the common one is a state file written by a
-   pre-plugin maintainer loop, an object keyed `tick_<ISO>` rather than a list of entries, which
-   `--migrate` converts in place while keeping the original beside it. **A `FAIL` here stops the
-   tick** — settle it, then start over at this step. `no entries yet` means a first tick and
-   nothing else.
+   **Actually run it, here, before any work (#149)** -- not `--help`, which reads the CLI and not
+   the file. A `FAIL` on this line names what is wrong and what to run; the common one is a state
+   file written by a pre-plugin maintainer loop, an object keyed `tick_<ISO>` rather than a list of
+   entries, which `--migrate` converts in place while keeping the original beside it. **A `FAIL`
+   here stops the tick** — settle it, then start over at this step. `no entries yet` means a first
+   tick and nothing else.
 
    **If a wait is still pending, test it before anything else in this tick (#337).** A wait's
    lifetime is not one entry -- `--pending-wait` finds the most recently recorded wait even behind
    entries that landed after it (a cohort freeze, a lane record, a plain intake), so this is not
-   only about the tick's very last entry (#436).
-   *Blocked on audit completion* is unfalsifiable prose and once outlived the audit it named by
-   ninety minutes with nothing re-reading it — three hours ten minutes with a green default branch,
-   an empty pull request board and four unstarted issues. Check for one directly:
+   only about the tick's very last entry (#436). *Blocked on audit completion* is unfalsifiable
+   prose. Check for one directly:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --pending-wait
@@ -71,17 +63,12 @@ tool, and you are gone by the time step 7 would run.
    field exists to close. Only record a fresh wait (`--wait-dispatch`/`--wait-observable` on step
    6's `--decision` call) when this tick itself becomes blocked on something new.
 
-   **Compare this tick's plugin identity against the last one recorded (#477, #677).** A version
-   change under a working loop invalidates every environmental fact the previous tick established,
-   and nothing notices it unless this is asked directly. `${CLAUDE_PLUGIN_ROOT}` is a
-   version-pinned path substituted once when this command was injected — asking THAT copy for its
-   own version can only ever answer with the version it was pinned to, and will report `unchanged`
-   straight through a real update (#677, observed: a real 0.14.0 → 0.15.0 update ten minutes
-   earlier reported `unchanged`, because the check was structurally asking the 0.14.0 copy what
-   version it is). Resolve the copy actually recorded as installed for this project instead, and
-   fall back to the pinned path only when that resolution fails — naming which route was used,
-   because the two are not the same measurement and comparing across them is #677's own second,
-   independently observed failure mode:
+   **Compare this tick's plugin identity against the last one recorded (#477, #677).**
+   `${CLAUDE_PLUGIN_ROOT}` is a version-pinned path substituted once when this command was injected
+   — asking THAT copy for its own version can only ever answer with the version it was pinned to,
+   and will report `unchanged` straight through a real update (#677). Resolve the copy actually
+   recorded as installed for this project instead, and fall back to the pinned path only when that
+   resolution fails — naming which route was used, because the two are not the same measurement:
 
    ```bash
    RESOLVED_ROOT="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" \
@@ -99,34 +86,26 @@ tool, and you are gone by the time step 7 would run.
      --check-plugin-identity "$IDENTITY" --plugin-identity-route "$ROUTE"
    ```
 
-   **#942: the same run already answers "is the installed copy behind the repository I am
-   standing in", when that question can even be asked — read its line instead of discarding
-   it.** The tick-to-tick comparison above answers "did this move since the last tick"; it
-   cannot see a maintainer running an install that has never caught up with their own repo,
-   because it only ever compares one tick's identity to another's. That is a different
-   question from "is this the version of the repository I am standing in", and it only has an
-   answer at all when the managed repo IS this plugin — every other repo has no such notion of
-   being "behind". `doctor.py`'s own `check_plugin_copy` already asks exactly that question on
-   every run — the SAME `$DOCTOR_OUTPUT` above already carries it — by comparing the checkout
-   at `--root .` against the installed copy it ran from, byte for byte, and naming both
-   manifests' versions the instant they disagree. Nothing needs to run twice; the line was
-   simply thrown away by the `sed` above, which keeps only the `OK oss plugin version` line.
-   Pull it out and say so before doing anything else this tick:
+   **The same run already answers "is the installed copy behind the repository I am standing in",
+   when that question can even be asked — read its line instead of discarding it (#942).** That
+   question only has an answer at all when the managed repo IS this plugin — every other repo has no
+   such notion of being "behind". `doctor.py`'s own `check_plugin_copy` already asks it on every run
+   — the SAME `$DOCTOR_OUTPUT` above already carries it — comparing the checkout at `--root .`
+   against the installed copy it ran from, byte for byte, and naming both manifests' versions the
+   instant they disagree. Nothing needs to run twice; the `sed` above keeps only the `OK oss plugin
+   version` line. Pull it out and say so before doing anything else this tick:
 
    ```bash
    PLUGIN_COPY="$(printf '%s\n' "$DOCTOR_OUTPUT" \
      | sed -nE 's/^(OK|WARN) plugin copy: //p' | head -n1)"
    ```
 
-   `-E` rather than `\(OK\|WARN\)`: BSD `sed` (macOS, the platform this plugin is developed
-   on) does not implement `\|` alternation in a basic regular expression at all — it is a GNU
-   extension — so that spelling would silently match nothing on every macOS machine and every
-   `sed -n` invocation above would need the same audit. `-E` is POSIX extended-regex mode and
-   both BSD and GNU `sed` implement it.
+   `-E` rather than `\(OK\|WARN\)`: BSD `sed` does not implement `\|` alternation in a basic regular
+   expression, so that spelling silently matches nothing on macOS. `-E` is POSIX extended-regex mode
+   and both BSD and GNU `sed` implement it.
 
-   Five shapes, and only the first is worth a line in the tick record — the other four are
-   this check correctly declining to say anything is wrong, exactly as narrow as #942 itself
-   says the whole question is:
+   Five shapes, and only the first is worth a line in the tick record — the other four are this
+   check correctly declining to say anything is wrong:
 
    - **`SKEW …`** — the checkout and the installed copy differ, and the sentence at its end
      names both manifests' declared versions. Report this prominently before anything else
@@ -138,10 +117,7 @@ tool, and you are gone by the time step 7 would run.
    - **`doctor.py answered from the checkout being diagnosed …, so there is no installed-copy/
      clone split to report here`** — also nothing to report, and also clean, not
      could-not-tell: this is what a maintainer developing this plugin against its own working
-     tree looks like (`$DOCTOR_ROOT` resolved to the same directory `--root .` names), the
-     literal scenario #942's own motivation describes. A self-review on this same change caught
-     an earlier draft of this list treating this exact shape as `could not be determined`,
-     which would have reported a spurious ambiguity on the ticks #942 cares about most.
+     tree looks like (`$DOCTOR_ROOT` resolved to the same directory `--root .` names).
    - **`… is not a checkout of this plugin …`** — not applicable. The repo being ticked is not
      this plugin itself, so "behind the repo it manages" has no meaning here; say nothing
      further.
@@ -154,16 +130,14 @@ tool, and you are gone by the time step 7 would run.
    over it is a judgement call for this tick to make and name, not an automatic re-run. `could-not-
    tell` — no prior tick ever recorded one (a first tick after this shipped, commonly) — say so once
    rather than letting it read as `unchanged`. `route-mismatch` — the prior tick's reading was taken
-   by a different route than this one (every repo hits this exactly once, on the tick this fix
-   itself ships: the prior was recorded via the old pinned-root route). Treat it like `could-not-
-   tell` for this tick — there is nothing comparable yet — and say so, rather than letting a route
-   change silently read as `changed` (the exact shape #677's own comment warned a naive fix would
-   produce for every repository on its first tick). Record this tick's own identity AND route on
-   step 6's `--decision` call regardless of which of the four it found (`--plugin-identity
-   "$IDENTITY" --plugin-identity-route "$ROUTE"`), so the next tick has a comparable prior.
+   by a different route than this one. Treat it like `could-not-tell` for this tick — there is
+   nothing comparable yet — and say so, rather than letting a route change silently read as
+   `changed`. Record this tick's own identity AND route on step 6's `--decision` call regardless of
+   which of the four it found (`--plugin-identity "$IDENTITY" --plugin-identity-route "$ROUTE"`), so
+   the next tick has a comparable prior.
 
    **Also snapshot `${CLAUDE_PLUGIN_ROOT}` itself, for a check within THIS tick (#565).** The
-   comparison above is cross-tick, against the *previous* tick's recording. #565 asks a narrower,
+   comparison above is cross-tick, against the *previous* tick's recording. This is the narrower,
    separate question: does the value this tick keeps substituting into every command move out from
    under it before this SAME tick ends — an update landing mid-session, which `plugin-currency.md`
    already says is not itself a fault. Snapshot it now; step 6 checks it once more just before the
@@ -180,23 +154,18 @@ tool, and you are gone by the time step 7 would run.
    supertool 'gh-prs' 'gh-issues:per=100' 'gh-branch' 'git-worktrees'
    ```
 
-   `gh-issues` bare caps at `--limit 50`, silently — a repo with 88 open issues reads as
-   50, and the tick proceeds on a board that is short by 38 without anything saying so
-   (#593). `per=100` raises the cap; it does not remove it, and a bigger repo hits the
-   new ceiling the same way. **Read the footer, not just the rows**: `gh-issues` names
-   its own population in three states — uncapped (every open issue is on screen),
-   `capped at --limit N — more may exist, raise with per=N` (the fetch stopped short;
-   read the count as "at least N", never as "the whole backlog"), or genuinely empty. A
-   capped footer this tick is a fact to report and act on — raise `per=` again, or say
-   in plain terms that the board was partial — never a silent floor for what "nothing
-   left" means in step 7.
+   `gh-issues` bare caps at `--limit 50`, silently (#593). `per=100` raises the cap; it does not
+   remove it, and a bigger repo hits the new ceiling the same way. **Read the footer, not just the
+   rows**: `gh-issues` names its own population in three states — uncapped (every open issue is on
+   screen), `capped at --limit N — more may exist, raise with per=N` (the fetch stopped short; read
+   the count as "at least N", never as "the whole backlog"), or genuinely empty. A capped footer
+   this tick is a fact to report and act on — raise `per=` again, or say in plain terms that the
+   board was partial — never a silent floor for what "nothing left" means in step 7.
 
-   The fourth op is the one this step used to be missing, and it is not conditional:
-   `git-worktrees` is available wherever supertool is, and it boards every tree of this repo
-   whether or not anything configured a root for them. `worktree_root` in `.oss.local.json` names
-   where this loop puts its own — but **the board is not gated on that key**, because a tree nobody
-   configured is still a tree, and skipping the call in a repo that sets no root reproduces exactly
-   the absence this step exists to close: a worktree board nobody read renders as no worktrees.
+   The fourth op is not conditional: `git-worktrees` boards every tree of this repo whether or not
+   anything configured a root for them. `worktree_root` in `.oss.local.json` names where this loop
+   puts its own — but **the board is not gated on that key**: a worktree board nobody read renders
+   as no worktrees.
 
    Which trees exist, who holds them and what merged is an input to step 3, not a step-5 cleanup
    detail. **Read both of its columns in three states, and never round the third one up.**
@@ -205,10 +174,9 @@ tool, and you are gone by the time step 7 would run.
    including why the shell exit cannot be branched on.
 
    **Then the watcher fleet, which is conditional — probe first, then run.** It gets its own call
-   for two reasons, not one: `radar` lives behind a preset and refuses when no tiers are
-   registered, so reaching for it blind is a refusal rather than a reading; and the bare call is a
-   write. `radar:--state` is the read-only probe — it spawns nothing, reaps nothing and calls no
-   API.
+   for two reasons: `radar` lives behind a preset and refuses when no tiers are registered, so
+   reaching for it blind is a refusal rather than a reading; and the bare call is a write.
+   `radar:--state` is the read-only probe — it spawns nothing, reaps nothing and calls no API.
 
    ```bash
    supertool 'radar:--state'
@@ -219,23 +187,19 @@ tool, and you are gone by the time step 7 would run.
    it. **Tiers are registered** — run the heal below. **The probe itself did not answer** — that is
    `unknown`, and it is reported, not skipped past.
 
-   **A tier that resolved over `pollers : none` is the second answer, not the first.** That is the
-   case the heal exists for, and it is the one that reads like the absence of a fleet: a repo which
-   registered a board and has never spawned a poller prints an empty list, exactly as a repo with
-   no board would. What settles which answer you are in is whether the probe resolved a tier module,
-   never how long its poller list is. Read it the other way and the board stays unraised across
-   every tick that repo ever runs, with nothing anywhere reporting a fault.
+   **A tier that resolved over `pollers : none` is the second answer, not the first.** What settles
+   which answer you are in is whether the probe resolved a tier module, never how long its poller
+   list is.
 
    ```bash
    supertool 'radar'
    ```
 
    Bare `radar` heals and forks pollers. That is a write, not a read, which is why the probe is a
-   separate call rather than folded into it — you run the repair deliberately, having seen what
-   needs repairing. It respawns watchers for open pull requests with no live poller and puts the
-   default branch on the board as a member, which is the red-default-branch case no pull request
-   covers. `radar:--state` buys none of that: it spawns nothing and reaps nothing, so a tick that
-   only probes has reported a fleet it also declined to bring up.
+   separate call rather than folded into it. It respawns watchers for open pull requests with no
+   live poller and puts the default branch on the board as a member, which is the red-default-branch
+   case no pull request covers. `radar:--state` buys none of that: a tick that only probes has
+   reported a fleet it also declined to bring up.
 
    **The heal has its own three outcomes, and they are not the probe's.** *Raised* — the tiers
    resolved and the board printed; report its counts. *Not configured* — no tier is registered, so
@@ -248,36 +212,31 @@ tool, and you are gone by the time step 7 would run.
    watcher, so `could not raise` is reported as itself or it is indistinguishable from a fleet that
    was already up.
 
-   **This is not the tick's only heal, and it is the one that covers the least.** Radar has no
-   discovery feed — its own board footer says `discovery: radar ticks only` — so this run arms
-   pollers for what is open *at the moment it runs* and for nothing opened after. Step 4 states the
-   rule that governs every later one, and *What ends a tick* is where it gets measured.
+   **This is not the tick's only heal.** Radar has no discovery feed — its own board footer says
+   `discovery: radar ticks only` — so this run arms pollers for what is open *at the moment it runs*
+   and for nothing opened after. Step 4 states the rule that governs every later one, and *What ends
+   a tick* is where it gets measured.
 
    **Relay the probe's channel line rather than swallowing it.** When `.supertool.json` declares no
    `watch_name` in any op block, the channel name came from the environment, and the probe says so
    in as many words: this socket and these poller slots **may be another project's fleet**. The heal
    is a write into whatever that name resolves to, so a tick that forks pollers without repeating
-   the line has reported a repair it cannot attribute — and an attribution nobody can check is worth
-   less than one nobody claimed.
+   the line has reported a repair it cannot attribute.
 
-   Read the tally, not the fact that the call succeeded: **forwarded is not delivered**. A poller
-   that is down and a poller with nothing to say produce the same silence, so a channel nobody
-   probed is **not a quiet channel** — it is a channel with no reading, and reporting it as calm is
-   this loop's own defect class landing on the loop's own instrumentation.
+   Read the tally, not the fact that the call succeeded: **forwarded is not delivered**. A channel
+   nobody probed is **not a quiet channel** — it is a channel with no reading, and reporting it as
+   calm is this loop's own defect class landing on the loop's own instrumentation.
 
 3. **Act on what is open before starting anything new.** A merged-but-unverified PR, a red default
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats
    starting.
 
    **A wait is not an act, and it does not outrank dispatch (#820).** The three examples above are
-   all work — verifying a merge, fixing a red branch, finishing an agent's uncommitted work. Watching
-   CI go green is not: the run concludes at the same moment whether or not anybody is looking at it.
-   Dispatch every lane that is ready to run before starting any wait — a lane runs concurrently with
-   CI and with every other lane, so one started before the wait is free and one started after it pays
-   the wait's whole duration on top of its own. Prefer polling (`gh-pr:N:status`, `gh-branch`) over a
-   blocking `gh run watch`, which spends the whole turn watching and leaves nothing free to act on a
-   handback that lands mid-run — sharper still given #818: a sub-manager cannot receive channel
-   events, so the gaps between polls are the only responsiveness it has.
+   all work; watching CI go green is not. Dispatch every lane that is ready to run before starting
+   any wait. Prefer polling (`gh-pr:N:status`, `gh-branch`) over a blocking `gh run watch`, which
+   spends the whole turn watching and leaves nothing free to act on a handback that lands mid-run —
+   sharper still given #818: a sub-manager cannot receive channel events, so the gaps between polls
+   are the only responsiveness it has.
 
 4. **Take the handback, then push and open the pull request.** An agent replies with a path. Push its
    branch, read the report's fields as you need them, **read the pull request body it wrote**, then
@@ -303,13 +262,9 @@ tool, and you are gone by the time step 7 would run.
    supertool 'radar'
    ```
 
-   **The rule is *board membership changed*, and it is deliberately not a list of places to heal.**
-   A list is easier to follow, and this file already had one: #187 added the probe and #208 added
-   the heal, and both landed in step 2 because that is where the board read was. So the pull request
-   the tick itself opened had no poller for its entire CI run, and the loop fell back to polling
-   `gh-pr:N:status` in a shell without ever noticing why it had to (#242). A list is complete until
-   somebody adds a step, and then it is wrong silently — the failure it produces is a missing
-   poller, and a missing poller is a silence.
+   **The rule is *board membership changed*, and it is deliberately not a list of places to heal
+   (#242).** A list is complete until somebody adds a step, and then it is wrong silently — the
+   failure it produces is a missing poller, and a missing poller is a silence.
 
    Three cases the rule covers, and **one of them has nothing to heal at all**, which is the fact
    that decides this rather than a preference for rules over lists:
@@ -326,28 +281,12 @@ tool, and you are gone by the time step 7 would run.
      armed for it; it is re-answered on each radar run. So this case is fixed by reading the board
      again and by nothing else, and no list of heal sites could ever have contained it.
 
-   It cannot double-arm — a slot already alive is neither healed nor respawned — which is why the
-   rule errs toward running it more often rather than less. **What it is not is free**, and "one op"
-   understates it: each bare `radar` is a board read, so it lists the pull requests, reconciles the
-   check legs of each and re-answers the default branch. Following this rule takes a tick from one
-   such read to three. That is the price of the fix and it is deliberate: the alternative is a
-   poller that was never armed, and a missing poller reports as a quiet board.
+   It cannot double-arm — a slot already alive is neither healed nor respawned — so err toward
+   running it more often rather than less. It is not free: each bare `radar` is a board read.
 
-   **#302 asked whether the *merged* case above could skip the heal when nothing is left bare, gated
-   on a cheap read instead of the event category — measured, not reasoned, before that rule was
-   kept unchanged.** `radar:--state` looks like that cheap read. It is not one: it renders the tier, the
-   filter and the pollers, and says outright that live coverage is "not resolved here, that would be
-   a call" — it cannot answer *N watched* against *N open*. The only op that answers that is the bare
-   `radar` heal itself. Timed back to back in this clone with nothing between the two calls (observed,
-   2026-08-20): `radar:--state` returned in 2.31s without touching coverage; `radar` returned in
-   11.46s and only then printed `1 open | 1 green | 1 watched`. A gate reading coverage before
-   deciding to heal would pay the heal's own cost to decide whether to pay it, so there is no cheaper
-   read to gate on — this route is not implementable as a saving, only as extra bookkeeping around a
-   call already made. The issue's other route, gating the merge case on `gh-pr-merge`'s own receipt,
-   needs that op to state whether a stacked follow-up exists; it does not today, so that is a filing
-   against supertool's own tracker and not a diff here. The rule stays *board membership changed*,
-   unconditionally, for both reasons at once — and it still errs toward running more than less, per
-   the paragraph above.
+   **Do not gate the *merged* case on a cheaper coverage read; there is not one (#302).**
+   `radar:--state` cannot answer *N watched* against *N open*; only the bare `radar` heal can. The
+   rule stays *board membership changed*, unconditionally.
 
 5. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
    optional. In particular: the check states must sum to the leg count, cleanup runs via the merge
@@ -372,7 +311,7 @@ tool, and you are gone by the time step 7 would run.
    and the third must never render as the second: `candidates` (at least one issue survived, with
    the reason every dropped one was dropped), `none-available` (every input was read cleanly and
    nothing survived — a real, established absence), `could-not-select` (at least one input could
-   not be read — never `none-available`, which is exactly the fold #970 exists to close). A tick
+   not be read — never `none-available`). A tick
    that finds nothing ready and a tick whose claim or staleness read failed must not close
    identically as `nothing left`; this call is what tells them apart. It does not replace `--claim`
    below — reading who is claimable and writing a claim stay separate calls — and it does not
@@ -395,18 +334,15 @@ tool, and you are gone by the time step 7 would run.
    through to merge. A lane that comes back red, or whose base moves under it, is resumed via
    `SendMessage` to its own agent -- never re-dispatched fresh at the same issue -- unless that
    agent is genuinely gone (context died, or resumed and silent twice), which is its own named
-   state, `agent-unreachable`, and not a silent excuse to spawn again. The full argument, the cost
-   comparison and the exact state names are in `skills/manager/phases/dispatch.md`; a re-dispatch
-   with neither an attempted resume nor an `agent-unreachable` finding behind it is the defect this
-   note exists to stop. **Record it, at step 6's own `--decision` call, with `--lane-dispatch-state
-   ISSUE=STATE[:WHY]`** -- it refuses the whole call outright rather than only being read.
+   state, `agent-unreachable`, and not a silent excuse to spawn again. The exact state names are in
+   `skills/manager/phases/dispatch.md`. **Record it, at step 6's own `--decision` call, with
+   `--lane-dispatch-state ISSUE=STATE[:WHY]`** -- it refuses the whole call outright rather than
+   only being read.
 
    **When delegating a new issue, name `scripts/lane_setup.py` in the brief instead of typing the base
-   commit and the worktree list into it by hand.** Both rot between the moment this tick reads them and
-   the moment the dispatched agent does — `main` has moved mid-tick before, and a hand-copied worktree
-   list has already flattened `cannot tell` to `idle` once (#317). The brief names the script and the
-   issue number; the dispatched agent runs it as its own first call and gets the resolved base, the
-   derived branch and worktree, and the condensed board back, freshly re-derived rather than pasted:
+   commit and the worktree list into it by hand (#317).** The brief names the script and the issue
+   number; the dispatched agent runs it as its own first call and gets the resolved base, the derived
+   branch and worktree, and the condensed board back, freshly re-derived rather than pasted:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim --lane <pattern> [--lane <pattern> ...]
@@ -422,10 +358,8 @@ tool, and you are gone by the time step 7 would run.
    disjointness probe on a candidate that might not be dispatched** — a probe that carries `--claim`
    leaves a phantom record behind that can block a later `--derive-held` call for hours.
 
-   **`--claim` refuses without `--lane` (#788)** — a fileless claim used to poison every later
-   `--derive-held` call this tick, for every other candidate probed after it, because the held set
-   could no longer be trusted complete while a lane with no known files was live. Pass the same
-   `--lane` patterns this candidate was already probed with.
+   **`--claim` refuses without `--lane` (#788)** — pass the same `--lane` patterns this candidate
+   was already probed with.
 
    **The merge call needs `|force`, and that is not a bypass.** `gh-pr-merge:N:squash` with no
    suffix previews its gate and merges nothing; `|force` is the confirmation, and every refusal the
@@ -433,8 +367,7 @@ tool, and you are gone by the time step 7 would run.
    the review is already spent — see *Before the first tick* in `skills/manager/phases/merge.md`.
 
    **Compose each spawn's `description` with `scripts/lane_setup.py --label`, not by hand (#539,
-   folded in for #1069).** A lane carrying three issues and a lane carrying one used to render
-   identically in the fleet view — the label named only the first issue. `python3
+   folded in for #1069).** `python3
    "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label <every issue this
    lane carries, comma-separated> "<phrase>"` prints `Lane <primary> x<N>  <phrase>`
    and refuses to print anything when the bundle is incomplete — *Run a fleet, not a queue* in
@@ -478,9 +411,7 @@ tool, and you are gone by the time step 7 would run.
    authorship rule, the label that makes the numerator derivable rather than recalled (#762), and why
    no target ratio is claimed are in the skill under *Intake: filings per merged pull request*.
 
-   **Record what this tick cost to *carry*, in the same call (#694).** A tick's own dollar cost
-   points at the wrong ticks — ranking 48 ticks by cost said twelve were expensive; ranking the same
-   ticks by context inherited at their start explained why, and it was not that they did more work.
+   **Record what this tick cost to *carry*, in the same call (#694).**
    `--tick-cost-session "$CLAUDE_CODE_SESSION_ID"` is a real, observable value — Claude Code sets it
    in the environment, so it costs nothing to read and nothing to invent. Pass `--tick-cost-first`
    only on the very first `--decision` this running session writes: that tick's own `start_ctx`
@@ -488,9 +419,9 @@ tool, and you are gone by the time step 7 would run.
    scanning the state file for an earlier entry carrying the same session id. **If you are not certain
    this is genuinely the session's first tick — a resumed session, for instance — omit
    `--tick-cost-first` rather than guess**; the CLI refuses it outright if this session already has an
-   earlier entry, resolved floor or not, rather than silently writing a false one — and a false floor,
-   once written, would never be corrected by anything later. The block above is deliberately the
-   *later*-tick shape; on the one call this session ever makes as its own first tick, append the flag:
+   earlier entry, resolved floor or not, rather than silently writing a false one. The block above is
+   deliberately the *later*-tick shape; on the one call this session ever makes as its own first
+   tick, append the flag:
 
    ```bash
      … --tick-cost-why "no live token-usage read available to this tick" \
@@ -545,9 +476,8 @@ stopped because there was nothing to do and a tick that stopped because it did n
 close on the same line. A release is a step in this list too — the tag is when merged work becomes
 reachable by the running loop, so the tick after one has more to do, not less (#235).
 
-**And not while the board says something is unwatched.** Step 4's rule is easier to skip than a
-list would be — that is the one thing a list is better at — so the anchor is a *measurement* taken
-at the end, not a reminder placed at the top. Read the board once more before the tick closes:
+**And not while the board says something is unwatched.** The anchor is a *measurement* taken at the
+end, not a reminder placed at the top. Read the board once more before the tick closes:
 
 ```bash
 supertool 'radar'

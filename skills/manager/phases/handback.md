@@ -2,10 +2,6 @@
 
 **Read this when** a dispatched lane has replied with a report path -- before you read the report or push anything.
 
-`skills/manager/SKILL.md` is the spine and carries the directives; this file carries the argument
-each one rests on -- the incident it was written for, the measurement behind it, the thing that was
-tried and rejected. A rule here that reads as obvious is one that has already been got wrong.
-
 **Say whether you read it.** Three states, the same three everything else in this loop uses:
 `read`, `not-read` with the reason, or `could-not-read`. A phase entered without its file is a set
 of rules that did not run, and a rule that did not run renders exactly like a rule with nothing to
@@ -38,26 +34,23 @@ naming every companion issue the lane also claimed as a `--release-also`. It rem
 assignment and reports `released` / `not-assigned` / `not-mine` / `could-not-read` /
 `could-not-release` for each issue named. Skipping this turns a collision problem into a permanent
 lock: an issue assigned to a lane that
-no longer exists is indistinguishable from one still being worked, which is this repository's own
-defect class landing on the mechanism meant to prevent it. A lane that *did* return a commit needs no
+no longer exists is indistinguishable from one still being worked. A lane that *did* return a commit
+needs no
 release here — merging closes the issue and drops it off the open board this selection step reads,
 which is what stops it being picked again, not the assignee field being cleared.
 
-**A pull request that closes without merging releases its issue too (#465).** It is further along
-than a lane that never committed — a commit exists, a pull request was opened — and ends in the same
-state: an assignee, no lane behind it, and a selection step that now skips it forever because it
-reads as somebody's. `gh-pr:N:status` already reads `state` and `merged_at`; when `state` is `CLOSED`
+**A pull request that closes without merging releases its issue too (#465).** `gh-pr:N:status`
+already reads `state` and `merged_at`; when `state` is `CLOSED`
 and `merged_at` reads as unset (the op prints `-`, never the word `null`), release the linked issue
 the same way — `lane_setup.py <N> --release`. Three states, exactly as parallel as the
 claim step's own: **released** — `state` is `CLOSED` and `merged_at` is unset; **still-assigned** —
 `state` is `MERGED` or still `OPEN`; and **could not read the pull request state** — the call failed
 or was not made, and this **must never render as released**, for the same reason a claim state that
-could not be read must never render as free. The reachable event is the one this loop's own decision
-produces: when this loop is the one that closes a pull request without merging — a superseded
+could not be read must never render as free. When this loop is the one that closes a pull request
+without merging — a superseded
 approach, a scope change, a duplicate — run this check as part of that same step, not a separate
 sweep. **A pull request closed by someone else, outside a tick this loop ran, is not observed by this
-step**; that gap is named rather than silently solved, because nothing in the loop currently re-reads
-a closed pull request on its own once it drops off the board a merge would have closed it from.
+step**; that gap is named rather than silently solved.
 
 ## Opening the pull request
 
@@ -67,8 +60,7 @@ Pushing and opening is yours, and it is one read plus one call:
 2. **Read the body before you publish it.** Not optional, and it is what makes this a saving rather
    than a trick: you stop *writing* a document you still have to *read*. A body published unread is
    your name on text you have not seen. If it is wrong, argue it in the pull request or send it back;
-   do not quietly rewrite it, because the person who did the work writes the record — twice now, a
-   body has carried a correction to the brief that a re-narration had flattened out.
+   do not quietly rewrite it, because the person who did the work writes the record.
 3. **Hand the payload path to `gh-pr-create:@FILE`.** Not `gh pr create`, and not a body of your own
    assembled from the report. The op parses the body's closing references with the same reader
    `gh-pr` uses, so a missing or malformed `Closes #N` is **caught** at creation, the earliest point
@@ -82,8 +74,7 @@ Pushing and opening is yours, and it is one read plus one call:
    issue it was briefed on; a maintainer who then keys it to the pull request number instead runs
    `git mv changelog.d/N.section.md changelog.d/M.section.md` — and the fold consumes the
    *filename*, so the entry body still has to name the number the filename now carries, or the
-   `fragment` leg refuses a fragment that passed a moment earlier (measured on PR #338: the body
-   named `#338`, the file became `425.…`, and CI read the mismatch as a fragment naming nothing).
+   `fragment` leg refuses a fragment that passed a moment earlier.
    The rename and the rewrite are one coupled fact, not two — a fragment keyed to the pull request's
    own number does not exist until the pull request is open, so nothing about it is correct until
    both halves have moved together.
@@ -96,9 +87,8 @@ Pushing and opening is yours, and it is one read plus one call:
 
 **Four fields arrive filled in, and they are not yours to retype.** The payload requires `title`,
 `body`, `head` and `base`; `schemas/agent-report.schema.json` also defines `draft` and `labels` as
-optional, so read it rather than this sentence for the current set. Measured: ten pull requests in
-one day where `head` and `base` were both overwritten by hand and all twenty values were already
-right. The op requires `base` because it never *defaults* one — not because you must type it.
+optional, so read it rather than this sentence for the current set. The op requires `base` because
+it never *defaults* one — not because you must type it.
 
 **How far the validator actually gets, because "already checked" is not the same claim for both**,
 and the difference decides what is worth your attention:
@@ -125,8 +115,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <the report path the ag
 older contract than the clone the work was done in, and routinely does, because a merged fix is
 invisible to the running loop until a tag is cut and installed. So:
 
-- **`ok`**, with the contract version it validated against — the routine answer. Since #416 that
-  version is sometimes **older than the copy's own**, and the line says so: the schema declares per
+- **`ok`**, with the contract version it validated against — the routine answer. That
+  version is sometimes **older than the copy's own** (#416), and the line says so: the schema declares per
   version whether it widened the one below it, and a chain of declared widenings back to the
   report's number means a document valid there is valid here. `ok … read under version N` is a
   weaker claim than a plain `ok` and is worth reading as one — it says the report satisfies a
@@ -150,9 +140,7 @@ the payload alone it has no branch to compare against, so the one check this cal
 run. Validating the report reads both files, which is why one path covers both.
 
 Reach for the payload path anyway and the validator says so by name and names the call to run — it
-does not enumerate the report keys a payload is missing, because fourteen of those on a completely
-correct payload reads as a finding about the file rather than a mistake by the caller, and the move
-it invites is hand-writing `head`.
+does not enumerate the report keys a payload is missing.
 
 You have just pushed the branch, so you are the only party in the loop holding ground truth about
 what `head` should be. **Compare it; rewriting them by hand is the one move that makes things
@@ -178,10 +166,7 @@ of the pull request that survives into the log, so it belongs to whoever did the
 ### Your verification is a different voice, so append it
 
 If you verified something the agent could not, **append a `## Verified by the maintainer` section to
-the body — never edit the agent's text into agreement with you.** Step 2 above says the person who
-did the work writes the record; without somewhere to put a verification, that rule leaves rewriting
-as the only way to record one, which is exactly what it forbids. The section is the missing half,
-not a new ceremony.
+the body — never edit the agent's text into agreement with you.**
 
 **This happens at review time, not at creation time** — you have verified nothing when you open the
 pull request, and your verification is the *Reviewing* section below. So it is an edit to a body
@@ -195,28 +180,17 @@ The payload is the shape `gh-pr-create` takes. **Read the published body out fir
 payload from it** rather than reconstructing it — the write replaces the whole body, so an append
 built from memory silently truncates the record you were protecting.
 
-**Use the op rather than raw `gh pr edit`, and #195 is the whole reason.** `gh pr edit` resolves the
+**Use the op rather than raw `gh pr edit` (#195).** `gh pr edit` resolves the
 pull request through a GraphQL query that also asks for `projectCards`, a Projects (classic) field
-GitHub now refuses. It exits non-zero naming `repository.pullRequest.projectCards` — a field you
-never asked for, about a feature you are not using — and **leaves the body unchanged**. The command
-is loud and the *edit* is silent, and the error reads as deprecation noise rather than as an
-unwritten body, which is what makes it dismissible: a maintainer following the old wording believed
-a verification was recorded and the pull request carried none. Two things bound it, both measured
-rather than assumed, and neither is the reason to prefer the op:
-
-- **It is not about your repository.** The field is refused for **every** repository, so this does
-  not depend on classic project cards existing anywhere.
-- **It is about your `gh`.** A current `gh` consults a detector and drops the field where Projects
-  (classic) is unsupported (cli/cli#13069); a `gh` predating that fix asks for it unconditionally
-  and fails every time. So the raw call will start working again on its own, which is exactly why
-  pinning a hand-rolled replacement for it would have been the wrong fix.
+GitHub now refuses. It exits non-zero naming `repository.pullRequest.projectCards` and **leaves the
+body unchanged** — the command is loud and the *edit* is silent, and the error reads as deprecation
+noise rather than as an unwritten body.
 
 **The mechanism was never the load-bearing half — the read-back is.** The op writes through REST,
 then compares the body the response carried against the bytes it sent and reports `EXACT`,
 `NORMALISED`, `MISMATCH` or `UNKNOWN`, and only the first two exit `0`. That is this repository's own
 rule enforced rather than remembered: **a write that landed something else is never rendered as a
-success**, and a verification reported from a command's return is a record nobody read —
-indistinguishable from a verification nobody performed. If you ever do reach for a raw call you have
+success**. If you ever do reach for a raw call you have
 taken that guarantee back into your own hands, so re-read the published body yourself with
 `gh-pr:<N>:full` and confirm your section is in it. `:full` is load-bearing there: a plain read
 truncates a long body and an appended section sits at the end, so the cheap read is precisely the one
@@ -224,17 +198,12 @@ that cannot see what it was called to confirm.
 
 **The op also closes the composition that made this worse than a broken command.** `gh-pr-create`
 **refuses** a body with no `Closes #N` at creation, the earliest point anything can see it, rather
-than creating the pull request and leaving the gap for later. This document said *reports, and exits
-0* between #209 and #776 — #209's own reasoning was that the sentence claiming a guarantee is the
-sentence that stops anyone checking, and that argument is still right; it settles in favour of a
-refusal that names its own remedy, not in favour of a silent pass. Measured under the old behaviour,
-on two pull requests in one night: both created with no binding closing reference and repaired by
-hand before merge, and four of seven agent payloads across two sessions carried the same defect — the
-failure the refusal now prevents outright. When this pull request deliberately closes nothing — a
+than creating the pull request and leaving the gap for later (#776). When this pull request
+deliberately closes nothing — a
 `Part of #N` pull request, or unrelated work — the refusal is not a false positive to route around
 with a keyword that lies: set `no_close = true` at the payload's top level, and the op opens the pull
-request with a receipt that distinguishes *deliberately closes nothing* from *forgot the keyword*,
-which the old exit-0 behaviour could not. A separate check does refuse in a second place: the report
+request with a receipt that distinguishes *deliberately closes nothing* from *forgot the keyword*.
+A separate check does refuse in a second place: the report
 validator rejects a `pr_body` whose declared `closes` is unmet. That is the payload being validated
 before it is used, not the forge call being blocked, and the two must not be read as one gate.
 `gh-pr-edit` re-parses the published body with the same reader `gh-pr` uses before it writes, in three
@@ -259,4 +228,3 @@ publish rather than after the squash:
   `#A`; `Closes #A B` does not even link `B`. Two issues need the keyword repeated — `Closes #A,
   closes #B` — and the safe habit is one `Closes` line per issue. The merge gates carry the second
   of these two cases; this is the first, and it is the one that looks correct.
-

@@ -2,14 +2,9 @@
 
 **Read this when** a reviewed pull request is green, and once before the first tick of a new install.
 
-`skills/manager/SKILL.md` is the spine and carries the directives; this file carries the argument
-each one rests on -- the incident it was written for, the measurement behind it, the thing that was
-tried and rejected. A rule here that reads as obvious is one that has already been got wrong.
-
-**Say whether you read it.** Three states, the same three everything else in this loop uses:
-`read`, `not-read` with the reason, or `could-not-read`. A phase entered without its file is a set
-of rules that did not run, and a rule that did not run renders exactly like a rule with nothing to
-say -- so the absence is stated, never silent.
+**Say whether you read it.** Three states: `read`, `not-read` with the reason, or `could-not-read`.
+A phase entered without its file is a set of rules that did not run, so the absence is stated, never
+silent.
 
 ---
 
@@ -17,8 +12,7 @@ say -- so the absence is stated, never silent.
 
 `gh-pr-merge` is the only op in the table that writes, and by default **it writes nothing**. Without
 a `|force` suffix it evaluates every gate, prints the preview, and exits non-zero with
-`requires explicit confirmation`. So a loop reaches the merge step with all gates satisfied, having
-spent the whole review, and then cannot merge. Arrange this at setup, not at the merge.
+`requires explicit confirmation`. Arrange this at setup, not at the merge.
 
 Three opt-outs exist, and they are not equivalent:
 
@@ -30,14 +24,12 @@ Three opt-outs exist, and they are not equivalent:
 
 **Prefer `|force`.** The other two are the same switch with a wider blast radius: the confirmation
 gate is shared, so turning it off for merging turns it off for the publishing ops in the same
-project too. That is three ops today, and the count is a fact about the installed presets rather
-than a promise — a project that later enables a publishing preset widens what it already disabled,
+project too, and a project that later enables a publishing preset widens what it already disabled,
 silently.
 
 A second mechanism sits in front of all three and is not the same thing: the harness's own
 permission handling can deny the call before supertool sees it, and an allowlist entry does not
-necessarily clear it. Two consequences worth knowing before the first tick, because both cost a
-round trip each to rediscover:
+necessarily clear it. Two consequences worth knowing before the first tick:
 
 - `gh-pr-merge:N:squash` and `gh-pr-merge:N:squash|force` are **different command strings**, so an
   approval of the first does not carry to the second.
@@ -46,18 +38,16 @@ round trip each to rediscover:
   `state` / `mergedAt` / `mergeCommit` back. **Do not route around a denied merge.** Say the call
   was denied, name it exactly, and let the maintainer run or permit it.
 
-**Which spelling to type, stated rather than left to be inferred.** Use the bare
-`supertool 'gh-pr-merge:N:squash|force'` from the clone root — an allowlist rule anchored on the
-`supertool ` prefix matches it. **Do not use `python3 supertool.py 'gh-pr-merge:…'` for the merge**,
-even in a repo whose own rules require that exact spelling for file operations: that requirement
-exists so a worktree's edits run against its own branch's core rather than whatever the global
-binary resolves to, and the merge op is a forge call that does not care which tree's core runs it,
-so the constraint does not carry over to it. One merge per Bash call — a loop or a compound command
-no longer *starts* with the allowed prefix, so it is denied even when each call inside it would be
-allowed on its own. And **read `Blocked by classifier` as a claim about the command string, not
-about the action**: on a call the allowlist appears to cover, it means the spelling in front of the
-op differs from the one the rule was written against, not that merging itself was refused. Three
-sessions chased the wrong cause before this was written down (#445).
+**Which spelling to type.** Use the bare `supertool 'gh-pr-merge:N:squash|force'` from the clone
+root — an allowlist rule anchored on the `supertool ` prefix matches it. **Do not use
+`python3 supertool.py 'gh-pr-merge:…'` for the merge**, even in a repo whose own rules require that
+exact spelling for file operations: that requirement exists so a worktree's edits run against its own
+branch's core, and the merge op is a forge call that does not care which tree's core runs it. One
+merge per Bash call — a loop or a compound command no longer *starts* with the allowed prefix, so it
+is denied even when each call inside it would be allowed on its own. And **read
+`Blocked by classifier` as a claim about the command string, not about the action** (#445): on a call
+the allowlist appears to cover, it means the spelling in front of the op differs from the one the
+rule was written against, not that merging itself was refused.
 
 ## Merge gates
 
@@ -77,23 +67,19 @@ is not on this list is just a way of not fixing things.
   `pull_request`-triggered workflow paired with its own `push: branches: [<default_branch>]` run on
   the same file (this repo's own `.github/workflows/tests.yml` is one instance, not a name to expect
   elsewhere). A `pull_request` run checks out a merge-ref computed when the run started, so where the
-  base has not moved since, a green PR has already tested the post-merge content and a rebase would
-  re-test byte-identical content -- a full matrix for nothing. Where the base *has* moved, the
-  squash's own `push` run on the default branch tests the real combined content regardless of
-  whether anyone rebased first, so a pre-merge rebase does not add coverage there either -- it
-  duplicates a run already being paid for. That `push` run is the backstop, which is why step 3
+  base has not moved since, a green PR has already tested the post-merge content. Where the base
+  *has* moved, the squash's own `push` run on the default branch tests the real combined content
+  regardless of whether anyone rebased first. That `push` run is the backstop, which is why step 3
   below (reading `gh-branch` after the squash) matters more, not less. **Where a managed repo's CI
   lacks that `push`-on-default-branch half, there is no backstop and this policy does not carry over
   without re-deriving the argument for that repo's own trigger shape.**
 
-  The residual cost, stated rather than smoothed over: a semantic conflict -- one branch adds a
-  test, another renames what it calls -- is green *and* mergeable and can still land red on the
-  default branch, and the remedy then is a revert. That cost is accepted deliberately; it is smaller
-  than a rebase on every merge, nearly all of which would be re-testing content that did not change.
-  **This policy holds only paired with watching the tick's last merge to conclusion before the tick
-  closes** (`skills/manager/phases/tick-order.md`'s *What ends a tick*, which refuses to close while
-  radar's board -- carrying the default branch as a member row, per that file's own step 4 --
-  reports anything unwatched) -- a green merge followed by the tick dying before that run
+  The residual cost: a semantic conflict -- one branch adds a test, another renames what it calls --
+  is green *and* mergeable and can still land red on the default branch, and the remedy then is a
+  revert. **This policy holds only paired with watching the tick's last merge to conclusion before
+  the tick closes** (`skills/manager/phases/tick-order.md`'s *What ends a tick*, which refuses to
+  close while radar's board -- carrying the default branch as a member row, per that file's own
+  step 4 -- reports anything unwatched) -- a green merge followed by the tick dying before that run
   concludes removes the pre-merge check without keeping the post-merge one. A rebase or
   `git merge origin/main` stays
   correct where the PR is *not* mergeable, or its failure is understood to come from a stale base --
@@ -110,21 +96,16 @@ is not on this list is just a way of not fixing things.
   repos/OWNER/REPO/pulls/N/update-branch` instead, which merges the new base into the head
   server-side, needs no local worktree and no force-push (#389).
 - **Cleanup is gated on the verified merge result — use the op's own `|cleanup` token rather than a
-  second, separate call.** Chaining merge and cleanup by hand once deleted a branch after a failed
-  merge and auto-closed the PR; recovery was possible only because the forge keeps the PR ref. That
-  is the exact guarantee `|cleanup` runs inside the op instead: `gh-pr-merge:N:squash|force|cleanup`
-  is the documented default, and its three deletions run only **after** the op's own `MERGED`
-  read-back, never before.
+  second, separate call.** `gh-pr-merge:N:squash|force|cleanup` is the documented default, and its
+  three deletions run only **after** the op's own `MERGED` read-back, never before.
 - **Release the merged issue's own lane record in the same breath.** A live record blocks a
-  follow-up for its full 240-minute TTL regardless of whether its own pull request merged --
-  three recorded instances cost 20-90 minutes of a follow-up wrongly `BLOCKED` on files a merge the
-  loop itself performed and read back had already freed (#734). Once step 1 above verifies
-  `state`/`mergedAt`/`mergeCommit`, run `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue>
-  --release --repo <clone>` -- `released` / `not-found` (nothing to do, not a failure) /
-  `could-not-release`. Skipping it is slower, not wrong: `held_from_live_lanes` also prunes a
-  record once its branch is confirmed gone from the shared clone's local `refs/heads`, which
-  `|cleanup`'s branch deletion above causes anyway -- the explicit release just does not wait for
-  a later lane to ask.
+  follow-up for its full 240-minute TTL regardless of whether its own pull request merged (#734).
+  Once step 1 above verifies `state`/`mergedAt`/`mergeCommit`, run
+  `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --release --repo <clone>` -- `released` /
+  `not-found` (nothing to do, not a failure) / `could-not-release`. Skipping it is slower, not
+  wrong: `held_from_live_lanes` also prunes a record once its branch is confirmed gone from the
+  shared clone's local `refs/heads`, which `|cleanup`'s branch deletion above causes anyway -- the
+  explicit release just does not wait for a later lane to ask.
 - **Verify the linked issue actually closed.** Write one `Closes #N` per issue — the *keyword*
   repeated, not just the `#`. `Closes #A B` silently references only A, and `Closes #A #B` links
   both and closes only A, so "each number has its own `#`" is not the rule and satisfying it is not
@@ -149,54 +130,39 @@ is not on this list is just a way of not fixing things.
 - **A `cannot tell` worktree is not yours to force through without re-checking HEAD, and the force is
   recorded when you do it anyway (#1007).** `|cleanup` declined that worktree for a reason: an agent
   may still be writing there, and the tick's own last observation of that tree is already stale by
-  the time cleanup runs. Twice this loop force-removed one anyway — `git worktree remove --force` plus
-  `git branch -D`, the manual fallback `commands/doctor.md`'s `worktree-reap permission` check names —
-  and both times destroyed a commit the lane had made in the window between the tick's last look and
-  the force-remove: a self-review finding it had just fixed, local only, gone with the tree. Both were
-  recovered by luck, a surviving reflog entry, not by design. **Before that force-remove runs, read the
-  tree's HEAD one more time with `git -C <worktree> rev-parse HEAD` — unconditionally, never as a
-  fallback (#1056; see below for why)** — and compare it to the HEAD you observed when you decided
-  to force this one — the merge's own head commit, or your last `git-worktrees` read of that path.
-  If it moved, something committed there after your last look and the force-remove is refused this
-  tick: leave the worktree standing, the same as any other `cannot tell`, and let a later tick's
-  cooldown re-evaluate it rather than destroying work you have not re-observed. This closes the
-  actual race window; a tick cannot get it right by being careful, because the gap is between its
-  own two observations, not a lapse in attention.
+  the time cleanup runs. The manual fallback is `git worktree remove --force` plus `git branch -D`,
+  which `commands/doctor.md`'s `worktree-reap permission` check names. **Before that force-remove
+  runs, read the tree's HEAD one more time with `git -C <worktree> rev-parse HEAD` —
+  unconditionally, never as a fallback (#1056)** — and compare it to the HEAD you observed when you
+  decided to force this one — the merge's own head commit, or your last `git-worktrees` read of that
+  path. If it moved, something committed there after your last look and the force-remove is refused
+  this tick: leave the worktree standing, the same as any other `cannot tell`, and let a later
+  tick's cooldown re-evaluate it rather than destroying work you have not re-observed.
 
   **`git-worktrees:PATH` cannot perform this comparison at all, so it is never the fallback and
   never the primary either (#1056).** The op reports branch, path, occupancy, `[merged, clean]`, a
-  remote-tracking line and a `git status --porcelain` line — no commit SHA anywhere. #1017 wrote the
-  raw `rev-parse` as a fallback "taken only if the op cannot answer" on the reasoning that
-  `git-worktrees` would usually suffice; but the op *always* answers with a merged/occupancy
-  verdict, just never with the SHA this check needs, so that fallback could never fire — the guard
-  was nominally on and effectively off. Read `git-worktrees:PATH` for the merged/occupancy state as
-  before; run `git -C <worktree> rev-parse HEAD` for the SHA comparison every time, full stop.
+  remote-tracking line and a `git status --porcelain` line — no commit SHA anywhere. Read
+  `git-worktrees:PATH` for the merged/occupancy state as before; run
+  `git -C <worktree> rev-parse HEAD` for the SHA comparison every time, full stop.
 
-  #982 narrowed `.claude/settings.json`'s blanket `Bash(git *)` grant to an enumerated allow-list
-  matched as a literal command-string prefix, and `git -C <worktree> rev-parse HEAD` does not
-  start with the string `git rev-parse` — `-C <path>` sits ahead of the subcommand. Whether Claude
-  Code's own Bash permission matcher normalizes a git global option before that prefix test is
-  reasoned here, not observed (nothing in this loop can drive its permission UI to confirm it
-  directly); expect this call may need an interactive grant. Widening the allow-list is not the
-  fix — `Bash(git -C:*)` would match `git -C <any path> <anything at all>`, reopening every
-  subcommand #982 narrowed the grant to exclude — so grant this one call, not the pattern.
+  `.claude/settings.json`'s `Bash(git *)` grant is an enumerated allow-list matched as a literal
+  command-string prefix (#982), and `git -C <worktree> rev-parse HEAD` does not start with the string
+  `git rev-parse` — `-C <path>` sits ahead of the subcommand. Expect this call may need an
+  interactive grant. Widening the allow-list is not the fix — `Bash(git -C:*)` would match
+  `git -C <any path> <anything at all>`, reopening every subcommand #982 narrowed the grant to
+  exclude — so grant this one call, not the pattern.
 
   **When the HEAD check passes and you do force it, record the override** —
   `oss_state.py`'s `--cleanup-override WORKTREE=REASON` (repeatable), same call as the tick's other
-  `--decision` flags, reason required. A forced cleanup over a `cannot tell` is not the same event as a
-  clean one, and until this the only trace of the override was a state file that afterwards read
-  identically to a tick that never triggered `cannot tell` at all — the guard's refusal was a line in
-  an op's output and the force-remove that followed was two ordinary git commands, so nothing outlived
-  either. Recording it does not make the removal safer; the HEAD check above is what does that. It
-  makes the override auditable rather than invisible, which is the second, cheaper half of the fix.
+  `--decision` flags, reason required. Recording it does not make the removal safer; the HEAD check
+  above is what does that. It makes the override auditable rather than invisible.
 - **The branch deletion is `|cleanup`'s, not a second call.** Inside the token it is
   `gh api -X DELETE repos/OWNER/REPO/git/refs/heads/<b>`, never `git push --delete`, and only once the
   head branch is established to be in this repository and the remote ref reads back at the PR's own
   head commit. Reach for the raw command by hand only in the three cases the op deliberately refuses
   to touch: a cross-repository head, an unestablished branch, or the default branch — where it prints
-  no command at all. And note `git branch -r --merged` **cannot see squash merges** — it reported 4 on
-  a repo holding 96 merged branches, which is why the op reads the remote ref back rather than
-  trusting ancestry.
+  no command at all. And note `git branch -r --merged` **cannot see squash merges**, which is why the
+  op reads the remote ref back rather than trusting ancestry.
 
 ### The merge is not done when the PR is green
 
@@ -215,5 +181,4 @@ Three steps, not one:
    **misread as a red default branch** — a merge reported as having broken `main` when nothing ran.
 
 Step 3 costs one call. Skipping it means the default branch is red for hours while the board reads
-clean, and the person who notices is the one who asked you to watch it.
-
+clean.

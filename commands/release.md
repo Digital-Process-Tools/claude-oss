@@ -7,8 +7,7 @@ allowed-tools: Bash, Agent, Skill
 directly when invoking `/oss:release`; `agents/releaser.md` (#696) follows it identically when the
 scheduler spawns a dedicated releaser for a trigger fired mid-tick, with tag-and-publish authority
 stated in its own definition rather than here. This file is the single source for the six gates
-either way — nothing below is restated in `agents/releaser.md`, on purpose, per the lesson #673
-already recorded about two documents describing one procedure.
+either way — nothing below is restated in `agents/releaser.md` (#673).
 
 Read `.oss.json`'s `release` block for what this repo does: `tag_pattern`, `commit_subject`,
 `merge_method`, `triggers`. It is the tracked half of the config, so it is the same block for every
@@ -21,9 +20,8 @@ Two of those keys may be null, and they are handled differently on purpose:
   opens a second tag namespace nobody notices until a release goes missing from it. Ask, then write
   it into the config. A wrong tag is permanent.
 - **`commit_subject: null` — use `chore(release): {version}`.** That is the plugin's default, not a
-  line for you to compose: a subject invented per release is an absence the tool produced, rendered
-  as a value. Substitute the version being released. Nothing to ask about, because a wrong subject
-  line is cosmetic and the next commit fixes it — which is exactly why this one gets a default and
+  line for you to compose. Substitute the version being released. Nothing to ask about: a wrong
+  subject line is cosmetic and the next commit fixes it, which is why this one gets a default and
   `tag_pattern` does not.
 
 Load the loop for the judgment behind each gate:
@@ -47,28 +45,18 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      .github/workflows at this commit with no run on it*. Not a pass and **not a blocker** — but it
      **contributes no coverage**, so a commit where every declared workflow lands here is
      **uncovered, not green**, and gate 1 is not satisfied by it.
-   - **declared, should have run, and did not** — `UNKNOWN`, and it **blocks**. This is the state
-     the two-state sentence this replaces was written for, and it is unchanged and just as strict.
-
-   Two states over an op that answers in three collapses the middle onto an outside, and both
-   collapses are wrong the same way. Read as `UNKNOWN` it blocks every release a repository with a
-   `pull_request`-only workflow will ever cut — which is structural, not transient, so the block
-   never clears. Waved through, it takes the third state with it, because at the point of decision
-   a workflow that was silently skipped looks exactly like one that could not have run.
+   - **declared, should have run, and did not** — `UNKNOWN`, and it **blocks**.
 
    **Name the middle state in the release report, and say where its coverage did come from.**
    *"Tagged with `<workflow>` not covered on this commit, covered on each pull request"* is a
-   sentence a reader can check; silence about it is indistinguishable from not having looked, which
-   is the whole of this plugin's defect class pointed at its own gate. The workflow name comes out
-   of the op's own output at the moment you write the report — the placeholder above is a
-   placeholder deliberately, because a name typed into this file is the remembered verdict below
-   arriving one paragraph early.
+   sentence a reader can check; silence about it is indistinguishable from not having looked. The
+   workflow name comes out of the op's own output at the moment you write the report.
 
    **Re-read it from the op on every release; never carry the verdict forward** and never write
    down which workflow it was. *No push trigger* is a measurement of an `on:` block somebody can
    change, and on the day it changes the workflow moves from the middle state to the blocking one
-   with nothing announcing it — a remembered verdict then waves through the one case the gate
-   exists for. Which workflow it is, is a per-repo fact and belongs in no document here.
+   with nothing announcing it. Which workflow it is, is a per-repo fact and belongs in no document
+   here.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean, findings, or
    **could not run**. An audit that did not execute must never render as an audit that found nothing.
@@ -76,27 +64,16 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    an unbounded "findings, therefore stop" makes every release hostage to diminishing returns. After
    round two, file the rest against the next milestone and ship.
 
-   **Resolve the plugin root at the point of use, the same way `skills/manager/phases/tick-order.md`
-   step 1 already does
-   for `doctor.py` (#789).** `${CLAUDE_PLUGIN_ROOT}` in this file's own command text is a
-   version-pinned path substituted once when the command was injected — it only locates the script
-   file to run. `checklist_skew.py` and `ranking_table.py` each *also* fall back internally to
-   `os.environ.get("CLAUDE_PLUGIN_ROOT")` for their own `--plugin-root` default, a real shell
-   environment variable that can be unset even in the same session that just substituted the literal
-   path above. Left to that fallback, `checklist_skew.py` degrades to `could-not-tell` — a real,
-   well-formed answer that reads as a legitimate unknown where a measurement (`not-applicable`, or
-   whatever the true state is) was one flag away — and `ranking_table.py` degrades to
-   `could-not-read`. **The resolution and the call it feeds belong in the same fenced block, never
-   split across two**: a shell variable does not survive between separate command invocations — only
-   `cd` does — so a block that assigns a root and a later, separate block that reads it are not
-   guaranteed to share anything, and an unset variable there is silently read as empty rather than as
-   an error. `skills/manager/phases/tick-order.md`'s own `DOCTOR_ROOT` block keeps its assignment
-   and its one use site
-   together for exactly this reason; each of the two call sites below now resolves and consumes its
-   own root inline, rather than sharing one resolution across three separate blocks. `release_delta.py`
-   takes no `--plugin-root` at all (confirmed by its own `--help`): its only use of
-   `${CLAUDE_PLUGIN_ROOT}` is to locate the script file, the same substituted-once path as everywhere
-   else in this document, so it needs no change here.
+   **Resolve the plugin root at the point of use, and pass it as `--plugin-root` (#789).**
+   `checklist_skew.py` and `ranking_table.py` each fall back internally to
+   `os.environ.get("CLAUDE_PLUGIN_ROOT")` for that default — a real shell environment variable that
+   can be unset even in the same session that substituted the literal path into this file's command
+   text. Left to that fallback, `checklist_skew.py` degrades to `could-not-tell` and
+   `ranking_table.py` to `could-not-read`. **The resolution and the call it feeds belong in the same
+   fenced block, never split across two**: a shell variable does not survive between separate
+   command invocations — only `cd` does — so each of the two call sites below resolves and consumes
+   its own root inline. `release_delta.py` takes no `--plugin-root` at all: its only use of
+   `${CLAUDE_PLUGIN_ROOT}` is to locate the script file.
 
    **Except a finding in a row the ranking table marks blocking, which is not carry-forward
    material.** It stops the tag in either round. Each finding comes back carrying its row, so this is
@@ -106,8 +83,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    **A finding can also arrive with no row at all, and that is not the same as a row that does not
    block.** `${CLAUDE_PLUGIN_ROOT}/agents/auditor.md` defines the two rowless answers a finding can
    carry instead of a row, and they are deliberately different answers. Read as one, the cheaper of
-   the two swallows the other and the gate re-creates a layer down the defect it exists to catch — so
-   the arms are separate here, and each one is stated rather than left to the omission above:
+   the two swallows the other — so the arms are separate here, and each one is stated:
 
    - **`unranked` — the agent classified it and no row fits.** Rank it **here**, before the cap is
      applied to it, and let the row decide from there: put it in a row, or earn it a new one in the
@@ -133,31 +109,19 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py" --plugin-root "$GATE3_ROOT"
      ```
 
-     **#688: a hand transcription of this table once dropped the embargo prose off two of its rows**
-     — the reasons collapsed to a bare `yes` / `no`, though the blocking column happened to survive
-     the paste, so ranking itself was unaffected. The auditor caught the drop by reading
-     `skills/manager/SKILL.md` itself and comparing — the table is the only place its own rows are
-     written down, and this remedy must not become a second one. The script prints the table's own
-     bytes — found,
-     verbatim, exit 0 — or refuses on stdout and explains on stderr rather than emitting a
-     truncated table (`not-found`: the header is missing or the table has been reshaped;
-     `could-not-read`: `skills/manager/SKILL.md` itself could not be opened under the plugin root
-     you gave it). Paste its stdout into the payload unedited; a refusal is itself a finding to
-     report, not a cue to type the table in by hand anyway. Record that you did — that is how the
-     answer gets computed, not an extra round. A rank nothing computed says nothing whatever about
-     the finding, and must never be read as a row that happens not to block.
+     The script prints the table's own bytes — found, verbatim, exit 0 — or refuses on stdout and
+     explains on stderr rather than emitting a truncated table (`not-found`: the header is missing
+     or the table has been reshaped; `could-not-read`: `skills/manager/SKILL.md` itself could not be
+     opened under the plugin root you gave it). Paste its stdout into the payload unedited (#688); a
+     refusal is itself a finding to report, not a cue to type the table in by hand anyway. Record
+     that you did. A rank nothing computed says nothing whatever about the finding, and must never
+     be read as a row that happens not to block.
 
    **Stop the tag, not the loop.** Gate 3 is the only gate whose failure *produces* work: gate 1
-   clears itself when CI goes green, gate 2 when the reviews finish, gate 4 names its own remedy —
-   and until #209 this sentence ended one clause early, naming an action and an artefact and handing
-   the work to nobody. A release blocked at 23:25Z therefore sat for three hours with a green
-   default branch, an empty pull request board and four freshly filed blockers nobody had started.
-   So every blocking arm has a continuation, and none of them is an ending:
+   clears itself when CI goes green, gate 2 when the reviews finish, gate 4 names its own remedy. So
+   every blocking arm has a continuation, and none of them is an ending:
 
-   **Compute the disposition; do not re-derive it from memory (#1043).** A release shipped over a
-   round-one `findings` verdict on the reasoning "no blocking finding, so nothing was on the
-   release's critical path" — round two's own carry-forward rule, applied one round early, which
-   made a round-one `findings` verdict indistinguishable from `clean`. Run it after every round:
+   **Compute the disposition; do not re-derive it from memory (#1043).** Run it after every round:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/gate3_disposition.py" \
@@ -181,8 +145,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
 
    What the *loop* does next is not restated here. **`/oss:tick` step 7 and *Loop mechanics* in the
    manager skill are the only places that rule lives**, and a blocked release is one of the
-   conditions they send to a wakeup rather than to a stop. A third copy of it here would be #331 a
-   second time: a restatement drifts, and the drifted copy is the one that gets quoted.
+   conditions they send to a wakeup rather than to a stop.
 
    The range is computed before anyone judges it, because "could not run" is a fact about the
    repository and not a reading:
@@ -216,17 +179,16 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    `tag_pattern`, that is the same finding as the stop-and-ask at the top of this file, reaching you
    from the other direction.
 
-   The reverse is now true as well: `tag_pattern` decides the range, not just the tag you are about
-   to write. A pattern that disagrees with how this repo actually tagged its last release anchors the
-   audit somewhere else — or reports `first-release` in a repo with releases — so a `scope` that does
-   not match the tag you expect is a config finding, not a delta.
+   `tag_pattern` decides the range, not just the tag you are about to write. A pattern that
+   disagrees with how this repo actually tagged its last release anchors the audit somewhere else —
+   or reports `first-release` in a repo with releases — so a `scope` that does not match the tag you
+   expect is a config finding, not a delta.
 
-   **Record the checklist in effect before you spawn.** The auditor is loaded from the installed
-   plugin, and the installed plugin is updated *by* releases — so an improvement to the checklist
-   cannot audit the release that ships it, and will not audit the next one either unless the install
-   is refreshed. That used to be a read a human performed by hand and typed into the payload — which
-   meant the honest answer was always "could not tell" and the rendered answer was usually nothing at
-   all (#538). It is computed instead:
+   **Record the checklist in effect before you spawn (#538).** The auditor is loaded from the
+   installed plugin, and the installed plugin is updated *by* releases — so an improvement to the
+   checklist cannot audit the release that ships it, and will not audit the next one either unless
+   the install is refreshed. With nothing measuring the installed checklist's version, the
+   honest answer is always "could not tell", so it is computed rather than read by hand:
 
    ```bash
    RESOLVED_ROOT="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" \
@@ -256,8 +218,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      here too. A `matches` payload carrying a `differs` row is a **config finding** the release report
      must quote — the state name answers the version question alone.
    - **`differs`** — name both. For a repo that merely installed the plugin the installed version is
-     legitimately whatever they installed, and blocking on a skew nobody chose trades a reporting gap
-     for a release nobody can cut — the same trade `scope: null` above already refuses. For the
+     legitimately whatever they installed, and this annotates rather than stopping. For the
      repository that *ships* the definitions both numbers are on its own disk, and a gate older than
      the rules it is gating is a **config finding** in the release report.
 
@@ -272,8 +233,8 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    - **`not-applicable`** (#659) — the installed checklist's own version **is known**, quote it, but
      this repository ships none of the checklist's own definition files, so there is nothing of its
      own on disk to compare that version against. This is the ordinary shape for most repos this
-     plugin only installs into — including the #580 case, a repo that happens to ship its own,
-     unrelated `.claude-plugin/plugin.json` for a different plugin entirely, whose version has nothing
+     plugin only installs into — including a repo that happens to ship its own, unrelated
+     `.claude-plugin/plugin.json` for a different plugin entirely (#580), whose version has nothing
      to do with this comparison. **Do not read `not-applicable` as `could-not-tell`**: which checklist
      ran is not in doubt here — say so in the release report rather than reporting an unknown where a
      measurement exists.
@@ -300,8 +261,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    does not tag. **A spawn that did not run is `could not run`**, never a clean audit — if the agent
    fails to start or comes back empty, that is the third outcome and the same stop applies.
 
-   Then read what comes back in three states, because one dispatch of this gate once produced two
-   completions over one range and only one of them was right:
+   Then read what comes back in three states:
 
    - **attributed** — the report echoes the token you minted. Proceed on it.
    - **unattributed** — no token line, a token that does not match, or `dispatch token: none
@@ -319,8 +279,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    with the tail phrase itself, which counts rather than names. A nonzero count **does not stop**
    the tag — requiring a fired control for every class on every delta buys more words rather than a
    better audit, and would block releases over honest answers. It is named by class letter in the
-   release report, and it is **not the same receipt** as a count of zero. Recording those two the
-   same way is precisely what let a class nobody exercised clear this gate.
+   release report, and it is **not the same receipt** as a count of zero.
 
    And the arm with force: **a `read` grade never outweighs a reproduction.** Where a finding in
    that class arrives from any source with a command that reproduces it — a second completion, a
@@ -328,10 +287,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    Where the class came back `clean (exercised)`, the two are a genuine disagreement and both are
    re-run before either is believed.
 
-   **A spawn that errors because the name does not resolve is that same `could not run`**, and it is
-   not hypothetical: this gate dispatched to a name the harness never registered for two releases,
-   so its third outcome was its permanent state and nothing reported it (#81). A release read as
-   having passed its gates because the error scrolled past. So:
+   **A spawn that errors because the name does not resolve is that same `could not run`** (#81). So:
 
    - **Quote the spawn error verbatim in the release report.** It is the only thing that separates a
      wiring failure from a clean audit, and both otherwise render as silence.
@@ -353,15 +309,10 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    so an allowlist by extension cannot see it.
 
    **The number swept for comes from the section below, not from an impression of the delta.**
-   `version_sites` says where the number goes; nothing here used to say what it is.
 
 ## Which number the release gets
 
-Every other input above is pinned. The version was not, so it came from whoever happened to be
-cutting the release — and in #171 that produced a recommendation of a minor bump that never
-mentioned the `removed` fragment sitting in the same directory. The number was right by luck.
-
-The fragments already carry the evidence, so it is read rather than felt:
+The fragments already carry the evidence, so the number is read rather than felt:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_version.py" --repo . --json
@@ -381,10 +332,9 @@ X.Y.Z` when the baseline is not a tag. **It proposes; it never writes, bumps or 
   `removed` fragment that declares nothing. **It names no number**, deliberately:
   a default patch bump over a breaking change is indistinguishable in the tag from a considered one.
   Fix what it names — usually one bullet in one fragment — and re-run. Do not pick a number instead.
-  **Read the cause beside each file name in the `unreadable` row rather than the reason line alone**:
-  the reason names only the causes that fired, and with two bad fragments it cannot say which file had
-  which. Until #297 that sentence was fixed text offering two causes whatever had happened, and a
-  maintainer renamed a correctly-named file on the strength of it.
+  **Read the cause beside each file name in the `unreadable` row rather than the reason line alone**
+  (#297): the reason names only the causes that fired, and with two bad fragments it cannot say which
+  file had which.
 - **exit 4, `no baseline`** — the change class is known and the version it applies to is not: no tag,
   a null `tag_pattern`, or a tag that does not spell a triple. A first release lands here, and the
   number is yours to choose. It names none either.
@@ -395,9 +345,8 @@ is a major.** In a `0.x` line that fold makes `breaking` and `feature` the same 
 receipt says the fold happened; a maintainer who wants `1.0.0` here has to override the proposal
 rather than notice nothing.
 
-And the section alone never decides it. A removal need not break anything — `113.removed.md` in this
-repository is exactly that case — so the verdict is a declared field on the fragment, written in the
-body as an ordinary bullet:
+And the section alone never decides it. A removal need not break anything, so the verdict is a
+declared field on the fragment, written in the body as an ordinary bullet:
 
 ```markdown
 - Compatibility: breaking|compatible - <reason>
@@ -407,15 +356,12 @@ Required on `removed`, optional elsewhere, and an unrecognised value is `could n
 than a quiet pass. The reason after the verdict is required too: a bare flag is the same unsourced
 verdict one field further along.
 
-**The syntax is written out here rather than pointed at, and that is deliberate (#225).** The
-fragments README is a *default* under the ownership contract — created once when the directory is
-made, then the repository's own file forever — so shared prose cannot know what any given repo's
-copy says, and a repo scaffolded before the section existed **may not document it at all**. Its
-path is `changelog_dir`, which is per-repo, so naming a directory here would be a fact about one
-repository sitting in a document every repository reads. Nobody is stranded either way: the
-refusal above quotes the bullet in full, which is the sentence that reaches every repository, new
-or old, at the moment it is needed. Newly scaffolded repositories get the section as well, because
-the template now carries it.
+**The syntax is written out here rather than pointed at (#225).** The fragments README is a
+*default* under the ownership contract, so shared prose cannot know what any given repo's copy
+says, and a repo scaffolded before the section existed **may not document it at all**. Its path is
+`changelog_dir`, which is per-repo, so naming a directory here would be a fact about one repository
+sitting in a document every repository reads. The refusal above quotes the bullet in full, which is
+the sentence that reaches every repository, new or old, at the moment it is needed.
 
 ## Who may tag and publish (#478)
 
@@ -436,24 +382,19 @@ which gate 4 already accepts unconditionally.
 
 **Stage explicit paths for the release commit. Never `git commit --all` (or `-a`), and never a
 bare `git add .` / `git add -A`.** `--all` commits every unstaged change the working tree happens
-to carry, not only the release's own — at `0.16.0` it swept an untracked `.venv/` into the commit,
-1,390 files where 41 were intended, caught only because the commit had not yet reached the remote
-(#710). The same accident, a different offender, is already recorded in `.gitignore`'s own comment
-against the `v0.3.0` release commit. Name the paths the release actually touched — the folded
-changelog, the version-site files, anything else this run wrote — and stage those, or `git add`
-each one explicitly before a pathless commit.
+to carry, not only the release's own (#710). Name the paths the release actually touched — the
+folded changelog, the version-site files, anything else this run wrote — and stage those, or
+`git add` each one explicitly before a pathless commit.
 
 Fold the changelog if this repo uses fragments (`/oss:changelog`), commit with `commit_subject` —
 or with `chore(release): {version}` when it is null, per the rule above — and tag.
 
 **This commit lands on the default branch outside a pull request, and `CLAUDE.md`'s "Who decides"
-table lists that as a stop row with no content exception (#1119).** That tension is not resolved
-here — routing the release commit through a pull request, writing a narrow documented exception, or
-removing bypass privileges from the release path are three different fixes and none is decided.
-What is closed is narrower: on an account holding bypass privileges, GitHub's branch protection
-does not refuse this push — it silently records a bypass and lets it through, announced only in the
-push's own stderr (`remote: Bypassed rule violations for refs/heads/main: ...`). **Push through
-`supertool`, capture what it prints, and check that — do not read a quiet push as a clean one:**
+table lists that as a stop row with no content exception (#1119).** On an account holding bypass
+privileges, GitHub's branch protection does not refuse this push — it silently records a bypass and
+lets it through, announced only in the push's own stderr (`remote: Bypassed rule violations for
+refs/heads/main: ...`). **Push through `supertool`, capture what it prints, and check that — do not
+read a quiet push as a clean one:**
 
 ```bash
 PUSH_RECEIPT="$(supertool 'git-push' 2>&1)"
@@ -480,9 +421,8 @@ A quiet `git push origin <tag>` can die inside a wrapper and read exactly like a
 ## Then publish the release, if this repo publishes
 
 A tag with no release object leaves the releases page showing a bare tag with no notes, nothing
-marked `Latest`, and nobody who watches for releases notified. That surface is entirely within
-reach — the notes were assembled a moment ago and it depends on nobody else — so it is closed here
-rather than narrated (#58):
+marked `Latest`, and nobody who watches for releases notified. That surface is closed here rather
+than narrated (#58):
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_publish.py" \
@@ -495,9 +435,8 @@ create the release. Read the printed command before you do.
 **Do not assemble the `gh` call yourself.** `--verify-tag` is the reason: without it
 `gh release create` creates the tag when it is missing, which turns the `git ls-remote` check above
 into a step that mints the very ref it was verifying. The script emits it on every branch that
-builds a command and the suite asserts the whole argv, so it cannot be lost to an edit. `--repo`
-is always passed for the same class of reason — `gh` otherwise infers the repository from whichever
-directory it is standing in.
+builds a command and the suite asserts the whole argv. `--repo` is always passed for the same class
+of reason — `gh` otherwise infers the repository from whichever directory it is standing in.
 
 The notes are the `## [x.y.z]` section `/oss:changelog` just wrote, everything up to the next
 `## [`. A heading with no body under it is **not** empty notes; it is `could not run`.
@@ -515,12 +454,8 @@ Four outcomes, exit codes because a shell reads those and never reads prose:
   believes something is published stops looking at it.
 
   **The notes-length cause is measured before any `gh` command is built, on the dry run and
-  `--execute` alike — it is knowable and fixable ahead of the tag, not discovered at or after the
-  write the way the other three causes are.** Folding it into "the API call failed" would make it
-  invisible at exactly the moment it is cheapest to fix: `release_publish.py` names the measured
-  length, the limit, and the overage, so the remedy is trim `changelog.d` fragments for this version
-  (or split the release) and re-run, rather than a maintainer diagnosing a `gh` failure that never
-  actually ran.
+  `--execute` alike.** `release_publish.py` names the measured length, the limit, and the overage;
+  the remedy is trim the fragments for this version (or split the release) and re-run.
 - **exit 5, `role-forbidden`** (#697) — this agent's declared role may not publish a release. Checked
   before anything else, ahead of the config read, so no repository's own policy is ever consulted on
   a withheld role's behalf (#695). This is not a denial: the script ran to completion and gave a real
@@ -533,14 +468,10 @@ Four outcomes, exit codes because a shell reads those and never reads prose:
 
 Four, because those are the answers a script that ran can give. A call the harness refuses never
 runs, and it is a fifth — *A denied call is a fifth answer* below. **Do not read the list above as
-exhaustive.** Filing a denial under one of these four is the single mistake that section exists to
-prevent, and an enumeration that looks complete is what produces it.
+exhaustive.**
 
 A `.oss.json` that parses but is not an object — `[]`, `"x"`, `null`, `42` — is exit 3 and not exit
-4. It states no policy, which is a different fact from stating one that does not publish, and the
-two were indistinguishable until #126: the shipped defaults answered for it and the run reported
-*skipped by policy* naming a key the document could not have set. The tag shipped and the Release
-silently did not.
+4 (#126). It states no policy, which is a different fact from stating one that does not publish.
 
 The policy lives in `.oss.json`'s `release` block, tracked, because how a project publishes is the
 project's answer and not one laptop's:
@@ -564,22 +495,19 @@ thing that can refuse a release step. The harness's permission handling sits **i
 three and can deny a call before supertool or `gh` ever sees it. An allowlist entry does not
 necessarily clear it, two spellings of one op are two different command strings, and it is not
 stable: the identical call has come back denied and then, later in the same session with no
-configuration change of any kind, been permitted. That has now been reproduced at four distinct
-calls — a skill invocation, a merge op, a force-push and a rebase — so it is not a property of the
-merge, which is what every other mention of this gate in the plugin is framed around (#186).
+configuration change of any kind, been permitted. That is not a property of the merge, which is what
+every other mention of this gate in the plugin is framed around (#186).
 
-The release path is where that costs the most, because the calls most likely to be gated all sit
-**after** the writing has started — `git push origin <tag>`, the `--execute` publish above, and any
-force-push. By then the changelog is folded, the fragments are deleted, the version sites are bumped
-and the commit is made.
+The calls most likely to be gated all sit **after** the writing has started — `git push origin
+<tag>`, the `--execute` publish above, and any force-push. By then the changelog is folded, the
+fragments are deleted, the version sites are bumped and the commit is made.
 
 **A denial is none of the four outcomes above.** `created`, `skipped`, `could-not-create` and
 `role-forbidden` are verdicts `release_publish.py` earned by running. A call the harness refused never
 ran: it has no exit code, and nothing whatever about the repository — or the calling agent's role —
 was established. Reporting it as `could-not-create` — or as the range gate's `could-not-run` — states
-a fact about the repository that nobody measured, which is this plugin's own defect class one layer up
-from where it usually bites. The word already exists in this plugin, at the merge: say the call was
-**denied**, name it exactly, and hand it to the maintainer to run or to permit.
+a fact about the repository that nobody measured. Say the call was **denied**, name it exactly, and
+hand it to the maintainer to run or to permit.
 
 **Do not route around it.** Concretely:
 
@@ -606,10 +534,8 @@ so do not write one that covers both:
   release object is missing. It resumes at `release_publish.py --execute` alone. Saying a tag push is
   outstanding here sends a maintainer to re-run a step that already ran.
 
-The ordering trade is real, and it is stated here rather than quietly taken: folding first puts the
-destructive half (the fragments are deleted) ahead of the deniable half, and tagging first would make
-a refusal cheaper at the cost of a tag pointing at a commit whose changelog is not folded. The order
-is unchanged and the receipt above is the mitigation.
+Folding first puts the destructive half (the fragments are deleted) ahead of the deniable half.
+The order is deliberate and unchanged; the receipt above is the mitigation.
 
 ## Traps waiting, which is a line in the report and not a gate
 
@@ -621,10 +547,8 @@ Three answers — `N waiting`, `none waiting`, `could-not-read` — and **none o
 A gate here would refuse a security fix over a typo somebody logged on Friday, and the ranking table
 already says a blocking-class finding releases immediately.
 
-So state the count in the release report, with the remedy (`/oss:curate`) beside it, and tag. What
-this line is for is that a queue nobody looks at becomes a landfill, and a landfill is skipped for
-being too big — which is the same failure as never having logged the traps at all, arrived at more
-slowly. `could-not-read` is reported as unknown and never as zero.
+So state the count in the release report, with the remedy (`/oss:curate`) beside it, and tag.
+`could-not-read` is reported as unknown and never as zero.
 
 ## The tag is not the delivery
 

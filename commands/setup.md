@@ -5,44 +5,36 @@ allowed-tools: Bash
 
 Write `.oss.json` for the repo in the current directory, by **measuring it**, not by asking.
 
-**Check whether `.oss.json` already exists before doing anything else.** If it does — the
-ordinary state of a fresh clone of a repo this plugin already manages — the probe/build
-pipeline below is the wrong route to run over it: it derives every project fact from
-scratch, including facts nobody asked it to re-derive, and writing that over a config
-somebody already reviewed loses whatever it could not measure. Observed on a real repo
-(#701): `release.authority`, `merge_method`, a `version_sites` entry, and
-`changelog_untagged` all reverted from a decision on record to a derived absence, and
-`labels.priority` went the other way (see #703). Skip straight to **Show, then write**
-below and run `--split .oss.json` on the file that is already there — since #701 it
-recognises this shape (no machine-scoped key in the tracked file, no `.oss.local.json` on
-this machine) on its own and never touches the tracked half in that case.
+**Check whether `.oss.json` already exists before doing anything else.** If it does — the ordinary
+state of a fresh clone of a repo this plugin already manages — do not run the probe/build pipeline
+below over it: it derives every project fact from scratch, including facts nobody asked it to
+re-derive, and writing that over a config somebody already reviewed loses whatever it could not
+measure (#701, #703). Skip straight to **Show, then write** below and run `--split .oss.json` on the
+file that is already there — it recognises this shape (no machine-scoped key in the tracked file, no
+`.oss.local.json` on this machine) on its own and never touches the tracked half in that case.
 
 ## Probe
 
 **Do not assemble the probe by hand.** `--probe` measures the repo and writes it, and
-`--build` reads that and nothing else. One implementation of the schema is the point:
-a hand-written probe listing `files` as top-level directory entries produced
-`test_command: null` and a `version_sites` list with the wrong file in it, and nothing
-at any layer reported a problem.
+`--build` reads that and nothing else.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py" --probe . | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py" --build
 ```
 
 `--probe` shells out to `git` and `gh` itself. If it cannot measure something it says
-so and writes no probe at all — half a probe is the underspecified probe this replaced.
+so and writes no probe at all — half a probe is an underspecified probe.
 Relay the `FAIL` line rather than filling the gap in by hand.
 
 **`--probe` prints `NOTE` lines on stderr too, and they are not failures.** One exists
 today (#396): **`N workflow file(s) are in the index and not on disk`**, with the
 names. `git ls-files` reports the index and the jobs are read out of the working tree,
 so this is an uncommitted delete — the file declares no jobs, which is a measurement,
-and the probe is complete for the tree it was measured from. Until #396 that path was
-filed as *could not read* and aborted probe generation for the whole repository. A
-workflow that is on disk and will not read is a different fact and still refuses: how
-many jobs it declares is unknown, and an unknown counted as zero understates the
-checks. Relay the `NOTE` — if the delete was not intentional, that is worth knowing
-before the config is written from a shorter job list.
+and the probe is complete for the tree it was measured from. A workflow that is on disk
+and will not read is a different fact and still refuses: how many jobs it declares is
+unknown, and an unknown counted as zero understates the checks. Relay the `NOTE` — if
+the delete was not intentional, that is worth knowing before the config is written from
+a shorter job list.
 
 Run the two separately when you want to look at the probe first; `--help` prints the
 full schema, including what `files` and `version_evidence` mean:
@@ -65,8 +57,7 @@ config cannot show:
   which is dropped silently and correctly.
   - **`in the index and not on disk`** — `git ls-files` reports the index and the
     probe reads the working tree, so this is what an uncommitted delete looks like.
-    Nothing was wrong with the read; there was nothing to read. Until #396 this
-    printed *could not read* about a file that was simply not there.
+    Nothing was wrong with the read; there was nothing to read.
   - **`are on disk and could not read`** — the file is there and its bytes did not
     come back. The tool failed to answer: a mode bit, an encoding, a filesystem.
   - **`read completely and their contents are not the shape the file type promises`**
@@ -81,9 +72,8 @@ config cannot show:
 **If a file already stands where `state_file` points, read it before the first tick.** A repo
 that ran a maintainer loop before this plugin existed has a history in whatever shape that loop
 wrote — the one seen in the wild is an object keyed `tick_<ISO>`, and `/oss:tick` needs a list of
-entries. Setup is not the place to convert it: setup is a one-shot step, it does not see the file
-on a repo it has already onboarded, and the conversion is somebody's history rather than a
-default. Ask instead, and if the answer is yes, run the conversion where its receipt is visible:
+entries. Setup is not the place to convert it. Ask instead, and if the answer is yes, run the
+conversion where its receipt is visible:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --migrate
@@ -154,13 +144,10 @@ maintainer's:
 | `.oss.json` | the project | `repo`, `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`, `docs_targets`, `labels`, `ci`, `milestones`, `release` | **tracked** — `git add` it and commit it in review |
 | `.oss.local.json` | this machine | `clone`, `worktree_root`, `state_file` | git-excluded, never shared |
 
-The reason the release block cannot stay local: `/oss:release` reads `tag_pattern`, `merge_method`,
+The release block cannot stay local (#34): `/oss:release` reads `tag_pattern`, `merge_method`,
 `commit_subject`, `version_sites`, `changelog_dir` and `triggers`, and every one of them is a fact
-about the repo. Held in one untracked file, the second maintainer to cut a release has none of them,
-is asked for `tag_pattern` by the command's own stop-and-ask, and can answer differently. A repo
-tagged `v1.2.3` then acquires `1.2.4` — the second tag namespace this plugin warns about, opened by
-the plugin. `.git/info/exclude` is also not copied by `git clone`, so a fresh clone inherits neither
-the file nor the exclusion.
+about the repo rather than about a laptop. `.git/info/exclude` is also not copied by `git clone`, so
+a fresh clone inherits neither the file nor the exclusion.
 
 `--split` repoints `.git/info/exclude` for you: `.oss.local.json` in, `.oss.json` out. It never runs
 `git add` — the project half is meant to be reviewed, so committing it stays a human act. It is
@@ -172,13 +159,11 @@ once and commit the result.
 
 - **The ordinary case — the committed `.oss.json` is already split**, carrying none of
   `clone`, `worktree_root`, `state_file`. That is every fresh clone of an already-onboarded
-  repo. `--split` derives the three values from the repository root (#608's own
-  derivation, reached here from the setup side — #701), writes them to
+  repo. `--split` derives the three values from the repository root, writes them to
   `.oss.local.json` alone, and leaves the tracked file byte-for-byte untouched. The
   receipt says **`derived, not configured`**, naming the three values, precisely so a
-  guess is never mistaken for something a maintainer chose (#608's acceptance
-  condition). There is no diff to review in this case, because nothing in the tracked
-  file moved.
+  guess is never mistaken for something a maintainer chose (#608, #701). There is no
+  diff to review in this case, because nothing in the tracked file moved.
 - **The legacy case — a machine-scoped key is still sitting in the committed file**,
   left there before this repo was split, or added back by hand. `--split` moves it out
   into `.oss.local.json` and rewrites the project half in place, exactly as before;
@@ -201,26 +186,23 @@ plugin. Arriving is not the same as working, and the gap is invisible:
   ships an `identity.example.md` — seed from that and edit it, rather than reconstructing the format
   from a second description here.
 
-  The file goes at `<repo>/.remember/identity.md`, and the reason it is safe there is
-  measured rather than assumed: the memory plugin writes a `.gitignore` containing `*` into that
-  directory when it creates it, so the store is untracked by construction and seeding identity
-  publishes nothing.
+  The file goes at `<repo>/.remember/identity.md`. The memory plugin writes a `.gitignore`
+  containing `*` into that directory when it creates it, so the store is untracked by construction
+  and seeding identity publishes nothing.
 
-  **Confirm that before writing, and do not write it anywhere else.** The hazard is real — identity
-  is per-user, and committing it publishes one developer's setup to everyone who clones — but the
-  hazard lives in *tracked* locations. `.claude/` is partly tracked in a scaffolded repo, so an
-  identity file landing there is one `git add .` from being published, and it would not be read
-  anyway: the session-start hook looks in the store, then at the store's parent, then at the
-  plugin's own directory. In a normal install none of those is `<repo>/.claude/remember/`. Check
-  `git status` after writing; the file must not appear.
+  **Confirm that before writing, and do not write it anywhere else.** Identity is per-user, and
+  committing it publishes one developer's setup to everyone who clones. `.claude/` is partly tracked
+  in a scaffolded repo, so an identity file landing there is one `git add .` from being published,
+  and it would not be read anyway: the session-start hook looks in the store, then at the store's
+  parent, then at the plugin's own directory. In a normal install none of those is
+  `<repo>/.claude/remember/`. Check `git status` after writing; the file must not appear.
 - **Rules with no built index** never fire, because the matcher reads the index rather than the
   markdown — and a rule that never fires is indistinguishable from one that fired and had nothing to
   say. Rules live per dimension and per layer, and **each layer carries its own index**; rebuild it in
   the same change that adds a rule, then confirm the row is there.
 
   The rules plugin ships an example per dimension and documents the frontmatter each one takes. Point
-  people at those rather than at a copy — a second explanation of someone else's format is a second
-  thing to keep in step, and it goes stale without anything failing.
+  people at those rather than at a copy.
 
 `/oss:doctor` reports both, with `WARN` for the memory gaps and `FAIL` for a missing or empty index,
 naming the layer.
@@ -314,11 +296,11 @@ reported as failed sends the maintainer to re-run the half that already worked.
 
 The per-file lines — `create`, `present`, `replace`, `decline`, `remove` — and the `layer` lines
 beside them are **read from the filesystem**, so they answer on a machine with no network at all.
-(`remove` and `layer` arrived with #182, which taught the plan to preview the `01-oss` rule layer;
-they are local reads like the rest.) The findings printed underneath are not uniformly
-local: the `label` finding is the **only line that asks the forge**, one `gh` call capped at 20
-seconds, and it degrades to its own stated `unknown` with a reason rather than to silence or to a
-guess. The `radar` and `tests` findings beside it are local reads like the plan itself.
+The findings printed underneath are not uniformly local:
+the `label` finding is the **only line that asks the forge**, one `gh` call capped at 20
+seconds, and it degrades to its own stated `unknown` with a reason rather than to silence
+or to a guess. The `radar` and `tests` findings beside it are
+local reads like the plan itself.
 
 So an unreachable forge does not make the furniture gap unmeasurable — it makes one finding
 unmeasured. Relay them as the two different things they are. A `label` line that could not answer

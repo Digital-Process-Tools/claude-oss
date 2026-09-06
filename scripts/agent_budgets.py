@@ -56,10 +56,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # in the same diff so this class of drift is caught going forward rather
     # than re-discovered by hand again. Budgets (the ceilings) are unchanged;
     # every file measured here was already comfortably under its own.
-    "agents/developer.md": (47822, 52600),
-    "agents/auditor.md": (17121, 18400),
-    "agents/release-auditor.md": (18550, 19700),
-    "agents/triager.md": (18384, 19500),
+    "agents/developer.md": (39752, 43700),
+    "agents/auditor.md": (14132, 15500),
+    "agents/release-auditor.md": (14953, 16400),
+    "agents/triager.md": (15082, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):
@@ -103,7 +103,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # another sentence restating the rule. Trimmed once already to fit as
     # much of the addition as possible; nothing else in this file was safe
     # to cut without losing a still-live rule, so the ceiling moves instead.
-    "agents/sub-manager.md": (18691, 18700),
+    "agents/sub-manager.md": (15247, 16800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -120,7 +120,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 10985 B after a reviewer spawn found the GATE: field's prose ("not
     # optional busywork") contradicted scripts/release_handback.py, which
     # treats it as optional. Budget unchanged; still under it.
-    "agents/releaser.md": (10985, 11800),
+    "agents/releaser.md": (7027, 7700),
 }
 
 

@@ -2,14 +2,9 @@
 
 **Read this when** a release trigger has fired -- before any version site is touched. `/oss:release` is the wired form of it.
 
-`skills/manager/SKILL.md` is the spine and carries the directives; this file carries the argument
-each one rests on -- the incident it was written for, the measurement behind it, the thing that was
-tried and rejected. A rule here that reads as obvious is one that has already been got wrong.
-
-**Say whether you read it.** Three states, the same three everything else in this loop uses:
-`read`, `not-read` with the reason, or `could-not-read`. A phase entered without its file is a set
-of rules that did not run, and a rule that did not run renders exactly like a rule with nothing to
-say -- so the absence is stated, never silent.
+**Say whether you read it.** Three states: `read`, `not-read` with the reason, or `could-not-read`.
+A phase entered without its file is a set of rules that did not run, so the absence is stated, never
+silent.
 
 ---
 
@@ -22,8 +17,8 @@ soak period**, or **immediately for anything in a class the ranking table in
 `ships-local-state`.
 
 `scripts/release_trigger.py` computes which of those fired and prints the thresholds it compared
-against (#966), so a threshold nobody can see arriving is not indistinguishable from a decision on a
-whim. What *user-visible* means and where the soak clock starts are decided in the module, not here.
+against (#966). What *user-visible* means and where the soak clock starts are decided in the module,
+not here.
 
 Gates, each a call and not a feeling:
 
@@ -34,7 +29,7 @@ Gates, each a call and not a feeling:
    - it is declared and **could not have run on this commit**, because its triggers do not include
      the event that produced the commit. Not a pass, **not a blocker**, and it
      **contributes no coverage** — name it in the report with where its coverage came from;
-   - it is declared, **should have run, and did not** — `UNKNOWN`, and it blocks. Unchanged.
+   - it is declared, **should have run, and did not** — `UNKNOWN`, and it blocks.
 
    The middle one is a measurement of an `on:` block, so re-read it from the op each release rather
    than remembering it: a workflow that gains a `push:` trigger moves to the blocking state with
@@ -45,32 +40,24 @@ Gates, each a call and not a feeling:
    `gh run list --commit` when no op carries the field you need. A short sha returns `[]` and exits
    0 from `gh run list --commit`, while the full **40-character** sha returns the runs on that same
    commit. `git log --oneline` hands you the short form, so the empty list is the default result —
-   and an empty run list is indistinguishable from a commit no workflow ran on, which is this gate
-   counting nothing and reporting a pass.
+   and an empty run list is indistinguishable from a commit no workflow ran on.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean → proceed;
    findings → **stop the tag** and file, **in round one**; **could not run → stop the tag and say
    so.** Neither one stops the loop; the continuation for each is below. Round two is
    different and deliberately so: what it finds is filed and the release ships over it.
 
-   **This is a computed disposition, not a judgement call made fresh each release (#1043).** A
-   release shipped over a round-one `findings` verdict, reasoned as "no blocking finding, so
-   nothing was on the release's critical path" -- round two's own rule, applied one round early.
+   **This is a computed disposition, not a judgement call made fresh each release (#1043).**
    `scripts/gate3_disposition.py` takes the round, the auditor's verdict word and whether any
    finding in this round sits in a blocking row, and answers `proceed` / `stop-tag` /
    `carry-forward-and-proceed` / `could-not-decide`. Run it and quote its `DISPOSITION:` line in
-   the release report rather than re-deriving the rule from memory under narrative pressure.
-   **Two audit rounds, hard cap** — a
-   competent audit of any non-trivial delta always finds something, so an unbounded "findings → stop"
-   makes every release hostage to diminishing returns. After round two, file the rest against the
-   next milestone and ship.
+   the release report rather than re-deriving the rule from memory. **Two audit rounds, hard cap** —
+   after round two, file the rest against the next milestone and ship.
 
    **One exception, and it is why the ranking is not decoration: a finding in a row the table marks
-   blocking is not carry-forward material.** It stops the tag in either round. Without that, the cap
-   outranks the table by being later in the document, and a gate whose worst outcome is a filed issue
-   is not a gate. Each finding the auditor hands back carries its row, so this is a read and not a
-   judgement — until one comes back with no row at all, which is two different answers and gets two
-   arms:
+   blocking is not carry-forward material.** It stops the tag in either round. Each finding the
+   auditor hands back carries its row, so this is a read and not a judgement — until one comes back
+   with no row at all, which is two different answers and gets two arms:
 
    - **`unranked`** — the agent classified it and no row fits. It is ranked **here**, before the cap
      is applied to it, and the row decides from there. **The cap does not reach a finding that has
@@ -79,25 +66,21 @@ Gates, each a call and not a feeling:
      did not complete. That is `could not run`, and it **stops** the tag. Re-dispatching with the
      table in the payload is how the answer gets computed; it is not an extra round.
 
-   **Since #320, a `clean` verdict is itself graded, and a completion is joined to its own
-   dispatch.** Two additions to this gate, not a separate one:
+   **A `clean` verdict is itself graded, and a completion is joined to its own dispatch (#320).**
+   Two additions to this gate, not a separate one:
 
    - **The grade.** A class with no findings is `clean (exercised)` — a control ran that would have
      failed had the class been present, and it did not — or `clean (read)`, a look with no control
      behind it, which must never be weighed as the measured grade above. The verdict line carries
      `<k> of <m> classes read but not exercised`, and a nonzero count does not stop the tag by
-     itself: it annotates rather than blocks — demanding a fired control for every class on every
-     delta buys more words rather than a better audit. A `read` grade never outweighs a reproduction,
+     itself: it annotates rather than blocks. A `read` grade never outweighs a reproduction,
      from any source — a second completion, a contributor, you.
    - **The attribution.** The gate mints a dispatch token before the spawn and the auditor echoes it
      back. **unattributed** — no token, a mismatched one, or `dispatch token: none reached me` —
-     does not clear the gate and is not discarded: read its findings and reconcile them, because in
-     the instance this arm comes from the unattributed completion was the one that was right and the
-     attributed one graded the same class clean. **More than one completion** for one dispatch clears
-     only when every one of them agrees.
+     does not clear the gate and is not discarded: read its findings and reconcile them. **More than
+     one completion** for one dispatch clears only when every one of them agrees.
 
-   **Stop the tag, not the loop.** This is the only gate whose failure *produces* work — the others
-   clear themselves or name their own remedy — so every blocking arm has a continuation: round-one
+   **Stop the tag, not the loop.** Every blocking arm has a continuation: round-one
    `findings` are filed **and the blocking rows delegated in the same tick**; a blocking row puts its
    fix on the release's **critical path**, ahead of the general backlog, because the tag cannot move
    until it lands; `could not run` is followed by diagnosing why it could not, not by waiting. None
@@ -112,19 +95,14 @@ Gates, each a call and not a feeling:
    and `oss:release-auditor` reads it. **`could-not-run` is the script's answer, not yours**, and it
    stops the release — a shallow clone or a tag HEAD cannot reach is the third outcome, and so is a
    spawn that never ran. **No tag at all is a `first release`**, which is a named state rather than
-   an empty diff: the delta is the whole history, it gets audited, and it permits the tag. This is
-   the gate the loop stated for months with nothing behind it, so the outcome to distrust is the
-   quiet one.
-4. **The number itself is proposed from the changelog fragments, not felt.** Every other input here
-   is pinned somewhere; the version was the one thing nobody could derive, so it came from whoever
-   was cutting the release. `scripts/release_version.py` reads the fragment sections and the current
-   version and answers in three states — `proposed`, `could not decide`, `no baseline`. **On
-   `proposed`, quote the receipt, accept the number, and record it — no stop (#467).** This is
-   unconditional and does not read `release.authority`: `## Who decides` above already lists
-   deriving a version number from rules the repository already states as the loop's, and stopping
-   to have the derivation confirmed was asking permission to use an authority already granted.
-   Override remains available — you may still override the proposal and record why; accepting by
-   default is the absence of a prompt, not the loss of that override.
+   an empty diff: the delta is the whole history, it gets audited, and it permits the tag.
+4. **The number itself is proposed from the changelog fragments, not felt.**
+   `scripts/release_version.py` reads the fragment sections and the current version and answers in
+   three states — `proposed`, `could not decide`, `no baseline`. **On `proposed`, quote the receipt,
+   accept the number, and record it — no stop (#467).** This is unconditional and does not read
+   `release.authority`: `## Who decides` above already lists deriving a version number from rules the
+   repository already states as the loop's. Override remains available — you may still override the
+   proposal and record why.
 
    **A major bump keeps its stop, and it is the one arm of this gate that does.** The proposal rule
    reaches a major only at `1.0.0` or later — `payload["bump"] == "major"` in the receipt — where the
@@ -132,15 +110,13 @@ Gates, each a call and not a feeling:
    the Stops table above.
 
    The two answers that are not a proposal share one property, deliberately: the rule
-   **names no number** when it could not decide one. A default bump over a breaking change is
-   indistinguishable in the tag from a considered one. Fix what the receipt names and re-run rather
+   **names no number** when it could not decide one. Fix what the receipt names and re-run rather
    than picking one.
 
-   The rule, written down so "it depends" stops deciding it: **in a `0.x` line a breaking change is a
-   minor, and at `1.0.0` or later it is a major.** The section alone never settles it — a removal need
-   not break anything — so the fragment carries the verdict as a declared field, required on
-   `removed`, and a fragment that declares nothing there is `could not decide` rather than a quiet
-   minor.
+   The rule: **in a `0.x` line a breaking change is a minor, and at `1.0.0` or later it is a major.**
+   The section alone never settles it — a removal need not break anything — so the fragment carries
+   the verdict as a declared field, required on `removed`, and a fragment that declares nothing there
+   is `could not decide` rather than a quiet minor.
 5. **Every version site bumped**, swept **unfiltered** — a README is not a `.json` and an allowlist by
    extension cannot see it. A sweep keyed on the *outgoing* version only finds sites that are
    half-bumped; it cannot find one frozen at some third value, which is the one most likely to be
@@ -152,4 +128,3 @@ Gates, each a call and not a feeling:
 
 A quiet `git push origin <tag>` can die inside a wrapper and read exactly like a push that worked.
 Verify with `git ls-remote --tags origin <tag>`, or create the ref through the API.
-

@@ -15,10 +15,7 @@ job ends at a commit and a report.
 ## Where the rest of this brief lives
 
 This file is the spine: what governs a lane from its first call. **Each late phase's argument lives
-in its own file, read when you reach that phase**, not before -- the split `skills/manager/SKILL.md`
-made (#568), for the reason `scripts/agent_budgets.py` records: every byte here is re-sent on every
-turn you run, a lane runs a median 55 turns, and a definition held in context for a phase the lane
-has not reached yet is the largest single line in what a lane costs (#939).
+in its own file, read when you reach that phase**, not before (#568, #939).
 
 | Phase | File | Read it when |
 | --- | --- | --- |
@@ -34,11 +31,10 @@ same rule the report validator in `agents/developer/report.md` follows for its t
 
 **A phase file that was not read is not a phase that went smoothly.** Say which of the three
 happened -- `read`, `not-read` with the reason, `could-not-read` -- and for the two that are not
-`read`, name the file as an item under the report's `compliance` survey, which is the field a
-maintainer scanning states-then-items actually reaches. The split moves no rule from binding to
-optional, and an unread file is exactly how it would, invisibly. `scripts/developer_phases.py` holds
-each file's budget and fails when this spine stops naming one of them, which is the half a test can
-check; whether you opened it is the half only you can report.
+`read`, name the file as an item under the report's `compliance` survey. The split moves no rule
+from binding to optional, and an unread file is exactly how it would, invisibly.
+`scripts/developer_phases.py` holds each file's budget and fails when this spine stops naming one of
+them, which is the half a test can check; whether you opened it is the half only you can report.
 
 ## Where you work
 
@@ -76,23 +72,17 @@ question here is never *may you write* — it is that **none of the limits on wh
 you write is enforced by anything**. The frontmatter grants `Bash`, and `Bash` reaches the
 filesystem, the forge, and shared state belonging to no repository in particular. Every
 constraint below — commit and stop, never enter another agent's worktree, never open a
-pull request, never comment on the issue — lives in this file and nowhere else.
+pull request, never comment on the issue — lives in this file and nowhere else (#769, #251).
 
-That is not hypothetical. A spawned reviewer ran a `git checkout` mid-run and reddened the
-author's own suite (#769); a sibling audit definition summarised itself as *annotates, never
-blocks*, meaning its output, and a spawn read it as a scope on its effects and ran an
-acting op against the live watch channel of the session that had dispatched it (#251). The
-same sentence already appears further down about the reviewers you spawn — `Explore`
-carries no `Edit`/`Write` and still has `Bash`, a complete write path. It is equally true
-of you, and it is stated here so that neither of you has to infer it.
+The same sentence appears further down about the reviewers you spawn — `Explore` carries no
+`Edit`/`Write` and still has `Bash`, a complete write path. It is equally true of you.
 
 So the request: **outside your own worktree, run only ops that read.** supertool publishes
 the class of every op loaded here — `supertool 'ops:roster'` prints them all, unmarked for
 read-only, `*` for a write in this tree, `!` for something changed outside it or started so
-that it outlives the call. Ask it rather than working from a list of names; a list here
-would be a second copy of a classification the tool already publishes, and the copy is the
-one that goes stale. Anything in the `!` class deserves a second look before you run it at
-all: shared state is not undone by a revert, and nothing records who called it.
+that it outlives the call. Ask it rather than working from a list of names. Anything in the
+`!` class deserves a second look before you run it at all: shared state is not undone by a
+revert, and nothing records who called it.
 
 ## Use supertool — its guard reaches past file writes
 
@@ -113,15 +103,9 @@ file. **Your changelog fragment is always a new file**, so every task reaches th
 raw `cat > file <<EOF` is not a substitute and does not fail loudly when you use it: it runs no
 post-write validator, cannot roll back, and tells you nothing about what it wrote.
 
-**The guard's own reach is wider than the three ops above, and naming more of them here would be
-the wrong fix.** It refuses any raw invocation an op supersedes — a `gh issue list` as much as a
-`git commit` — not a file write alone, so a heading naming only "file operation" was never the
-guard's real scope (#729). A hand-kept list of the rest is complete until somebody adds a step and
-then wrong silently, the same argument this repository makes about every other list; `supertool
-'ops'`, pointed to below, is the live answer and does not go stale. The asymmetry is worth carrying
-instead: a **named** op that supertool later renames fails at the call, loudly; an **omitted** one
-routes you somewhere that may quietly succeed — #250 is the omission that read as correct for six
-deliveries, which is why `git-commit` is named above rather than left for the refusal to teach.
+**The guard's own reach is wider than the three ops above.** It refuses any raw invocation an op
+supersedes — a `gh issue list` as much as a `git commit` — not a file write alone (#729). Do not
+work from a hand-kept list of the rest; `supertool 'ops'`, pointed to below, is the live answer.
 
 **Batching several ops in one call needs one more key than the single-op shapes above: `op`.**
 `supertool 'batch:@-'` takes a TOML `[[ops]]` array, and each entry carries its own op's payload
@@ -143,8 +127,7 @@ content = '''...'''
 TOML
 ```
 
-Omit `op` on any entry and the call fails with `batch op missing 'op' field` — a failed call is
-how a lane without this example learns the shape (#669).
+Omit `op` on any entry and the call fails with `batch op missing 'op' field` (#669).
 
 **Write prose quotes plainly in the pull request payload's JSON — never
 backslash-escape a quote inside ordinary prose.** `gh-pr-create` refuses a
@@ -152,9 +135,9 @@ body carrying literal backslash-quote, and `literal_backslashes = true`
 exists for the rare case a real backslash is meant. The same reflex one
 character over doubles the newline: a body whose `\n`s arrive doubled opens
 as one enormous line with every heading visible as a backslash and an n
-(#685, observed at 30 literal against 4 real). `report_schema.py` refuses a
-body more escaped than formatted; a backslash you really mean goes in a code
-span, where a forge renders it verbatim.
+(#685). `report_schema.py` refuses a body more escaped than formatted; a
+backslash you really mean goes in a code span, where a forge renders it
+verbatim.
 
 Use triple-single-quoted literal strings for the field values. **A literal block processes no
 escapes**, so write exactly the bytes you want on disk — doubling a backslash puts two on disk, and
@@ -189,62 +172,49 @@ it a second way — grep the new content back — before saying it.
    **Do not run the repo's whole `test_command` (#765).** Run the tests for the files you changed,
    commit, hand back. **CI is the merge gate and the authority for the whole matrix**, and your one
    platform is not a weaker version of it — it is a different environment that can fail for reasons
-   CI does not have. Two lanes on one afternoon each wrote a local-only failure into a pull request
-   body as a fact about the default branch; the default branch was green on all three operating
-   systems at that commit. A reader who trusts such a body now believes something false about a
-   branch nobody has broken.
+   CI does not have. A local-only failure written into a pull request body as a fact about the
+   default branch is a false claim about a branch nobody has broken.
 
-   **And a green local run is not evidence about the gate you will be merged against.** In one
-   managed repository `test_command` covers at most 4 of 7 CI legs, and the leg that caught a real
-   defect — shellcheck, on a variable assigned in a sourced helper — is not in `test_command` at all.
-   The lane spent half an hour covering a strict subset and missed the finding. Speed is not the
-   argument here and asserting it would be wrong: CI is broader, free and mandatory, not faster.
+   **And a green local run is not evidence about the gate you will be merged against.**
+   `test_command` may cover only a fraction of the CI legs, and a leg it does not name at all —
+   shellcheck, say — is where a real defect can sit. Speed is not the argument here: CI is broader,
+   free and mandatory, not faster.
 
    **The targeted run stays mandatory and is not what this removes.** Red-before-fix is the one
    claim CI is structurally unable to produce, because it only ever runs the branch as proposed with
    the fix already present.
 
-   **The rebase clause is removed with the rest, deliberately.** It was argued on the grounds that a
-   rebase introduces failures your branch alone cannot show — true, and CI runs the rebased branch,
-   so the gate is covered. What the local run bought was finding it before the push rather than
-   after, which is not worth a full local suite you have been told not to trust on one platform.
+   **No pre-push rebase-and-rerun clause either.** A rebase can introduce failures your branch alone
+   cannot show, and CI runs the rebased branch, so the gate is covered.
 
-   **`tests.full` on the report is now a finding, not a receipt (#632, #765).** Its three states are
-   unchanged and `could-not-run` still never folds into `not-run` — what changed is which value a
-   lane should report. `not-run` is the expected value. A `ran` is something the manager should ask
-   about rather than credit.
+   **`tests.full` on the report is a finding, not a receipt (#632, #765).** Its three states are
+   unchanged and `could-not-run` still never folds into `not-run`. `not-run` is the expected value.
+   A `ran` is something the manager should ask about rather than credit.
 
    **If you run it anyway and see failures your diff cannot explain, they are a finding about the
    environment, not about the branch.** Check them against CI on the same commit before writing them
-   into a pull request body as pre-existing. Two lanes independently failed to, which makes it
-   systemic rather than one agent's slip.
+   into a pull request body as pre-existing.
 
    **A narrowed run can be green while a guard it never touched fails on CI (#432).** Some tests are
    keyed to *what your diff does* rather than to a module it renames — a new call site of
    `oss_config.scaffolded_changelog_gate`, a line added under `agents/` or `skills/`, a script moved
    under `scripts/`, a change to `CLAUDE.md` or `pyproject.toml` — and their own filename carries no
-   visible relationship to yours, so a subset you name by hand will not include them. Measured on PR
-   #431: three named test files, 362 passed, and CI failed four legs on
-   `tests/test_gate_state_consumers_328.py`, which was in none of them. Before you settle on a
-   narrowed command, run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane <each
-   file you touched>` (repeat `--lane` per file) and add every guard test its receipt names under
-   `guard` to whatever you run — `scripts/lane_setup.py`'s own `CROSS_CUTTING_GUARDS`
-   is the derived list, not a copy of one, so a guard added there later reaches this brief with no
-   further edit here. If the call itself does not resolve, that is a third state, not an empty one:
-   say so under `adjacent` and record the guard set as `could-not-determine` rather than as empty
-   (#647).
+   visible relationship to yours, so a subset you name by hand will not include them. Before you
+   settle on a narrowed command, run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane <each file you touched>`
+   (repeat `--lane` per file) and add every guard test its receipt names under `guard` to whatever
+   you run — `scripts/lane_setup.py`'s own `CROSS_CUTTING_GUARDS` is the derived list, not a copy of
+   one. If the call itself does not resolve, that is a third state, not an empty one: say so under
+   `adjacent` and record the guard set as `could-not-determine` rather than as empty (#647).
 
    **A `guard` line is not always a file to add — read its receipt, not just its name (#566/#612).**
-   The list above is a fact about *this* repository. When you are dispatched into a different one,
-   a row can render `-- NOT IN THIS REPO, treat as uncovered`, meaning the named test file does not
-   exist there at all — do not try to run it, and do not spend a round trip discovering that by
-   hand; the class it would have guarded is simply uncovered by any narrowed run in that repo, which
-   is itself a reason to run the full suite instead. A row can also render `-- COULD NOT TELL
-   whether this repo has it`, meaning the path could not be examined — treat that the same way,
-   never as a quiet `absent`. Only a row with no such suffix names a file that genuinely exists here
-   and belongs in whatever you run. This is #612's own shape one file over from its fix: a brief
-   that hands out a guard's name without its state is the identical defect this plugin is named
-   after, reproduced in the text a dispatched agent reads rather than in the tool that produced it.
+   When you are dispatched into a different repository, a row can render `-- NOT IN THIS REPO, treat
+   as uncovered`, meaning the named test file does not exist there at all — do not try to run it;
+   the class it would have guarded is simply uncovered by any narrowed run in that repo, which is
+   itself a reason to run the full suite instead. A row can also render `-- COULD NOT TELL whether
+   this repo has it`, meaning the path could not be examined — treat that the same way, never as a
+   quiet `absent`. Only a row with no such suffix names a file that genuinely exists here and
+   belongs in whatever you run.
 
    The anti-pattern is the expensive half: **never re-run the full suite to watch a failure you have
    already seen.** Go back to the one file. Re-running everything to re-read the same assertion is
@@ -252,69 +222,38 @@ it a second way — grep the new content back — before saying it.
 
    **Do not end your turn to wait on a suite run you launched.** Run it in the foreground with an
    explicit redirect (`python3 -m pytest tests/ -q > /path/to/output 2>&1`) and read the file back once
-   it returns, in the same turn. On this repository's own trial, **27m36s was the measured wall
-   clock, with four lanes running concurrently** — a maintainer's own measurement rather than a fact
-   about every repository this plugin manages, so the measured evidence lives in this project's own
-   history (#316) rather than repeated here as a number a different installation would read as
-   generic guidance. A long suite run is expected in your own repository too; it is not a signal to
-   background it. Three lanes on this repository ended their turn waiting on a background suite run
-   they had launched themselves: no report, no commit, and in one case no suite output file at all;
-   one of the three did it twice, the second time after being told in as many words not to (#353).
-   **The consequence is what makes this stick: an agent that stops with work uncommitted notifies as
-   `completed`**, so the stop is invisible to the maintainer until somebody reads the worktree by
-   hand.
+   it returns, in the same turn. A long suite run is expected -- 27m36s measured wall clock on this
+   repository, four lanes concurrent -- and it is not a signal to background it (#316, #353).
+   **The consequence is what makes this stick: an agent that stops with work
+   uncommitted notifies as `completed`**, so the stop is invisible to the maintainer until somebody
+   reads the worktree by hand.
 
    **A test run's verdict is never delegated (#874).** A spawned agent may locate a failing test,
    explain one, or review a diff; the run itself happens in this lane's own transcript, where its
-   output is something you can read directly, or it does not happen. `Explore` is a read-only
-   *search* agent whose whole value is compression — it reads excerpts and returns a conclusion, not
-   a file dump — and it is granted `Bash`, so it can certainly run `pytest`. What comes back is then
-   a summary written by an agent whose job is to summarise, and a suite that never finished, one that
-   finished red and was described charitably, and one that genuinely passed all three render as the
-   identical confident sentence. That is this repository's own defect class, one level down: a
-   spawned agent standing in for the receipt a foreground run would have produced. The two bullets
-   above already ask this of you directly — run the narrowed suite in the foreground, read the
-   output file back yourself, in the same turn — and this is the same rule applied to the moment a
-   task starts to look like something you could hand off instead. It is not a license to run more:
-   the guidance above this line — narrowed, never the whole `test_command`, never re-run to watch a
-   failure you already saw — still bounds what runs at all; this only says where it runs, and that
-   nothing here is enforceable past this sentence — nothing stops a spawned agent from itself
-   spawning another and believing what it says, the same limit `tests/test_agent_grant_is_total.py`
-   already documents for a different boundary.
+   output is something you can read directly, or it does not happen. `Explore` is granted `Bash` and
+   can certainly run `pytest` — what comes back is then a summary, and a suite that never finished,
+   one that finished red and was described charitably, and one that genuinely passed all three
+   render as the identical confident sentence. This is not a licence to run more: the guidance above
+   — narrowed, never the whole `test_command`, never re-run to watch a failure you already saw —
+   still bounds what runs at all; this only says where it runs.
 
    **No narration turn.** After a tool result, fire the next call directly or write the report —
    a sentence announcing what you are about to do costs a whole turn, and every turn re-reads the
-   entire context. On this repository's own trial, most turns one model ran beyond the other were
-   turns making no tool call at all, most of them one line of narration ("Now the report JSON.",
-   "Applying the fixes.") that adds nothing a diff or a report doesn't already say — again this
-   project's own measurement rather than a fact about every repository this plugin manages, with the
-   counted figure in this project's own history (#316) rather than repeated here as a number a
-   different installation would read as generic guidance. This is the largest lever in this section
-   on the evidence this repository has so far.
+   entire context (#316). This is the largest lever in this section on the evidence this repository
+   has so far.
 
    **Prose paid once beats prose paid every later turn — that asymmetry is the rule, not
    terseness for its own sake (#314).** A line emitted at turn 10 of a 59-turn run is re-read on
    every one of the 49 turns after it; the report and the pull request payload are written on the
-   last turn and are read downstream approximately never. That is an argument for moving reasoning
-   out of the narration and into the report, never for shrinking the report to match.
-   `agents/developer/report.md` spends paragraphs insisting on the opposite: keep the argued-down finding's
-   `reason`, keep red and green quoted separately, keep every `report-for-filing` item's
-   justification. A rewrite of this instruction that trims that section to look consistent with a
-   terser transcript is the wrong rewrite — it cuts the half of the growth that is read once and
-   worth its cost, to save nothing on the half that is read on every later turn regardless. **Not
-   claimed**: that the text between tool calls is mostly narration rather than tool-call payload —
-   a `paste` payload carrying a new test file is emitted text and is not narration, and this
-   section does not attempt to separate the two; and that cutting narration costs nothing —
-   thinking out loud mid-run may improve the diff, and nothing here weighs that against the token
-   cost it carries.
+   last turn. That is an argument for moving reasoning out of the narration and into the report,
+   never for shrinking the report to match: keep the argued-down finding's `reason`, keep red and
+   green quoted separately, keep every `report-for-filing` item's justification.
 
-   **Batching is enforced by a hook now, not by this paragraph.** A PostToolUse hook
+   **Batching is enforced by a hook, not by this paragraph.** A PostToolUse hook
    (`scripts/batch_hint.py`) flags a run of 3+ consecutive single-op read-only supertool
-   calls, once, with one line naming the collapsed form. Prose asking for the same thing —
-   this very paragraph, in an earlier form — measured at zero effect across 612 transcripts
-   and a controlled A/B (#490): it is charged on every turn whether or not it ever applies,
-   which the hook is not. Before reaching for `read`, `grep` or `glob` again, ask what else
-   you already know you will need and fetch it in the same call.
+   calls, once, with one line naming the collapsed form (#490). Before reaching for `read`,
+   `grep` or `glob` again, ask what else you already know you will need and fetch it in the
+   same call.
 3. **A negative assertion needs a positive control.** An assertion that *X does not happen* passes
    when *nothing at all* happens — a broken harness, an unresolved tree, a process that died before
    it spoke. Pair every "must not fire" case with a "must fire" case in the same fixture, and if the
@@ -348,12 +287,9 @@ it a second way — grep the new content back — before saying it.
 
    **The fragment has a real checker and `test_command` does not reach it — run it yourself before
    you commit, and paste what it said.** `test_command` is `pytest`; the thing that judges a
-   fragment is `assemble_changelog.py`, a CI leg pytest never touches. An agent that ran the full
-   suite green three times has checked everything it was told to check and has not checked the
-   fragment — measured once already: an entry naming its issue only in the **filename**
-   (`274.fixed.md`, body silent) passed a green suite and was refused on the `fragment` leg, because
-   the fold consumes the filename and nothing carries the number into `CHANGELOG.md` without it.
-   Locate the assembler the same two places, in the same order, this repo's own
+   fragment is `assemble_changelog.py`, a CI leg pytest never touches. An entry naming its issue only
+   in the **filename** (`274.fixed.md`, body silent) passes a green suite and is refused on the
+   `fragment` leg. Locate the assembler the same two places, in the same order, this repo's own
    `oss_rules.assembler_path()` checks: `.oss/assemble_changelog.py`, else
    `scripts/assemble_changelog.py`. Found at either: run `python3 <that path> --check` from inside
    your worktree. It is a plain read: it derives its own root by walking up for `.git` and needs
@@ -363,42 +299,29 @@ it a second way — grep the new content back — before saying it.
 
    **Neither candidate existing is not the same claim as "this repo has no fragment checker."**
    `assembler_path()` only ever looks at those two canonical locations, so its `None` means "not at
-   either one," not "not wired anywhere" — a repo that keeps the assembler at a third path is a real
-   instance (`.github/scripts/assemble_changelog.py`, #784), can have it wired into CI, and this
-   lookup will never find it. So when neither candidate exists, before you report "no assembler
-   here": grep `.github/workflows/` for an invocation of `assemble_changelog.py`. Nothing there
-   either — that is the genuine no-assembler state, and skipping is correct. A workflow invokes it
-   but you cannot find the script in the tree — that is **could-not-resolve**, not no-assembler: say
-   so in your report, name the workflow and what you searched, and never let it render as the clean
-   skip above. **A clean grep is not proof either** — a composite action or a called/reusable
-   workflow can invoke the script from outside `.github/workflows/`, where this grep cannot see it,
-   the same shape `agents/auditor.md` already names as unreadable from the calling repo. If a
-   workflow references a composite action or a reusable workflow you did not open, say
-   could-not-resolve rather than no-assembler; only report no-assembler once you have actually
-   looked at what every such reference calls.
+   either one," not "not wired anywhere" (#784). So when neither candidate exists, before you report
+   "no assembler here": grep `.github/workflows/` for an invocation of `assemble_changelog.py`.
+   Nothing there either — that is the genuine no-assembler state, and skipping is correct. A workflow
+   invokes it but you cannot find the script in the tree — that is **could-not-resolve**, not
+   no-assembler: say so in your report, name the workflow and what you searched, and never let it
+   render as the clean skip above. **A clean grep is not proof either** — a composite action or a
+   called/reusable workflow can invoke the script from outside `.github/workflows/`, where this grep
+   cannot see it. If a workflow references a composite action or a reusable workflow you did not
+   open, say could-not-resolve rather than no-assembler; only report no-assembler once you have
+   actually looked at what every such reference calls.
 
    This is not the only requirement here whose checker `test_command` cannot reach — the report
-   itself has one, `report_schema.py`, named explicitly in
-   `agents/developer/report.md` — but it is the only *other* one backed by a real automated gate. Docs review and
-   the diagnostic convention, both just below, have no script to run; they are judged by a human
-   reading the diff, which is why both are marked **observed rather than enforced** rather than
-   given a command. A pytest test that shells out to `assemble_changelog.py --check` on every run
-   was considered and declined: it would duplicate a CI leg into every lane's every suite run for a
-   check that costs under a second run directly, and `test_command` staying `pytest`-only is a
-   decision about suite runtime, not an oversight.
+   itself has one, `report_schema.py`, named explicitly in `agents/developer/report.md` — but it is
+   the only *other* one backed by a real automated gate. Docs review and the diagnostic convention,
+   both just below, have no script to run; they are judged by a human reading the diff, which is why
+   both are marked **observed rather than enforced** rather than given a command.
 
-   **Nothing checks the docs half, so your report is the only record that it happened.** The
-   changelog half is gated on every pull request. A matching gate for this half was **measured on this
-   plugin's own repository, against its last thirty merged pull requests** rather than assumed, and
-   rejected on the numbers: the trigger the changelog gate already computes fires on 27 of the 30 and
-   is right about 6, the narrowest rule anybody proposed — a new file under a product path — fires on
-   none of the thirty at all, and the best of them is wrong two times in three. Those counts are one
-   repository's history, named as such and not a fact about yours; what carries across is the shape.
-   A gate wrong that often earns a blanket override label inside a week, which converts an unmeasured
-   duty into a measured and routinely-overridden one; a gate that never fires cannot be told from one
-   that is broken. So this duty is **observed rather than enforced**: **open every path in
-   `docs_targets` and report one line per path** under `docs`, saying which of these three docs
-   states each is in — not to be confused with the diagnostic's own three, below.
+   **Nothing checks the docs half, so your report is the only record that it happened.** A matching
+   gate was measured against this plugin's own merged history and rejected on the numbers: a gate
+   wrong that often earns a blanket override label inside a week, and a gate that never fires cannot
+   be told from one that is broken. So this duty is **observed rather than enforced**: **open every
+   path in `docs_targets` and report one line per path** under `docs`, saying which of these three
+   docs states each is in — not to be confused with the diagnostic's own three, below.
 
    - **updated** — this diff changed it. No reason needed; the diff is the reason.
    - **no-change-needed** — you opened it and it is still true. **Say what you read it against**,
@@ -415,10 +338,7 @@ it a second way — grep the new content back — before saying it.
    convention.** `scripts/doctor.py` is what tells a maintainer whether their repo matches what this
    plugin expects, so a convention that moves without it answers confidently against a rule nobody
    follows any more — health measured against the old shape, or a gap reported for what is now
-   correct behaviour. It has already happened here, and in the worst way to catch: two individually
-   correct commits, one teaching the writer to decline a file and one leaving the diagnostic
-   reporting that file as missing with the remedy *run the writer that now declines*. The defect
-   existed only in the composition, so neither diff review could see it.
+   correct behaviour.
 
    The rule is **make sure the diagnostic reports it**, not *always edit `doctor.py`*. Say in your
    report which of these three diagnostic states you are in — a separate question from the docs
@@ -452,10 +372,9 @@ commit and stop, unconditionally.
 Your report carries three states everywhere. So must the code you write. **`ok`, a finding, and
 `skipped`/`unknown` — and the third one is load-bearing.** A check that cannot look has to say it
 could not look, because when it returns the same value for *I looked and found nothing* and *I could
-not look*, the absence it produced becomes an absence in the world, and everybody downstream is
-confident about a question nobody answered. Before you call an implementation finished, ask what it
-prints when it cannot look. If that is the same thing it prints when it is clean, it is not
-finished, and no test asserting the clean path will tell you so.
+not look*, the absence it produced becomes an absence in the world. Before you call an implementation
+finished, ask what it prints when it cannot look. If that is the same thing it prints when it is
+clean, it is not finished, and no test asserting the clean path will tell you so.
 
 Two traps sit beside that one, and both arrive wearing the costume of a fix:
 
@@ -492,9 +411,8 @@ by a fix, a test named for a constant it no longer uses, a receipt that overstat
 saying, no caller. **Say it in the pull request**, where somebody still holds the context.
 
 That is the third answer and it has a word: **`below-bar`**, in `action` and in `disposition` alike.
-Do not reach for `report-for-filing` and disclaim it in the text — that is what the lane before you
-had to do, and the maintainer read the label, not the disclaimer, and nearly opened the issue the
-item argued against (#411). `below-bar` states where the finding sits rather than what anyone should
+Do not reach for `report-for-filing` and disclaim it in the text — the maintainer reads the label,
+not the disclaimer (#411). `below-bar` states where the finding sits rather than what anyone should
 do about it, which is why it can be read at the speed labels are actually read.
 
 **It is a receipt, so it is checked.** A `below-bar` item carries **`pr_anchor`**: a verbatim
@@ -548,14 +466,13 @@ declares as a dependency. Routing around it and saying nothing leaves the board 
 unaware of a defect somebody has already reproduced — and **getting it onto that tracker is part of
 finishing the work**, not a favour to another project.
 
-**The tooling running you is one of those dependencies in every way except the manifest**, and that
-is the case this section used to be silent about. When the repo you are working in belongs to
-somebody else, a defect in the rule layers written into their tree, in an owned file, in this brief,
-in an op the brief mandates, in the launcher or in the diagnostic is **not their bug**: their
-maintainer cannot patch it, cannot see it declared anywhere, and a report on their board reads as
-work done while the board that could ship the fix never hears. The reverse holds exactly as firmly —
-a defect in the host project's own code belongs to the host project. **The split is who owns the
-code, never who is standing closest to it.**
+**The tooling running you is one of those dependencies in every way except the manifest.** When the
+repo you are working in belongs to somebody else, a defect in the rule layers written into their
+tree, in an owned file, in this brief, in an op the brief mandates, in the launcher or in the
+diagnostic is **not their bug**: their maintainer cannot patch it, cannot see it declared anywhere,
+and a report on their board reads as work done while the board that could ship the fix never hears.
+The reverse holds exactly as firmly — a defect in the host project's own code belongs to the host
+project. **The split is who owns the code, never who is standing closest to it.**
 
 Nothing declares itself as its own dependency, so the loop's own board is the one name the
 derivation above cannot produce. **Do not infer a slug for it. Ask.** `loop_repository()` in
@@ -614,9 +531,8 @@ comes back: `fixed`, `refused`, `argued-down`, `report-for-filing` with its requ
 **Then read `agents/developer/review-return.md` when the final messages arrive.** It carries
 `scripts/review_return.py` and the framed heredoc that keeps a quoted terminator from ending the
 stream in your own session (#404), the six verdicts and which of them are `returned-nothing` in the
-report, the one permitted re-spawn that does not erase the first outcome, the record of the brief
-sentence as an experiment with a baseline rather than a fix, and what to do when the spawn name does
-not resolve (#81).
+report, the one permitted re-spawn that does not erase the first outcome, and what to do when the
+spawn name does not resolve (#81).
 
 **A review that did not execute must never render as a review that found nothing.** That holds for
 both spawns, for an empty final message from either one, and for each of the auditor's classes
