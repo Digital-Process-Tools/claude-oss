@@ -119,7 +119,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # block and the new phase-file table row. Budget unchanged; comfortably
     # under it.
     SPINE: (
-        41261,
+        # Re-baselined for #1083: 41261 B became 41367 B -- the op table's
+        # own `Filing` row still stated the pre-#1083 unconditional
+        # attach-the-label rule ("every time"), which directly contradicted
+        # accounting.md's own new provenance directive; a self-review found
+        # it and it was corrected here rather than left standing.
+        41367,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -228,7 +233,17 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # already give for their own re-baselines: a ceiling left far above the file
     # is a saving spendable again without anybody choosing to.
     "skills/manager/phases/dispatch.md": (
-        52772,
+        # Re-baselined for #1083/#1178: 52772 B became 53168 B -- the
+        # `--board`-vs-default-mode stdin contract, stated once here rather
+        # than left ambiguous next to the true "takes no input" sentence
+        # about the other mode. Budget unchanged; comfortably under it.
+        # Re-baselined again in the same lane's own self-review round:
+        # 53168 B became 53485 B -- the first version of that sentence
+        # claimed a wrong-shaped `--board` payload always fails with a
+        # stdin-parse error; verified against the running script it can
+        # instead exit 0 with a silently degraded receipt, or crash with an
+        # unrelated traceback, and the sentence now says so.
+        53485,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -311,8 +326,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # prose each release, after a releaser misread the round-two
     # carry-forward rule as applying to round one and shipped over a
     # round-one findings verdict. Budget unchanged; still under it.
+    # Re-baselined for #1158: 8930 B became 9170 B -- has_blocking gained a
+    # third state (BLOCKING_UNKNOWN / None -> could-not-decide) alongside
+    # True/False, so gate3_disposition.py's own paragraph here now names it.
+    # Budget unchanged; still comfortably under it.
     "skills/manager/phases/release.md": (
-        8930,
+        9170,
         9800,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
@@ -333,7 +352,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # mentions renamed to select_issues_rank.py in the same call-site rewrite.
     # Budget unchanged; comfortably under it.
     "skills/manager/phases/accounting.md": (
-        17705,
+        # Re-baselined for #1083: 17705 B became 18549 B -- the
+        # `filed_by_loop` attach directive now turns on provenance (the
+        # loop's own initiative) rather than on which call site typed the
+        # issue up, so a co-decided issue is never tagged even when the loop
+        # files it. Budget unchanged; comfortably under it.
+        18549,
         19500,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
@@ -351,7 +375,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # --label worked example moved from named flags to positional arguments.
     # Budget unchanged.
     "skills/manager/phases/tick-order.md": (
-        33032,
+        # Re-baselined for #1178: 33032 B became 33334 B -- the same
+        # `--board`-vs-default-mode stdin clarification dispatch.md gained,
+        # stated at this file's own call site. Budget unchanged;
+        # comfortably under it.
+        # Re-baselined again in the same lane's own self-review round:
+        # 33334 B became 33532 B -- the same wrong-shaped-payload
+        # correction dispatch.md's own re-baseline note describes.
+        33532,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

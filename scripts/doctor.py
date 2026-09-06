@@ -8456,7 +8456,7 @@ def _malformed_repo(repo):
     if oss_config is not None:
         if oss_config.repo_problem(repo) is not None:
             return True
-    elif not re.match(r"\A[^/\\s]+/[^/\\s]+\Z", repo):
+    elif not re.match(r"\A[^/\\\s]+/[^/\\\s]+\Z", repo):
         return True
     segments = repo.split("/")
     for segment in segments:
