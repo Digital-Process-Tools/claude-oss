@@ -217,6 +217,18 @@ def test_cli_claim_renders_the_lane_fill_token_alongside_agent_call(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    # A fresh temp repo carries no git identity of its own, and neither
+    # actions/checkout nor a CI runner's environment supplies one outside
+    # the workspace it configured -- `git commit` then refuses with exit
+    # 128 ("no email/name was given and auto-detection is disabled"),
+    # exactly the failure this test caused on PR #1151 (ubuntu-latest,
+    # 3.11/3.12) while passing locally, where a real user identity is
+    # already configured globally. Same convention as
+    # tests/test_agent_role_marker_695.py and tests/test_changelog_gate.py.
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "user.email", "t@example.com"], check=True
+    )
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
     subprocess.run(
         ["git", "-C", str(repo), "commit", "--allow-empty", "-q", "-m", "x"], check=True
     )
