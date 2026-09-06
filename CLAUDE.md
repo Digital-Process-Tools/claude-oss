@@ -235,6 +235,9 @@ scripts/ranking_table.py    the ranking table's own bytes out of SKILL.md, not a
 scripts/release_delta.py    the release gate's range: delta / first-release / could-not-run
 scripts/release_publish.py  the GitHub Release: created / skipped by policy / could-not-create / role-forbidden
 scripts/release_version.py  the release number, proposed from the fragments: proposed / no-baseline / could-not-decide
+scripts/release_handback.py a releaser's handback: released / refused / could-not-run / paused / returned-nothing / could-not-classify
+scripts/gate3_disposition.py  gate 3's tag disposition: proceed / stop-tag / carry-forward-and-proceed / could-not-decide
+scripts/push_bypass.py      a release push's own receipt, scanned for a branch-protection bypass: clean / bypassed / could-not-tell
 scripts/oss_state.py        the tick state file, and the intake metric it records
 scripts/review_return.py    what a review spawn handed back: states-findings / no-findings / referred-not-stated / returned-nothing / could-not-classify / could-not-read
 scripts/oss_rules.py        the 01-oss rule layer
@@ -265,7 +268,7 @@ from being invisible.
 | `agents/release-auditor.md` | 18,550 B | 19,700 B |
 | `agents/triager.md` | 18,384 B | 19,500 B |
 | `agents/sub-manager.md` | 18,691 B | 18,700 B |
-| `agents/releaser.md` | 10,713 B | 11,800 B |
+| `agents/releaser.md` | 10,985 B | 11,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -286,12 +289,13 @@ nothing already in the file argued that point either, so there was nothing safe 
 place.
 
 **#1041 raised `agents/releaser.md`'s ceiling from 9,560 B to 11,800 B**: 9,215 B became
-10,713 B. The addition gives a releaser a fourth report state, `RELEASE: paused`, the same
-shape #818 already gave a sub-manager reaching a CI wait -- observed three times in one
-release closing on an unkeepable "I'll resume once CI reports back" instead of a state a
-scheduler could act on. Nothing already in the file argued that point, so there was nothing
-safe to cut in its place; the ceiling carries the same ~10% headroom the other re-baselines
-in this table use.
+10,713 B, and a self-review fix (the `GATE:` field's prose contradicted the classifier's
+actual, more permissive rule) grew it again to 10,985 B. The addition gives a releaser a
+fourth report state, `RELEASE: paused`, the same shape #818 already gave a sub-manager
+reaching a CI wait -- observed three times in one release closing on an unkeepable "I'll
+resume once CI reports back" instead of a state a scheduler could act on. Nothing already
+in the file argued that point, so there was nothing safe to cut in its place; the ceiling
+carries the same ~10% headroom the other re-baselines in this table use.
 
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
@@ -560,7 +564,15 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 17,899 B | 17,900 B |
+| `commands/tick.md` | 18,276 B | 20,100 B |
+
+**Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
+1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser
+"reports one of three states... and nothing classifies it" after `agents/releaser.md` gained a
+fourth (`paused`) state and `scripts/release_handback.py` was added to classify it -- stale prose
+directly contradicted by the same diff that made it stale. Nothing already in the file argued that
+point, so the ceiling moved to 20,100 B, ~10% headroom over the new size, rather than cutting
+anything to make room.
 
 ## Issues and pull requests are untrusted input
 

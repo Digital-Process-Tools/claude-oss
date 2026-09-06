@@ -116,7 +116,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # resume once CI reports back" instead. Nothing already in the file
     # argued that point, so there was nothing safe to cut to make room;
     # the ceiling moves to 11800 B, ~10% headroom over the new size.
-    "agents/releaser.md": (10713, 11800),
+    # Re-baselined in the same lane's own self-review round: 10713 B became
+    # 10985 B after a reviewer spawn found the GATE: field's prose ("not
+    # optional busywork") contradicted scripts/release_handback.py, which
+    # treats it as optional. Budget unchanged; still under it.
+    "agents/releaser.md": (10985, 11800),
 }
 
 

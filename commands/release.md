@@ -452,17 +452,22 @@ here — routing the release commit through a pull request, writing a narrow doc
 removing bypass privileges from the release path are three different fixes and none is decided.
 What is closed is narrower: on an account holding bypass privileges, GitHub's branch protection
 does not refuse this push — it silently records a bypass and lets it through, announced only in the
-push's own stderr (`remote: Bypassed rule violations for refs/heads/main: ...`). **Capture the
-push's own output and check it — do not read a quiet push as a clean one:**
+push's own stderr (`remote: Bypassed rule violations for refs/heads/main: ...`). **Push through
+`supertool`, capture what it prints, and check that — do not read a quiet push as a clean one:**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/push_bypass.py" <<< "$PUSH_RECEIPT"
+PUSH_RECEIPT="$(supertool 'git-push' 2>&1)"
+printf '%s\n' "$PUSH_RECEIPT"
+printf '%s' "$PUSH_RECEIPT" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/push_bypass.py"
 ```
 
-where `$PUSH_RECEIPT` is the combined stdout/stderr the push actually produced. `bypassed` is not a
-stop — this gate does not decide that — but it is a fact that must reach the release report in
-those words, never rendered the same as `clean`. `could-not-tell` (nothing was captured) is a
-third answer and must not read as either.
+Piped rather than fed with a bash-only here-string (`<<<`), so the same three lines run under any
+POSIX shell a releaser's own environment happens to provide. `bypassed` is not a stop — this gate
+does not decide that — but it is a fact that must reach the release report in those words, never
+rendered the same as `clean`. `could-not-tell` means nothing was actually captured (an empty
+`$PUSH_RECEIPT`, from a step run in a separate call with nothing assigning it) — a third answer
+that must never read as either `clean` or `bypassed`, and a sign to re-run the capture and the scan
+in the same call rather than trust the result.
 
 Then **verify the tag exists on the remote**:
 

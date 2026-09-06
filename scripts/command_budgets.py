@@ -54,7 +54,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # self-review fix (two stale "below" cross-references pointing at
     # content #1037 moved out of this file) landed here. Budget unchanged;
     # comfortably under it.
-    "commands/tick.md": (17899, 17900),
+    # Raised for #1041 (self-review round of #1119/#1041/#1043): 17899 B
+    # became 18276 B, past the 17900 B ceiling with 1 B of headroom left.
+    # The releaser paragraph here still said "one of three states, never a
+    # TICK: handback, and nothing classifies it" after agents/releaser.md
+    # gained a fourth (`paused`) state and scripts/release_handback.py was
+    # added to classify it -- a reviewer spawn caught the contradiction.
+    # Nothing already in the file argued that point, so there was nothing
+    # safe to cut in its place; the ceiling moves to 20100 B, ~10% headroom
+    # over the new size.
+    "commands/tick.md": (18276, 20100),
 }
 
 

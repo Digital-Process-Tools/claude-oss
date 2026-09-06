@@ -262,6 +262,14 @@ def classify(message):
         )
     wait_dispatch = _rr.fold_to_one_ascii_line(wait_dispatch_match.group(1))
     wait_observable = _rr.fold_to_one_ascii_line(wait_observable_match.group(1))
+    # GATE: is optional for a paused report -- it does not affect classification, only
+    # what a resume can skip -- so unlike every required field above, an ambiguous
+    # (duplicated) GATE: line is folded into the same "absent" answer as a genuinely
+    # missing one, deliberately, rather than promoted to could-not-classify. This is a
+    # narrower rule than "a second match is exactly as undecidable as a missing one"
+    # (_find_field's own docstring, applied everywhere else in this module): here the
+    # two ambiguous cases share one answer because neither one can make the paused
+    # state unclassifiable, not because the ambiguity was overlooked.
     gate_match, gate_count = _th._find_field(_GATE, tail)
     gate = _rr.fold_to_one_ascii_line(gate_match.group(1)) if gate_count == 1 else None
     return _verdict(

@@ -105,6 +105,34 @@ def test_paused_missing_wait_observable_is_could_not_classify():
     assert verdict["state"] != "paused"
 
 
+def test_paused_with_duplicate_gate_line_still_classifies_as_paused():
+    """GATE: is optional for a paused report -- a reviewer flagged that an
+    ambiguous (duplicated) GATE: line was silently folded into the same
+    answer as a missing one, unlike every *required* field, where a
+    duplicate refuses to classify. This locks in that the divergence is
+    deliberate: GATE: does not gate classification either way."""
+    verdict = release_handback.classify(
+        "RELEASE: paused\n"
+        "GATE: 1, default branch green\n"
+        "GATE: 3, security audit\n"
+        "WAIT-DISPATCH: x\n"
+        "WAIT-OBSERVABLE: y\n"
+    )
+    assert verdict["state"] == "paused"
+    assert verdict["gate"] is None
+
+
+def test_positive_control_paused_with_a_single_gate_line_reports_it():
+    """Positive control for the test above: a single, unambiguous GATE:
+    line on a paused report IS read and reported, so the assertion above is
+    not passing because GATE: is simply never read."""
+    verdict = release_handback.classify(
+        "RELEASE: paused\nGATE: 1, default branch green\nWAIT-DISPATCH: x\nWAIT-OBSERVABLE: y\n"
+    )
+    assert verdict["state"] == "paused"
+    assert "default branch green" in verdict["gate"]
+
+
 def test_empty_message_is_returned_nothing_not_could_not_classify():
     verdict = release_handback.classify("")
     assert verdict["state"] == "returned-nothing"

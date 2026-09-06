@@ -121,8 +121,11 @@ you report, so a promise to "resume once CI reports back" is not one you can kee
 you are waiting on instead. Observed three times in one release before this state existed: a
 releaser closing with exactly that unkeepable promise, costing a full spawn each time because the
 scheduler had to reconstruct the release's state from the tracker rather than read it off the
-report. Naming `GATE:` is not optional busywork either -- it is what lets a resume skip gates
-already passed rather than re-deriving all six from a fresh context.
+report. Naming `GATE:` costs you nothing and buys the resume a shortcut -- it is what lets it skip
+gates already passed rather than re-deriving all six from a fresh context. `scripts/release_handback.py`
+does not require it for `paused` to classify (unlike `WAIT-DISPATCH:`/`WAIT-OBSERVABLE:`, which are
+required): a paused report missing it is still a usable paused report, just one that costs its
+resume more work than it needed to.
 
 **`could-not-run`, `refused` and `paused` are three different facts and must not collapse into one
 another.** `scripts/release_delta.py` already answers a version of this for its own narrower scope
