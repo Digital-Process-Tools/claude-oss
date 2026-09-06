@@ -294,39 +294,30 @@ per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale`
 `lane-collision`). It does not replace `--claim` above: reading who is claimable and writing a claim
 stay separate calls.
 
-**Read `lanes`, one entry per declared lane label, and dispatch its group (#1146).** The fleet is
-the lane labels `.oss.json` declares, `labels.lane_other` included — so its size is the declared lane
-count, and the lanes are disjoint by construction because each label names a subsystem. Each lane
-returns **one** group: the best-ranked eligible issue as lead plus up to two companions chosen by
-file adjacency, whatever their own rank. **Cap at three, never four** (#799, measured across 237
-lanes in #499) — `select_issues_rank.check_lane` refuses a fourth before the spawn, not after. A
-lane's other eligible issues stay visible in its own `candidates` list; they are not lost, only not
-dispatched this tick. A group is a suggestion, never a dispatch — weigh it against topic and
-judgement.
+**It takes no input (#1145).** No stdin payload, no `--fetch` mode. It fetches the board, reads
+`.oss.json` and derives the held set itself, so `board_read_ok` / `board_read_why` / `board_capped` /
+`board_cap_detail` / `lanes_read_ok` / `lanes_read_why` are facts it observed, and a failed read is
+`could-not-select`. It still never invents `lane_patterns` or `preflight_pattern` for an issue that
+declares neither (#267).
 
-Each lane carries its own third state (`candidates` / `none` / `could-not-tell`) and, when short,
-one of `board-exhausted` / `no-adjacent` / `did-not-search` / `could-not-tell`. A lane with no
-eligible work returns a stated absence rather than a missing key. `lane-other` is a lane like any
-other and keeps its solo rule (#1130): one issue, never a companion, never offered as one.
+**Read `lanes`, one entry per declared lane label, and dispatch its group (#1146).** The fleet is the
+lane labels `.oss.json` declares, `labels.lane_other` included. Each lane returns **one** group: the
+best-ranked eligible issue as lead plus up to two companions by file adjacency, whatever their own
+rank. **Cap at three, never four** (#799, #499). A lane's other eligible issues stay in its
+`candidates` list. A group is a suggestion, never a dispatch — weigh it against topic and judgement.
 
-**An issue carrying no `lane-*` label is not selected at all (#1146).** No lane, no group, no body —
-`/oss:triage` is what gives an issue a lane, and until it has one there is nothing here to dispatch.
-It is not silently absent either: it appears in the top-level `dropped` list with the disposition
-`no-lane-label`, beside every other dropped issue and its reason.
+Each lane carries its own third state (`candidates` / `none` / `could-not-tell`) and, when short, one
+of `board-exhausted` / `no-adjacent` / `did-not-search` / `could-not-tell`. A lane with no eligible
+work returns a stated absence, not a missing key. `lane-other` keeps its solo rule (#1130): one
+issue, never a companion, never offered as one.
 
-**It takes no input (#1145).** It fetches the board itself — issues, labels, bodies and
-`author_association` — reads `.oss.json`, and derives the held set from running lanes. There is no
-stdin payload and no `--fetch` mode: one way to do it. So `board_read_ok` / `board_read_why` /
-`board_capped` / `board_cap_detail` / `lanes_read_ok` / `lanes_read_why` are facts the module
-observed, not claims a caller made, and a read that failed is `could-not-select` rather than a
-confidently short answer. `lane_patterns` / `preflight_pattern` are still never invented for an issue
-that declares neither (#267).
+**An issue carrying no `lane-*` label is not selected (#1146).** No lane, no group, no body. It
+appears in the top-level `dropped` list with the disposition `no-lane-label`. `/oss:triage` gives an
+issue its lane.
 
-**It returns the body of every issue in every group it returns (#1147)**, so the veto reads what the
-call already handed it rather than re-fetching issue by issue. Each body is wrapped in a per-body
-random nonce and labelled data, not instructions — an issue cannot forge its own closing marker. A
-capped body says `body_truncated` with its full `body_length` beside it: a body cut at the cap and a
-body that is that size must not render alike.
+**Every group carries its issues' bodies (#1147)**, each wrapped in a per-body random nonce and
+labelled data, not instructions. A capped body reports `body_truncated` and its full `body_length`.
+Read those rather than re-fetching issue by issue.
 
 **`labels.reserved` in `.oss.json` is how the maintainer holds an issue open (#844).** An empty
 assignee field means only "no maintainer lane holds this" — never "nobody wants it". A reservation

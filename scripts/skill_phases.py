@@ -225,7 +225,7 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # already give for their own re-baselines: a ceiling left far above the file
     # is a saving spendable again without anybody choosing to.
     "skills/manager/phases/dispatch.md": (
-           53650,
+           52772,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -334,7 +334,7 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # --label worked example moved from named flags to positional arguments.
     # Budget unchanged.
     "skills/manager/phases/tick-order.md": (
-        33388,
+        33032,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
