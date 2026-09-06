@@ -79,7 +79,7 @@ step 1 has already decided better.
 | **Who** | the sub-manager, once per surviving group |
 | **Runs** | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane <pattern> --claim-also <N> ... --phrase "<phrase>" --subagent-type oss:developer --brief <brief-file>` |
 | **Input** | one group from step 1, and a brief file the caller wrote |
-| **Output** | a pasteable `Agent(...)` line -- and the claim, the lane registration and the worktree are now written |
+| **Output** | a pasteable `Agent(...)` line, the `--lane-fill` token for step 5 -- and the claim, the lane registration and the worktree are now written |
 
 It claims every issue, registers the lane, derives base commit / branch / worktree, resolves the
 file set, validates the brief, and renders the call.
@@ -94,6 +94,11 @@ was reviewed*.
 
 `--claim`'s five states, the brief's result and the label's outcome are reported **separately**,
 never flattened into one verdict.
+
+**It also emits step 5's `--lane-fill PRIMARY:COUNT[:REASON]` token**, with the count from the claim
+result and the reason carried through from the group `select_issues.py` already labelled. Nobody
+computes it. That closes the same defect the label had: two calls that must agree, kept in agreement
+by hand.
 
 ---
 
@@ -116,8 +121,16 @@ lane of the fleet in a single message so they run concurrently.
 | --- | --- |
 | **Who** | the sub-manager, at the tick's own `--decision` call |
 | **Runs** | `oss_state.py ... --lane-fill PRIMARY:COUNT[:REASON] --lane-dispatch-state ISSUE=STATE[:WHY]` |
-| **Input** | what was actually dispatched |
+| **Input** | the tokens step 3 emitted, one per lane. **Paste only** -- nothing is computed here. |
 | **Output** | the tick's record, refused outright if a short lane arrives with no reason |
+
+**Why this is not folded into step 3.** `oss_state.append` writes **one entry per tick**,
+append-only and atomic, and refuses an entry carrying no decision. A claim is not a tick decision,
+and it happens before the tick has one. Folding would need either one entry per lane -- turning a
+record of what the tick decided into an event log -- or mutable entries, which trades away the
+atomic write whose point is that a failure leaves the history unchanged rather than half-written.
+Both cost more than the single call the fold would save. So the *write* stays here; only the
+*composing* moved to step 3.
 
 ---
 
@@ -209,6 +222,19 @@ would replace a retype with a confident wrong number, which is worse than the re
 
 `--claim`'s five states, the brief's result and the label's outcome are reported **separately**,
 never flattened into one verdict.
+
+**It also emits step 5's `--lane-fill PRIMARY:COUNT[:REASON]` token**, with the count from the claim
+result and the reason carried through from the group `select_issues.py` already labelled. Nobody
+computes it. That closes the same defect the label had: two calls that must agree, kept in agreement
+by hand.
+
+## The rule the steps converge on
+
+**Every step is either a tool composing, or a human pasting what a tool composed. Never a human
+composing.** Step 1 and step 3 compose; step 4 and step 5 paste; step 2 is the one judgement, and it
+decides yes or no rather than producing a value. There is nowhere left in the sequence where a
+number, a list or a call is assembled by hand -- which is the only property that made every defect
+below unreachable rather than merely warned against.
 
 ## The one judgement left to the LLM
 
