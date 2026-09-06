@@ -2,10 +2,6 @@
 
 **Read this when** a reviewer's final message has arrived -- before you sort it, and before you write `review` in the report.
 
-`agents/developer.md` is the spine and carries the directives; this file carries the argument
-each one rests on -- the incident it was written for, the measurement behind it, the thing that was
-tried and rejected. A rule here that reads as obvious is one that has already been got wrong.
-
 **Say whether you read it.** A phase file you did not open, or could not, is a clause of your brief
 that did not run: name it as an item under the report's `compliance` survey, with the reason. A rule
 that did not run renders exactly like a rule with nothing to say, so the absence is stated, never
@@ -13,11 +9,9 @@ silent.
 
 ## When a spawn runs and comes back empty
 
-That rule has a loud half and a quiet half, and only the loud half was ever written down. A spawn
-that errors is handled below. This is the other one: a spawn can **execute, consume its budget, and
-return an empty final message** — the review happened, the conclusions are gone. Reported honestly
-and structurally that is `findings: []` under `state: checked`, which is byte-identical to a clean
-review, and it has already cost this repository real findings that nobody can now recover.
+A spawn that errors is handled below. This is the other half: a spawn can **execute, consume its
+budget, and return an empty final message** — the review happened, the conclusions are gone.
+Reported as `findings: []` under `state: checked` that is byte-identical to a clean review.
 
 So it gets its own state. `review.classes` and `review.findings` carry a fourth one,
 **`returned-nothing`**, that no other survey in the report can spell — `checked` would render a real
@@ -26,9 +20,8 @@ The validator refuses it without a reason.
 
 **How you decide you are in it: compute it, do not read tone.** Both briefs already require a
 sentinel — `NO FINDINGS`, and what was checked — precisely so silence is distinguishable from
-cleanliness. Sorting what comes back used to be your judgment, performed once per spawn by an agent
-that has just been told a review happened, and **that judgment is the step that fails silently**.
-Pipe each reviewer's final message, verbatim, through the classifier:
+cleanliness. Sorting what comes back by your own judgment is the step that fails silently. Pipe each
+reviewer's final message, verbatim, through the classifier:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/review_return.py" --framed - <<'MSG'
@@ -40,10 +33,8 @@ MSG
 **The indentation is the guard, not a style.** A quoted heredoc ends at the first line *equal* to
 its terminator, at column zero — so a message placed at column zero decides where its own transport
 ends, and everything after that point is parsed by bash as commands, in your session, with the
-maintainer's credentials. That is #404, and it needs no adversary: the first observed instance was a
-reviewer **quoting this very code block**, terminator included, which is an ordinary thing for a
-reviewer of `agents/developer.md` to do. Indenting every line makes a content line that ends the
-stream unconstructible, which is why the fix is not a longer or a random terminator — any terminator
+maintainer's credentials (#404). Indenting every line makes a content line that ends the stream
+unconstructible, which is why the fix is not a longer or a random terminator — any terminator
 written down here is one a message can quote.
 
 So: **prefix every line of the message with those four spaces, blank lines included, and change
@@ -87,10 +78,9 @@ The classifier decides from the bytes you hand it and nothing else, which is the
 a verdict from what you believe the spawn did while it ran — you did not see that, and a transcript
 you happen to hold is evidence about your own session, not a return value.
 
-The state's own definition is what makes that arm legitimate rather than a stretch: `returned-nothing`
-is *the review happened and its conclusions are lost*, and an empty message is the instance it was
-first observed in rather than the boundary of it. Conclusions referred to and not stated are lost in
-exactly the same way and to exactly the same degree.
+`returned-nothing` is *the review happened and its conclusions are lost*; an empty message is one
+instance of that, not the boundary of it. Conclusions referred to and not stated are lost in exactly
+the same way and to exactly the same degree.
 
 **What the report must say, and it is a required field rather than good manners.** Set the state to
 `returned-nothing` and put in `reason` which spawn went quiet, **which of the two ways** — nothing at
@@ -106,11 +96,10 @@ answered.
 **Record the residue, and do not mistake it for the finding.** A message that referred to findings it
 did not state usually leaves something behind — a count, a subject, a filename, a severity. That
 residue goes into `items` as an `open` item, **quoted rather than paraphrased**, because it is the
-only handle anybody will have. And it is a handle, not a finding: one lost return preserved the name
-of a single file and nothing else, and because nobody owned the residue, nobody opened that file for
-the rest of the session. Say what the residue is, say what it is not, and say how many findings the
-count implied that you have nothing at all for. A count is the cheapest residue there is and the
-easiest to drop, and it is the one that tells a maintainer the size of what is missing.
+only handle anybody will have. And it is a handle, not a finding. Say what the residue is, say what
+it is not, and say how many findings the count implied that you have nothing at all for. A count is
+the cheapest residue there is and the easiest to drop, and it is the one that tells a maintainer the
+size of what is missing.
 
 **One fresh re-spawn, and it does not erase the first outcome.** Spawn a new agent of the same type
 with the same brief, once, and stop there; a second empty return is a finding, not a third attempt.
@@ -118,79 +107,49 @@ Whatever the retry hands back, the state stays `returned-nothing` and the reason
 attempts. Converting *the reviewer said nothing* into *no findings* is the bug; converting it into
 *I retried and it worked, nothing to see* is the same bug one layer up.
 
-**Decided against, so that it is a decision rather than an omission: granting `SendMessage` to ask
-the reviewer to repeat itself.** That was the missing capability the agents who hit this named, and
-it is still the wrong answer. It widens a delegated agent from *spawns its own reviewers* to *can
-address any live agent*, including the sibling lanes working other issues in the same round; and it
-does not recover the lost message anyway, because an agent asked to repeat regenerates — what comes
-back is a fresh review wearing the first one's authority. A fresh spawn buys the same thing and
-says what it is.
+**Decided against: granting `SendMessage` to ask the reviewer to repeat itself.** It widens a delegated agent from
+*spawns its own reviewers* to *can address any live agent*, including sibling lanes in the same
+round; and an agent asked to repeat regenerates, so what comes back is a fresh review wearing the
+first one's authority. A fresh spawn buys the same thing and says what it is.
 
-**None of this is a finding about a particular agent type.** The count is now six across two
-repositories and two days, not the two it was when this paragraph was written, and the shape did not
-change with it: every observed instance was the same reviewer type and the auditor half returned
-normally every time — but agent type, brief and task shape vary together in all six, and nothing
-separates those explanations. **A handful of samples is not a measurement**, so nothing in this
-subsection names an agent type: the rule is mechanism-agnostic and applies to whatever you spawned.
-The confound is worked through once, below.
+**None of this is a finding about a particular agent type.** Agent type, brief and task shape vary
+together in every observed instance, and nothing separates those explanations. **A handful of samples
+is not a measurement**, so nothing here names an agent type: the rule is mechanism-agnostic and
+applies to whatever you spawned.
 
 ## The brief sentence is an experiment, not a fix
 
 A sentence added to a brief to change how a model writes its last paragraph cannot be shown to work
-from inside the session that adds it, and the temptation is to treat it as done because it is
-written. So it is recorded here as an intervention with a baseline, and the record is part of the
-change rather than a courtesy.
+from inside the session that adds it. Two prose interventions have shipped and the shape recurred
+after both (#275, #296, PR #332, then #392). `scripts/review_return.py` is the third and is
+deliberately not prose: it computes the sort from the returned bytes and asks the reviewer for
+nothing. Its limit, stated: it does not change how often a spawn gestures, only whether a gesture is
+recorded as a clean review.
 
-- **Baseline, two independent populations.** In one session in this repository, **three of roughly
-  seven review spawns** executed, formed conclusions and returned a final message referring to
-  findings it never stated — two of those unrecoverable, one recovered by the permitted re-spawn and
-  correct, one surviving only as the name of a file. Two days later, in a different repository, all
-  **three of three** developer runs in one fleet hit it, claiming ten findings between them of which
-  nine are gone. The agents did not know about each other. Every instance was recorded as
-  `returned-nothing` rather than `checked`, which is why there is a baseline at all.
-- **Intervention 1, and it did not hold.** The sentence, the `FINDINGS: <n>` header and the
-  `referred-not-stated` sort arm, in `agents/developer/review.md` and above. Together they cost three paragraphs of brief and one
-  comparison. #275 and #296 were the first two instances and PR #332 shipped that language; **#392
-  reports the identical shape recurring twice in one day, in two unrelated lanes, after it
-  shipped.** Two prose attempts, two recurrences. That is what makes a third one the wrong move
-  rather than the obvious one.
-- **Whether #392's two lanes are new samples is not established, and the count is not incremented on
-  them.** They were dispatched in the same fleet, in the same repository, on the same day as the
-  "three of three" population above, and nothing distinguishes them from lanes already inside it.
-  Counting them again would inflate the baseline the next intervention is graded against — which is
-  the failure this section exists to avoid, pointed at its own arithmetic.
-- **Intervention 2, and it is deliberately not prose.** `scripts/review_return.py` computes the sort
-  from the returned bytes; the section above tells you to run it and quote its `VERDICT:` line. It
-  asks the reviewer for nothing, so it does not fail the way intervention 1 and its predecessors
-  fail. It also cannot be graded by the metric below, and that is the honest limit of it: it does not
-  change how often a spawn gestures, only whether a gesture is recorded as a clean review. Its own
-  evidence would be different — reports whose `review` survey states `returned-nothing` with a quoted
-  classifier verdict, over reports that state `checked` with no verdict quoted at all.
-- **What would count as evidence.** The same rate, over later sessions, counted the same way: spawns
-  that referred without stating, over spawns dispatched. Nothing else. A session with no instances is
-  one observation, not a result, and a run in which nobody counted is not a zero.
-- **The confound, which is why one tempting explanation is not built on.** Every instance came from
-  one spawn type and the other type answered normally every time — but agent, brief and task vary
-  together, so *a fixed enumeration is harder to gesture at than a free-form list* is a hypothesis
-  and not a finding. Nothing here is arranged around it, and nothing here should be read as having
-  tested it.
-- **What is not established at all.** Whether these spawns genuinely produced findings and lost them
-  at the return boundary, or never produced them and misreported, has not been observed — nobody has
-  read a reviewer's own transcript. Those are different bugs with different fixes. The header is
-  chosen partly because it does not need that question answered: a count that exceeds the findings
-  stated under it is the same detection either way.
-- **So nothing below is relaxed on the strength of it**, and nothing above either. The
-  `returned-nothing` state, the counted reason, the one permitted re-spawn and the rule that a retry
-  does not erase the first outcome all stand exactly as they are. An unmeasured mitigation treated as
-  a measured one would be this plugin's own defect class, one layer up: a guard nominally on, and the
-  reason nobody re-reads it.
+**The baseline it is graded against, and do not re-count a population already in it.** In one session
+here, three of roughly seven review spawns referred to findings they never stated; two days later, in
+another repository, three of three developer runs in one fleet did the same (#275, #296, #392).
+
+**The confound, so nothing is built on it.** Every instance came from one spawn type — but agent,
+brief and task vary together, so *a fixed enumeration is harder to gesture at than a free-form list*
+is a hypothesis, not a finding.
+
+**What would count as evidence**, if you are grading any of this: the same rate, over later sessions,
+counted the same way — spawns that referred without stating, over spawns dispatched. Nothing else. A
+session with no instances is one observation, not a result, and a run in which nobody counted is not
+a zero. Whether these spawns produced findings and lost them at the return boundary, or never
+produced them and misreported, has not been observed; do not build on either.
+
+**So nothing below is relaxed on the strength of it**, and nothing above either. The
+`returned-nothing` state, the
+counted reason, the one permitted re-spawn and the rule that a retry does not erase the first outcome
+all stand exactly as written. An unmeasured mitigation treated as a measured one is this plugin's own
+defect class one layer up.
 
 ## When the spawn itself fails
 
 **A spawn that errors because the name does not resolve is `could not run`.** Not a clean audit,
-not an omission. `oss:auditor` was in exactly that state for two releases while every report that
-did not quote the error read as an audit that found nothing (#81), which is why this is written
-here rather than left to a reader who happens to know.
+not an omission (#81).
 
 So, in order:
 
