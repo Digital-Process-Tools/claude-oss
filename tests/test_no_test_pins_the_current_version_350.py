@@ -368,18 +368,28 @@ def classify_source(source, version):
     return [], hits
 
 
-def sweep(version, root=None):
-    """`(pins, collisions, unscannable, scanned)` over every `*.py` under `root`.
+def _build_corpus(root=None):
+    """The version-INDEPENDENT half of `sweep()`, done once: walk `root`, read and
+    parse every `*.py`, and score whether each parsed file routes to this
+    repository's own version. None of that depends on `version` -- `_routes_tree`
+    takes no version argument either -- so it is exactly the part #1108 measured
+    three (really four) tests each redoing from scratch: `os.walk`, one
+    `Path.read_text` and one `ast.parse` per file, ~5900 files deep.
 
-    `pins` and `collisions` are `rel:l1,l2` strings, one per file. `unscannable`
-    and `scanned` are the third state: a walk that read nothing, or a tree it
-    could not parse, must never render as a clean sweep.
+    Returns `(entries, unscannable)`. `entries` is `[(rel, tree, has_route), ...]`;
+    `unscannable` mirrors `sweep()`'s own third state -- a file that could not be
+    walked, read or parsed, so a caller building on this must never let an empty
+    `entries` render as a clean sweep either.
+
+    Safe to share across every version a caller wants to ask about: the corpus is
+    a read of files on disk that does not change during a single test run (the
+    real fixture below is why this matters, and why it is NOT safe to cache
+    across separate pytest invocations -- it isn't; module scope rebuilds it once
+    per run, always against whatever is on disk right now).
     """
     root = TESTS_DIR if root is None else Path(root)
-    pins = []
-    collisions = []
+    entries = []
     files, unscannable = _python_files(root)
-    scanned = 0
     for path in files:
         rel = path.relative_to(root).as_posix()
         try:
@@ -390,15 +400,54 @@ def sweep(version, root=None):
             )
             continue
         try:
-            file_pins, file_collisions = classify_source(source, version)
+            tree = ast.parse(source)
         except SyntaxError as exc:
             unscannable.append("{}: does not parse ({})".format(rel, exc))
             continue
+        entries.append((rel, tree, bool(_routes_tree(tree))))
+    return entries, unscannable
+
+
+def sweep_from_corpus(corpus, version):
+    """`(pins, collisions, unscannable, scanned)` for `version`, over a corpus
+    already built by `_build_corpus`.
+
+    This is the ONLY part of the sweep that is version-dependent -- `_scan_tree`
+    re-runs fresh for every call, against the shared parsed tree, so two calls
+    with two different `version` values can never collide on a cached verdict.
+    Nothing here is memoized keyed on `version`; the corpus caches parsing, never
+    the comparison, which is the distinction that keeps this from being the
+    "false green" shape #1108 explicitly warns against.
+    """
+    entries, unscannable = corpus
+    pins = []
+    collisions = []
+    scanned = 0
+    for rel, tree, has_route in entries:
         scanned += 1
-        for bucket, lines in ((pins, file_pins), (collisions, file_collisions)):
-            if lines:
-                bucket.append("{}:{}".format(rel, ",".join(str(n) for n in lines)))
-    return pins, collisions, unscannable, scanned
+        hits = _scan_tree(tree, version)
+        if not hits:
+            continue
+        bucket = pins if has_route else collisions
+        bucket.append("{}:{}".format(rel, ",".join(str(n) for n in hits)))
+    return pins, collisions, list(unscannable), scanned
+
+
+def sweep(version, root=None):
+    """`(pins, collisions, unscannable, scanned)` over every `*.py` under `root`.
+
+    `pins` and `collisions` are `rel:l1,l2` strings, one per file. `unscannable`
+    and `scanned` are the third state: a walk that read nothing, or a tree it
+    could not parse, must never render as a clean sweep.
+
+    Builds its own corpus fresh every call -- this is what every non-fixture
+    caller (synthetic `tmp_path` roots in the tests below) still gets, unchanged.
+    A caller sweeping the same real corpus at several versions in one test run
+    should use `real_corpus` (session-scoped fixture, below) plus
+    `sweep_from_corpus` instead, which is exactly what this function does
+    internally, just without sharing the corpus across calls.
+    """
+    return sweep_from_corpus(_build_corpus(root), version)
 
 
 def test_a_pin_and_a_colliding_literal_are_told_apart_in_one_sweep(tmp_path):
@@ -615,7 +664,81 @@ def warn_on_far_horizon_pins(pins, horizon):
     )
 
 
-def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next():
+@pytest.fixture(scope="module")
+def real_corpus():
+    """The walk-read-parse half of a real sweep, built once per test module run
+    and shared by every test below that asks a question about the real `tests/`
+    tree (#1108). Module-scoped rather than session-scoped: nothing else in this
+    suite needs it, and a narrower scope is a smaller claim about what stays
+    valid for how long.
+
+    Safe by construction, not by convention: `_build_corpus` performs no
+    version comparison at all, so there is nothing here for a stale value to
+    contaminate. `test_sharing_the_corpus_cannot_produce_a_false_green` below is
+    the positive control that two different versions asked of this same fixture
+    still get two different, correct answers.
+    """
+    return _build_corpus(TESTS_DIR)
+
+
+def test_sharing_the_corpus_cannot_produce_a_false_green(tmp_path):
+    """The positive control for #1108's own hazard, named explicitly in the
+    issue: a naive cache can "cache a result computed BEFORE a fix under test
+    in the same run has landed, silently passing on stale data". This proves
+    the opposite for the SPECIFIC sharing chosen here: `_build_corpus` caches
+    parsing ONLY (no version enters it at all), and `sweep_from_corpus` always
+    re-runs the literal comparison fresh against the shared parsed trees. So
+    the same corpus object, asked about two different versions in either
+    order, must never let one call's verdict leak into the other's.
+
+    Deliberately independent of what this repository's real `tests/` tree
+    happens to contain right now (a `real_corpus`-based version of this same
+    control was tried first and floundered on exactly that: this very test
+    file already carries a route AND spells `CONTROL` as a code literal at its
+    own module scope, so a sweep for `CONTROL` over the real corpus correctly
+    reports a pin on itself -- a fact about this file, not a leak). A
+    synthetic, single-file corpus makes the claim exact instead.
+    """
+    root = tmp_path / "tests"
+    root.mkdir()
+    (root / "test_x.py").write_text(
+        'M = ".claude-plugin/plugin.json"\n'
+        'def test_x():\n    assert v == "AAA-shared-corpus-control"\n',
+        encoding="utf-8",
+    )
+    corpus = _build_corpus(root)
+
+    pins_a, _c1, unscannable_a, scanned_a = sweep_from_corpus(
+        corpus, "AAA-shared-corpus-control"
+    )
+    assert unscannable_a == [], unscannable_a
+    assert scanned_a == 1, scanned_a
+    assert pins_a == ["test_x.py:3"], pins_a
+
+    # The must-not-fire half, against the SAME corpus object: a version this
+    # fixture does not spell must find nothing. If `sweep_from_corpus` (or the
+    # corpus itself) cached the first call's verdict instead of comparing
+    # fresh, this would still report the first version's pin under the
+    # second version's name.
+    pins_b, _c2, unscannable_b, scanned_b = sweep_from_corpus(
+        corpus, "BBB-shared-corpus-control"
+    )
+    assert unscannable_b == [], unscannable_b
+    assert scanned_b == 1, scanned_b
+    assert pins_b == [], (
+        "sweeping the shared corpus for a version it does not spell still "
+        "found a pin -- the comparison is reusing a stale verdict from the "
+        "earlier call rather than re-running fresh: {}".format(pins_b)
+    )
+
+    # And asking about the FIRST version again, after the second call, must
+    # still find it -- proving the corpus carries no cross-call mutation
+    # either, in whichever order the versions are asked about.
+    pins_a2, _c3, _u3, _s3 = sweep_from_corpus(corpus, "AAA-shared-corpus-control")
+    assert pins_a2 == pins_a, "the shared corpus was mutated by the intervening call"
+
+
+def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next(real_corpus):
     """#399's real cost is that the release commit is the worst moment to learn
     this. The next minor is knowable now, so it is asked now.
 
@@ -676,15 +799,17 @@ def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next():
     # says is knowable now: see `warn_on_far_horizon_pins`.
     far_horizon = _minor_after(current_version(), 2)
     if far_horizon is not None:
-        far_pins, _far_collisions, far_unscannable, far_scanned = sweep(far_horizon)
+        far_pins, _far_collisions, far_unscannable, far_scanned = sweep_from_corpus(
+            real_corpus, far_horizon
+        )
         assert far_unscannable == [], far_unscannable
         assert far_scanned > 1, far_scanned
         warn_on_far_horizon_pins(far_pins, far_horizon)
 
 
-def test_no_test_file_pins_the_current_version():
+def test_no_test_file_pins_the_current_version(real_corpus):
     version = current_version()
-    pins, collisions, unscannable, scanned = sweep(version)
+    pins, collisions, unscannable, scanned = sweep_from_corpus(real_corpus, version)
     offenders = [entry for entry in pins if entry.rsplit(":", 1)[0] not in ALLOWED]
 
     assert not unscannable, (
@@ -817,7 +942,9 @@ def test_a_literal_two_minors_out_warns_rather_than_fails(tmp_path):
         assert caught == [], "no pins beyond the horizon; nothing should warn"
 
 
-def test_the_real_sweep_two_minors_out_is_reported_as_a_warning_not_a_failure():
+def test_the_real_sweep_two_minors_out_is_reported_as_a_warning_not_a_failure(
+    real_corpus,
+):
     """The integration half: run the same warning-only sweep against this
     repository's real tests/ tree, at the actual two-minors-out horizon.
     Never asserts `not pins` -- that would be exactly the failing horizon
@@ -830,7 +957,7 @@ def test_the_real_sweep_two_minors_out_is_reported_as_a_warning_not_a_failure():
             "the current version ({!r}) is not three integers, so the "
             "two-minors-out horizon could not be derived".format(current_version())
         )
-    pins, _collisions, unscannable, scanned = sweep(horizon)
+    pins, _collisions, unscannable, scanned = sweep_from_corpus(real_corpus, horizon)
     assert unscannable == [], unscannable
     assert scanned > 1, scanned
     with warnings.catch_warnings(record=True) as caught:
