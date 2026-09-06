@@ -67,10 +67,11 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
+
+import gh_which
 
 STATE_GREEN = "green"
 STATE_RED = "red"
@@ -490,7 +491,9 @@ def main(argv=None, run=None):
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
 
-    gh = args.gh or shutil.which("gh")
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    gh = args.gh or gh_which.safe_which("gh")
     if not gh:
         sys.stdout.write("COULD-NOT-READ | gh is not on PATH\n")
         return EXIT_CODES[STATE_COULD_NOT_READ]

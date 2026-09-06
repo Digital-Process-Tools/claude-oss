@@ -734,10 +734,17 @@ def test_run_hands_subprocess_the_resolved_path_not_the_bare_name(monkeypatch):
     assert calls[0][1:] == ["plugin", "marketplace", "update"], calls
 
 
-def test_run_falls_back_to_the_bare_name_when_which_cannot_resolve_it(monkeypatch):
-    """The must-not-fire control: a name `which()` cannot resolve at all is
-    left as-is, so the eventual failure still names the exact string that
-    was tried, rather than a fabricated `None`."""
+def test_run_never_spawns_a_bare_unresolved_name_when_which_cannot_resolve_it(
+    monkeypatch,
+):
+    """#1157 self-review finding (both spawned reviewers, independently
+    confirmed): the prior version of this control let `_run` fall back to
+    spawning the bare, unresolved name and asserted the eventual
+    `subprocess.run` call happened with it -- exactly the shape a planted
+    same-named `.exe` at the inspected repo's own root can hijack via
+    `CreateProcess`'s own cwd-first search on Windows. `_run` must never
+    call `subprocess.run` at all once `safe_which` has already searched
+    every real `PATH` entry and found nothing."""
     calls = []
 
     def fake_which(name, path=None):
@@ -752,5 +759,5 @@ def test_run_falls_back_to_the_bare_name_when_which_cannot_resolve_it(monkeypatc
 
     ok, output = plugin_update._run(["claude", "mcp", "list"])
     assert ok is False
-    assert calls and calls[0] == ["claude", "mcp", "list"], calls
+    assert not calls, calls
     assert "FileNotFoundError" in output, output

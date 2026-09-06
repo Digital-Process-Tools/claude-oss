@@ -147,7 +147,14 @@ def _run(args, timeout=_TIMEOUT):
     # still lets a same-named `.cmd`/`.bat` at the inspected repo's own
     # root win over a real `PATH` entry on Windows, `path=` or not.
     resolved = gh_which.safe_which(args[0])
-    argv = [resolved] + list(args[1:]) if resolved else args
+    if resolved is None:
+        # #1157: never fall back to spawning the bare, unresolved name --
+        # see `select_issues._run_gh`'s identical fix for why: `safe_which`
+        # already searched every real `PATH` entry, and a bare-name spawn
+        # on Windows would still let CreateProcess's own cwd-first search
+        # find a planted same-named `.exe`.
+        return False, "", "{0} is not on PATH".format(args[0])
+    argv = [resolved] + list(args[1:])
     try:
         proc = subprocess.run(
             argv,

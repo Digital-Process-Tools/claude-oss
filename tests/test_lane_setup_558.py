@@ -189,7 +189,9 @@ class _FakeCompletedProcess:
 
 def test_held_from_open_prs_resolved_with_open_prs(monkeypatch):
     monkeypatch.setattr(
-        lane_setup.shutil, "which", lambda name: "/usr/bin/gh" if name == "gh" else None
+        lane_setup.gh_which,
+        "safe_which",
+        lambda name, path=None: "/usr/bin/gh" if name == "gh" else None,
     )
     payload = json.dumps(
         [
@@ -213,7 +215,9 @@ def test_held_from_open_prs_resolved_with_open_prs(monkeypatch):
 def test_held_from_open_prs_resolved_with_zero_open_prs(monkeypatch):
     """Must fire the positive control: zero open PRs is a confirmed zero, not an
     absence to fold into could-not-derive."""
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        lane_setup.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     monkeypatch.setattr(
         lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, "[]", "")
     )
@@ -223,7 +227,7 @@ def test_held_from_open_prs_resolved_with_zero_open_prs(monkeypatch):
 
 
 def test_held_from_open_prs_could_not_derive_when_gh_is_not_on_path(monkeypatch):
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: None)
+    monkeypatch.setattr(lane_setup.gh_which, "safe_which", lambda name, path=None: None)
     result = lane_setup.held_from_open_prs("owner/repo")
     assert result["state"] == "could-not-derive"
 
@@ -231,7 +235,9 @@ def test_held_from_open_prs_could_not_derive_when_gh_is_not_on_path(monkeypatch)
 def test_held_from_open_prs_could_not_derive_on_nonzero_exit(monkeypatch):
     """Must not fire the silent case: a failed `gh` call must never render as a
     confident, empty held set."""
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        lane_setup.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     monkeypatch.setattr(
         lane_setup.subprocess,
         "run",
@@ -243,7 +249,9 @@ def test_held_from_open_prs_could_not_derive_on_nonzero_exit(monkeypatch):
 
 
 def test_held_from_open_prs_could_not_derive_on_unparseable_output(monkeypatch):
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        lane_setup.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     monkeypatch.setattr(
         lane_setup.subprocess,
         "run",
@@ -258,7 +266,9 @@ def test_held_from_open_prs_could_not_derive_when_the_page_limit_is_hit(monkeypa
     result that reaches `_PR_LIST_LIMIT` is indistinguishable from a page that was
     cut off mid-list, so it must be reported the same way a failed call is -- never
     folded into `resolved` with whatever partial `held` it managed to build."""
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        lane_setup.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     limit = lane_setup._PR_LIST_LIMIT
     payload = json.dumps(
         [
@@ -279,7 +289,9 @@ def test_held_from_open_prs_resolved_when_under_the_page_limit(monkeypatch):
     """Positive control for the truncation case above: a result comfortably under
     the limit is still `resolved`, or the limit itself would be indistinguishable
     from a broken derivation."""
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        lane_setup.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     payload = json.dumps([{"number": 1, "files": [{"path": "scripts/f.py"}]}])
     monkeypatch.setattr(
         lane_setup.subprocess,
@@ -294,7 +306,9 @@ def test_held_from_open_prs_resolved_when_under_the_page_limit(monkeypatch):
 
 
 def test_derive_held_set_resolved_combines_both_sources(tmp_path, monkeypatch):
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        lane_setup.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     payload = json.dumps([{"number": 5, "files": [{"path": "scripts/pr_file.py"}]}])
     monkeypatch.setattr(
         lane_setup.subprocess,
@@ -311,7 +325,7 @@ def test_derive_held_set_resolved_combines_both_sources(tmp_path, monkeypatch):
 def test_derive_held_set_could_not_derive_when_the_forge_call_fails(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: None)
+    monkeypatch.setattr(lane_setup.gh_which, "safe_which", lambda name, path=None: None)
     result = lane_setup.derive_held_set("owner/repo", tmp_path)
     assert result["state"] == "could-not-derive"
 
@@ -319,7 +333,9 @@ def test_derive_held_set_could_not_derive_when_the_forge_call_fails(
 def test_derive_held_set_could_not_derive_when_a_lane_record_is_untrustworthy(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(lane_setup.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        lane_setup.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     monkeypatch.setattr(
         lane_setup.subprocess, "run", lambda *a, **k: _FakeCompletedProcess(0, "[]", "")
     )

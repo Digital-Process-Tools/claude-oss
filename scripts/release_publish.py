@@ -59,13 +59,13 @@ import argparse
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gh_which  # noqa: E402
 
 import agent_role  # noqa: E402
 import oss_config  # noqa: E402
@@ -645,7 +645,9 @@ def main(argv=None):
     # An explicit --gh is the caller's own fact about their machine and is taken as
     # given; the default is resolved, and an unresolvable one is `could not run`
     # rather than a command that fails as something else later.
-    gh = args.gh if args.gh else shutil.which("gh")
+    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+    # module's docstring for why a `path=` argument does not close the gap.
+    gh = args.gh if args.gh else gh_which.safe_which("gh")
 
     planned = plan(
         config=config,

@@ -306,16 +306,24 @@ def test_run_resolves_the_binary_via_which_before_spawning_it(monkeypatch):
     assert calls == [[r"C:\fake\bin\gh.cmd", "api", "user", "--jq", ".login"]], calls
 
 
-def test_run_still_attempts_the_bare_name_when_which_finds_nothing(monkeypatch):
-    """Positive-control pairing for the test above: when the binary is
-    genuinely absent, `_run` must not resolve to `None` (which would crash
-    `subprocess.run` with a `TypeError` rather than reporting `could-not-*`)
-    -- it falls back to the bare name, so `subprocess`'s own
-    `FileNotFoundError` still reaches the existing "is not on PATH" detail."""
+def test_run_never_spawns_a_bare_unresolved_name_when_which_finds_nothing(
+    monkeypatch,
+):
+    """#1157 self-review finding (both spawned reviewers, independently
+    confirmed): the prior version of this control let `_run` fall back to
+    spawning the bare, unresolved name and relied on `subprocess`'s own
+    `FileNotFoundError` to reach `could-not-*` -- exactly the shape a
+    planted same-named `.exe` at the inspected repo's own root can hijack
+    via `CreateProcess`'s own cwd-first search on Windows. `_run` must
+    never call `subprocess.run` at all once `safe_which` has already
+    searched every real `PATH` entry and found nothing."""
 
     def fake_run(args, **kwargs):
-        assert args[0] == "gh", args
-        raise FileNotFoundError(2, "No such file or directory")
+        raise AssertionError(
+            "subprocess.run must never be called with an unresolved name: {}".format(
+                args
+            )
+        )
 
     monkeypatch.setattr(issue_claim.subprocess, "run", fake_run)
     monkeypatch.setattr(

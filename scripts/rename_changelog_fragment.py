@@ -52,7 +52,6 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import shutil
 import stat
 import subprocess
 import sys
@@ -61,6 +60,7 @@ from pathlib import Path
 # Import the sibling module by location rather than by package, matching how
 # every other script in this directory is invoked directly with `python3`.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gh_which  # noqa: E402
 from assemble_changelog import (  # noqa: E402
     BadFragment,
     parse_fragment_name,
@@ -214,7 +214,10 @@ def rename(fragment_path, new_issue, use_git=True):
     )
 
     if use_git:
-        git = shutil.which("git")
+        # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see
+        # that module's docstring for why a `path=` argument does not
+        # close the Windows curdir-insertion gap.
+        git = gh_which.safe_which("git")
         if git is None:
             return (
                 REFUSED,

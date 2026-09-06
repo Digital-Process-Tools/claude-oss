@@ -965,7 +965,17 @@ def _run_gh(args, timeout=_GH_TIMEOUT):
     # entry on Windows, `path=` argument or not (see `gh_which`'s
     # docstring for the mechanism).
     resolved = gh_which.safe_which(args[0])
-    argv = [resolved] + list(args[1:]) if resolved else args
+    if resolved is None:
+        # #1157: never fall back to spawning the bare, unresolved name --
+        # `subprocess.run([args[0], ...], shell=False)` on Windows reaches
+        # `CreateProcess` directly, whose own search order checks the
+        # process's current working directory (ordinarily the inspected
+        # repo's own root) ahead of `PATH` for a same-named `.exe` it
+        # auto-appends. `safe_which` already searched every real `PATH`
+        # entry, so there is nothing left to gain by spawning anyway, and
+        # everything to lose from planted-`.exe` execution.
+        return False, "", "{0} is not on PATH".format(args[0])
+    argv = [resolved] + list(args[1:])
     try:
         proc = subprocess.run(
             argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout

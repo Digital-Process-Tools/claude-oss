@@ -351,7 +351,9 @@ def _cli_run_factory(responses):
 def test_cli_exits_0_on_green(monkeypatch, capsys):
     rows = [_row("tests", "tests")]
     run = _run_sequence([(0, _rollup_json(11, "fix/11", "aaa", rows), "")])
-    monkeypatch.setattr(pr_green.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        pr_green.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     rc = pr_green.main(["11"], run=run)
     out = capsys.readouterr().out
     assert rc == 0
@@ -367,7 +369,9 @@ def test_cli_exits_1_on_red_and_prints_branch_and_leg(monkeypatch, capsys):
             (0, "some log\nlast line here\n", ""),
         ]
     )
-    monkeypatch.setattr(pr_green.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        pr_green.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     rc = pr_green.main(["22"], run=run)
     out = capsys.readouterr().out
     assert rc == 1
@@ -378,7 +382,9 @@ def test_cli_exits_1_on_red_and_prints_branch_and_leg(monkeypatch, capsys):
 
 def test_cli_exits_3_on_could_not_read_never_2_never_0(monkeypatch, capsys):
     run = _run_sequence([(1, "", "gh: rate limited")])
-    monkeypatch.setattr(pr_green.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        pr_green.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     rc = pr_green.main(["33"], run=run)
     out = capsys.readouterr().out
     assert rc == 3
@@ -391,7 +397,9 @@ def test_cli_exits_2_when_all_named_prs_are_pending_and_no_wait_given(
 ):
     pending_rows = [_row("tests", "tests", status="IN_PROGRESS", conclusion=None)]
     run = _run_sequence([(0, _rollup_json(44, "fix/44", "ccc", pending_rows), "")])
-    monkeypatch.setattr(pr_green.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        pr_green.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     rc = pr_green.main(["44"], run=run)
     out = capsys.readouterr().out
     assert rc == 2
@@ -399,7 +407,9 @@ def test_cli_exits_2_when_all_named_prs_are_pending_and_no_wait_given(
 
 
 def test_cli_requires_pr_numbers_or_all_open(monkeypatch, capsys):
-    monkeypatch.setattr(pr_green.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        pr_green.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     with pytest.raises(SystemExit):
         pr_green.main([], run=_run_sequence([]))
 
@@ -497,7 +507,9 @@ def test_cli_notes_could_not_determine_missing_workflows_on_an_unreadable_direct
 ):
     rows = [_row("tests", "tests")]
     run = _run_sequence([(0, _rollup_json(712, "fix/712", "ff66", rows), "")])
-    monkeypatch.setattr(pr_green.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(
+        pr_green.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
     rc = pr_green.main(
         ["712", "--project-dir", str(tmp_path / "does-not-exist")],
         run=run,

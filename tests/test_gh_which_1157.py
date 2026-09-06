@@ -28,6 +28,7 @@ passes when nothing runs at all.
 """
 
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -131,3 +132,51 @@ def test_safe_which_uses_real_path_env_when_path_argument_omitted(
     )
     resolved = gh_which.safe_which("gh")
     assert resolved == str(real_dir / "gh"), resolved
+
+
+def test_safe_which_walks_past_empty_directories_to_a_later_path_entry(tmp_path):
+    """#1157 self-review finding (Explore): every other test in this file
+    calls `safe_which` with a single-directory `path`, so a regression that
+    broke the `os.pathsep`-splitting loop entirely -- e.g. handing the whole
+    joined `path` string to `shutil.which` as one candidate directory --
+    would still pass every one of them. This exercises the REAL
+    `shutil.which` (unpatched) against a genuine multi-entry `PATH`: two
+    directories that do not contain the binary, then one that does,
+    joined with `os.pathsep` exactly as a real `PATH` environment variable
+    would be. `safe_which` must walk past the first two and resolve the
+    third."""
+    empty_one = tmp_path / "empty_one"
+    empty_two = tmp_path / "empty_two"
+    real_dir = tmp_path / "the_real_one"
+    for directory in (empty_one, empty_two, real_dir):
+        directory.mkdir()
+    target = real_dir / "gh"
+    target.write_text("#!/bin/sh\necho gh\n")
+    target.chmod(target.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    search_path = os.pathsep.join([str(empty_one), str(empty_two), str(real_dir)])
+    resolved = gh_which.safe_which("gh", path=search_path)
+
+    assert resolved == str(target), resolved
+
+
+def test_safe_which_stops_at_the_first_real_path_entry_that_resolves(tmp_path):
+    """Positive-control pairing for the walk above, in the other direction:
+    when TWO real `PATH` entries both carry the binary, `safe_which` must
+    return the FIRST one in `PATH` order -- the same precedence a real
+    `PATH` search gives -- never the last one it happens to find."""
+    first_dir = tmp_path / "first_on_path"
+    second_dir = tmp_path / "second_on_path"
+    for directory in (first_dir, second_dir):
+        directory.mkdir()
+    for directory in (first_dir, second_dir):
+        candidate = directory / "gh"
+        candidate.write_text("#!/bin/sh\necho gh\n")
+        candidate.chmod(
+            candidate.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH
+        )
+
+    search_path = os.pathsep.join([str(first_dir), str(second_dir)])
+    resolved = gh_which.safe_which("gh", path=search_path)
+
+    assert resolved == str(first_dir / "gh"), resolved

@@ -133,14 +133,23 @@ def test_gh_api_resolves_the_binary_via_which_before_spawning_it(monkeypatch):
         assert run.calls[0][0] == _FAKE_GH_CMD, (module.__name__, run.calls)
 
 
-def test_gh_api_still_attempts_the_bare_name_when_which_finds_nothing(monkeypatch):
-    """Must-not-fire pairing: when `safe_which` resolves nothing, `_gh_api`
-    must fall back to the bare `"gh"` rather than passing `None` as argv[0]
-    (which would raise `TypeError` inside `subprocess.run` before this
-    function's own `except` could catch anything)."""
+def test_gh_api_never_spawns_a_bare_unresolved_name_when_which_finds_nothing(
+    monkeypatch,
+):
+    """#1157 self-review finding (both spawned reviewers, independently
+    confirmed): the original shape of this control asserted `run.calls[0][0]
+    == "gh"` -- a bare, unresolved name is exactly the shape a planted
+    same-named `.exe` at the inspected repo's own root can still hijack via
+    `CreateProcess`'s own cwd-first search on Windows, `shutil.which`
+    entirely aside. `_gh_api` must never call `run` at all once
+    `safe_which` has already searched every real `PATH` entry and found
+    nothing -- it returns the same `(None, "", "", exc)` shape a real spawn
+    attempt would raise, without spawning anything."""
     for module in _GH_API_MODULES:
         run = _recording_run(returncode=0, stdout="{}", stderr="")
         monkeypatch.setattr(module.gh_which, "safe_which", lambda name, path=None: None)
-        rc, _out, _err, exc = module._gh_api("repos/owner/name", run)
-        assert exc is None, (module.__name__, exc)
-        assert run.calls[0][0] == "gh", (module.__name__, run.calls)
+        rc, out, err, exc = module._gh_api("repos/owner/name", run)
+        assert not run.calls, (module.__name__, run.calls)
+        assert rc is None, (module.__name__, rc)
+        assert out == "" and err == "", (module.__name__, out, err)
+        assert isinstance(exc, FileNotFoundError), (module.__name__, exc)
