@@ -228,7 +228,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # already give for their own re-baselines: a ceiling left far above the file
     # is a saving spendable again without anybody choosing to.
     "skills/manager/phases/dispatch.md": (
-        52772,
+        # Re-baselined for #1083/#1178: 52772 B became 53168 B -- the
+        # `--board`-vs-default-mode stdin contract, stated once here rather
+        # than left ambiguous next to the true "takes no input" sentence
+        # about the other mode. Budget unchanged; comfortably under it.
+        53168,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -333,7 +337,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # mentions renamed to select_issues_rank.py in the same call-site rewrite.
     # Budget unchanged; comfortably under it.
     "skills/manager/phases/accounting.md": (
-        17705,
+        # Re-baselined for #1083: 17705 B became 18549 B -- the
+        # `filed_by_loop` attach directive now turns on provenance (the
+        # loop's own initiative) rather than on which call site typed the
+        # issue up, so a co-decided issue is never tagged even when the loop
+        # files it. Budget unchanged; comfortably under it.
+        18549,
         19500,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
@@ -351,7 +360,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # --label worked example moved from named flags to positional arguments.
     # Budget unchanged.
     "skills/manager/phases/tick-order.md": (
-        33032,
+        # Re-baselined for #1178: 33032 B became 33334 B -- the same
+        # `--board`-vs-default-mode stdin clarification dispatch.md gained,
+        # stated at this file's own call site. Budget unchanged;
+        # comfortably under it.
+        33334,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

@@ -623,7 +623,11 @@ one checks what goes into a lane, the other what comes back out of it.
 - **Select in the dispatch order, and compute it rather than feel it (#798, extended by #993).**
   Two axes, author before priority within a band. `python3
   "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` is the one place the table lives; call it
-  rather than re-deriving it here. The rows below transcribe `scripts/select_issues_rank.py`'s own
+  rather than re-deriving it here. **`--board` is a different mode from the default, no-flags call
+  documented above, and the two do not share an input contract (#1178): `--board` reads a
+  board-shaped payload on stdin, while the default mode takes no input at all.** Piping nothing, or
+  the raw board JSON, at `--board` fails with `stdin: not valid JSON …`; give it the assembled
+  board payload the ranking receipt expects. The rows below transcribe `scripts/select_issues_rank.py`'s own
   `ROWS` (the module was `dispatch_rank.py` before #1069); a table that disagrees with it is a bug
   in this file, not a second opinion.
 
