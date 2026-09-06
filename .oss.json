@@ -19,6 +19,7 @@
     "priority": ["priority-high", "priority-medium", "priority-low"],
     "lanes": ["lane-dispatch", "lane-doctor", "lane-prose", "lane-release", "lane-scaffold"],
     "filed_by_loop": "filed-by-loop",
+    "lane_other": "lane-other",
     "lane_patterns": {
       "lane-dispatch": [
         "scripts/select_issues*.py",

@@ -57,6 +57,19 @@ subsystem, not one issue's own files -- so every candidate carries
 `lane_patterns_source` (`"declared"` / `"derived-from-label"` / `None`),
 never folding the two together.
 
+**#1130 adds one more per-repo label, never a sixth lane: `labels.lane_other`.**
+A `lane-other` GitHub label is the triager's positive statement that an
+issue was examined and no real lane owns its files -- never "nobody has
+looked yet", which stays plain unlabelled. It carries no file set by
+definition, so `_derive_lane_patterns_from_labels` special-cases it to
+`None` explicitly, before the mapping is even consulted, rather than
+reaching the same `None` through the ordinary "uncovered label" path by
+accident. A candidate whose issue carries that label also gets
+`is_lane_other: True`, independent of `lane_patterns_source` (which cannot
+carry the distinction -- both a `lane-other` issue and one with no lane
+label at all resolve `lane_patterns_source` to `None`). See "## Groups"
+below for what that flag does to grouping.
+
 **This module never calls `gh` for the board itself.** The same separation
 `select_issues_rank.py` and `lane_setup.py --suggest-companions` already use: the
 caller (a tick, a sub-manager, a human) reads the board and hands it in as
@@ -82,6 +95,15 @@ a dispatch -- the caller still decides whether it is worth a lane.
 files, per #267, or files that could not be resolved), never candidates that
 were grouped and stayed alone -- a short group with a stated
 `short_reason` is a different, weaker claim than "never entered grouping".
+
+**#1130: a `lane-other` candidate is a third route into `groups`, never
+into `ungrouped`.** It is dispatched solo, always -- never given a
+companion, never offered as one, never padded toward `_GROUP_TARGET` --
+but it still enters grouping and comes out as a deliberate group of one
+with a stated `short_reason` naming the rule. That is the same
+"entered, and stayed alone" claim a short overlap-based group makes, kept
+apart from "never entered grouping at all" so a reader can tell "no lane
+owns this, by rule" from "nobody could place this".
 
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
@@ -204,7 +226,8 @@ def _group_candidates(
                   truncated never render as the same row.
       ungrouped   every candidate that could not join any group at all --
                   declares no files (#267: never guessed into one), the only
-                  reason reachable through `select()`'s own call graph today;
+                  reason reachable through `select()`'s own call graph today
+                  for a candidate that is not `is_lane_other`;
                   a second, named reason ("its own declared files could not
                   be resolved to anything on disk") is kept for a future
                   caller of this function that builds `candidates` /
@@ -233,6 +256,28 @@ def _group_candidates(
         if number in taken:
             continue
         taken.add(number)
+        if cand.get("is_lane_other"):
+            # #1130: never given a companion, always solo -- the direction
+            # of the risk runs opposite to a declared-file group. Bundling
+            # is justified by PROVEN disjointness (#267); a `lane-other`
+            # issue has no known file set at all, so disjointness against it
+            # can only be assumed, and assuming it is the dangerous
+            # direction. This still ENTERS grouping and comes out as a
+            # deliberate group of one with a stated `short_reason` -- never
+            # `ungrouped`, which means "never entered grouping at all".
+            groups.append(
+                {
+                    "members": [dict(cand, role="lead")],
+                    "state": "lane-other",
+                    "detail": "",
+                    "short_reason": (
+                        "lane-other: no lane owns this issue's files -- "
+                        "dispatched alone by rule, never assumed disjoint "
+                        "with another candidate (#1130)"
+                    ),
+                }
+            )
+            continue
         claimed = resolved_files_by_number.get(number)
         if not claimed:
             row = issues_by_number.get(number) or {}
@@ -267,6 +312,13 @@ def _group_candidates(
                 other = candidates_by_number.get(cnum)
                 if other is None:
                     continue
+                if other.get("is_lane_other"):
+                    # #1130: symmetric with the solo-dispatch branch above --
+                    # a `lane-other` candidate is never offered AS a
+                    # companion either, regardless of iteration order (this
+                    # lead may be ranked ahead of the `lane-other` issue's
+                    # own turn in the loop above).
+                    continue
                 members.append(dict(other, role="member", overlap=entry["files"]))
                 taken.add(cnum)
                 if len(members) >= _GROUP_TARGET:
@@ -292,7 +344,7 @@ def _group_candidates(
     return groups, ungrouped
 
 
-def _derive_lane_patterns_from_labels(labels, lane_pattern_map):
+def _derive_lane_patterns_from_labels(labels, lane_pattern_map, lane_other_label=None):
     """#1129: an issue's `lane_patterns` when it declares none of its own,
     derived from whichever of its GitHub labels the repo's declared
     `.oss.json` `labels.lane_patterns` mapping covers -- the fix for
@@ -317,7 +369,21 @@ def _derive_lane_patterns_from_labels(labels, lane_pattern_map):
     claim than a declared one. The caller (`select()`) records that as
     `lane_patterns_source`, never folding the two together, so a reader can
     tell a measured disjointness from an inferred one.
+
+    #1130: `lane_other_label` -- the per-repo `labels.lane_other` name --
+    is checked FIRST and unconditionally, before the mapping is consulted
+    at all. `lane-other` has no file set by definition: it is the label the
+    triager applies precisely when no lane owns an issue's files, so it
+    must resolve to unknown even if a mapping happens to carry an entry
+    keyed by that same label (never produced by `.oss.json`'s own validated
+    shape, but a hand edit could do it). Reaching `None` for `lane-other`
+    via the ordinary "uncovered label" fallback below would be the right
+    answer for the wrong reason -- indistinguishable from a repo that
+    simply forgot to map it -- so this is its own explicit branch, not a
+    consequence of the loop underneath.
     """
+    if lane_other_label and lane_other_label in (labels or []):
+        return None
     if not isinstance(lane_pattern_map, dict) or not lane_pattern_map:
         return None
     matched = None
@@ -463,6 +529,16 @@ def select(
     # cases (no lane label, an uncovered one, no declared mapping, or an
     # ambiguous match across two differently-mapped labels on one issue).
     lane_patterns_source_by_number = {}
+    # #1130: independent of `lane_patterns`/`lane_patterns_source` above --
+    # a `lane-other` issue has no file set by definition (it is always
+    # `None`, same as "no lane label at all"), so this is the one signal
+    # that tells "triaged, no lane owns this" apart from "nobody has looked
+    # yet" once grouping needs to route the two differently. Read directly
+    # off the issue's own `lane-*` label and the repo's declared
+    # `labels.lane_other` name -- never derived from `lane_patterns_source`,
+    # which cannot carry the distinction (both render `None`).
+    is_lane_other_by_number = {}
+    lane_other_label = declared.get("lane_other")
 
     for item in ranked:
         number = item.get("number")
@@ -510,11 +586,15 @@ def select(
             # own docstring already promises for an issue with no
             # `lane_patterns` at all.
             derived = _derive_lane_patterns_from_labels(
-                item.get("labels"), declared.get("lane_patterns")
+                item.get("labels"), declared.get("lane_patterns"), lane_other_label
             )
             if derived:
                 lane_patterns = derived
                 lane_patterns_source = "derived-from-label"
+        is_lane_other_by_number[number] = bool(
+            lane_other_label and lane_other_label in (item.get("labels") or [])
+        )
+
         if lane_patterns:
             resolved = resolve_lane(Path("."), lane_patterns)
             refused = [
@@ -641,6 +721,12 @@ def select(
                     # reader must never have to guess which producer a
                     # candidate's resolved files came from.
                     "lane_patterns_source": lane_patterns_source_by_number.get(number),
+                    # #1130: `True` when the issue carries the repo's
+                    # configured `labels.lane_other` label -- a positive,
+                    # triaged "no lane owns this", never a guess. Read by
+                    # `_group_candidates` to route this candidate to a
+                    # deliberate solo group instead of `ungrouped`.
+                    "is_lane_other": is_lane_other_by_number.get(number, False),
                 }
             )
 
