@@ -69,8 +69,8 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
     ),
     "agents/developer/review-return.md": (
-        10687,
-        11800,
+        11249,
+        12400,
         "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails",
     ),
     "agents/developer/report.md": (

@@ -77,8 +77,8 @@ Gates, each a call and not a feeling:
      from any source — a second completion, a contributor, you.
    - **The attribution.** The gate mints a dispatch token before the spawn and the auditor echoes it
      back. **unattributed** — no token, a mismatched one, or `dispatch token: none reached me` —
-     does not clear the gate and is not discarded: read its findings and reconcile them. **More than
-     one completion** for one dispatch clears only when every one of them agrees.
+     does not clear the gate and is not discarded: read its findings and reconcile them.
+     **More than one completion** for one dispatch clears only when every one of them agrees.
 
    **Stop the tag, not the loop.** Every blocking arm has a continuation: round-one
    `findings` are filed **and the blocking rows delegated in the same tick**; a blocking row puts its
@@ -99,10 +99,10 @@ Gates, each a call and not a feeling:
 4. **The number itself is proposed from the changelog fragments, not felt.**
    `scripts/release_version.py` reads the fragment sections and the current version and answers in
    three states — `proposed`, `could not decide`, `no baseline`. **On `proposed`, quote the receipt,
-   accept the number, and record it — no stop (#467).** This is unconditional and does not read
-   `release.authority`: `## Who decides` above already lists deriving a version number from rules the
-   repository already states as the loop's. Override remains available — you may still override the
-   proposal and record why.
+   accept the number, and record it — no stop (#467).** This is unconditional and
+   does not read `release.authority`: `## Who decides` above already lists deriving a version number
+   from rules the repository already states as the loop's. Override remains available — you may still
+   override the proposal and record why.
 
    **A major bump keeps its stop, and it is the one arm of this gate that does.** The proposal rule
    reaches a major only at `1.0.0` or later — `payload["bump"] == "major"` in the receipt — where the

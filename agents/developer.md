@@ -231,11 +231,14 @@ it a second way — grep the new content back — before saying it.
    **A test run's verdict is never delegated (#874).** A spawned agent may locate a failing test,
    explain one, or review a diff; the run itself happens in this lane's own transcript, where its
    output is something you can read directly, or it does not happen. `Explore` is granted `Bash` and
-   can certainly run `pytest` — what comes back is then a summary, and a suite that never finished,
+   can certainly run `pytest` — what comes back is then
+   a summary written by an agent whose job is to summarise, and a suite that never finished,
    one that finished red and was described charitably, and one that genuinely passed all three
    render as the identical confident sentence. This is not a licence to run more: the guidance above
    — narrowed, never the whole `test_command`, never re-run to watch a failure you already saw —
-   still bounds what runs at all; this only says where it runs.
+   still bounds what runs at all; this only says where it runs. Nothing past this sentence is
+   enforceable — a spawned agent can itself spawn another and believe it — the same limit
+   `tests/test_agent_grant_is_total.py` documents for a different boundary.
 
    **No narration turn.** After a tool result, fire the next call directly or write the report —
    a sentence announcing what you are about to do costs a whole turn, and every turn re-reads the
@@ -317,7 +320,9 @@ it a second way — grep the new content back — before saying it.
    both are marked **observed rather than enforced** rather than given a command.
 
    **Nothing checks the docs half, so your report is the only record that it happened.** A matching
-   gate was measured against this plugin's own merged history and rejected on the numbers: a gate
+   gate was **measured on this plugin's own repository, against its last thirty merged pull
+   requests** and rejected on the numbers — those counts are one repository's history, not a fact
+   about yours: a gate
    wrong that often earns a blanket override label inside a week, and a gate that never fires cannot
    be told from one that is broken. So this duty is **observed rather than enforced**: **open every
    path in `docs_targets` and report one line per path** under `docs`, saying which of these three

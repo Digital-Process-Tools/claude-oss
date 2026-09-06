@@ -107,7 +107,7 @@ Whatever the retry hands back, the state stays `returned-nothing` and the reason
 attempts. Converting *the reviewer said nothing* into *no findings* is the bug; converting it into
 *I retried and it worked, nothing to see* is the same bug one layer up.
 
-**Do not ask for `SendMessage` to make the reviewer repeat itself.** It widens a delegated agent from
+**Decided against: granting `SendMessage` to ask the reviewer to repeat itself.** It widens a delegated agent from
 *spawns its own reviewers* to *can address any live agent*, including sibling lanes in the same
 round; and an agent asked to repeat regenerates, so what comes back is a fresh review wearing the
 first one's authority. A fresh spawn buys the same thing and says what it is.
@@ -126,13 +126,22 @@ deliberately not prose: it computes the sort from the returned bytes and asks th
 nothing. Its limit, stated: it does not change how often a spawn gestures, only whether a gesture is
 recorded as a clean review.
 
+**The baseline it is graded against, and do not re-count a population already in it.** In one session
+here, three of roughly seven review spawns referred to findings they never stated; two days later, in
+another repository, three of three developer runs in one fleet did the same (#275, #296, #392).
+
+**The confound, so nothing is built on it.** Every instance came from one spawn type — but agent,
+brief and task vary together, so *a fixed enumeration is harder to gesture at than a free-form list*
+is a hypothesis, not a finding.
+
 **What would count as evidence**, if you are grading any of this: the same rate, over later sessions,
 counted the same way — spawns that referred without stating, over spawns dispatched. Nothing else. A
 session with no instances is one observation, not a result, and a run in which nobody counted is not
 a zero. Whether these spawns produced findings and lost them at the return boundary, or never
 produced them and misreported, has not been observed; do not build on either.
 
-**So nothing above is relaxed on the strength of the classifier.** The `returned-nothing` state, the
+**So nothing below is relaxed on the strength of it**, and nothing above either. The
+`returned-nothing` state, the
 counted reason, the one permitted re-spawn and the rule that a retry does not erase the first outcome
 all stand exactly as written. An unmeasured mitigation treated as a measured one is this plugin's own
 defect class one layer up.

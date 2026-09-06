@@ -285,8 +285,12 @@ tool, and you are gone by the time step 7 would run.
    running it more often rather than less. It is not free: each bare `radar` is a board read.
 
    **Do not gate the *merged* case on a cheaper coverage read; there is not one (#302).**
-   `radar:--state` cannot answer *N watched* against *N open*; only the bare `radar` heal can. The
-   rule stays *board membership changed*, unconditionally.
+   `radar:--state` says outright that live coverage is
+   "not resolved here, that would be a call" — it cannot answer *N watched* against *N open*, and
+   only the bare `radar` heal can. Gating the merged case on `gh-pr-merge`'s receipt instead needs
+   that op to state whether a stacked follow-up exists, which is a filing
+   against supertool's own tracker rather than a diff here. The rule stays *board membership
+   changed*, unconditionally.
 
 5. **Decide, delegate, review, merge** — the skill governs each of these, and the gates in it are not
    optional. In particular: the check states must sum to the leg count, cleanup runs via the merge

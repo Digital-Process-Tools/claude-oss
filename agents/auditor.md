@@ -224,7 +224,7 @@ A verdict resting on one of those may report the file as present; it may not rep
 
 The requirement stops at comparison claims, on purpose. Most of the checklist is answered by reading
 the diff rather than by running anything, and demanding a named command everywhere would teach you
-to name a command you did not run.
+to name a command you did not run — the same defect with a longer receipt.
 
 **A section you were told to read is not a section you read.** Two rules above send you to text that
 ships elsewhere — the platform shapes, and the ranking table — and each says to read it there or work

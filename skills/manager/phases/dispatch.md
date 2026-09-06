@@ -338,6 +338,10 @@ PATTERN --against PATTERN` — overlap against a *running* lane means conflict; 
 *candidate's* declared lane means the two are worth bundling. Same flag, opposite readings; aim it
 deliberately.
 
+**The two-issue row must not become a rule (#586).** The cap's own measurement puts a two-issue lane
+worse per issue than a single-issue one at n=58, which is the size of result that reverses on more
+data — carry that caveat with the number, and never turn it into a refusal to pair two issues.
+
 **The fleet-view label names what a lane covers, not what it starts with (#539).** The count is the
 load-bearing half — a reader scanning four rows should see `x3, x1, x1, x1` without reading any
 phrase — so the multiplier spelling is the convention: `Lane 534 x3  auto-update path`, never
@@ -604,7 +608,9 @@ what goes into a lane, the other what comes back out of it.
 - **Select in the dispatch order, and compute it rather than feel it (#798, extended by #993).**
   Two axes, author before priority within a band. `python3
   "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` is the one place the table lives; call it
-  rather than re-deriving it here.
+  rather than re-deriving it here. The rows below transcribe `scripts/select_issues_rank.py`'s own
+  `ROWS` (the module was `dispatch_rank.py` before #1069); a table that disagrees with it is a bug
+  in this file, not a second opinion.
 
   | Rank | Who filed | Priority |
   | --- | --- | --- |

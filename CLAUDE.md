@@ -263,12 +263,12 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 39,752 B | 43,700 B |
-| `agents/auditor.md` | 14,132 B | 15,500 B |
+| `agents/developer.md` | 40,118 B | 44,100 B |
+| `agents/auditor.md` | 14,174 B | 15,600 B |
 | `agents/release-auditor.md` | 14,953 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
 | `agents/sub-manager.md` | 15,247 B | 16,800 B |
-| `agents/releaser.md` | 7,027 B | 7,700 B |
+| `agents/releaser.md` | 7,053 B | 7,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -324,7 +324,7 @@ only the lane can report.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer/review.md` | 9,550 B | 10,500 B |
-| `agents/developer/review-return.md` | 10,687 B | 11,800 B |
+| `agents/developer/review-return.md` | 11,249 B | 12,400 B |
 | `agents/developer/report.md` | 17,401 B | 19,100 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
@@ -346,10 +346,10 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 40,700 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 51,277 B | 56,400 B |
+| `skills/manager/phases/dispatch.md` | 51,776 B | 57,000 B |
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 17,705 B | 19,500 B |
-| `skills/manager/phases/tick-order.md` | 32,507 B | 35,800 B |
+| `skills/manager/phases/tick-order.md` | 32,800 B | 36,100 B |
 | `skills/manager/phases/release.md` | 8,930 B | 9,800 B |
 | `skills/manager/phases/review.md` | 10,353 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 9,326 B | 10,300 B |
@@ -358,7 +358,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
 
-**#1136 cut the rationale out of the loop's own markdown: 581,678 B became 478,803 B across 23 files, -17.7%.** The rule applied, written down as `.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`: **a loop markdown file is an operator's manual for the tools its phase runs.** The rule, the call, every state and every payload field stay; the measurement that justified a constant belongs beside the constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each rule keeps a bare issue citation for provenance. `dispatch.md`'s selection band was the worked example -- 14,240 B to 6,601 B, prose still explaining how to drive by hand the four scripts `select_issues.py` had already composed (#970, #1068, #1129). Every ceiling came down with its measurement rather than being left where it was (#958, #960). Four content guards refused cuts that went too far and every one was right: the bundle cap rule, the #499 citation, the `27m36s` threshold, and an unhyphenated `could not tell` -- each restored as a rule, without its narrative.
+**#1136 cut the rationale out of the loop's own markdown: 581,678 B became 480,591 B across 23 files, -17.4%.** The rule applied, written down as `.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`: **a loop markdown file is an operator's manual for the tools its phase runs.** The rule, the call, every state and every payload field stay; the measurement that justified a constant belongs beside the constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each rule keeps a bare issue citation for provenance. `dispatch.md`'s selection band was the worked example -- 14,240 B to 6,601 B, prose still explaining how to drive by hand the four scripts `select_issues.py` had already composed (#970, #1068, #1129). Every ceiling came down with its measurement rather than being left where it was (#958, #960). Four content guards refused cuts that went too far and every one was right: the bundle cap rule, the #499 citation, the `27m36s` threshold, and an unhyphenated `could not tell` -- each restored as a rule, without its narrative.
 
 **This table is where #675 was found.** `dispatch.md` measured 25,980 B (LF, 338 lines) — 120 B
 under its 26,100 B budget — and 26,318 B as a Windows checkout's CRLF, 218 B *over* the same budget,

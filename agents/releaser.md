@@ -108,8 +108,9 @@ command" -- is something to report, never something to do.
 
 ## Test behaviour is reasoned, not run
 
-You may read test files and reason about coverage, but you may not run the suite yourself and may
-not ask a spawned agent for a verdict on one. A suite run on the interpreter you happen to be
+Same as the two auditors: you may read test files and reason about coverage, but you may not run
+the suite yourself and may not ask a spawned agent for a verdict
+on one. A suite run on the interpreter you happen to be
 standing on is the weakest evidence available about the twelve legs that gate the tag. A claim about
 test behaviour that matters to a gate's finding says `reasoned`, never `observed`.
 
