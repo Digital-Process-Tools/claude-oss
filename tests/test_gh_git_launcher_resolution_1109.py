@@ -287,19 +287,23 @@ def test_check_tool_resolves_git_via_safe_which(monkeypatch, capsys):
     assert "available" in out
 
 
-def test_check_tool_unrelated_names_still_use_shutil_which(monkeypatch, capsys):
-    """`check_tool` is also called for `supertool`, which is out of scope
-    for this issue (#1168 names only `gh`/`git`) -- must still resolve via
-    the unpatched `shutil.which` path rather than being silently routed
-    through `gh_which.safe_which` too."""
+def test_check_tool_routes_every_name_through_safe_which(monkeypatch, capsys):
+    """#1172: `check_tool`'s own `else` arm used to special-case every name
+    other than `"gh"`/`"git"` (`"supertool"` included) onto a bare
+    `shutil.which`, open to the identical curdir-execution threat #1163 and
+    #1168 closed for their own two names. There is no longer a special
+    case at all -- every name, `"supertool"` included, must resolve via
+    `gh_which.safe_which`, never the bare `shutil.which`."""
     monkeypatch.setattr(
         doctor.gh_which,
         "safe_which",
-        lambda name, path=None: (_ for _ in ()).throw(
-            AssertionError("check_tool must not route 'supertool' through safe_which")
-        ),
+        lambda name, path=None: "/usr/local/bin/supertool",
     )
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/local/bin/supertool")
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("check_tool must not call shutil.which directly")
+
+    monkeypatch.setattr(doctor.shutil, "which", _boom)
     run = _RecordingSubprocessRun(returncode=0)
     monkeypatch.setattr(doctor.subprocess, "run", run)
 
@@ -309,3 +313,25 @@ def test_check_tool_unrelated_names_still_use_shutil_which(monkeypatch, capsys):
     assert run.calls[0][0] == "/usr/local/bin/supertool", run.calls
     out = capsys.readouterr().out
     assert "available" in out
+
+
+def test_check_tool_falls_back_to_warn_when_safe_which_finds_nothing_for_an_unrelated_name(
+    monkeypatch, capsys
+):
+    """Positive control: `safe_which` returning `None` for a name other than
+    `gh`/`git` must still be handled -- reported as missing, and
+    `subprocess.run` never called -- not just the resolved case above."""
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: None)
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("check_tool must not call shutil.which directly")
+
+    monkeypatch.setattr(doctor.shutil, "which", _boom)
+    run = _RecordingSubprocessRun(returncode=0)
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+
+    doctor.check_tool("supertool", ["supertool", "version"])
+
+    assert not run.calls, run.calls
+    out = capsys.readouterr().out
+    assert "not on path" in out.lower()

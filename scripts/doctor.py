@@ -47,7 +47,11 @@ import json
 import os
 import platform
 import re
-import shutil
+import shutil  # noqa: F401 -- no longer called directly; kept as the shared
+
+# module handle several tests patch (`monkeypatch.setattr(doctor.shutil,
+# "which", ...)` patches the real `shutil` module's `which`, which every
+# caller across this codebase shares, not a `doctor`-local copy).
 import stat
 import subprocess
 import sys
@@ -1104,10 +1108,12 @@ def tool_binary_architecture(path, run=None, which=None):
     class, produced by the check meant to avoid it.
 
     `run` and `which` are injected so every branch is assertable without
-    shelling out; `check_gh_binary` supplies the real `subprocess.run` and
-    `shutil.which`.
+    shelling out; production callers get the real `subprocess.run` and
+    `gh_which.safe_which` (#1172: not a bare `shutil.which`, which lets a
+    same-named binary planted at the inspected repo's own root win over a
+    real `PATH` entry on Windows -- see `gh_which`'s own docstring).
     """
-    which = shutil.which if which is None else which
+    which = gh_which.safe_which if which is None else which
     run = subprocess.run if run is None else run
     file_bin = which("file")
     if file_bin is None:
@@ -1305,15 +1311,17 @@ def check_tool(name, probe):
     `gh_which`'s own docstring for the mechanism). ``gh``/``git`` route
     through `gh_which.safe_which` instead, the same seam `check_gh_binary`
     and `select_issues._run_gh` already use, with the resolved path
-    substituted into the spawned argv. Every other name (``"supertool"``)
-    is unaffected and keeps resolving via the bare `shutil.which` -- #1168
-    is scoped to the two names the issue names, not every caller of this
-    function.
+    substituted into the spawned argv.
+
+    #1172: the round-1 fix above scoped this to ``"gh"``/``"git"`` and left
+    the ``else`` arm -- ``"supertool"``, spawned from `main()` four lines
+    below this one -- resolving via the bare `shutil.which`, open to the
+    identical curdir-execution threat. `gh_which.safe_which(name, path=None)`
+    is fully generic, not `gh`/`git`-specific, so there is no longer a
+    reason to special-case which names use it: every name this function is
+    called with now routes through it.
     """
-    if name in ("gh", "git"):
-        resolved = gh_which.safe_which(name)
-    else:
-        resolved = shutil.which(name)
+    resolved = gh_which.safe_which(name)
     if resolved is None:
         report(
             "WARN", "{}: not on PATH; anything needing it will be skipped".format(name)
@@ -5817,17 +5825,26 @@ def check_loop_repository(plugin_root=None):
 
 
 def published_versions(repos):
-    """Latest published version per dependency, read off each repo's default branch."""
+    """Latest published version per dependency, read off each repo's default branch.
+
+    #1173: `gh_which.safe_which`, not a bare `shutil.which("gh")` gating a
+    spawn of the literal, unresolved `"gh"` -- see `gh_which`'s own
+    docstring for why a `.cmd`/`.exe` planted at the root of the inspected
+    repo would otherwise win over a real `PATH` entry on Windows.
+    """
     latest = {}
     for name, url in repos.items():
         latest[name] = None
-        if not url or shutil.which("gh") is None:
+        if not url:
+            continue
+        gh_bin = gh_which.safe_which("gh")
+        if gh_bin is None:
             continue
         slug = str(url).rstrip("/").replace("https://github.com/", "")
         try:
             done = subprocess.run(
                 [
-                    "gh",
+                    gh_bin,
                     "api",
                     "repos/{}/contents/.claude-plugin/plugin.json".format(slug),
                     "--jq",
@@ -5969,8 +5986,12 @@ def dependency_diagnostic_state(
     `remember`'s script always exits 0 by its own design; its answer lives in
     the trailing `VERDICT:` line it prints, which is what is relayed there.
     """
+    # #1172: `gh_which.safe_which`, not a bare `shutil.which`, is the
+    # production default -- a bare `shutil.which("supertool")` lets a
+    # same-named binary planted at the inspected repo's own root win over
+    # a real `PATH` entry on Windows; see `gh_which`'s own docstring.
     run = subprocess.run if run is None else run
-    which = shutil.which if which is None else which
+    which = gh_which.safe_which if which is None else which
     timeout = DEPENDENCY_DIAGNOSTIC_TIMEOUT if timeout is None else timeout
 
     spec = DEPENDENCY_DIAGNOSTICS.get(name)
@@ -7488,12 +7509,17 @@ def _git_head(root):
     """A label, not the verdict. The content digest is what decides agreement; this
     is here so a human can say *which commit* in one glance, and it says so plainly
     when it cannot -- an installed copy is usually not a git tree at all.
+
+    #1173: `gh_which.safe_which`, not a bare `shutil.which("git")` gating a
+    spawn of the literal, unresolved `"git"` -- see `gh_which`'s own
+    docstring for the Windows curdir-execution mechanism this closes.
     """
-    if shutil.which("git") is None:
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
         return "git not on PATH"
     try:
         done = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            [git_bin, "-C", str(root), "rev-parse", "--short", "HEAD"],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             universal_newlines=True,
@@ -8060,12 +8086,24 @@ def _git_ls_files_tracked(repo_root, relpath, run=None):
     git on PATH, not a git repository, or the command could not be run), with
     `detail` naming why in the last case.
     """
+    # #1173: `gh_which.safe_which`, not a bare `shutil.which("git")` gating
+    # a spawn of the literal, unresolved `"git"` -- see `gh_which`'s own
+    # docstring for the Windows curdir-execution mechanism this closes.
     run = subprocess.run if run is None else run
-    if shutil.which("git") is None:
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
         return "could-not-tell", "git is not on PATH"
     try:
         done = run(
-            ["git", "-C", str(repo_root), "ls-files", "--error-unmatch", "--", relpath],
+            [
+                git_bin,
+                "-C",
+                str(repo_root),
+                "ls-files",
+                "--error-unmatch",
+                "--",
+                relpath,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
@@ -8330,12 +8368,16 @@ def _origin_slug(project_dir, run=None):
     Both https and ssh remotes resolve; anything else is `unrecognised` rather
     than guessed at.
     """
+    # #1173: `gh_which.safe_which`, not a bare `shutil.which("git")` gating
+    # a spawn of the literal, unresolved `"git"` -- see `gh_which`'s own
+    # docstring for the Windows curdir-execution mechanism this closes.
     run = subprocess.run if run is None else run
-    if shutil.which("git") is None:
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
         return None, "git is not on PATH"
     try:
         done = run(
-            ["git", "-C", str(project_dir), "remote", "get-url", "origin"],
+            [git_bin, "-C", str(project_dir), "remote", "get-url", "origin"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
