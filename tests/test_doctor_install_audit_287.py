@@ -275,7 +275,7 @@ def test_a_repo_with_no_priority_labels_is_a_named_gap(tmp_path):
 
 
 def test_gh_unavailable_is_could_not_tell_not_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: None)
     state, payload = doctor.label_vocabulary_state(
         tmp_path, config={"repo": "owner/name"}
     )

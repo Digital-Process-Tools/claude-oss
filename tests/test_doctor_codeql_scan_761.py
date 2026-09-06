@@ -58,7 +58,9 @@ def _languages_run(languages_dict):
 
 
 def test_could_not_tell_when_gh_is_not_on_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        doctor_check_codeql_scan.gh_which, "safe_which", lambda name, path=None: None
+    )
     state, detail = doctor.codeql_scan_state(tmp_path, config=_config())
     assert state == "could-not-tell"
     assert "gh is not on PATH" in detail

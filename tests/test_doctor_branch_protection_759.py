@@ -25,6 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
+import doctor_check_branch_protection  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -67,7 +68,11 @@ def _run_sequence(responses):
 
 
 def test_could_not_tell_when_gh_is_not_on_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        doctor_check_branch_protection.gh_which,
+        "safe_which",
+        lambda name, path=None: None,
+    )
     state, detail = doctor.branch_protection_state(tmp_path, config=_config())
     assert state == "could-not-tell"
     assert "gh is not on PATH" in detail
