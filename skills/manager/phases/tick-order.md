@@ -305,8 +305,10 @@ tool, and you are gone by the time step 7 would run.
    table lives; the spine's *Deciding what to build* states it and `skills/manager/phases/dispatch.md`
    says how a lane is filled from it. **`--board` is not the default, no-input mode described
    elsewhere in this file (#1178) — it reads a board-shaped payload on stdin, a separate,
-   older CLI contract folded in from `dispatch_rank.py`; feeding it nothing, or the wrong
-   shape, fails with a stdin-parse error rather than a board.**
+   older CLI contract folded in from `dispatch_rank.py`. Feeding it nothing fails with a
+   stdin-parse error; feeding it a wrong-shaped-but-valid payload does not fail the same way —
+   it can exit 0 with a silently degraded receipt, or crash with an unrelated traceback. Give it
+   the real assembled board payload rather than an improvised one.**
 
    **Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself, not
    the ranking/staleness/collision/claim reads joined by hand.** It composes ranking

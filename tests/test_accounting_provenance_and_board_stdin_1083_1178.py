@@ -102,3 +102,31 @@ def test_select_issues_py_confirms_board_reads_stdin_and_default_does_not():
         SELECT_ISSUES
     )
     assert "there is no stdin fallback left in this mode" in SELECT_ISSUES
+
+
+def test_the_prose_does_not_overclaim_that_every_wrong_shape_fails_cleanly():
+    """A self-review round found the first version of both #1178 sentences
+    claimed a wrong-shaped `--board` payload always fails with a clean
+    `stdin: not valid JSON` error. Verified against the running script that
+    is false: a dict with no `declared` key exits 0 with a silently
+    degraded receipt, and a bare JSON list crashes with an uncaught
+    `AttributeError`. The corrected prose must not repeat that overclaim."""
+    for name, text in (("dispatch.md", DISPATCH), ("tick-order.md", TICK_ORDER)):
+        normalized = text.replace("\n", " ")
+        board_idx = normalized.index("--board")
+        window = normalized[board_idx : board_idx + 900]
+        assert "degraded" in window or "crash" in window, name
+
+
+def test_skill_md_op_table_no_longer_states_the_unconditional_attach_rule():
+    """The reviewer's third finding: `skills/manager/SKILL.md`'s own op
+    table carried the pre-#1083 unconditional "every time" reading in its
+    `Filing` row, directly contradicting accounting.md's new provenance
+    directive at a second, equally load-bearing call site."""
+    skill_md = (REPO_ROOT / "skills" / "manager" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "label, every time (#762, #798)" not in skill_md
+    normalized = skill_md.replace("\n", " ")
+    assert "on its own initiative" in normalized
+    assert "#1083" in normalized

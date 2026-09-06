@@ -119,7 +119,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # block and the new phase-file table row. Budget unchanged; comfortably
     # under it.
     SPINE: (
-        41261,
+        # Re-baselined for #1083: 41261 B became 41367 B -- the op table's
+        # own `Filing` row still stated the pre-#1083 unconditional
+        # attach-the-label rule ("every time"), which directly contradicted
+        # accounting.md's own new provenance directive; a self-review found
+        # it and it was corrected here rather than left standing.
+        41367,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -232,7 +237,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # `--board`-vs-default-mode stdin contract, stated once here rather
         # than left ambiguous next to the true "takes no input" sentence
         # about the other mode. Budget unchanged; comfortably under it.
-        53168,
+        # Re-baselined again in the same lane's own self-review round:
+        # 53168 B became 53485 B -- the first version of that sentence
+        # claimed a wrong-shaped `--board` payload always fails with a
+        # stdin-parse error; verified against the running script it can
+        # instead exit 0 with a silently degraded receipt, or crash with an
+        # unrelated traceback, and the sentence now says so.
+        53485,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -364,7 +375,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # `--board`-vs-default-mode stdin clarification dispatch.md gained,
         # stated at this file's own call site. Budget unchanged;
         # comfortably under it.
-        33334,
+        # Re-baselined again in the same lane's own self-review round:
+        # 33334 B became 33532 B -- the same wrong-shaped-payload
+        # correction dispatch.md's own re-baseline note describes.
+        33532,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

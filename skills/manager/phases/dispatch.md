@@ -625,9 +625,12 @@ one checks what goes into a lane, the other what comes back out of it.
   "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` is the one place the table lives; call it
   rather than re-deriving it here. **`--board` is a different mode from the default, no-flags call
   documented above, and the two do not share an input contract (#1178): `--board` reads a
-  board-shaped payload on stdin, while the default mode takes no input at all.** Piping nothing, or
-  the raw board JSON, at `--board` fails with `stdin: not valid JSON …`; give it the assembled
-  board payload the ranking receipt expects. The rows below transcribe `scripts/select_issues_rank.py`'s own
+  board-shaped payload on stdin, while the default mode takes no input at all.** Piping nothing
+  fails with `stdin: not valid JSON …`, and a wrong-shaped payload does not fail the same clean
+  way — verified: a dict with no `declared` key runs to exit 0 and silently reads every issue as
+  unrankable, and a bare JSON list crashes with an uncaught `AttributeError` rather than a parse
+  error. Give it the actual assembled board payload the ranking receipt expects, never an
+  improvised shape, and do not read a clean exit as proof the shape was right. The rows below transcribe `scripts/select_issues_rank.py`'s own
   `ROWS` (the module was `dispatch_rank.py` before #1069); a table that disagrees with it is a bug
   in this file, not a second opinion.
 
