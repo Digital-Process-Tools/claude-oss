@@ -81,6 +81,16 @@ agent. This does not prevent a call typed by hand anyway -- nothing in this repo
 the real `Agent(...)` call before it runs, the same limit the model-choice recording above already
 states -- it makes the correct call cheaper to produce than a wrong one typed from memory.
 
+**Fallback mode, for a lane composed some other way: `--label`.** When the issues were claimed
+outside this call -- an already-running lane relabelled, a bundle assembled by hand -- the label is
+rendered on its own from a primary and an explicit list, with no claim and no `Agent(...)` line:
+
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --label 534,537,495 "auto-update path"
+    -> Lane 534 x3  auto-update path
+
+It takes the list on trust, which is exactly what `--claim` above removes, so prefer `--claim`
+whenever this call is the one doing the claiming.
+
 **A spawn whose `subagent_type` does not resolve is `could not run`, and the fallback is to brief
 `general-purpose` with a pointer to the definition file.** A newly written agent file not
 registering until a fresh session is the benign case and it clears itself. The one that does not is

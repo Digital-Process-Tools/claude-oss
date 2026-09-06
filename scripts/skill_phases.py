@@ -225,7 +225,7 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # already give for their own re-baselines: a ceiling left far above the file
     # is a saving spendable again without anybody choosing to.
     "skills/manager/phases/dispatch.md": (
-           52168,
+           52746,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
