@@ -64,7 +64,7 @@ SPINE = "agents/developer.md"
 #: budget bytes incl. ~10% headroom, what the file governs).
 DOCUMENTS: dict[str, tuple[int, int, str]] = {
     "agents/developer/review.md": (
-        9550,
+        9868,
         10500,
         "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
     ),

@@ -46,6 +46,11 @@ snapshot the tree before you spawn, and compare after both return.
 
 ```
 BEFORE=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot)
+printf '%s' "$BEFORE" | python3 -c 'import json,sys; s=json.load(sys.stdin); print(s["root"], s["branch"])'
+# ^ read this line back NOW, against your own known worktree path and branch, before
+# spawning anything -- three incidents (#1024, #1078, #1096) reported this call landing on a
+# *sibling* lane's worktree even from one shell call. If root or branch is not yours, stop and
+# pass --root <your worktree path> explicitly to both calls below, and say so in your report.
 # ... spawn both agents, wait for both final messages ...
 printf '%s' "$BEFORE" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before -
 ```
@@ -53,8 +58,6 @@ printf '%s' "$BEFORE" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py"
 Neither call needs an explicit `--root`. `snapshot` reads the calling process's actual cwd at that
 call -- never a guess across a sibling worktree -- and `compare` defaults to re-snapshotting the root
 `snapshot` recorded, not whatever cwd the later, separate Bash call happens to be standing in (#971).
-If you ever see this pair land on the wrong sibling worktree (#1024), pass `--root <your worktree
-path>` explicitly to both calls and say so in your report.
 
 `clean` (exit 0) means nothing persisted. `mutated` (exit 1) names what changed — restore it
 (`git checkout -- <path>`, or delete a leftover scratch file), re-run whatever suite you already

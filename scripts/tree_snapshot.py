@@ -164,6 +164,26 @@ def snapshot(root="."):
     re-snapshots the directory the before-snapshot actually looked at)
     without also reusing an unresolved fallback string as though it were
     cwd-independent, which it is not.
+
+    A third fact, `branch` (#1096), is corroborating rather than load-
+    bearing: three separate incidents (#1024, #1078, #1096) reported this
+    call landing on a *sibling* worktree's directory instead of its own,
+    even from a single `cd <worktree> && python3 ... snapshot` shell call --
+    and none of them found a resolvable code-level cause here (`root`
+    always reads the invoking process's own cwd; there is no cross-worktree
+    guess anywhere in this module). `branch` cannot detect that on its own
+    -- if the whole process really stood in the wrong directory, `branch`
+    would consistently read the WRONG worktree's branch too, the same way
+    `head`/`status` would. What it buys is cheap, active verification for
+    the human or agent holding the before-snapshot: a lane already knows
+    its OWN branch name (its brief states it), so reading `branch` back
+    immediately -- rather than trusting `root`'s bare path, which is easy
+    to misread at a glance -- is a much lower-effort check than comparing
+    two directory strings character by character. Best-effort: a failure
+    to read the branch name does not fail the whole snapshot (`error`
+    stays keyed to `head`/`status` alone), because HEAD/status are what
+    `compare` actually needs and a detached-HEAD checkout must not lose
+    those over a corroborating field it cannot supply.
     """
     resolved_root, root_resolved = _resolved_root(root)
     head, head_error = _run_git(["rev-parse", "HEAD"], root)
@@ -173,6 +193,7 @@ def snapshot(root="."):
             "root_resolved": root_resolved,
             "head": None,
             "status": None,
+            "branch": None,
             "error": head_error,
         }
     status, status_error = _run_git(
@@ -184,13 +205,16 @@ def snapshot(root="."):
             "root_resolved": root_resolved,
             "head": None,
             "status": None,
+            "branch": None,
             "error": status_error,
         }
+    branch, branch_error = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], root)
     return {
         "root": resolved_root,
         "root_resolved": root_resolved,
         "head": head.strip(),
         "status": status,
+        "branch": branch.strip() if branch_error is None else None,
         "error": None,
     }
 

@@ -52,6 +52,14 @@ OPTIONAL_KEYS = {
     # them. Absent/null is the default and leaves the gate unconditional, same
     # as before this key existed -- see `user_visible_paths_problem` below.
     "user_visible_paths",
+    # #1155: `bin/oss-workspace`'s three threshold routes -- open issues with
+    # no lane-*/priority-* label, trap.d/ fragments waiting, changelog.d/
+    # fragments waiting. Each is a per-repo fact on purpose: absent means this
+    # repo does not want the route, the same rule `changelog_untagged` and
+    # `user_visible_paths` already use. See `scripts/workspace_routes.py`.
+    "triage_route_threshold",
+    "curate_route_threshold",
+    "release_route_threshold",
 }
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
