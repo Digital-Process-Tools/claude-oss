@@ -197,3 +197,115 @@ def test_check_gh_binary_falls_back_when_safe_which_finds_nothing(monkeypatch, c
 
     out = capsys.readouterr().out
     assert "gh" in out.lower()
+
+
+# --------------------------------------------------- doctor.py: check_tool
+
+
+class _RecordingSubprocessRun:
+    """Records the argv `subprocess.run` was called with and returns a
+    canned `CompletedProcess`-like result -- `check_tool` only reads
+    `.returncode`, so nothing else is faked."""
+
+    def __init__(self, returncode=0):
+        self.returncode = returncode
+        self.calls = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append(argv)
+        return self
+
+
+def test_check_tool_resolves_gh_via_safe_which(monkeypatch, capsys):
+    """#1168: `check_tool("gh", ...)` runs four lines before
+    `check_gh_binary` in `main()` and reaches the identical bare-`gh`
+    pattern #1163 fixed there -- `shutil.which("gh")` gating a
+    `subprocess.run(["gh", ...])` spawn of the unresolved name. Must
+    resolve via `gh_which.safe_which` and spawn the resolved path, never
+    call `shutil.which` directly."""
+    monkeypatch.setattr(
+        doctor.gh_which, "safe_which", lambda name, path=None: _FAKE_GH_CMD
+    )
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("check_tool must not call shutil.which directly for gh")
+
+    monkeypatch.setattr(doctor.shutil, "which", _boom)
+    run = _RecordingSubprocessRun(returncode=0)
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+
+    doctor.check_tool("gh", ["gh", "auth", "status"])
+
+    assert run.calls, "subprocess.run was never called"
+    assert run.calls[0][0] == _FAKE_GH_CMD, run.calls
+    out = capsys.readouterr().out
+    assert "available" in out
+
+
+def test_check_tool_falls_back_to_warn_when_safe_which_finds_nothing_for_gh(
+    monkeypatch, capsys
+):
+    """Positive control: `safe_which` returning `None` for `gh` must still
+    be handled -- reported as missing, and `subprocess.run` never called --
+    not just the resolved case above."""
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: None)
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("check_tool must not call shutil.which directly for gh")
+
+    monkeypatch.setattr(doctor.shutil, "which", _boom)
+    run = _RecordingSubprocessRun(returncode=0)
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+
+    doctor.check_tool("gh", ["gh", "auth", "status"])
+
+    assert not run.calls, run.calls
+    out = capsys.readouterr().out
+    assert "not on path" in out.lower()
+
+
+def test_check_tool_resolves_git_via_safe_which(monkeypatch, capsys):
+    """Same shape as the `gh` case, for `git` -- the issue's own suggested
+    (not mandatory) second site, fixed here for the same reason
+    `check_gh_binary` names `gh_which.safe_which` as "the one place this
+    repo resolves `gh`/`git`"."""
+    fake_git = r"C:\fake\bin\git.cmd"
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: fake_git)
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("check_tool must not call shutil.which directly for git")
+
+    monkeypatch.setattr(doctor.shutil, "which", _boom)
+    run = _RecordingSubprocessRun(returncode=0)
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+
+    doctor.check_tool("git", ["git", "--version"])
+
+    assert run.calls, "subprocess.run was never called"
+    assert run.calls[0][0] == fake_git, run.calls
+    out = capsys.readouterr().out
+    assert "available" in out
+
+
+def test_check_tool_unrelated_names_still_use_shutil_which(monkeypatch, capsys):
+    """`check_tool` is also called for `supertool`, which is out of scope
+    for this issue (#1168 names only `gh`/`git`) -- must still resolve via
+    the unpatched `shutil.which` path rather than being silently routed
+    through `gh_which.safe_which` too."""
+    monkeypatch.setattr(
+        doctor.gh_which,
+        "safe_which",
+        lambda name, path=None: (_ for _ in ()).throw(
+            AssertionError("check_tool must not route 'supertool' through safe_which")
+        ),
+    )
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: "/usr/local/bin/supertool")
+    run = _RecordingSubprocessRun(returncode=0)
+    monkeypatch.setattr(doctor.subprocess, "run", run)
+
+    doctor.check_tool("supertool", ["supertool", "version"])
+
+    assert run.calls, "subprocess.run was never called"
+    assert run.calls[0][0] == "/usr/local/bin/supertool", run.calls
+    out = capsys.readouterr().out
+    assert "available" in out

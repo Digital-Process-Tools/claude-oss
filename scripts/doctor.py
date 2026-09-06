@@ -1295,15 +1295,34 @@ def check_tool(name, probe):
     decode is removed rather than guarded: an ``except ValueError`` here would be
     unreachable, and would newly swallow a malformed ``probe`` -- a bug in this file --
     into a finding about the user's toolchain.
+
+    #1168: this is called for ``"gh"`` from `main()` four lines before
+    `check_gh_binary`'s own #1163 fix in the same function, and reaches the
+    identical bare-name pattern `check_gh_binary` used to have -- a bare
+    ``shutil.which(name)`` gating a spawn of the unresolved ``probe[0]``,
+    which on Windows lets a same-named ``.cmd``/``.exe`` planted at the
+    inspected repo's own root win over a real ``PATH`` entry (see
+    `gh_which`'s own docstring for the mechanism). ``gh``/``git`` route
+    through `gh_which.safe_which` instead, the same seam `check_gh_binary`
+    and `select_issues._run_gh` already use, with the resolved path
+    substituted into the spawned argv. Every other name (``"supertool"``)
+    is unaffected and keeps resolving via the bare `shutil.which` -- #1168
+    is scoped to the two names the issue names, not every caller of this
+    function.
     """
-    if shutil.which(name) is None:
+    if name in ("gh", "git"):
+        resolved = gh_which.safe_which(name)
+    else:
+        resolved = shutil.which(name)
+    if resolved is None:
         report(
             "WARN", "{}: not on PATH; anything needing it will be skipped".format(name)
         )
         return
+    argv = [resolved] + list(probe[1:])
     try:
         done = subprocess.run(
-            probe,
+            argv,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             timeout=20,

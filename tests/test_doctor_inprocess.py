@@ -518,8 +518,14 @@ def test_check_tool_warns_when_absent(monkeypatch):
 def test_check_tool_warns_when_present_but_failing(monkeypatch):
     """Present-and-broken is its own state. Reporting it as absent would send someone
     to install a tool they already have.
+
+    #1168: ``"git"`` is one of the two names `check_tool` now resolves via
+    `gh_which.safe_which` rather than the bare `shutil.which` -- patch the
+    seam this call site actually uses.
     """
-    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: "/bin/false")
+    monkeypatch.setattr(
+        doctor.gh_which, "safe_which", lambda name, path=None: sys.executable
+    )
     doctor.check_tool("git", [sys.executable, "-c", "import sys; sys.exit(3)"])
     state, message = doctor.FINDINGS[-1]
     assert state == "WARN"
@@ -529,9 +535,12 @@ def test_check_tool_warns_when_present_but_failing(monkeypatch):
 def test_check_tool_warns_when_the_probe_cannot_spawn(monkeypatch):
     """An unspawnable binary must reach the tool-failed arm, not raise. This is the
     cross-platform shape: Windows raises where POSIX would have run something.
+
+    #1168: patch `gh_which.safe_which`, the seam `check_tool` now uses to
+    resolve ``"git"``.
     """
     monkeypatch.setattr(
-        doctor.shutil, "which", lambda name, **kwargs: "/definitely/not/here"
+        doctor.gh_which, "safe_which", lambda name, path=None: "/definitely/not/here"
     )
     doctor.check_tool("git", ["/definitely/not/here", "--version"])
     state, message = doctor.FINDINGS[-1]
