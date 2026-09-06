@@ -257,9 +257,31 @@ def test_a_missing_jq_does_not_crash_the_payload_fallback(tmp_path):
         _require(tool)
     clean = _path_only("git", "grep", "sed")
     env["PATH"] = os.pathsep.join([gh_dir, clean])
-    done = _run_script(_gate_script(), _pull_request(tmp_path, NO_FRAGMENT), env)
+    repo = _pull_request(tmp_path, NO_FRAGMENT)
+    done = _run_script(_gate_script(), repo, env)
     # Must not fire: no shell error (a `-c` script error is 2, never 0 or 1).
-    assert done.returncode in (0, 1), done.stdout
+    #
+    # A bare `assert done.returncode in (0, 1), done.stdout` is what this was, and on
+    # the three Windows legs under pytest-xdist it produced `assert 127 in (0, 1)` with
+    # a stdout holding only the note -- 127 is `command not found`, and the name of the
+    # command was in the diagnostic this test's own subject (`2>/dev/null` on the
+    # pipeline) discards. A failure that cannot say what was missing costs a CI round
+    # per guess, so the status is re-derived under `set -x` before reporting it: the
+    # trace names the command, and the re-run is paid only on the failing path.
+    if done.returncode not in (0, 1):
+        traced = _run_script("set -x\n" + _gate_script(), repo, env)
+        raise AssertionError(
+            "exit {} (127 is command-not-found) with PATH={!r}\n"
+            "resolved for the child: {}\n"
+            "--- stdout ---\n{}\n"
+            "--- last 40 traced lines ---\n{}".format(
+                done.returncode,
+                env["PATH"],
+                {t: shutil.which(t) for t in ("git", "grep", "sed", "jq", "python3")},
+                done.stdout,
+                "\n".join(traced.stdout.splitlines()[-40:]),
+            )
+        )
     # Must fire: absent `jq` reads differently from a genuinely empty payload -- see
     # the two tests above (`test_a_failed_live_read_degrades_...` and
     # `test_the_failure_message_says_push_a_commit_...`) for the "payload present,
