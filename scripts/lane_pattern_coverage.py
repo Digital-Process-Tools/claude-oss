@@ -207,7 +207,18 @@ def lane_pattern_report(repo, lane_patterns):
     refused = []
     malformed = []
     for lane, patterns in lane_patterns.items():
-        if not isinstance(patterns, list):
+        # Matches `oss_config.py`'s own shape validation exactly (#1229
+        # second-pass finding): not just "is this a list", but "is this a
+        # non-empty list of non-blank strings" -- an empty list passed the
+        # first-pass fix's narrower `isinstance(patterns, list)` guard,
+        # resolved via `resolve_lane(repo, [])` (which returns no files and
+        # no per-pattern findings), and reported `ok` on the exact shape
+        # `check_config` already FAILs for.
+        if (
+            not isinstance(patterns, list)
+            or not patterns
+            or not all(isinstance(p, str) and p.strip() for p in patterns)
+        ):
             malformed.append((lane, patterns))
             continue
         resolved = select_issues_overlap.resolve_lane(repo, patterns)

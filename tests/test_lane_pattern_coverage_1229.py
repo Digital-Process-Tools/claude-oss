@@ -143,6 +143,18 @@ def test_non_dict_lane_patterns_is_a_finding_not_ok(tmp_path):
     assert result["malformed"]
 
 
+def test_empty_list_per_lane_value_is_a_finding_not_ok(tmp_path):
+    """Second-pass audit finding on #1229's own fix commit: the first fix's
+    `isinstance(patterns, list)` guard let `[]` (a list, but empty) through
+    to `resolve_lane`, which returns no files and no per-pattern findings --
+    so this read `ok` on the exact shape `oss_config.py`'s own
+    `check_config` already FAILs for (an empty pattern list is refused
+    there, never silently accepted)."""
+    result = lane_pattern_coverage.lane_pattern_report(tmp_path, {"lane-a": []})
+    assert result["state"] == "finding"
+    assert result["malformed"] == [("lane-a", [])]
+
+
 def test_non_list_per_lane_value_is_a_finding_not_a_char_by_char_walk(tmp_path):
     """A lane's own value failing shape validation (a bare string instead
     of a list of globs) must not be resolved character-by-character as a
