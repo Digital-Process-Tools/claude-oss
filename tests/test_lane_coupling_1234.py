@@ -162,6 +162,46 @@ def test_extract_references_rejects_backslash_literal(tmp_path):
     assert refs == []
 
 
+def test_extract_references_rejects_dotdot_traversal(tmp_path):
+    """#1256: `_looks_like_path_literal` refused an absolute path, `~`, `:`
+    and a backslash, but not a `..` segment -- so `extract_references`'s own
+    `(repo / literal).is_file()` stat could land outside `repo` for a
+    literal like `"../secret.txt"`, contradicting this module's own
+    docstring claim that it only returns paths that exist under `repo`.
+    Positive control: `secret.txt` is created one directory *above*
+    `tmp_path` (the fake repo root), so a wrong fix that still resolves the
+    traversal would find a real file and report it."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path.parent / "secret.txt").write_text("shh\n", encoding="utf-8")
+    source = 'PATH = "../secret.txt"\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert problem is None
+    assert refs == []
+
+
+def test_extract_references_rejects_dotdot_in_middle_of_literal(tmp_path):
+    """The same traversal shape, one segment deeper -- `_looks_like_path_
+    literal` must refuse `..` wherever it appears as a path segment, not
+    only when the literal starts with it."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path.parent / "secret.txt").write_text("shh\n", encoding="utf-8")
+    source = 'PATH = "scripts/../../secret.txt"\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert problem is None
+    assert refs == []
+
+
+def test_extract_references_accepts_ordinary_in_repo_relative_literal(tmp_path):
+    """Must-not-fire control for the two `..` cases above: an ordinary
+    relative literal naming a real in-repo file is still accepted."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "ordinary.py").write_text("x = 1\n", encoding="utf-8")
+    source = 'PATH = "scripts/ordinary.py"\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert problem is None
+    assert refs == ["scripts/ordinary.py"]
+
+
 def test_malformed_per_lane_value_is_finding_the_must_fire_case(tmp_path):
     """#1234 self-review finding: only the top-level "lane_patterns is not
     a dict" shape had a test; a single lane's own value being malformed

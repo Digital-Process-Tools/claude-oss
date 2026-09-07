@@ -113,6 +113,17 @@ def _looks_like_path_literal(value):
     # forward-slash-only (confirmed by survey), so nothing genuine is lost.
     if "\\" in value:
         return False
+    # #1256: a `..` path segment was not refused here, so a literal like
+    # "../secret.txt" survived as a "candidate" and `extract_references`'s
+    # own `(repo / literal).is_file()` stat could then resolve outside
+    # `repo` -- contradicting this module's own docstring claim that it
+    # only returns paths that exist under `repo`. Split on "/" (this
+    # module's own literals are forward-slash-only, per the backslash
+    # refusal above) and refuse `..` as a segment anywhere in the literal,
+    # not only when it leads -- the same check `select_issues_overlap.
+    # resolve_lane` already applies on the sibling (pattern) side.
+    if ".." in value.split("/"):
+        return False
     return True
 
 
