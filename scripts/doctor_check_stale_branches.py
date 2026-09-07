@@ -89,17 +89,18 @@ _STALE_PR_STATE = "MERGED"
 
 _REFS_HEADS_PREFIX = "refs/heads/"
 
-#: `gh pr list`'s own page cap for this call. Self-review finding (both
-#: spawned reviewers, independently, against the live `Digital-Process-Tools/
-#: claude-oss` repo): `gh pr list --state all` sorts newest-first, so once a
-#: repository's PR count exceeds this limit the OLDEST merged PRs -- the
-#: "months old" leftovers this check exists to find -- are exactly the ones
-#: a single capped call drops, and a dropped row renders identically to "this
-#: branch was never merged". `scripts/lane_setup_claim.py`'s own
-#: `_PR_LIST_LIMIT` already names this same hazard and the same fix for its
-#: own `gh pr list` call: treat hitting the limit as `could-not-derive`
-#: (here, `could-not-read`), never as a complete read.
-_PR_LIST_LIMIT = 500
+#: #1253: this module used to ask `gh pr list --state all` for the WHOLE
+#: pull-request history and join it against the branches `matching-refs`
+#: found -- correct in shape, but `gh pr list` caps at 500 rows and sorts
+#: newest-first, so on a repository whose PR count exceeds that (this one
+#: included) the OLDEST merged PRs -- exactly the "months old" leftovers this
+#: check exists to find -- are the rows a capped read drops first, and the
+#: check could never clear on its own target repo. The fix asks the tracker
+#: about each matching branch BY NAME (`gh pr list --head <branch>`, server-
+#: side filtered) instead of asking it to enumerate its own history: the
+#: query's cost now tracks how many branches match `branch_pattern`, never
+#: how many pull requests the repository has ever had, so no page limit is
+#: reachable by construction.
 
 
 def _branch_prefix(pattern):
@@ -189,10 +190,23 @@ def _list_matching_branches(gh_bin, slug, prefix, run):
     return names, None
 
 
-def _list_pull_requests(gh_bin, slug, run):
-    """``(rows, None)`` or ``(None, reason)`` -- every pull request this repo's
-    tracker has ever recorded, `number`/`headRefName`/`state`, `--state all`
-    so a merged one is not filtered out before it is even read.
+def _pr_state_for_branch(gh_bin, slug, branch, run):
+    """``(state_or_None, None)`` or ``(None, reason)`` -- the pull request
+    state recorded for ONE named branch, `MERGED` winning over any other
+    state recorded for the same head (a branch name is only ever reused
+    across pull requests when somebody force-pushed a new PR onto an old
+    branch name after the first one closed unmerged -- rare, but a `MERGED`
+    verdict once earned for that name must not be erased by a later,
+    unrelated row for the same string). ``state_or_None`` is ``None`` when
+    the branch has no pull request recorded at all -- not a finding, just
+    "nothing to join".
+
+    `--head <branch>` filters server-side, so this asks the tracker about
+    one name rather than asking it to enumerate its own history -- #1253's
+    fix: the old `_list_pull_requests` asked for every pull request the
+    repository has ever recorded and joined that against the matching
+    branches locally, which could never complete on a repository whose PR
+    count exceeds `gh pr list`'s own 500-row page cap.
     """
     rc, stdout, stderr, exc = _gh_json(
         gh_bin,
@@ -201,59 +215,41 @@ def _list_pull_requests(gh_bin, slug, run):
             "list",
             "-R",
             slug,
+            "--head",
+            branch,
             "--state",
             "all",
             "--json",
             "number,headRefName,state",
-            "--limit",
-            "500",
         ],
         run,
     )
     if exc is not None:
-        return None, "gh pr list did not run ({})".format(exc)
+        return None, "gh pr list --head {} did not run ({})".format(branch, exc)
     if rc != 0:
-        return None, "gh pr list failed: {}".format(
-            (stderr or stdout or "").strip()[:200]
+        return None, "gh pr list --head {} failed: {}".format(
+            branch, (stderr or stdout or "").strip()[:200]
         )
     try:
         rows = json.loads(stdout or "[]")
     except ValueError as exc:
-        return None, "gh pr list output did not parse as JSON ({})".format(exc)
-    if not isinstance(rows, list):
-        return None, "gh pr list output was not a list"
-    if len(rows) >= _PR_LIST_LIMIT:
-        return None, (
-            "gh pr list returned {} pull request(s), at or past the {}-PR page "
-            "limit -- newest-first, so the OLDEST merged PRs (exactly the "
-            "leftovers this check exists to find) are the ones a truncated "
-            "read would drop; the result cannot be trusted complete".format(
-                len(rows), _PR_LIST_LIMIT
-            )
+        return None, "gh pr list --head {} output did not parse as JSON ({})".format(
+            branch, exc
         )
-    return rows, None
-
-
-def _pr_state_by_branch(rows):
-    """`headRefName` -> its pull request state, `MERGED` winning over any
-    other state recorded for the same head. A branch name is only ever
-    reused across pull requests when somebody force-pushed a new PR onto an
-    old branch name after the first one closed unmerged -- rare, but a
-    `MERGED` verdict once earned for that name must not be erased by a later,
-    unrelated row for the same string.
-    """
-    result = {}
+    if not isinstance(rows, list):
+        return None, "gh pr list --head {} output was not a list".format(branch)
+    state = None
     for row in rows:
         if not isinstance(row, dict):
             continue
         head = row.get("headRefName")
-        state = row.get("state")
-        if not isinstance(head, str) or not isinstance(state, str):
+        row_state = row.get("state")
+        if head != branch or not isinstance(row_state, str):
             continue
-        if result.get(head) == _STALE_PR_STATE:
+        if state == _STALE_PR_STATE:
             continue
-        result[head] = state
-    return result
+        state = row_state
+    return state, None
 
 
 def stale_branches_state(project_dir, config=None, run=None):
@@ -327,16 +323,19 @@ def stale_branches_state(project_dir, config=None, run=None):
             "stale": [],
         }
 
-    rows, reason = _list_pull_requests(gh_bin, slug, run)
-    if rows is None:
-        return {
-            "state": "could-not-read",
-            "detail": reason,
-            "slug": slug,
-            "stale": [],
-        }
+    pr_state = {}
+    for name in matching:
+        state, reason = _pr_state_for_branch(gh_bin, slug, name, run)
+        if reason is not None:
+            return {
+                "state": "could-not-read",
+                "detail": reason,
+                "slug": slug,
+                "stale": [],
+            }
+        if state is not None:
+            pr_state[name] = state
 
-    pr_state = _pr_state_by_branch(rows)
     stale = [name for name in matching if pr_state.get(name) == _STALE_PR_STATE]
     if not stale:
         return {

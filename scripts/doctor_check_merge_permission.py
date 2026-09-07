@@ -72,6 +72,139 @@ def _permission_entries(data, key):
     return [entry for entry in entries if isinstance(entry, str)]
 
 
+# #1242: `#886`/`#895` gave `doctor_check_worktree_reap_permission.py` a fifth
+# and sixth answer (`cannot-tell-whether-covered` / `cannot-tell-whether-
+# forbidden`) for a covering wildcard (`Bash(git *)`, `Bash(git:*)`) that a
+# literal substring test cannot read. The two checks in THIS module never got
+# it, and rendered `absent` against the same settings file on the same run
+# (#1242's own repro: `Bash(supertool *)` and `Bash(./supertool *)`, neither
+# matching `SUPERTOOL_ENTRY_RE`'s anchored `supertool:` spelling, and neither
+# containing the `gh-pr-merge` substring `merge_permission_state` looks for).
+#
+# These helpers were defined once, in `doctor_check_worktree_reap_permission.
+# py`, keyed on a SINGLE op head (`git`, both ops in that module invoke a bare
+# `git ...` command). They move here, generalised to accept a set of
+# candidate heads, because the two checks below are invoked differently: both
+# `gh-pr-merge:...` and the supertool call itself run as
+# `supertool 'gh-pr-merge:...'` or `./supertool 'gh-pr-merge:...'`, so the
+# covering wildcard head to look for is `supertool` or `./supertool` --
+# never the op name itself, which never appears as a Bash command head at
+# all. The reap module now imports
+# these from here instead of defining its own copy (one helper, several call
+# sites, per the issue's own suggested direction) and passes a single-element
+# set to keep its existing `git`-only behaviour unchanged.
+WILDCARD_MARKER = "*"
+PREFIX_SUFFIX = ":*"
+
+
+def _entry_command_head(entry):
+    """The first whitespace-separated token inside a `Bash(...)` rule's
+    parentheses, or None if `entry` is not shaped like a Bash rule. Purely
+    structural parsing -- no wildcard interpretation."""
+    if not entry.startswith("Bash(") or not entry.endswith(")"):
+        return None
+    content = entry[len("Bash(") : -1]
+    parts = content.split(None, 1)
+    return parts[0] if parts else None
+
+
+def _entry_prefix_wildcard_head(entry):
+    """The bare command name inside a `Bash(name:*)` command-name-level
+    prefix rule (`Bash(git:*)`, `Bash(supertool:*)`), or None if `entry` is
+    not shaped like one. Deliberately narrower than
+    `content.endswith(PREFIX_SUFFIX)` alone: an op-specific prefix grant such
+    as `Bash(git worktree remove:*)` also ends in `:*`, but its content
+    before the suffix contains whitespace, so it is excluded here (it is not
+    this shape -- it is the literal, already-handled one)."""
+    if not entry.startswith("Bash(") or not entry.endswith(")"):
+        return None
+    content = entry[len("Bash(") : -1]
+    if not content.endswith(PREFIX_SUFFIX):
+        return None
+    head = content[: -len(PREFIX_SUFFIX)]
+    if not head or any(ch.isspace() for ch in head):
+        return None
+    return head
+
+
+def _bash_wildcard_allow_detail(project_dir, op_heads, home=None):
+    """Count-and-file detail (same convention as `_permission_rule_state`,
+    never the entry text) for Bash allow entries whose command head is one of
+    `op_heads` and which contain a bare wildcard, OR whose command-name-level
+    prefix (`Bash(git:*)`, #895) is one of `op_heads` -- either shape this
+    check's substring test cannot resolve either way. `op_heads` is scoped to
+    the caller's own invocation shape (a single command like `git`, or the
+    `supertool`/`./supertool` pair this module's two checks are actually
+    invoked through) so an unrelated grant (`Bash(npm *)`) can never match.
+    Empty string when none exist."""
+    found = []
+    for path in settings_candidates(project_dir, home=home):
+        try:
+            if not path.exists():
+                continue
+        except OSError:
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        matches = [
+            e
+            for e in _permission_entries(data, "allow")
+            if (
+                WILDCARD_MARKER in e
+                and PREFIX_SUFFIX not in e
+                and _entry_command_head(e) in op_heads
+            )
+            or _entry_prefix_wildcard_head(e) in op_heads
+        ]
+        if matches:
+            found.append(_entry_count(len(matches), "allow", path))
+    return "; ".join(found)
+
+
+def _bash_wildcard_deny_detail(project_dir, op_heads, home=None):
+    """#892's deny-side sibling of `_bash_wildcard_allow_detail` above -- same
+    shapes, same `op_heads` scoping, scanning `deny` entries instead of
+    `allow`. Empty string when none exist."""
+    found = []
+    for path in settings_candidates(project_dir, home=home):
+        try:
+            if not path.exists():
+                continue
+        except OSError:
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        matches = [
+            e
+            for e in _permission_entries(data, "deny")
+            if (
+                WILDCARD_MARKER in e
+                and PREFIX_SUFFIX not in e
+                and _entry_command_head(e) in op_heads
+            )
+            or _entry_prefix_wildcard_head(e) in op_heads
+        ]
+        if matches:
+            found.append(_entry_count(len(matches), "deny", path))
+    return "; ".join(found)
+
+
+#: The Bash command heads that actually invoke `gh-pr-merge` or the supertool
+#: call itself -- `supertool 'gh-pr-merge:...'` or `./supertool
+#: 'gh-pr-merge:...'`, never the op name as a command head on its own. A
+#: wildcard entry granting (or denying) one of these two heads covers every
+#: supertool op, `gh-pr-merge` included.
+SUPERTOOL_COMMAND_HEADS = frozenset({"supertool", "./supertool"})
+
+
 def _entry_count(count, key, path):
     """`2 allow entries in /path/to/settings.json` -- the count and the file, and
     nothing the file's author wrote."""
@@ -145,8 +278,29 @@ def _permission_rule_state(project_dir, matches_entry, home=None):
 def merge_permission_state(project_dir, home=None):
     """Is there a settings rule naming the merge op? See `_permission_rule_state`
     for the four answers and why an unreadable neighbour never wins over a
-    rule that was actually read."""
-    return _permission_rule_state(project_dir, lambda e: MERGE_OP in e, home=home)
+    rule that was actually read. #1242: a fifth and sixth answer,
+    `cannot-tell-whether-covered` / `cannot-tell-whether-forbidden`, replace
+    `absent` when no entry literally names `gh-pr-merge` but a Bash entry
+    granting (or denying) `supertool` or `./supertool` with a bare wildcard
+    exists -- `gh-pr-merge` is invoked AS a supertool op
+    (`supertool 'gh-pr-merge:...'`), so such an entry already covers it under
+    Claude Code's own matcher, exactly the shape #886/#895 already handle for
+    the two `doctor_check_worktree_reap_permission.py` checks."""
+    state, detail = _permission_rule_state(
+        project_dir, lambda e: MERGE_OP in e, home=home
+    )
+    if state == "absent":
+        deny_wildcard_detail = _bash_wildcard_deny_detail(
+            project_dir, SUPERTOOL_COMMAND_HEADS, home=home
+        )
+        if deny_wildcard_detail:
+            return "cannot-tell-whether-forbidden", deny_wildcard_detail
+        wildcard_detail = _bash_wildcard_allow_detail(
+            project_dir, SUPERTOOL_COMMAND_HEADS, home=home
+        )
+        if wildcard_detail:
+            return "cannot-tell-whether-covered", wildcard_detail
+    return state, detail
 
 
 def check_merge_permission(project_dir, home=None):
@@ -180,6 +334,29 @@ def check_merge_permission(project_dir, home=None):
             "could not read {}, so whether a {} rule exists is unknown -- not answered "
             "as absent, because that would send you to add a rule you may already "
             "have.".format(detail, MERGE_OP),
+        )
+        return
+    if state == "cannot-tell-whether-covered":
+        doctor.report(
+            "WARN",
+            "no settings rule literally names {}, but a Bash allow entry with a "
+            "wildcard exists ({}) that this check's substring test cannot read -- "
+            "{} is invoked as a supertool op, so it may already be covered, or may "
+            "not. Interpreting a wildcard is Claude Code's own permission matcher's "
+            "job, not this check's. Confirm by attempting the merge once.".format(
+                MERGE_OP, detail, MERGE_OP
+            ),
+        )
+        return
+    if state == "cannot-tell-whether-forbidden":
+        doctor.report(
+            "WARN",
+            "no settings rule literally names {}, but a Bash deny entry with a "
+            "wildcard exists ({}) that this check's substring test cannot read -- "
+            "it may already forbid every supertool op, {} included, or may not. "
+            "Confirm what the wildcard covers before adding anything.".format(
+                MERGE_OP, detail, MERGE_OP
+            ),
         )
         return
     doctor.report(
@@ -219,10 +396,29 @@ SUPERTOOL_ENTRY_RE = re.compile(r"^Bash\((?:\./|(?:[A-Za-z]:)?[/\\].*[/\\])?supe
 def supertool_permission_state(project_dir, home=None):
     """Is there a settings rule naming the supertool call itself? See
     `_permission_rule_state` for the four answers and why an unreadable
-    neighbour never wins over a rule that was actually read."""
-    return _permission_rule_state(
+    neighbour never wins over a rule that was actually read. #1242: a fifth
+    and sixth answer, `cannot-tell-whether-covered` /
+    `cannot-tell-whether-forbidden`, replace `absent` when no entry matches
+    `SUPERTOOL_ENTRY_RE`'s anchored `supertool:`/`./supertool:` spelling but a
+    Bash entry granting (or denying) `supertool` or `./supertool` with a bare
+    wildcard exists (`Bash(supertool *)`, `Bash(./supertool *)`) -- a
+    spelling this anchored regex was never going to match, but one Claude
+    Code's own matcher honours all the same."""
+    state, detail = _permission_rule_state(
         project_dir, lambda e: bool(SUPERTOOL_ENTRY_RE.match(e)), home=home
     )
+    if state == "absent":
+        deny_wildcard_detail = _bash_wildcard_deny_detail(
+            project_dir, SUPERTOOL_COMMAND_HEADS, home=home
+        )
+        if deny_wildcard_detail:
+            return "cannot-tell-whether-forbidden", deny_wildcard_detail
+        wildcard_detail = _bash_wildcard_allow_detail(
+            project_dir, SUPERTOOL_COMMAND_HEADS, home=home
+        )
+        if wildcard_detail:
+            return "cannot-tell-whether-covered", wildcard_detail
+    return state, detail
 
 
 def check_supertool_permission(project_dir, home=None):
@@ -254,6 +450,29 @@ def check_supertool_permission(project_dir, home=None):
             "could not read {}, so whether a {} rule exists is unknown -- not answered "
             "as absent, because that would send you to add a rule you may already "
             "have.".format(detail, SUPERTOOL_OP),
+        )
+        return
+    if state == "cannot-tell-whether-covered":
+        doctor.report(
+            "WARN",
+            "no settings rule matches the documented {} spelling, but a Bash allow "
+            "entry with a wildcard exists ({}) that this check's anchored regex "
+            "cannot read -- it may already cover every supertool call, or may not. "
+            "Interpreting a wildcard is Claude Code's own permission matcher's job, "
+            "not this check's. Confirm by attempting a supertool call once.".format(
+                SUPERTOOL_OP, detail
+            ),
+        )
+        return
+    if state == "cannot-tell-whether-forbidden":
+        doctor.report(
+            "WARN",
+            "no settings rule matches the documented {} spelling, but a Bash deny "
+            "entry with a wildcard exists ({}) that this check's anchored regex "
+            "cannot read -- it may already forbid every supertool call, or may not. "
+            "Confirm what the wildcard covers before adding anything.".format(
+                SUPERTOOL_OP, detail
+            ),
         )
         return
     doctor.report(

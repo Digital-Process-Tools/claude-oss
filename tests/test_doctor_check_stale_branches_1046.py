@@ -72,6 +72,14 @@ def _pr_list_json(rows):
     return (0, json.dumps(rows), "")
 
 
+def _pr_head_responses(*per_branch_rows):
+    """One staged ``gh pr list --head <branch>`` response per positional
+    argument, in the order the branches will be queried (``sorted(matching)``
+    -- `matching-refs`' own response order is not guaranteed, but
+    `stale_branches_state` sorts before iterating)."""
+    return [_pr_list_json(rows) for rows in per_branch_rows]
+
+
 def _which_gh_only(name, path=None):
     return "/usr/bin/gh" if name == "gh" else None
 
@@ -131,22 +139,23 @@ def test_no_matching_branches_is_ok_and_never_calls_gh_pr_list(tmp_path, monkeyp
 
 def test_matching_branches_with_no_merged_pr_are_ok(tmp_path, monkeypatch):
     """Positive control for the merged case: an OPEN PR's branch must never be
-    flagged, and a branch with no PR at all must never be flagged either."""
+    flagged, and a branch with no PR at all must never be flagged either.
+    One `gh pr list --head <branch>` call per matching branch (#1253) --
+    fix/2's own call returns no rows at all."""
     monkeypatch.setattr(sb.gh_which, "safe_which", _which_gh_only)
     run = _run_sequence(
-        [
-            _matching_refs(["fix/1", "fix/2"]),
-            _pr_list_json(
-                [
-                    {"number": 1, "headRefName": "fix/1", "state": "OPEN"},
-                    # fix/2 has no PR row at all
-                ]
-            ),
-        ]
+        [_matching_refs(["fix/1", "fix/2"])]
+        + _pr_head_responses(
+            [{"number": 1, "headRefName": "fix/1", "state": "OPEN"}],
+            [],
+        )
     )
     result = sb.stale_branches_state(tmp_path, config=_config(), run=run)
     assert result["state"] == "ok"
     assert result["stale"] == []
+    assert len(run.calls) == 3
+    assert "--head" in run.calls[1] and "fix/1" in run.calls[1]
+    assert "--head" in run.calls[2] and "fix/2" in run.calls[2]
 
 
 # --------------------------------------------------------------- the finding
@@ -155,15 +164,11 @@ def test_matching_branches_with_no_merged_pr_are_ok(tmp_path, monkeypatch):
 def test_a_merged_branch_is_flagged_as_stale(tmp_path, monkeypatch):
     monkeypatch.setattr(sb.gh_which, "safe_which", _which_gh_only)
     run = _run_sequence(
-        [
-            _matching_refs(["fix/1", "fix/2"]),
-            _pr_list_json(
-                [
-                    {"number": 1, "headRefName": "fix/1", "state": "MERGED"},
-                    {"number": 2, "headRefName": "fix/2", "state": "OPEN"},
-                ]
-            ),
-        ]
+        [_matching_refs(["fix/1", "fix/2"])]
+        + _pr_head_responses(
+            [{"number": 1, "headRefName": "fix/1", "state": "MERGED"}],
+            [{"number": 2, "headRefName": "fix/2", "state": "OPEN"}],
+        )
     )
     result = sb.stale_branches_state(tmp_path, config=_config(), run=run)
     assert result["state"] == "stale"
@@ -176,10 +181,10 @@ def test_check_stale_branches_reports_warn_with_the_delete_command(
 ):
     monkeypatch.setattr(sb.gh_which, "safe_which", _which_gh_only)
     run = _run_sequence(
-        [
-            _matching_refs(["fix/1"]),
-            _pr_list_json([{"number": 1, "headRefName": "fix/1", "state": "MERGED"}]),
-        ]
+        [_matching_refs(["fix/1"])]
+        + _pr_head_responses(
+            [{"number": 1, "headRefName": "fix/1", "state": "MERGED"}],
+        )
     )
     sb.check_stale_branches(tmp_path, config=_config(), run=run)
     assert len(doctor.FINDINGS) == 1
@@ -251,26 +256,51 @@ def test_branch_pattern_with_placeholder_first_is_could_not_read(tmp_path, monke
     assert "branch_pattern" in result["detail"]
 
 
-def test_gh_pr_list_hitting_the_page_limit_is_could_not_read_not_ok(
+def test_a_repository_with_over_500_total_pull_requests_still_resolves(
     tmp_path, monkeypatch
 ):
-    """Self-review finding (both spawned reviewers, independently): `gh pr
-    list --state all` sorts newest-first, so a truncated 500-row read drops
-    the OLDEST merged PRs first -- exactly the "months old" leftovers this
-    check exists to find. Hitting the limit must never render as a clean
-    "not stale", the same convention `lane_setup_claim.py`'s own
-    `_PR_LIST_LIMIT` already applies to its own `gh pr list` call. Must-fire
-    pair for `test_a_merged_branch_is_flagged_as_stale`'s positive control:
-    it is the exact same shape one row short of the cap."""
+    """#1253: the old implementation asked `gh pr list --state all` for the
+    tracker's ENTIRE pull-request history and joined that locally against the
+    branches `matching-refs` found -- on a repository whose total PR count
+    is at or past `gh pr list`'s own 500-row page cap (this repo's own,
+    measured), that global read could never be trusted complete and the
+    check could never clear. The fix asks about each matching branch BY
+    NAME (`--head`), so the query's cost tracks how many branches match
+    `branch_pattern` -- one here -- never how many pull requests the
+    repository has ever had. A repository with(say) 10,000 total pull
+    requests, only one of which matches `branch_pattern` and is MERGED,
+    now correctly resolves to `stale` rather than `could-not-read`."""
     monkeypatch.setattr(sb.gh_which, "safe_which", _which_gh_only)
-    huge = [
-        {"number": n, "headRefName": "fix/{}".format(n), "state": "OPEN"}
-        for n in range(sb._PR_LIST_LIMIT)
-    ]
-    run = _run_sequence([_matching_refs(["fix/1"]), _pr_list_json(huge)])
+    run = _run_sequence(
+        [_matching_refs(["fix/1"])]
+        + _pr_head_responses(
+            [{"number": 9999, "headRefName": "fix/1", "state": "MERGED"}],
+        )
+    )
+    result = sb.stale_branches_state(tmp_path, config=_config(), run=run)
+    assert result["state"] == "stale"
+    assert result["stale"] == ["fix/1"]
+    # Exactly two calls total: one matching-refs listing, one PER-BRANCH
+    # `gh pr list --head` -- never a global, unbounded `gh pr list`.
+    assert len(run.calls) == 2
+    assert "--state" not in run.calls[0]
+    assert "--head" in run.calls[1]
+    assert "--limit" not in run.calls[1]
+
+
+def test_a_gh_pr_list_head_call_that_fails_is_could_not_read(tmp_path, monkeypatch):
+    """The third state must still be reachable per-branch: an unauthenticated
+    `gh`, a rate limit or an offline machine on any one branch's own call must
+    render `could-not-read`, never a clean answer over a partial read."""
+    monkeypatch.setattr(sb.gh_which, "safe_which", _which_gh_only)
+    run = _run_sequence(
+        [
+            _matching_refs(["fix/1"]),
+            (1, "", "gh: rate limit exceeded"),
+        ]
+    )
     result = sb.stale_branches_state(tmp_path, config=_config(), run=run)
     assert result["state"] == "could-not-read"
-    assert str(sb._PR_LIST_LIMIT) in result["detail"]
 
 
 def test_undecodable_bytes_do_not_crash_the_check(tmp_path, monkeypatch):

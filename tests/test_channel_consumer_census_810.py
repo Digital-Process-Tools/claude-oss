@@ -34,6 +34,26 @@ def _clean_findings():
     doctor.FINDINGS.clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_plugin_population(tmp_path, monkeypatch):
+    """#1241 added a second population (installed plugins' own `.mcp.json`
+    servers) to this census, read from a real, machine-specific registry
+    path by default. Every test in this file predates that and asserts only
+    against the `claude mcp list` half -- without this, they would silently
+    pick up whatever plugins happen to be installed on the machine running
+    the suite (this repo's own dev machine has a real
+    `~/.claude/plugins/installed_plugins.json`), the exact ambient-state
+    dependency CLAUDE.md's own test-writing rules warn against. Pointing
+    `_PLUGIN_REGISTRY_PATH` at a path that does not exist makes the plugin
+    half of the census always resolve to `([], None)` -- present, empty,
+    never `could-not-ask` -- for every test that does not override it
+    explicitly (see `tests/test_plugin_channel_consumer_census_1241.py` for
+    those)."""
+    monkeypatch.setattr(
+        mod, "_PLUGIN_REGISTRY_PATH", str(tmp_path / "no-such-registry.json")
+    )
+
+
 class _FakeCompleted:
     def __init__(self, returncode, stdout=b""):
         self.returncode = returncode

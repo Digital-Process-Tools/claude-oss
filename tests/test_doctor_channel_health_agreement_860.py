@@ -10,15 +10,35 @@ that reports all three outcomes.
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
 import doctor_check_channel_health_agreement as agreement  # noqa: E402
+import doctor_check_mcp_channel_registration as mcp_mod  # noqa: E402
 
 
 def setup_function(_):
     doctor.FINDINGS.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_plugin_population(tmp_path, monkeypatch):
+    """#1241 gave `channel_consumer_census_state` a second population
+    (installed plugins' own `.mcp.json` servers), read from a real,
+    machine-specific registry path by default. This file predates that and
+    asserts only against the `claude mcp list` half -- without this, two
+    tests here picked up this repo's own real
+    `~/.claude/plugins/installed_plugins.json` (a real, and on this
+    development machine DUPLICATED, supertool install), turning an expected
+    `single`/`agree` into `collision`/`OK`. Pointing `_PLUGIN_REGISTRY_PATH`
+    at a path that does not exist makes the plugin half of the census always
+    resolve to `([], None)` for every test in this file."""
+    monkeypatch.setattr(
+        mcp_mod, "_PLUGIN_REGISTRY_PATH", str(tmp_path / "no-such-registry.json")
+    )
 
 
 # --------------------------------------------------------------------------
