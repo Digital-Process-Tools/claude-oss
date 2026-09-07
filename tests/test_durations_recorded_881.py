@@ -87,23 +87,74 @@ def _declared_addopts():
     return match.group(1) if match else None
 
 
-def _run_stub_test(addopts_override=None):
+def _run_stub_test(addopts_override=None, extra_args=None):
     """Run one trivial, always-passing test in a fresh subprocess, from inside this
     repository's own tree, and return everything it printed.
 
     `addopts_override` replaces pyproject.toml's addopts for this one invocation
     via pytest's own `-o` override, without touching the file -- the negative
     control needs to prove the probe *would* have caught #881's failure mode
-    without actually breaking the fix under test.
+    without actually breaking the fix under test. `extra_args`, if given, is a
+    list of additional CLI arguments appended after the fixed flags below (used
+    by #1214's own regression test to pass `--trace-config` without disturbing
+    `addopts_override`'s separate role).
+
+    The stub directory is nested under `tests/`, never a direct child of the
+    repository root (#1214) -- it still has to live *somewhere* inside this
+    repository's tree, because pytest resolves rootdir by walking UP from the
+    given path to find `pyproject.toml`, so a target outside the repo would
+    silently pick up no config. But the repository root itself is shared by
+    every concurrent nested pytest subprocess xdist can spawn (`-n auto
+    --dist loadfile`, #1177), and a scratch directory created directly there
+    is exactly what #1214 observed vanishing mid-collection under a sibling
+    worker's own concurrent root-level churn (`_durprobe_881_*`). Nesting one
+    level down removes this file's own contribution to that shared surface.
+
+    Living under `tests/` means pytest's own ancestor-conftest discovery
+    loads `tests/conftest.py` on the way down to the stub, which registers
+    `pytester`, `must_assert_plugin` and `duration_report_plugin` for the
+    REAL suite (see that file's own docstring) -- plugins this probe was
+    never meant to carry: this module's whole point is an *isolated* second
+    Config resolution ("nesting a second Config resolution inside that
+    process is exactly the kind of thing coverage instrumentation can
+    perturb"), and inheriting them silently, e.g. `duration_report_plugin`
+    reading the real `tests/duration-baseline.json`, would undercut that
+    (caught in #1214's own self-review). All three are disabled by name
+    below so the location fix does not trade one #1214 defect for a second,
+    quieter one.
+
+    `-p no:cacheprovider` is passed unconditionally for the same underlying
+    reason: this is a one-off, single-file smoke run that gains nothing from
+    `--lf`/`--ff` or lastfailed caching, and disabling the plugin means this
+    nested pytest never touches the rootdir-shared `.pytest_cache` directory
+    at all -- removing it as a party to #1214's second logged instance
+    (`pytest-cache-files-*`, pytest's own cache-dir atomic-rename tempfile,
+    also written at the shared rootdir).
     """
-    stub_dir = REPO_ROOT / ("_durprobe_881_" + uuid.uuid4().hex[:8])
+    stub_dir = REPO_ROOT / "tests" / ("_durprobe_881_" + uuid.uuid4().hex[:8])
     stub_dir.mkdir()
     stub_path = stub_dir / "test_stub.py"
     try:
         stub_path.write_text(_STUB_TEST_BODY, encoding="utf-8")
-        args = [sys.executable, "-m", "pytest", "-q", str(stub_path)]
+        args = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "no:pytester",
+            "-p",
+            "no:must_assert_plugin",
+            "-p",
+            "no:duration_report_plugin",
+        ]
         if addopts_override is not None:
             args += ["-o", "addopts=" + addopts_override]
+        if extra_args:
+            args += list(extra_args)
+        args += [str(stub_path)]
         result = spawn_guard.run(
             args,
             subject="whether pytest's durations-summary header appears for this stub run",
@@ -116,10 +167,7 @@ def _run_stub_test(addopts_override=None):
     finally:
         # shutil.rmtree, not unlink()+rmdir(): running the stub test compiles
         # test_stub.py, leaving a __pycache__/ directory inside stub_dir, so a
-        # bare rmdir() (which requires an empty directory) raises here. Measured
-        # directly rather than assumed: .pytest_cache/ itself lands at REPO_ROOT,
-        # not inside stub_dir -- it is the bytecode cache, not pytest's own cache,
-        # that makes rmdir() fail.
+        # bare rmdir() (which requires an empty directory) raises here.
         shutil.rmtree(stub_dir, ignore_errors=True)
 
 
