@@ -328,8 +328,8 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
       written before it, so this release's own cohort count does not exist yet at this step. Cite
       only a cohort that already finished freezing — see `skills/manager/phases/accounting.md`'s
       cohort-citation rule for what that means in practice. Run
-      `${CLAUDE_PLUGIN_ROOT}/scripts/cohort_citation_order.py --state <state file> --at <now>` before
-      committing (#1220)
+      `"${CLAUDE_PLUGIN_ROOT}/scripts/cohort_citation_order.py" --state <state file> --at <now>`
+      before committing (#1220)
       — `<now>` needs an explicit `Z` suffix or UTC offset (`date -u +%Y-%m-%dT%H:%M:%SZ`), since a
       bare timestamp with neither is refused rather than assumed to be UTC. `ok` or `could-not-check`
       (no state file) are fine, `finding` means this citation is about to repeat v0.25.0's own
