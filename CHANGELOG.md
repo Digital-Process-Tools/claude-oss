@@ -7,6 +7,605 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-09-07
+
+### Added
+
+- `doctor` now checks the tracker for merged pull requests whose `origin/fix/*` (or whatever
+  `branch_pattern` derives) branch was never deleted -- report-only, three states (`ok` / a
+  finding / `could-not-read`, never rendering an unreadable `gh`/`git` call as clean), read from
+  `gh pr list` rather than git ancestry so a squash-merged branch is still recognised as merged
+  (#1046).
+
+- Added a jit-context rule (`.claude/jit-context/tools/01-oss/tree-snapshot-compare.md`,
+  shipped in every managed repository's generated layer) for the review phase's
+  `tree_snapshot.py` mutation check: `compare` already defaults to the before-snapshot's own
+  recorded root rather than the live cwd, write the before-snapshot inside the worktree rather
+  than the shared scratchpad, and treat `could-not-compare` as a third verdict that is never
+  `clean` (#1105).
+
+- Added `.claude/jit-context/tools/00-manual/release-publish-execute-denied.md`: `release_publish
+  --execute` can be denied by Claude Code's auto-mode permission classifier inside `oss:releaser`
+  and succeed on the byte-identical call from the scheduler's own context, observed on two
+  releases a day apart. The denial lands before `gh` or the script's own logic runs, so it is
+  invisible to every one of `release_publish.py`'s own outcomes. The fix is a retry from the
+  other context before handing a human the command; this fragment only records the observation
+  and what is not yet settled about it (#1106).
+
+- `bin/oss-workspace`'s job 2 (choosing the next command) now reads three more facts about a
+  repository's own work, not only the tooling: open issues missing `lane-*`/`priority-*` labels,
+  `trap.d/` fragments waiting, and `changelog.d/` fragments waiting, each a standing count crossing
+  a per-repo threshold declared in `.oss.json` (`triage_route_threshold`, `curate_route_threshold`,
+  `release_route_threshold` -- absent means the repo does not want the route). `scripts/
+  workspace_routes.py` is the new module; three states per count (`over`/`under`/
+  `could-not-count`), precedence when more than one is over (release, then triage, then curate, per
+  what blocks the most), and a #1064-shaped receipt via `oss_state.workspace_route_check` so a count
+  stuck `over` threshold does not re-route every single launch forever (#1155).
+
+- Added `docs/open-the-workspace.md`, the goal doc for the `bin/oss-workspace` launcher, in the same
+  form as `docs/pick-the-work.md`: the launcher's two jobs, which rows are built and which are
+  designed, the sixteen steps in four bands, and what is still open. Its `What job 2 should choose
+  from` section is the design filed as #1155 (#1155).
+
+- `scripts/doctor.py` gains `--worker-sizing`: report what `pytest -n auto` would request on this
+  machine, and nothing else. It is the interpreter-environment check's worker lines plus one
+  `VERDICT` line, and it reports `worker sizing unknown` rather than a number when no probe on the
+  machine answered (#1177).
+- Every leg of the `pytest` matrix in `.github/workflows/tests.yml` now runs that probe before the
+  suite, so the three operating systems and four interpreters each report their own core count
+  instead of the number a documentation page claims for that runner. It is the reading #1177's
+  pytest-xdist candidate names as its own precondition, and it cannot fail a leg: `doctor.py` exits
+  0 in every mode (#1177).
+
+- Added a drift guard (`tests/test_874_marker_sync_1212.py`) tying the #874 "may not ask a
+  spawned agent for a verdict on one" marker in `agents/audit/shared.md` to its two copies in
+  `agents/auditor.md` and `agents/release-auditor.md` -- byte-identical comparison for the
+  first pair, required-substring comparison for `release-auditor.md`'s deliberately reworded
+  copy, so a future one-sided edit to any of the three is caught rather than drifting silently
+  (#1212).
+
+- Added `scripts/cohort_citation_order.py`, a mechanical check for the
+  cohort-citation ordering rule #1122 added to release-process prose:
+  compares CLAUDE.md's cited cohort against that cohort's own recorded
+  `detail.cohort_freeze` decision in the state file, and reports `ok` /
+  `finding` / `could-not-check` -- `finding` is exactly v0.25.0's own
+  mistake shape, a release commit citing a cohort ahead of its own freeze.
+  `could-not-check` on a fresh checkout (the state file lives under the
+  git-ignored `.max/`), so an absent check never reads as a clean one.
+  Wired as a pointer in `skills/manager/phases/accounting.md` and
+  `commands/release.md`'s marker-rewrite gate (#1220).
+
+- `doctor` now checks whether `.oss.json`'s `labels.lane_patterns` actually holds the disjointness
+  `docs/pick-the-work.md` describes for this repo's own tree, rather than only the shape `oss_config.py`
+  already validated -- report-only, three states (`ok` / a finding / `not-configured`, the last never
+  rendering as `ok` for a repo that has never declared `lane_patterns`). A finding names a pattern
+  that matches no file on disk, a malformed pattern, or two lanes claiming the same file -- the last
+  reported as a refactoring signal (split the file), never as a dispatch-blocking claim. Resolution
+  goes through `select_issues_overlap.resolve_lane`, the same function the dispatch collision check
+  uses. Built as its own module, `scripts/lane_pattern_coverage.py`, so it stays runnable by hand
+  while editing `.oss.json` (#1229).
+
+- `scripts/lane_coupling.py` (#1234): generalizes #1201's own manual fix --
+  a `tests/*.py` file's static string-literal references and top-level
+  imports are parsed and resolved to the lane(s) covering them
+  (`.oss.json`'s `labels.lane_patterns`), and any test whose references span
+  two or more lanes is a candidate for the same silent-collision shape
+  #1201's incident was. Validated against this repo's own real suite: it
+  finds `tests/test_lane_pattern_coverage_1201.py` itself spanning
+  lane-prose and lane-dispatch, the exact pair #1201's own fix addressed by
+  hand. Deliberately scoped to static references only -- a runtime-assembled
+  path (an f-string, a `Path(...) / var` join) or a glob-driven read is not
+  resolved, and is left for a follow-up rather than guessed at. Not wired
+  into `doctor.py`: a trial run over this repo's own real test suite found
+  48 of 465 test files (~10%) already span two or more lanes, mostly
+  intentional whole-repo guard tests rather than accidental couplings, and
+  the module's own natural remedy (declare the shared file under every lane
+  it touches) directly triggers `scripts/lane_pattern_coverage.py`'s (#1229)
+  own overlap finding -- a genuine tension between the two checks that needs
+  a maintainer decision on noise-reduction before this ships as a live
+  doctor check.
+
+### Changed
+
+- Investigated #1045 again (`--suggest-companions` reportedly citing the same file for every
+  candidate): still could not reproduce, this time against real, unrelated open-issue bodies
+  fetched live from this repository's own tracker (#1229, #1137) rather than synthetic ones -- the
+  specific gap the prior 2026-09-05 investigation left explicitly open ("the original tick's own
+  board ... may hit a shape this test does not"). Claiming `scripts/doctor.py` correctly cites only
+  #1229, and claiming `oss_state.py` correctly cites only #1137; neither candidate is ever cited
+  with the other's file. Added as a permanent regression test
+  (`test_1045_real_open_issue_bodies_cite_their_own_distinct_file`) alongside the existing
+  synthetic one. No code change -- the tool works as designed on real board data too. Left open
+  rather than closed here, since a developer lane does not comment on or close issues; the
+  maintainer should consider closing #1045 given three independent, differently-shaped
+  reproduction attempts have now all failed to find the reported defect.
+
+- `lane_setup.py --suggest-companions` (and its underlying `suggest_companions` function) was
+  reported as citing the same file for every companion candidate regardless of body content --
+  not independently reproduced by the maintainer on 2026-09-05, and not reproduced here either
+  with a stronger, three-candidate synthetic case (each candidate names a genuinely distinct file,
+  only one of which lands inside the claimed set). The stronger case is now a permanent regression
+  test, confirmed to fail against the reported defect shape when deliberately injected (#1045).
+
+- A commit that answers an audit's own findings was a diff nothing made a subject again by
+  default: on PR #921 a fix for two findings shipped unreviewed, and a later re-audit found two
+  more real bugs inside it. `agents/developer/review-return.md` and
+  `skills/manager/phases/review.md` now name an explicit trigger for when that fix commit needs
+  its own review pass, backed by a new script, `scripts/fix_commit_scope.py`: three or more files
+  touched, or any file this repo already governs with its own byte-budget table, means
+  `needs-second-pass`; a small fix stays `within-scope`. Whether a touched function's *behaviour*
+  as a guard changed is left as judgement, stated as such rather than mechanized past what a file
+  list can actually answer (#1047).
+
+- Three tests in `tests/test_no_test_pins_the_current_version_350.py` each swept the whole
+  `tests/` corpus (`os.walk` plus `ast.parse` per file) from scratch, once per version being
+  checked -- 12.69s locally, ~26s measured on Windows CI (#1108). They now share a single
+  module-scoped `real_corpus` fixture that walks, reads and parses the tree exactly once;
+  only the cheap per-version literal comparison (`sweep_from_corpus`) still runs fresh for
+  each version, so a future version can never read a stale verdict computed for a different
+  one. A new positive control (`test_sharing_the_corpus_cannot_produce_a_false_green`) proves
+  that directly, against a synthetic corpus rather than this repository's own real tree.
+  `tests/test_spawn_guard_716.py`'s three calls to `spawn_guard.scan_tree` were already shared
+  via `functools.lru_cache`, and `tests/test_prose_script_refs_1070.py` makes only a single
+  real-corpus call, so neither needed a change (#1108).
+
+- The maintainer skill now documents that a `Blocked by classifier` denial on an
+  `oss_state.py`/`agent_role.py` call cannot be told apart from a maintainer-meant refusal from
+  inside either script: the denial fires at the harness's own permission layer, before the
+  process is ever launched, so there is nothing script-side to add for that half. The documented
+  fix is a retry: retry the identical, unmodified call once before treating the denial as real,
+  plus an explicitly unconfirmed fallback (dropping a hash-prefixed reference from
+  `--decision`/`--wait-cleared-by` text) that is not established as a cause and is stated as such
+  rather than automated around. Not independently reproduced here: an attempted repro with a
+  hash-prefixed `--decision` string succeeded immediately with no denial (#1137).
+
+- CI: nine slow content-guard tests (reading this repository's own tracked files, whose answer
+  cannot vary by OS or interpreter -- e.g. `test_no_test_pins_the_current_version_350.py`,
+  `test_unwired_scripts_253.py`, `test_spawn_guard_716.py`, `test_prose_script_refs_1070.py`) are now
+  marked `@pytest.mark.invariant` and deselected (`-m "not invariant"`) on 11 of the 12 pytest matrix
+  legs, reusing the same full leg (`ubuntu-latest`, 3.12) #1177 already keeps coverage on. They still
+  run once, on that leg, so nothing is silently unchecked -- `tests/test_invariant_marker_1176.py`
+  pins the registry against what actually carries the marker and asserts the deselect names exactly
+  one leg of the matrix (#1176).
+
+- CI: coverage is computed on one leg of the pytest matrix (`ubuntu-latest`, 3.12) rather than on all
+  twelve. `--cov-fail-under=85` was evaluated twelve times and the twelve numbers were never compared
+  to each other, so eleven of those evaluations bought nothing a reader saw -- about 11% of wall time
+  (#881's measurement), roughly 600s of the matrix's ~5567s per run. Coverage is now measured on one
+  OS and one interpreter, so a branch reachable only on Windows counts as uncovered (#1177).
+- The flag is chosen by a workflow expression on the step's own command line, with no `shell:`
+  override. Branching inside `bash` was the first version, and on `windows-latest` that replaced the
+  default shell for the whole test run: pytest under Git Bash resolves a different `git` than pytest
+  under PowerShell, and 123 tests across four launcher suites that pin their own PATH failed on every
+  Windows leg, serially (#1177).
+
+- CI: the pytest matrix runs under `pytest-xdist` with `-n auto --dist loadfile` on every leg. The
+  worker-sizing probe reported 4 workers on `ubuntu-latest` and `windows-latest` and 3 on
+  `macos-latest`, and nothing was consuming them. `--dist loadfile` rather than xdist's default
+  `load`: this suite builds git repositories, changes working directory and manages worktrees, and
+  keeping one file's tests on one worker is what lets those fixtures survive running beside each
+  other. A whole file lands on one worker, so the longest single file sets the floor -- the worker
+  count is not a speedup factor (#1177).
+- Recorded because it was misattributed for two rounds: the 123 launcher-suite failures seen on the
+  Windows legs while this change was in flight were NOT caused by parallelism. They came from a
+  `shell: bash` override on the test step, and reproduced on a serial run with no xdist workers in
+  the log (#1177).
+
+### Fixed
+
+- `CLAUDE.md`'s two summed-total sentences in "The manager skill is a spine plus one file per
+  phase" had drifted from the table they summarize -- the last re-sum predated #1136's large
+  rationale cut across the loop's own markdown, so both figures had gone stale without anybody
+  noticing. Re-derived both against current on-disk sizes (#1057).
+
+- `agents/auditor.md` and `agents/release-auditor.md` shared 286 8-grams (~10% of each) --
+  the total `Bash` grant's explanation, how a read happens through `supertool`, and "test
+  behaviour is reasoned, not run" were near-verbatim in both. That prose moved to
+  `agents/audit/shared.md`, the loop's first multi-parent fragment, budgeted separately in
+  `scripts/audit_shared.py` since neither `agent_budgets.BUDGETS` nor `developer_phases.DOCUMENTS`
+  fits a file with no single spine. Each agent kept its own decision -- the worktree-boundary check
+  for `auditor.md`, the tagging/publishing exception for `release-auditor.md` -- and now points at
+  the fragment for the shared argument (#1071).
+
+- `CLAUDE.md`'s "What is not proven yet" currency marker had no mechanical check keeping it
+  current: three consecutive releases (`v0.22.0` through `v0.24.0`) shipped with the marker
+  naming the *prior* release rather than the one just cut, caught only because an unrelated PR
+  later happened to reactivate a dormant test. `tests/test_claude_md_currency.py` now compares
+  the marker's named release against `CHANGELOG.md`'s newest heading unconditionally, not only
+  while `changelog.d` carries pending fragments, so a missed bump is caught on the very next PR
+  rather than waiting for the next release cycle to re-arm the gate. `commands/release.md` and
+  `skills/manager/phases/release.md` now name the bump as its own release-time step (#1077).
+
+- (#1081) The Windows Defender-exclusion step in `.github/workflows/tests.yml`'s `pytest` job
+  could fail the whole `windows-latest` leg on a runner-side cmdlet failure
+  (`Add-MpPreference -ExclusionPath ...` returning `0x800106ba`, the Defender service itself
+  unavailable) unrelated to the change under test -- and it rendered identically to a real
+  Windows test failure in `gh-pr:N:status`, distinguishable only by opening the job log. Each
+  `Add-MpPreference` call is now wrapped in try/catch rather than given a bare
+  `continue-on-error`, so the step can no longer fail the job on a cmdlet error and discloses
+  "applied" vs "failed" per path in the log, reusing the hit/miss/skip disclosure shape #1196
+  already added to this same workflow (the "Tool cache state" step) instead of a second,
+  silent shape.
+
+- `skills/manager/phases/accounting.md` told a session to attach `labels.filed_by_loop` to every
+  issue the loop files, unconditionally -- which, read literally, also tags an issue the maintainer
+  and the loop decided on together in a session and then asked the loop to write up. That
+  contradicted two things the file already says: the intake numerator counts only filings the loop
+  itself generated, and `select_issues_rank.rank` reads the label as settling authorship outright,
+  so a co-decided issue would rank in the loop's own band instead of the maintainer's. The
+  directive now turns on provenance -- the loop's own initiative, judged per issue rather than per
+  session -- not on which call site happened to type the issue up (#1083).
+
+- `scripts/tree_snapshot.py`'s `snapshot()` now records the current branch alongside `root`, so a
+  lane holding a before-snapshot has a cheap, high-signal way to catch a wrong-worktree read
+  before trusting anything `compare` says later -- a lane already knows its own branch name, and
+  two sibling lanes always sit on different branches even when their worktree paths look similar
+  at a glance. `agents/developer/review.md`'s worked example now reads `root`/`branch` back and
+  checks them against the calling lane's own worktree/branch immediately after taking the
+  before-snapshot, rather than leaving that as passive advice for "if you ever notice". This does
+  not claim to have found or closed the underlying mechanism behind three reported incidents
+  (#1024, #1078, #1096) of this call landing on a *sibling* lane's worktree even from a single
+  shell call; repeated investigation found no cross-worktree resolution heuristic anywhere in
+  this module, so this is a corroborating field and an active check, not a proof (#1096).
+
+- `scripts/scaffold.py`'s owned-README template and `CLAUDE.md`'s own file-map row for
+  `scripts/statusline.py` both still described a `next_tick` field ("when the next tick is
+  due") that #1079 removed in favour of the unlabelled-issue counts and the `trap.d/`
+  backlog count. Both prose sites now describe what `statusline.py` actually renders today,
+  and a new test (`tests/test_scaffold.py::test_owned_readme_describes_statusline_fields_
+  that_still_exist`) pins the owned-README template's wording so this class of drift is
+  caught mechanically the next time a statusline field changes. A self-review pass found a
+  third site carrying the identical stale prose -- `commands/scaffold.md`'s owned-file
+  table row for `.oss/statusline.py` -- fixed the same way (#1101).
+
+- `doctor.py`'s `_malformed_repo` fallback regex (only reached when `oss_config` fails to
+  import) excluded `/`, a literal backslash, and the letter `s` -- `\s` inside a character
+  class is a literal backslash followed by the letter `s`, not the whitespace shorthand -- so a
+  slug carrying the letter `s`, including this repo's own `Digital-Process-Tools/claude-oss`,
+  read as malformed while a slug carrying a literal space read as well-formed. Fixed the missing
+  backslash so the fallback matches `oss_config.REPO_RE` exactly (#1111).
+
+- `select_issues.select()` now names a `lane_label` filter and how many rows it removed in a new
+  `lane_label_filter` field (`{"label": ..., "removed": N}`, or `None` when no filter ran), so a
+  lane label matching nothing on the board is no longer indistinguishable from a genuinely empty
+  board -- both used to render the same `none-available` state with no way to tell them apart (#1112).
+
+- `pr_green.py`'s `_render` now flattens forge-supplied text (`gh` stderr and a CI leg's own name)
+  onto one line before stitching it into the line-structured receipt (`#N | STATE | ...`) a caller
+  parses one row at a time. An embedded newline used to put that text at column 0 of the next line,
+  where it could read as a second, unrelated row -- e.g. a fake `#999 | GREEN | ...` (#1113).
+
+- `tests/test_baseline_matches_disk_1014.py` compared declared baselines against disk for three
+  budget modules and not for the fourth with the identical shape, `scripts/developer_phases.py` --
+  whose two rows had drifted from disk by the time the gap was filed, with nothing to notice.
+  Extended to cover `developer_phases.DOCUMENTS` too (#1114).
+
+- #1118: `oss_rules.install()` now re-validates each dimension's symlink
+  ancestor chain immediately before that dimension's own mutating step, not
+  only in the up-front pass -- shrinking the race window from "between the
+  two whole passes" to "between one check and the write it guards" (still
+  not fully closed; see the comment above the re-check).
+
+- Release process: the "What is not proven yet" marker's release commit is
+  written before the cohort freeze runs (the freeze is keyed to the tag's own
+  timestamp, not to `now`), so the marker can never know the current
+  release's own cohort count at the moment it is written. `v0.25.0`'s marker
+  guessed it anyway and disagreed with the count actually applied at the tag
+  (30 cited, 32 applied). The release process now cites only a cohort that
+  has already finished freezing -- the previous release's -- and reports a
+  new cohort's own count for the first time in the *next* release's marker,
+  once its freeze has actually run (#1122).
+
+- `/oss:doctor` now catches a truncated plugin-cache unpack for a declared
+  dependency, rather than reporting it current on the strength of the install
+  record alone. The dependency-resolution check resolves the exact directory
+  `installed_plugins.json` names as active for this project and stats it for its
+  own `.claude-plugin/plugin.json`; a directory that exists but has no manifest
+  inside it is reported as a broken install, not folded into "resolves" (#1126).
+
+- `CLAUDE.md`'s "What is not proven yet" section cited `#815` as tracking the reach-probe and
+  owned-files re-derivation pass, but `#815` closed at v0.18.0 having only fixed the currency
+  marker, never performing that pass. Repointed the citation to `#1127`, the issue that now
+  tracks the outstanding work (#1127).
+
+- `CLAUDE.md`'s "curated by hand" rule forbade a lane from editing the file unless the release
+  marker bump or a change whose subject was the file itself, while three tests
+  (`tests/test_claude_md_budget_table_709.py`, `tests/test_claude_md_phase_budget_table_725.py`,
+  `tests/test_baseline_matches_disk_1014.py`) required exactly that whenever a lane grew a
+  budgeted file past its ceiling. Named a third, narrowly-drawn exception covering a forced
+  budget re-baseline -- only that file's own table row and the required explanatory paragraph
+  may move for that reason, nothing else (#1134).
+
+- Investigating #1137 turned up a real, fixable instance of the same defect class one level
+  below the classifier: `agent_role.py`'s `write_role_marker`/`clear_role_marker` caught a real
+  `OSError` on the write/unlink and returned the identical `False` already used for "not inside a
+  git repository" (write) or "no marker was there" (clear), so the CLI reported every such
+  failure as if the repository were missing, even when the actual cause was a permission denial,
+  a full disk, or a read-only mount. `agent_role.py`'s CLI now tells the causes apart and names
+  the real `OSError` instead; `write_role_marker`/`clear_role_marker`'s own bool contracts, and
+  every existing caller of them, are unchanged (#1137).
+
+- `lane_setup.py --claim` no longer needs a human to retype `select_issues.py`'s
+  own group-shortness explanation into `--short-reason`'s closed four-word
+  vocabulary. A new `--group-state STATE` flag takes the group's own `state`
+  field (`candidates` / `none` / `could-not-tell` / `lane-other`), unchanged,
+  and `compose_lane_fill` mechanically derives `--lane-fill`'s `REASON` from
+  it for three of the four states: `no-adjacent` from `none` and
+  `could-not-tell` from `could-not-tell` are literally what those two reasons
+  already mean (#918), and `did-not-search` from `lane-other` follows because
+  a `lane-other` lead never calls the board sweep at all (#1130) -- exactly
+  #918's own definition of `did-not-search`, "a computation nobody started".
+  The fourth, `candidates` (some companions found, the group still ran
+  short), deliberately has no translation: `board-exhausted` is a claim about
+  the WHOLE board's remaining disjoint candidate count (#871), which one
+  group's own `state` never establishes, so it is never guessed at -- an
+  explicit `--short-reason` is still required for that state, and still wins
+  over `--group-state` whenever both are given. (#1153)
+
+- `/oss:doctor` no longer tells a launcher-opened session to run `/reload-plugins`
+  after an update that already ran before that session started. `bin/oss-workspace`
+  updates the plugin synchronously, before `exec claude`, so there is no old copy
+  for a reload to move -- but the doctor row and the dependency row both branched
+  on `state` alone and gave the reload advice unconditionally. `plugin_update.
+  update()` now records who ran the update (`--caller launcher`), and both rows
+  read it back before recommending a remedy that would do nothing (#1154).
+
+- Fixed `scripts/gate3_disposition.py`'s `decide()` treating `has_blocking` as
+  two-state. A round-two `findings` verdict with `has_blocking=None` (an
+  unranked or could-not-rank finding, never actually established either way)
+  silently returned `carry-forward-and-proceed` -- the same demotion of
+  "never ranked" into "does not block" this repository is named after. `decide()`
+  now accepts a third state, `gate3_disposition.BLOCKING_UNKNOWN`, and maps it
+  to `could-not-decide` rather than folding it into `False`. The CLI's
+  `--blocking` flag now accepts `unknown` alongside `yes`/`no`, so a releaser
+  under pressure has a route to the honest answer instead of being pushed
+  toward `no`. No live caller in the documented gate-3 flow currently produces
+  an unranked `has_blocking` at the CLI boundary -- `commands/release.md`
+  already resolves `could not rank` to `could-not-run` before this call runs
+  -- so this closes a latent composition gap between two commits that each
+  looked correct alone, before a caller exercises it under narrative
+  pressure. (#1158)
+
+- `lane_setup_worktree.worktree_last_activity()` now routes a per-entry `lstat` failure inside its
+  walk into the same `could-not-tell` path the directory-level walk error already used, instead of
+  silently skipping the entry. The function's own docstring promises "a partial walk is reported as
+  `could-not-tell` even when it already found some files"; an unreadable, recently touched file used
+  to break that promise and return a stale `mtime` under a confident `resolved` state -- exactly the
+  signal a sub-manager reads before deciding whether a worktree is safe to re-brief into (#1159).
+
+- Fixed `scripts/select_issues.py`'s `_attach_bodies`: a group member whose
+  number had no matching row in `issues_by_number` used to fall through to
+  a fenced empty body (`body_length: 0`, `body_truncated: False`) --
+  indistinguishable from an issue whose real body genuinely is empty. Every
+  current call path builds both lists from the same board fetch, so this
+  join miss cannot happen today; the new `body_state` field
+  (`"fetched"` / `"no-matching-row"`) is a guard against a future change
+  that fetches the two lists separately, filed as latent by a release audit
+  (#1160).
+
+- The releaser could not read whether a pull request had gone green, though a sub-manager already
+  held a script and a named trap for exactly that (#1086's `NOT ALL GREEN` substring trap). Gate
+  3's blocking arm puts a fix on the release's critical path by construction, so landing it means a
+  releaser merging one with no instruction. Added `skills/manager/phases/ci-green.md`, shared by
+  `agents/sub-manager.md` and `agents/releaser.md`, both of which now point at it rather than
+  restating the `pr_green.py` call and its four states (#1162).
+
+- A sub-manager reading `skills/manager/phases/tick-order.md`'s dispatch-selection directive
+  could miss it entirely: it sits past the ~292-line window a `supertool read` with no explicit
+  end returns by default, so a sub-manager reading only the first window never saw it, went
+  hunting for `scripts/select_issues.py` by `ls`/`find`, and burned turns on the auto-mode
+  classifier denying then allowing the identical read-only command. The literal, runnable command
+  now lives directly in `agents/sub-manager.md`, which is injected whole on every turn and never
+  truncated (#1179).
+
+- `select_issues.py`'s default fleet print no longer attaches every issue body to its groups: those
+  bodies were measured at 66% of a real fleet's serialized bytes, enough on their own to push the
+  payload over the harness's output-truncation cap and hand step 2 a file pointer instead of a fleet.
+  A new bounded second call, `select_issues.py --bodies N N ...`, fetches back just the fenced bodies
+  of the groups a caller actually kept; a direct library call to `select_fleet()` still gets bodies
+  attached by default (`include_bodies=True`), unchanged (#1180).
+
+- `scripts/review_return.py --framed` correctly refused to guess a finding stated in full,
+  clear prose directly under a bare "Class C" (or similar) label -- a header claiming
+  `FINDINGS: 1` over zero enumerable markdown markers reads as `could-not-classify` by design,
+  and a test in this repo's own suite already pins that refusal against the "loosen the parser"
+  fix, so this was left unchanged. The actual gap was upstream: `agents/auditor.md`'s report
+  contract did not require a finding to be rendered as a list item, so a compliant auditor could
+  emit exactly this uncountable shape. Its report-format section now says so explicitly, closing
+  the gap without weakening `scripts/review_return.py`'s existing refusal (#1186).
+
+- `agents/sub-manager.md` carried two contradictory CI-wait rules -- #818 said hand a wait back
+  always, #1086 handed over `pr_green.py --wait` instead -- and a sub-manager that followed #818
+  paid ~11k tokens per resume finding no other work to dispatch into a lane freed mid-wait. One
+  ordered procedure replaces both: re-select a freed lane first, else wait inside the turn with
+  `pr_green.py --wait`, else hand back with the fleet's occupancy folded into `WAIT-OBSERVABLE`
+  (#1190).
+
+- CI: `pytest (windows-latest, 3.9)` no longer downloads CPython 3.9 fresh on every run.
+  `setup-python` reports `Version 3.9 was not found in the local cache` on that runner image
+  and installs it -- measured at 44s of the 229s critical-path `Run tests` step under xdist
+  (#1177 made this leg the critical path; before that it was 6% of a serial leg and correctly
+  out of scope). A new step restores the hosted tool-cache VERSION directory (not the `x64/`
+  subdirectory beneath it, whose sibling `x64.complete` marker `setup-python` still checks)
+  before `setup-python` runs, Windows-only and 3.9-only, following the pattern already shipped
+  in `Digital-Process-Tools/claude-supertool`'s own CI (#1127 there). A "Tool cache state" step
+  discloses hit/miss/skip/stale-pin explicitly rather than leaving it to be inferred from
+  `Set up Python`'s own duration -- a cache written on a pull request branch is visible only to
+  that branch, so the first PR after this change lands may still pay the download once (#1196).
+
+- `skills/manager/phases/dispatch.md` and `agents/sub-manager.md` still described a sub-manager
+  choosing or typing `--lane-fill`'s short-lane REASON word by hand, with no mention of the
+  mechanical `--claim --group-state STATE` path #1153 added to `lane_setup.py`. Both now name it as
+  the normal path -- `select_issues.py`'s own group `state` field, pasted unchanged, derives the
+  REASON word for three of the four states -- and keep `--short-reason` documented as the explicit
+  override, for the unmapped `candidates` state and for a lane composed some other way (#1198).
+
+- `lane_setup.py`'s `_GROUP_STATES` constant is now imported from `select_issues_companions.py`
+  instead of retyped as a second, hand-kept copy of the vocabulary `select_issues.py`'s own per-group
+  `state` field takes -- a future rename or addition to that vocabulary in the producer module now
+  reaches `lane_setup.py` automatically instead of silently drifting from it (#1199).
+
+- `select_issues.py --board` fetches its own board now, the same way the script's default mode
+  already does, instead of reading a board-shaped payload on stdin -- closing the gap #1178 had
+  papered over by documenting the stdin contract at two phase-file call sites instead of removing
+  it. `docs/pick-the-work.md` already stated, twice, that this entry point takes no stdin at all;
+  the code now matches that design rather than the design being amended to match a leftover code
+  path (#1200).
+
+- `.oss.json`'s `lane_patterns` left `CLAUDE.md`'s phase-budget table and its
+  four sibling bookkeeping scripts (`scripts/skill_phases.py`,
+  `scripts/agent_budgets.py`, `scripts/command_budgets.py`,
+  `scripts/developer_phases.py`) outside any lane's declared file pattern
+  except `CLAUDE.md` itself -- so two file-disjoint lanes in the same tick
+  (#1195, #1194) both re-baselined the same adjacent table rows and the
+  dispatch-time collision check (`lane_setup.py --derive-held`) could not see
+  the overlap, since it compares only each lane's own declared pattern (#1201).
+  `lane-prose`'s pattern, which already names `CLAUDE.md` whole-file, now also
+  names the four scripts, so a lane touching any of them declares the same
+  contended lane the table itself lives in.
+
+- `agents/auditor.md` and `agents/release-auditor.md` stopped stating the delegated-test-run
+  rule (#874) in their own raw text once #1071's dedup moved it to `agents/audit/shared.md` and
+  left only a runtime pointer behind -- but `tests/test_delegated_test_run_877.py` reads each
+  file's own bytes directly and never resolves that pointer, so the marker sentence silently
+  stopped existing anywhere the test could see it, and the test itself had gone unnoticed red
+  because a separate CI-integrity bug had been silently skipping the "Run tests" step on `main`.
+  Restored in both files' own text, alongside the shared fragment and its pointer, which stay for
+  the human reader; a self-review round then found that a byte-identical restoration in both files
+  re-crossed `tests/test_audit_shared_1071.py`'s own duplication ceiling (the same defect #1071
+  had fixed), so `release-auditor.md`'s copy was reworded to keep the same required substrings
+  with different surrounding prose, and `agents/audit/shared.md` was corrected to no longer claim
+  it carries the shared argument in only one place (#1210).
+
+- `tests/test_workspace_launcher.py` failed intermittently on CI under `-n auto
+  --dist loadfile` (#1177's xdist rollout, #1214), observed cross-platform
+  (ubuntu and windows). Traced, not assumed: the issue's own hypothesis was a
+  shared,
+  fixed-name resource collision between xdist workers -- not confirmed here,
+  and contradicted by what the actual CI logs showed once read in full.
+  `run()`, this file's own launcher-test harness, invokes `bin/oss-workspace`
+  without `OSS_WORKSPACE_SKIP_DOCTOR=1` for nearly every one of its ~100
+  tests, so the REAL setup diagnostic (`scripts/doctor.py`) runs, reaches the
+  network, and prints its own warning count -- measured to differ between two
+  runs of the identical fixture (35 warnings locally, 36 on one observed CI
+  run). Tests asserting a substring like `"could not be checked" not in
+  done.stderr` were scoped to the WHOLE, noisy diagnostic output rather than
+  to the launcher's own naming/consumer-resolve logic they were named for, so
+  an unrelated diagnostic line (`doctor_check_auto_update.py`'s own network
+  check) could satisfy or violate the assertion by coincidence -- more likely
+  under CI's heavier parallel network contention than on one quiet machine.
+  `run()` now defaults `OSS_WORKSPACE_SKIP_DOCTOR=1`, the same way it already
+  defaults `OSS_NO_AUTO_UPDATE=1`, so the diagnostic only runs for the two
+  tests that are genuinely about it and opt back in explicitly.
+
+- `tests/test_durations_recorded_881.py` and `tests/test_duration_report_plugin_910.py`
+  each spawn a nested `pytest` subprocess against a throwaway stub test, and #1214's
+  second, still-open signature (distinct from the launcher-test race #1221 already
+  fixed) showed both dying intermittently during their own **collection** under
+  `-n auto --dist loadfile` (#1177): a directory one of them needed had vanished,
+  because a nested pytest's rootdir always resolves to the repository root (it
+  walks UP from the given path to find `pyproject.toml`), and that root is shared
+  by every concurrent worker's own nested subprocess. Two confirmed, independently
+  fixed instances: `test_durations_recorded_881.py` created its scratch directory
+  as a **direct child of the repository root** (`_durprobe_881_*`) rather than
+  nesting it under `tests/` the way `test_duration_report_plugin_910.py` already
+  did -- now fixed to match. Both files' nested `pytest` invocations now also run
+  with `-p no:cacheprovider`, so neither is a party any more to the write race at
+  the shared, rootdir-level `.pytest_cache` directory that produced the issue's
+  second observed instance (`pytest-cache-files-*`, pytest's own cache-dir
+  atomic-rename tempfile). Nesting the 881 stub under `tests/` newly exposed
+  it to `tests/conftest.py`'s own plugin registration (`pytester`, `must_assert_plugin`,
+  `duration_report_plugin`), undercutting that file's own stated need for an
+  isolated Config resolution -- caught in this lane's own self-review, fixed by
+  disabling all three by name on that one invocation. `tests/conftest.py` also
+  gained `collect_ignore_glob = ["_durprobe_*"]`, so a scratch directory either
+  file leaves behind after an abnormal kill (job cancellation, OOM -- the
+  `finally:` cleanup only runs on a normal unwind) is never picked up as a real
+  test by the next full-suite collection. A fully deterministic repro of the
+  exact interleaving was not practical in a single-process, single-platform test
+  run; verified instead with a live root-directory monitor proving no scratch
+  artifact lands directly at the repository root any more, and a `--trace-config`
+  check that the cache plugin is genuinely inactive for both nested invocations
+  (an earlier version of this same check deleted the real, shared `.pytest_cache`
+  directly, itself a small instance of the very defect class #1214 is about, and
+  was replaced before this landed) (#1214).
+
+- Nothing swept for a THIRD root-level scratch-artifact site (#1214's own class): the
+  race fired five times in one day, three of them on `main` itself. Two independent
+  fixes. **A direct config fix for the recurring `.coverage` collision**
+  (`PermissionError: [WinError 32] ... .coverage`, observed four of the five times):
+  `tests/test_durations_recorded_881.py`'s nested `pytest` subprocess used to inherit
+  `pyproject.toml`'s real `addopts` verbatim, including `--cov=scripts`, so it started
+  its own coverage.py session against the SAME shared `.coverage` file a concurrent
+  xdist sibling (or the outer suite's own coverage session) could be reading, combining
+  or erasing at that exact moment. `--no-cov` on that one invocation removes it from the
+  race entirely. **A whole-suite generalisation of the original, narrower guard**:
+  `tests/root_scratch_guard.py`, a new pytest plugin registered for the whole session
+  (not just around the two known stub runs #1214's own `_RootWatcher` already covers),
+  watching the repository root's direct children for the whole run and failing loudly,
+  naming the entry, if anything unexpected appears -- read-only (never itself writes,
+  deletes or renames at the root) and controller-only under `-n auto --dist loadfile`
+  (one watcher and one allowlist, not N racing copies of the same problem). The harder
+  generalisation from the issue's own comment thread -- "any path inside the checkout
+  shared between concurrent workers and written, created or removed during a run",
+  covering a shared TRACKED SOURCE directory (`skills/manager/phases/undeclared-
+  control.md`) and any other pre-existing shared file -- is deliberately out of scope
+  here; a follow-up is filed for it rather than guessing at scope or allowlist shape
+  under time pressure (#1228).
+
+- The same #1229 doctor check broke `tests/test_workspace_doctor_route_receipt_1064.py` on CI
+  (5 of 18 legs red): `scripts/doctor_check_lane_patterns.py` imports `lane_pattern_coverage`,
+  which imports `select_issues_overlap`, and neither matched that test's hand-kept list of
+  which real `scripts/` modules to copy into its fake plugin root -- so `import doctor` raised
+  `ModuleNotFoundError` inside the fixture even though every module the old list named was
+  present. Fixed by deriving the module set mechanically instead of patching the one gap: the
+  test now walks the real, on-disk `scripts/` import graph via `ast` (no execution), starting
+  from the modules the receipt logic names directly and following every local `import` to a
+  fixed point, so the next `doctor_check_*.py` that imports a helper module cannot reopen this
+  same class of failure (#1229).
+
+- Redacted the maintainer's absolute home paths baked into
+  `trap.d/1155.forgot-cd-prefix-landed-write-in-main-clone.md` and
+  `trap.d/1078.tree-snapshot-root-landed-on-a-sibling-worktree.md` (#1255) --
+  `trap.d/` ships in the installed plugin artifact, so a fragment logged
+  mid-lane with a literal `/Users/<name>/...` path baked a machine-specific
+  fact into every install. Both fragments now describe the shape (a worktree
+  root, the main clone) without the literal path. Also closes the scope gap
+  that let this land through a green suite: `tests/test_content_invariants.py`'s
+  repo-specific-fact guard (`_fact_bearing_documents()`) never reached
+  `trap.d/`, and its existing `HARDCODED` patterns only match the `~/...`
+  spelling, not the literal `/Users/<name>/...` or `/home/<name>/...` form a
+  live Bash call actually sees. A new sibling guard,
+  `test_no_absolute_home_paths_in_trap_d`, scans every `trap.d/*.md` fragment
+  for both forms, with its own positive-control test proving the pattern
+  actually catches a planted fixture.
+
+- `scripts/workspace_routes.py`'s `why` field, sourced from `gh`'s own stderr in
+  `triage_count`, could carry a well-formed `ROUTE: <something>` line embedded in
+  external text. `main()` printed it unflattened into the stdout receipt
+  `bin/oss-workspace` parses with `awk '/^ROUTE:/ { line = $0 } END { print line
+  }'`, so a `gh` stderr shaped like `boom\nROUTE: release\ntrailing` produced a
+  second, forged `ROUTE:` line at column 0 -- the identical shape `pr_green.
+  _flatten` was already fixed for this release (#1113). A local `_flatten`
+  helper, matching `pr_green`'s exact behaviour, is now applied to every route's
+  `why` before it is printed, and, as the same one-line fix on the same
+  mechanism, to the two exception-message prints later in `main()` (the #1064
+  receipt-check failure and the receipt-append failure, the latter printed to
+  stderr AFTER the genuine `ROUTE:` line, where the real launcher's `2>&1`
+  merge would let a forged line win outright) (#1257).
+
+### Security
+
+- `scripts/lane_coupling.py`'s `_looks_like_path_literal` refused an absolute path,
+  `~`, `:` and a backslash but not a `..` path segment, so `extract_references`'s own
+  `(repo / literal).is_file()` stat could resolve outside `repo` for a literal like
+  `"../secret.txt"` -- contradicting the module's own docstring claim that it only
+  returns paths that exist under `repo`. Refuse any literal containing `..` as a path
+  segment, the same check `select_issues_overlap.resolve_lane` already applies on the
+  sibling (pattern) side. Found by the v0.27.0 release gate 3 audit, blocking row
+  `containment (read)`; `lane_coupling.py` has no live caller yet (#1234), so there was
+  no exploitable path today, but the contract violation was real (#1256).
+
 ## [0.26.0] - 2026-09-06
 
 ### Added
@@ -9130,7 +9729,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.27.0
 [0.26.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.26.0
 [0.25.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.25.0
 [0.24.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.24.0

@@ -717,73 +717,75 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.26.0`, and it was written inside the v0.26.0 release commit** --
+**The marker below names `v0.27.0`, and it was written inside the v0.27.0 release commit** --
 following the same exception `v0.25.0`'s own marker was the first to honour.
 
-**The delta count, gate 3's audit rounds and the cohort freeze WERE re-derived for `v0.26.0`. The
-reach probe and the field readings were not.** Keeping those two halves apart is the point of this
-paragraph.
+**The delta count and gate 3's audit rounds WERE re-derived for `v0.27.0`. The cohort freeze
+citation below could not be independently re-confirmed. The reach probe and the field readings
+were not.** Keeping those three states apart is the point of this paragraph.
 
-**Delta, taken two ways that agree.** The range is `v0.25.0..HEAD`: **16** merged pull requests, reported `[EXACT]` from the
-forge's own search index (`merged:>=2026-09-06T01:22:21Z`, the tag's own commit timestamp), and
-`git rev-list --count v0.25.0..HEAD` independently returns **16**; the release op ran that
-cross-check itself and reported `RAN and AGREED`. The open-issue count for the cohort freeze below
-was taken two ways too -- `gh-issues`'s own `42 issue(s)` line and `gh issue list --json --limit 200`
-counted independently -- and both read **42**.
+**Delta, taken two ways that agree.** The range is `v0.26.0..HEAD`: **45** merged pull requests,
+reported `[EXACT]` from the forge's own search index (`merged-at:>=2026-09-06T17:54:03Z`, the
+tag's own commit timestamp converted to UTC), and `git rev-list --count v0.26.0..HEAD`
+independently returns **45**; both routes agreed.
 
-**Gate 3, and this release is the first to need a verification round beyond its own two-round cap
-to actually clear.** Two formal rounds, the hard cap, same as `v0.25.0`. Round one (over
-`v0.25.0..9216aeb`, 13 commits): 4 findings -- `#1163` (`executes`, **blocking**, a fix for the
-prior release's own `#1157` that had left one converted site un-converted) and `#1164`
-(`ships-local-state`, **blocking**, a stray committed test-probe directory), plus `#1165` and
-`#1166` (both non-blocking, filed and carried). Round two, over the range recomputed after
-`#1163`/`#1164` landed (`v0.25.0..1a1e0b5`, 14 commits): 1 new finding, `#1168`, **also
-`executes`, also blocking** -- the identical mechanism, a third call in the same eight-line
-`doctor.py` block the first fix had not been pointed at, plus `#1166` and `#1170` non-blocking.
-**Neither blocking finding was filed-and-shipped; both stopped the tag and were fixed and merged
-before it moved.** That is where the two-round cap ended, and it was not where the defect class
-ended: a verification dispatch run *outside* the cap specifically to check `#1168`'s own fix, the
-same shape `v0.25.0`'s own third audit used, found the fix correct for the two names it touched and
-then found **two more** open instances of the identical mechanism in the same file --
-`#1172` (`check_tool`'s own `"supertool"` branch, left bare by `#1168`'s scoping) and `#1173` (four
-further bare `gh`/`git` spawns elsewhere in `doctor.py`, never before named individually). Both
-blocking, both fixed and merged before the tag, in one bundled change that also closed the
-already-filed, non-blocking `#1165` (a repository-wide sweep guard) so a sixth instance cannot land
-silently. **Four consecutive fixes for one defect class, each correct for the sites it was pointed
-at and each missing a sibling site in the same function or the same file, until the fifth fix added
-a mechanized sweep instead of another hand-check.** The uncomfortable half, stated the same way
-`v0.25.0`'s marker stated it: the defects that came nearest to shipping were caught by dispatches
-outside the gate's own formal count, not by the gate itself.
+**Gate 3, and this release is the second in a row to need a verification round beyond its own
+two-round cap to actually clear.** Two formal rounds, the hard cap, same as `v0.25.0` and
+`v0.26.0`. Round one (over `v0.26.0..2828308`, 42 commits): 4 findings, **none in a blocking
+row** -- `#1251` and `#1252` (both `misreports`), `#1253` (`unranked`, judged non-blocking: a
+doctor check that can never clear on this repo because `gh pr list` hits its own 500-PR page
+limit), `#1254` (`splices`); all four filed and carried rather than fixed, since the two-round
+protocol only forces a fix ahead of the tag for a blocking row. Round two, over the identical
+range (unchanged, because nothing from round one blocked and so nothing was fixed before it ran):
+**3 new findings, and this time all three were blocking** -- `#1255` (`ships-local-state`, a
+maintainer's absolute home path baked into a `trap.d/` fragment that ships in the installed
+artifact), `#1256` (`containment (read)`, a path-literal filter that refused an absolute path but
+not a `..` segment, letting a stat land outside the repo), `#1257` (`forges`, unflattened `gh`
+stderr that could land a forged `ROUTE:` line in a receipt an `awk` parses for one). **None of the
+three was filed-and-shipped; all three stopped the tag and were fixed, reviewed, merged and
+watched to a green `main` before the tag moved.** That is where the two-round cap ended, and a
+verification dispatch run *outside* the cap, the same shape `v0.25.0`'s third audit and
+`v0.26.0`'s fifth-fix sweep both used, checked each of the three fixes against the actual code
+(not the fix commit's own description) and found **all three verified-fixed, with no new instance
+of any blocking class introduced by any of the three fixes** -- but it also found three more
+non-blocking findings in the immediate neighbourhood of the fixes themselves (`#1261`, a guard
+added by the `#1255` fix that does not recognise a Windows-spelled home path; `#1262`, that same
+guard's narrow scope to `trap.d/` alone when several other shipped directories are written the
+same way; `#1263`, one interpolation beside the one the `#1257` fix flattened, left unflattened,
+currently unreachable but the identical mechanism). Ten findings in total across the three
+dispatches (`#1251`-`#1254`, `#1255`-`#1257`, `#1261`-`#1263`); three were blocking and all three
+are fixed and merged; seven are filed and carried. Stated the same way the last two markers
+stated it: the verification dispatch is still where the class not caught by the formal round count
+turns up, this time on both sides -- it confirmed the fixes were real fixes, and it still found
+something the fixes themselves had not covered.
 
-**Cohort freeze: cohort-22 at 42 open issues, against cohort-21's 29.** It grew, and by more than
-the previous jump. Stated plainly rather than smoothed over: this release's own findings account
-for a meaningful share of that growth (`#1163` through `#1175`, several already closed by the
-fixes above but replaced on the board by their own non-blocking siblings and follow-ups --
-`#1165` closed, `#1166`/`#1169`/`#1170`/`#1175` still open). That is now three consecutive cohorts
-that grew, which is a trend rather than an artefact, and this release's own gate 3 is a visibly
-larger contributor to it than `v0.25.0`'s was.
+**Cohort freeze: cannot be cleanly cited this release, and that is stated rather than guessed
+past.** Per #1122's rule, this marker must cite a cohort that has already finished freezing --
+never this release's own not-yet-frozen one -- so the candidate is `cohort-22`, frozen at
+`v0.26.0`'s tag. `scripts/cohort_citation_order.py` against this machine's own state file
+returned `could-not-check`: no `measured` freeze record exists there for `cohort-22` (the last
+entry with a recorded, agreeing freeze is `cohort-21` at **32**, timestamped
+`2026-09-06T01:40:12Z`). The prior marker (written for `v0.26.0`) cited cohort-22 at **42**, by
+its own admission before that cohort's freeze had actually run -- the same premature-measurement
+defect #1122 was written to close. A fresh independent check run now, `gh api graphql` against
+the `cohort-22` label's own `issues.totalCount` (open and closed together, which a frozen cohort
+label should never grow past), returns **43** -- one more than the figure the prior marker
+guessed. Neither number is re-asserted here as the settled count: the discrepancy is named rather
+than silently resolved by picking one, because the honest content of this paragraph is that the
+label accounting for `cohort-22` does not currently agree with itself, not a smoothed-over
+figure. Tracked as a fact for whoever next reconciles it, not a blocking gate.
 
-**This citation is itself an instance of the exact defect #1122 fixes, written before that fix
-existed.** Cohort-22 did not exist yet at the moment this marker was committed -- its freeze runs
-at `v0.26.0`'s own tag, strictly after this commit -- so "42" here was a number taken before the
-freeze it claims to report, the same premature measurement `v0.25.0`'s marker made for cohort-21
-(cited 30, applied 32). #1122's fix governs the marker written for the release that follows this
-one onward; it does not rewrite this one, because doing so would misdate prose that already
-shipped as read at the time it was written. The honest correction lands where the rule now says it
-must: the next release's own marker cites cohort-22's settled count, once its freeze has actually
-run, in place of guessing its own not-yet-frozen cohort's.
-
-**The reach probe was NOT re-derived at `v0.26.0`** -- it is still `v0.21.0`'s, measured at `c565488`,
-eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of the field
-readings were not either: the owned-files table, the two installs and the `doctor` run are still
-`v0.17.0`'s, measured at `ad38b93` and now carried through **nine** tags (`v0.18.0` through
-`v0.26.0`). `#1127` tracks re-deriving them -- replacing `#815`, which closed at `v0.18.0` having
-tracked only the marker-paragraph fix (#817), never the full pass, and had been cited here as the
-tracker for over eight releases after it stopped being one. A ninth release disclosing the
+**The reach probe was NOT re-derived at `v0.27.0`** -- it is still `v0.21.0`'s, measured at
+`c565488`, eleven repositories in the one org it can see and four carrying `.oss.json`. The rest
+of the field readings were not either: the owned-files table, the two installs and the `doctor`
+run are still `v0.17.0`'s, measured at `ad38b93` and now carried through **ten** tags (`v0.18.0`
+through `v0.27.0`). `#1127` tracks re-deriving them -- replacing `#815`, which closed at `v0.18.0`
+having tracked only the marker-paragraph fix (#817), never the full pass, and had been cited here
+as the tracker for over eight releases after it stopped being one. A tenth release disclosing the
 identical, unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low
 priority against everything else this loop spends a tick on, or the disclosure is not actually
-driving anyone to close it. Both are worth naming and neither is decided here — the honest content of this
-paragraph is the count itself, nine releases running, not a conclusion drawn from it. **The
+driving anyone to close it. Both are worth naming and neither is decided here — the honest content
+of this paragraph is the count itself, ten releases running, not a conclusion drawn from it. **The
 readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
 marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release
 commit, per this section's own stated exception, so a developer lane does not have to catch the gap
