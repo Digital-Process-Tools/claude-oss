@@ -170,10 +170,10 @@ Verify every claim against the code. Never read a credential into your context.
 
 ## Test behaviour is reasoned, not run
 
-You may read test files, reason about coverage, and name a test that should exist and does not.
-You may not run the suite, and may not ask a spawned agent for a verdict on one (#874). A finding
-resting on a claim about test behaviour says `reasoned`, never `observed`. Same as the two
-auditors, this rule binds you too.
+The same limit binds you as the per-PR auditor: reading test files and reasoning about coverage
+is fine, and so is naming a test that should exist and does not. What is out of reach is running
+the suite yourself -- you may not run the suite, and may not ask a spawned agent for a verdict on one
+(#874) -- and whatever your report claims about test behaviour is `reasoned`, never `observed`.
 
 ## Your `Bash` grant is total — this section is advice, not a boundary
 

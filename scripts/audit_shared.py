@@ -32,8 +32,13 @@ FRAGMENT = "agents/audit/shared.md"
 PARENTS = ("agents/auditor.md", "agents/release-auditor.md")
 
 #: (bytes measured when the budget was set, budget bytes incl. ~10% headroom).
-BASELINE = 2576
-BUDGET = 2900
+#: Re-baselined for #1210: the fragment gained one sentence pointing at the
+#: two parents' own restored copies of "test behaviour is reasoned, not run"
+#: (see CLAUDE.md's #1210 note), 2576 B became 2899 B -- 1 B under the old
+#: 2900 B ceiling, so the ceiling moved with it rather than being left with
+#: no headroom at all.
+BASELINE = 2899
+BUDGET = 3190
 
 
 def check() -> dict:

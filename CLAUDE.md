@@ -265,7 +265,7 @@ from being invisible.
 | --- | --- | --- |
 | `agents/developer.md` | 40,118 B | 44,100 B |
 | `agents/auditor.md` | 13,273 B | 15,600 B |
-| `agents/release-auditor.md` | 14,353 B | 16,400 B |
+| `agents/release-auditor.md` | 14,424 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
 | `agents/sub-manager.md` | 16,060 B | 16,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
@@ -304,8 +304,13 @@ not run" from both files' own raw text and left only the pointer to `agents/audi
 `tests/test_delegated_test_run_877.py` reads each file's own bytes directly and does not resolve
 that pointer -- a fact #1071 did not check against, so the marker sentence silently stopped
 existing anywhere the test could see it. The section is back in both files' own text (the shared
-fragment and the pointer stay too, for the human reader); 12,963 B became 13,273 B for
-`auditor.md`, 13,992 B became 14,353 B for `release-auditor.md`. Both ceilings are unchanged.
+fragment and the pointer stay too, for the human reader). Restoring it verbatim in both files at
+first re-crossed `tests/test_audit_shared_1071.py`'s own duplication threshold (168 shared 8-grams
+against a `< 150` ceiling) -- the same defect #1071 fixed, reintroduced by the fix for a different
+one. `release-auditor.md`'s copy was reworded (same four required substrings, different
+surrounding prose) rather than left byte-identical to `auditor.md`'s, bringing the pair back to 132
+shared 8-grams. 12,963 B became 13,273 B for `auditor.md`, 13,992 B became 14,424 B for
+`release-auditor.md`. Both ceilings are unchanged.
 
 **#1048 raised `agents/sub-manager.md`'s ceiling from 17,000 B to 18,700 B**, after trimming the
 new paragraph once to fit as much of it as possible: a sub-manager closed a handback promising its

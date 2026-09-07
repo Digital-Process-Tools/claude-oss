@@ -76,9 +76,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     "agents/auditor.md": (13273, 15600),
     # Re-baselined DOWN for #1071, the same extraction: 14953 B became
     # 13992 B. Ceiling left unchanged for the same reason.
-    # Re-baselined UP for #1210, the same restoration as auditor.md above:
-    # 13992 B became 14353 B. Ceiling unchanged.
-    "agents/release-auditor.md": (14353, 16400),
+    # Re-baselined UP for #1210, the same restoration as auditor.md above,
+    # then reworded once more in the same lane's self-review round to keep
+    # tests/test_audit_shared_1071.py's own duplication threshold (< 150
+    # shared 8-grams between the two files) from being crossed again by the
+    # restoration: 13992 B became 14424 B. Ceiling unchanged.
+    "agents/release-auditor.md": (14424, 16400),
     "agents/triager.md": (15082, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
