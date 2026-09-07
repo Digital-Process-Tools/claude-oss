@@ -118,6 +118,11 @@ Two answers that are not the same and must never print the same:
 - **`could not rank`** — the table did not reach you: neither the file nor the brief carried it. Say
   which of the two was missing. This never renders as `unranked`, and never as an omitted row.
 
+**The row also decides where the finding goes once it leaves this report (#1275).** Read
+`findings.md`'s "Routing a finding" section — a blocking row is filed as an issue immediately, a
+non-blocking row becomes a `trap.d/` fragment, `unranked` files like a blocking row. You annotate;
+you do not file the issue or write the `trap.d/` fragment yourself.
+
 ## What CI already covers decides the weight of a platform finding
 
 A platform finding is worth reporting in proportion to what nothing else will catch. That is a fact

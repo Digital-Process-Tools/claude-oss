@@ -1220,7 +1220,7 @@ AUDIT_AGENTS = [
 ]
 
 RANKING_BLOCKS = "yes, unconditionally"
-RANKING_FILES_IT = "can ship behind a filed issue"
+RANKING_FILES_IT = "can ship behind a trap.d fragment"
 RANKING_VERDICTS = (RANKING_BLOCKS, RANKING_FILES_IT)
 
 # The table gained a second verdict column when release-blocking and embargo were split

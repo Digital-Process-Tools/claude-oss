@@ -129,7 +129,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # stated #818's "always hand back" rule as the whole answer,
         # contradicting the new decision procedure agents/sub-manager.md
         # gained the same round. Budget unchanged; comfortably under it.
-        41601,
+        # Re-baselined for #1275's own self-review round: 41601 B became
+        # 41738 B -- the "report-for-filing" summary sentence still claimed
+        # "the three receipts", stale the moment review.md gained a fourth
+        # (a trap.d/ fragment for a non-blocking row). Budget unchanged;
+        # comfortably under it.
+        41738,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -282,15 +287,27 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # for the same gap agents/developer/review-return.md's own new
         # section closes on the developer side. Ceiling unchanged;
         # comfortably under it.
-        10829,
+        # Re-baselined for #1275's self-review round: 10829 B became
+        # 11390 B. A self-review round found the three-receipts list still
+        # defaulted a non-blocking finding to a new issue, so the receipt
+        # list gained a fourth entry (a trap.d/ fragment) and a rank-first
+        # instruction. Ceiling unchanged; comfortably under it.
+        11390,
         11400,
         "reviewing a returned diff, and what an issue body filed out of one looks like, when a fix-for-a-finding needs its own pass",
     ),
     "skills/manager/phases/findings.md": (
-        9326,
-        10300,
-        "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board",
+        11222,
+        12400,
+        "ranking a finding: the eleven classes, the blocking and embargo columns, routing by row (#1275), and filing on a dependency's own board",
     ),
+    # Raised for #1275: 9326 B became 11222 B, past the old 10300 B ceiling by
+    # 922 B. The new "Routing a finding" section states where a ranked finding
+    # goes once it is ranked -- filed as an issue for a blocking or unranked
+    # row, a trap.d/ fragment for everything else -- closing the gap #1275
+    # named: 21 of 30 open issues carried filed-by-loop, because nothing
+    # routed a non-blocking finding anywhere but the tracker. Ceiling moved to
+    # 12400 B, ~10% headroom over the new size, rather than trimming anything.
     # Re-baselined for #1029: 14455 B on disk against a stale 13198 declared
     # baseline -- #1026 grew this file (#976's push-to-main rule, #1017's
     # worktree-reap fix) without touching this table. Budget unchanged; the

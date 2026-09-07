@@ -64,8 +64,15 @@ SPINE = "agents/developer.md"
 #: budget bytes incl. ~10% headroom, what the file governs).
 DOCUMENTS: dict[str, tuple[int, int, str]] = {
     "agents/developer/review.md": (
-        10132,
-        10500,
+        # Raised for #1275: 10132 B became 10576 B, past the old 10500 B
+        # ceiling by 76 B. `report-for-filing` used to be the disposition
+        # for any real, out-of-scope finding; both spawn reviewers found it
+        # still stated that way here after the sibling rule (a non-blocking
+        # row routes to trap.d/ instead) landed everywhere else this diff
+        # touches. Too small an overage to trim something else to absorb,
+        # so the ceiling moved with ~10% headroom over the new size.
+        10576,
+        11600,
         "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
     ),
     "agents/developer/review-return.md": (

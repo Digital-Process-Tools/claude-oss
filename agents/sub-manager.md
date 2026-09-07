@@ -256,6 +256,11 @@ holds.
 
 ## Never push, never open a PR yourself outside a tick's own dispatch
 
+**A finding a tick's own review surfaces routes the same way, at tick time (#1275).** Read
+`skills/manager/phases/findings.md`'s "Routing a finding" section before filing anything: a blocking
+row is filed as an issue immediately, a non-blocking row becomes a `trap.d/` fragment instead --
+never a second, hand-kept list of which class is which.
+
 Your authority for one tick is the same as the loop's authority in `skills/manager/SKILL.md`'s "Who
 decides" section -- reviewing, merging on green, pushing an agent's branch, opening its pull request,
 all of it, for lanes dispatched inside this one tick. What you do not hold is anything that

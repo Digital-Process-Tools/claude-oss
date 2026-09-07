@@ -181,6 +181,77 @@ def extract_ranking_table(text):
     return STATE_FOUND, table, None
 
 
+#: Exact value the `Blocks a release?` column carries on a blocking row.
+BLOCKS_UNCONDITIONALLY = "yes, unconditionally"
+
+
+def parse_rows(table):
+    """``{class_name: blocks_value}`` for every data row in ``table`` -- the
+    string ``extract_ranking_table`` (or ``load_table``) returned under
+    ``STATE_FOUND``. Call it on nothing else; the two guards below rely on
+    ``extract_ranking_table``'s own shape checks and are dead code on any
+    other input.
+
+    #1275: this is the one place that reads which classes block a release
+    and which do not, so a routing rule naming either set can derive it here
+    rather than keep a second, hand-copied list that drifts (#577, #1014).
+
+    Raises ``ValueError``, naming the offending row, if a data row's first
+    cell is not a backtick-quoted class name. Maintainer review on #1275
+    caught the alternative: a silently skipped row is absent from both
+    ``blocking_classes`` and ``non_blocking_classes`` alike -- neither
+    blocking nor non-blocking, simply gone -- which is exactly the
+    absence-read-as-world defect this plugin is named after, sitting in the
+    one function a routing rule reads. The two other ``continue`` guards
+    below stay defensive rather than becoming a second raise: both are
+    provably unreachable on a table ``extract_ranking_table`` returned under
+    ``STATE_FOUND``, and are annotated as such at each one, so this is the
+    only shape a caller can actually be surprised by.
+    """
+    rows = {}
+    lines = table.splitlines()
+    for line in lines[2:]:
+        stripped = _strip_eol(line).strip()
+        if not stripped.startswith("|"):
+            # Unreachable for a STATE_FOUND table: extract_ranking_table's
+            # own row-collecting loop only ever appends a line that already
+            # passed `_strip_eol(line).strip().startswith("|")`, so nothing
+            # failing that same test can be among ``table``'s data rows.
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if len(cells) < 2:
+            # Unreachable for a STATE_FOUND table: extract_ranking_table
+            # already refused (as STATE_NOT_FOUND) any row whose cell count
+            # disagrees with the header before returning this table at all.
+            continue
+        class_match = re.match(r"^`([^`]+)`", cells[0])
+        if not class_match:
+            raise ValueError(
+                "ranking table row has no backtick-quoted class name in its "
+                "first cell, so it cannot be routed as blocking or "
+                "non-blocking: {0!r}".format(stripped)
+            )
+        rows[class_match.group(1)] = cells[1]
+    return rows
+
+
+def blocking_classes(table):
+    """Classes whose row answers ``BLOCKS_UNCONDITIONALLY`` in the
+    ``Blocks a release?`` column, sorted."""
+    return sorted(
+        cls
+        for cls, value in parse_rows(table).items()
+        if value == BLOCKS_UNCONDITIONALLY
+    )
+
+
+def non_blocking_classes(table):
+    """Every other ranked class, sorted -- the rows a routing rule sends to
+    ``trap.d/`` instead of the tracker (#1275)."""
+    blocking = set(blocking_classes(table))
+    return sorted(cls for cls in parse_rows(table) if cls not in blocking)
+
+
 def load_table(plugin_root):
     """``(state, table, reason)`` for the ranking table under ``plugin_root``.
 

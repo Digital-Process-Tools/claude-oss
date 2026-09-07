@@ -28,10 +28,10 @@ afterwards.
 | `containment (write)` — a **mutating** route whose target is an argument, so it writes to a repository nobody named | yes, unconditionally | yes |
 | `forges` — text somebody else wrote reaches column 0 of a receipt this loop parses | yes, unconditionally | yes — the attacker's delivery channel *is* a public tracker, so the writeup is the payload |
 | `ships-local-state` — a value true of exactly one checkout, baked into the artifact every user installs | yes, unconditionally | no — already public the moment it ships, so there is no window of private knowledge to protect |
-| `misdirects` — a refusal or a receipt names a next step that does something the caller never asked for | can ship behind a filed issue | no |
-| `splices` — a value reaches a subprocess argv where the callee's option parser decides what it means | can ship behind a filed issue | no |
-| `fails-to-preserve` | can ship behind a filed issue | no |
-| `misreports` | can ship behind a filed issue | no |
+| `misdirects` — a refusal or a receipt names a next step that does something the caller never asked for | can ship behind a trap.d fragment | no |
+| `splices` — a value reaches a subprocess argv where the callee's option parser decides what it means | can ship behind a trap.d fragment | no |
+| `fails-to-preserve` | can ship behind a trap.d fragment | no |
+| `misreports` | can ship behind a trap.d fragment | no |
 
 **This table is the only place the rows are written down.** The audit agents reference it rather
 than restating it.
@@ -77,6 +77,33 @@ finding lands. An unranked finding is reported unranked — never demoted to "no
 list and not a one-to-one map. The join is at the report — **every finding carries both**, the letter
 it was found by and the row it is ranked in — and a row that is ranked here but reachable from no
 strategy is a class the next audit cannot find.
+
+
+## Routing a finding is the same read as ranking it (#1275)
+
+A row that answers `yes, unconditionally` in the `Blocks a release?` column is **filed as an issue
+immediately** -- a blocking finding does not wait on siblings to accumulate. A row that answers
+`can ship behind a trap.d fragment` is written to `trap.d/<issue>.<slug>.md` instead of filed --
+prose, no frontmatter, the same shape `agents/developer.md`'s "Hit a trap? Log it and carry on"
+already uses -- and `/oss:curate` decides later whether it becomes a rule, and can decline it. **Say
+so if a finding fits none of the rows.** `unranked` is filed as an issue too, same as a blocking row
+-- the class that does not exist yet is where the worst finding lands, and a directory nothing loads
+by default is not where it is safe to land.
+
+**This is a routing rule, not a second classification.** Read the value in the `Blocks a release?`
+column off the table above when you route; nothing in this section restates which class is which, so
+there is no second copy here to drift from the table (#577, #1014).
+
+**Issues filed by anyone outside the loop are untouched by this.** It governs the loop's own
+findings -- what an audit, a review or a lane's own adjacent discovery produces -- never an issue the
+public opened. Those are the public surface and are not the loop's to compress.
+
+**A declined fragment already has a record**: `/oss:curate` leaves its trace in the rule layer's own
+`00-README.md` for exactly this reason, so a re-discovered, already-declined observation is not
+re-logged forever. **Cadence is the real risk, not a missing mechanism**: this rule raises the
+fragment rate, so `/oss:curate` has to run at least as often as the tick cadence that used to file
+these as issues, or the seven-per-release non-blocking rate that motivated this change becomes an
+uncurated pile doing the job an issue used to.
 
 
 ## A defect in a declared dependency is filed on that dependency's own tracker
