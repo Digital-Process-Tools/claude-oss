@@ -202,22 +202,42 @@ def _is_os_path_join_call(node):
     )
 
 
+def _join_two(left, right):
+    """`left`/`right` joined the way `os.path.join`/`pathlib`'s `/` operator
+    actually behave, not naive string concatenation -- self-review finding
+    (#1245): an earlier version of this fold always concatenated, so
+    `os.path.join("scripts", "/etc/passwd")` folded to
+    `"scripts/etc/passwd"` while the real call returns `"/etc/passwd"` (an
+    absolute right-hand part DISCARDS everything to its left, in both
+    `os.path.join` and `Path.__truediv__`). Left uncorrected, that mismatch
+    could hide an absolute-path join from `_looks_like_path_literal`'s own
+    leading-`/` refusal: the folded (wrong) result never starts with `/`,
+    even though the real target the source names is an absolute path this
+    module must refuse the same way a hand-typed absolute literal already
+    is."""
+    if right.startswith("/"):
+        return right
+    return left.rstrip("/") + "/" + right.lstrip("/")
+
+
 def _fold_literal_path_expr(node):
     """#1245's genuinely resolvable slice of "runtime-assembled path" -- a
     conservative constant-fold, NOT a general interpreter for a fragment of
     Python (the thing #1234's own docstring already refused to build).
     Resolves only `Path(<foldable>)`, `os.path.join(<foldable>, ...)` and a
     chain of `<foldable> / <foldable>` (`ast.BinOp` with `ast.Div`) where
-    every leaf is a literal string constant, returning the joined
-    POSIX-style string. Falls through to `None` the moment anything in the
-    chain is not one of these shapes -- a bare `Name` (a variable), an
-    f-string `FormattedValue`, a function call this module does not
-    recognise -- so `Path("scripts") / "foo.py"` folds (both operands are
-    already literal) but `Path(root) / "foo.py"` and `f"scripts/{name}.py"`
-    do not, because their value is genuinely only known at runtime. Those
-    two are #1245's own stated remaining boundary, not silently dropped:
-    `extract_references` reports no reference for them, which is correct
-    (nothing WAS resolved) rather than a claim that nothing IS there.
+    every leaf is a literal string constant, returning the joined string
+    (via `_join_two`, which replicates the real join/`/`-operator
+    semantics rather than naive concatenation). Falls through to `None` the
+    moment anything in the chain is not one of these shapes -- a bare
+    `Name` (a variable), an f-string `FormattedValue`, a function call this
+    module does not recognise -- so `Path("scripts") / "foo.py"` folds
+    (both operands are already literal) but `Path(root) / "foo.py"` and
+    `f"scripts/{name}.py"` do not, because their value is genuinely only
+    known at runtime. Those two are #1245's own stated remaining boundary,
+    not silently dropped: `extract_references` reports no reference for
+    them, which is correct (nothing WAS resolved) rather than a claim that
+    nothing IS there.
     """
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
@@ -226,7 +246,7 @@ def _fold_literal_path_expr(node):
         right = _fold_literal_path_expr(node.right)
         if left is None or right is None:
             return None
-        return left.rstrip("/") + "/" + right.lstrip("/")
+        return _join_two(left, right)
     if _is_path_call(node):
         return _fold_literal_path_expr(node.args[0])
     if _is_os_path_join_call(node):
@@ -240,7 +260,7 @@ def _fold_literal_path_expr(node):
             return None
         joined = parts[0]
         for part in parts[1:]:
-            joined = joined.rstrip("/") + "/" + part.lstrip("/")
+            joined = _join_two(joined, part)
         return joined
     return None
 
@@ -275,12 +295,29 @@ def _glob_call_targets(tree):
     diagnostic time, rather than trying to know what it would match
     without one. `base` independently passes `_looks_like_path_literal` (a
     bare `..`/absolute base is refused before the glob ever touches the
-    filesystem, exactly as a plain literal is); `pattern` is refused the
-    same way if it carries a `..` segment, so a glob cannot be used to walk
-    outside `repo` either. A dynamic base (`Path(root).glob(...)`) or a
-    non-literal pattern folds to `None`/fails the isinstance check and is
-    silently skipped -- genuinely unresolvable, the same as an unfoldable
-    `Path(...) / var` join above.
+    filesystem, exactly as a plain literal is). `pattern` gets three of its
+    own refusals, each closing a gap a self-review round found real:
+
+    * a `..` segment (so a glob cannot be used to walk outside `repo` even
+      through the pattern rather than the base);
+    * a backslash anywhere in it -- `pathlib.Path.glob` splits a pattern on
+      `/` only on POSIX but on both `/` and `\\\\` on Windows (`ntpath`), so
+      the identical literal pattern in a test file's source can resolve to
+      different matches purely by which OS runs the diagnostic. This
+      module's own `_looks_like_path_literal` already refuses a backslash
+      in a plain literal for the identical reason; the glob pattern earns
+      no exemption from it;
+    * a leading `/` (absolute) -- `Path.glob`/`rglob` raise
+      `NotImplementedError("Non-relative patterns are unsupported")` for a
+      non-relative pattern, and an uncaught exception here used to take
+      down the scan for every OTHER test file in the same run, not just
+      record this one as unreadable. Refused before the glob call is ever
+      made, the same as the base's own absolute-path refusal.
+
+    A dynamic base (`Path(root).glob(...)`) or a non-literal pattern folds
+    to `None`/fails the isinstance check and is silently skipped --
+    genuinely unresolvable, the same as an unfoldable `Path(...) / var`
+    join above.
     """
     targets = []
     for node in ast.walk(tree):
@@ -299,7 +336,11 @@ def _glob_call_targets(tree):
         ):
             continue
         pattern = pattern_node.value
-        if ".." in pattern.replace("\\", "/").split("/"):
+        if "\\" in pattern:
+            continue
+        if pattern.startswith("/"):
+            continue
+        if ".." in pattern.split("/"):
             continue
         base = _fold_literal_path_expr(node.func.value)
         if base is None or not _looks_like_path_literal(base):
@@ -379,7 +420,14 @@ def extract_references(repo, source_text):
                 except (OSError, ValueError):
                     continue
                 found.add(rel.as_posix())
-        except (OSError, ValueError):
+        except (OSError, ValueError, NotImplementedError):
+            # `NotImplementedError` is `pathlib.Path.glob`/`rglob`'s own
+            # reaction to a non-relative pattern (self-review finding,
+            # #1245) -- `_glob_call_targets` already refuses a leading `/`
+            # before it ever reaches here, but this is defense in depth
+            # against a pathlib version raising it for a pattern shape
+            # this module has not enumerated, so one unresolvable glob in
+            # one test file cannot take the whole scan down with it.
             continue
     return sorted(found), None
 
