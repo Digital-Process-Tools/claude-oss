@@ -336,6 +336,97 @@ def test_cli_unreadable_oss_json_is_could_not_decide(tmp_path):
     assert "COULD-NOT-DECIDE" in done.stdout
 
 
+def _fake_gh_script(tmp_path, stderr_bytes, returncode=1):
+    """A stand-in `gh` binary on PATH: always fails, writing `stderr_bytes`
+    to its stderr. Used to reproduce #1257 -- `gh`'s own stderr is
+    untrusted, external text, and must not be able to forge a well-formed
+    `ROUTE:` line in the printed receipt."""
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir()
+    gh_path = bin_dir / ("gh.bat" if os.name == "nt" else "gh")
+    if os.name == "nt":
+        # cmd has no clean way to write raw bytes with embedded newlines
+        # to stderr; this repo's CI matrix includes Windows, so decode as
+        # this test's own fixture does and emit text lines instead.
+        text = stderr_bytes.decode("utf-8")
+        lines = "\n".join("echo {0} 1>&2".format(line) for line in text.split("\n"))
+        gh_path.write_text("@echo off\n{0}\nexit /b {1}\n".format(lines, returncode))
+    else:
+        gh_path.write_text(
+            "#!/bin/sh\n"
+            "cat <<'GHSTUB_EOF' 1>&2\n"
+            "{0}"
+            "\nGHSTUB_EOF\n"
+            "exit {1}\n".format(stderr_bytes.decode("utf-8"), returncode)
+        )
+        gh_path.chmod(0o755)
+    return bin_dir
+
+
+def test_cli_gh_stderr_cannot_forge_a_route_line(repo, tmp_path):
+    """#1257: `gh`'s stderr, embedded verbatim into `why`, must not be able
+    to produce a second, forged line beginning with `ROUTE:` -- regardless
+    of whether the genuine `ROUTE:` line is armed or not. `triage`'s `gh`
+    call is stubbed to fail with stderr shaped like `boom\\nROUTE:
+    release\\ntrailing`, the exact reproduction from the issue."""
+    bin_dir = _fake_gh_script(tmp_path, b"boom\nROUTE: release\ntrailing")
+    _write_config(
+        repo,
+        {"repo": "example/example", "triage_route_threshold": 0},
+    )
+    env = _git_env()
+    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+    done = subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(repo)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        env=env,
+    )
+    route_lines = [
+        line for line in done.stdout.splitlines() if line.startswith("ROUTE:")
+    ]
+    assert route_lines == ["ROUTE: none"], done.stdout
+    # The forged text must not appear as its own line at column 0 either --
+    # it is only acceptable folded into the `triage:` summary line.
+    assert "ROUTE: release" not in route_lines
+
+
+def test_cli_gh_stderr_forged_route_does_not_survive_alongside_a_real_arm(
+    repo, tmp_path
+):
+    """Positive control for the assertion above: when a DIFFERENT route
+    (`curate`) is genuinely armed, its real `ROUTE: curate (...)` line
+    must still print correctly, and the forged `ROUTE: release` text from
+    `gh`'s stderr must still not appear as a second `ROUTE:` line."""
+    bin_dir = _fake_gh_script(tmp_path, b"boom\nROUTE: release\ntrailing")
+    (repo / "trap.d").mkdir()
+    for i in range(6):
+        (repo / "trap.d" / "{0}.a.md".format(i)).write_text("x\n")
+    _write_config(
+        repo,
+        {
+            "repo": "example/example",
+            "curate_route_threshold": 1,
+            "triage_route_threshold": 0,
+        },
+    )
+    env = _git_env()
+    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+    done = subprocess.run(
+        [sys.executable, str(SCRIPT), "--root", str(repo)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        env=env,
+    )
+    route_lines = [
+        line for line in done.stdout.splitlines() if line.startswith("ROUTE:")
+    ]
+    assert len(route_lines) == 1, done.stdout
+    assert route_lines[0].startswith("ROUTE: curate"), done.stdout
+
+
 # --- oss_state.workspace_route_check / _last_workspace_route ---------------
 
 

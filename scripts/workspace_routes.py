@@ -73,6 +73,19 @@ import oss_state  # noqa: E402
 import release_version  # noqa: E402
 import trap_curate  # noqa: E402
 
+
+def _flatten(text):
+    """#1257: `why` can carry text this loop did not generate itself --
+    `gh`'s own stderr, read verbatim in `triage_count` -- collapsed onto
+    one line before `main` prints it into a line-structured receipt
+    `bin/oss-workspace` parses with `awk '/^ROUTE:/ { line = $0 } END {
+    print line }'`. Unflattened, an embedded newline puts forge-supplied
+    text at column 0 of the next printed line, where a line shaped like
+    `ROUTE: <something>` reads as a second, unrelated `ROUTE:` line --
+    the identical mechanism `pr_green._flatten` was written for (#1113)."""
+    return " ".join(str(text).split())
+
+
 OVER = "over"
 UNDER = "under"
 COULD_NOT_COUNT = "could-not-count"
@@ -306,7 +319,7 @@ def main(argv=None):
                 result["state"],
                 result["count"],
                 result["threshold"],
-                result["why"],
+                _flatten(result["why"]),
             )
         )
 
