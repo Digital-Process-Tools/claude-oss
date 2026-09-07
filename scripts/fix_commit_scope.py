@@ -124,8 +124,12 @@ def files_from_git(repo, base, head):
     represent would otherwise raise `UnicodeDecodeError`, escaping this
     function's own `except (OSError, subprocess.TimeoutExpired)` clause and
     this module's documented `(files, error)` contract entirely. Matches
-    the same fix already applied at `tree_snapshot.py`, `batch_hint.py`,
-    `ruff_ratchet.py`, `lane_setup.py` and `release_delta.py`."""
+    the same `encoding="utf-8", errors="replace"` pairing already used at
+    `tree_snapshot.py`, `ruff_ratchet.py`, `lane_setup.py` and
+    `release_delta.py` -- `batch_hint.py` pins `encoding="utf-8"` too but
+    takes a different route for the failure itself, catching
+    `UnicodeDecodeError` explicitly to degrade to its own third state,
+    so it is not grouped in here as "the same fix" (self-review finding)."""
     git_bin = gh_which.safe_which("git")
     if git_bin is None:
         return None, "git not found on PATH"

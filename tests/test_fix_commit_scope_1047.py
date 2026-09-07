@@ -169,10 +169,20 @@ def test_files_from_git_does_not_let_a_leading_dash_base_be_read_as_an_option(
 ):
     """The negative control for the positive git-diff read above: a
     `base`/`head` beginning with `-` must be rejected by git as a bad
-    revision (because of the `--` separator), never accepted and
-    reinterpreted as an option such as `--output=<path>`. Proves the
-    dangerous mechanism is closed by checking the attacker-chosen path is
-    never created."""
+    revision (via `--end-of-options`), never accepted and reinterpreted as
+    an option such as `--output=<path>`.
+
+    Self-review finding (both spawned reviewers independently caught this):
+    the naive assertion here would be `assert not (tmp_path /
+    "pwned.txt").exists()`, but that is not a discriminating check -- the
+    vulnerable code joins `base` and `head` into one `"{base}..{head}"`
+    argv token, so an unguarded `--output=<target>` actually receives
+    `<target>..HEAD` as its value and writes to a file named
+    `pwned.txt..HEAD`, never to bare `pwned.txt`. That file's absence is
+    `True` under both the vulnerable and the fixed code, so asserting it
+    alone would pass either way. Assert against the actual filename the
+    injection produces instead, so this control can fail on the code this
+    diff replaces and pass on the code it introduces."""
     repo = tmp_path / "r"
     repo.mkdir()
     _git(repo, "init", "-q")
@@ -183,9 +193,11 @@ def test_files_from_git_does_not_let_a_leading_dash_base_be_read_as_an_option(
     _git(repo, "commit", "-q", "-m", "base")
 
     target = tmp_path / "pwned.txt"
+    injected_write_target = Path(str(target) + "..HEAD")
     files, error = fix_commit_scope.files_from_git(
         repo, "--output={0}".format(target), "HEAD"
     )
+    assert not injected_write_target.exists()
     assert not target.exists()
     assert files is None
     assert error
