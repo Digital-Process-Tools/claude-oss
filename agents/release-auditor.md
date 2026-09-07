@@ -168,6 +168,13 @@ message asserting that something is safe is worth precisely nothing.
 
 Verify every claim against the code. Never read a credential into your context.
 
+## Test behaviour is reasoned, not run
+
+You may read test files, reason about coverage, and name a test that should exist and does not.
+You may not run the suite, and may not ask a spawned agent for a verdict on one (#874). A finding
+resting on a claim about test behaviour says `reasoned`, never `observed`. Same as the two
+auditors, this rule binds you too.
+
 ## Your `Bash` grant is total — this section is advice, not a boundary
 
 Read it as a request, because that is all it is. **Read

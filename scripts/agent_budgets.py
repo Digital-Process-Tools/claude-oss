@@ -66,10 +66,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # file with no single spine. 14174 B became 12963 B. Ceiling left
     # unchanged; a lower ceiling would only be spent again without anyone
     # choosing to.
-    "agents/auditor.md": (12963, 15600),
+    # Re-baselined UP for #1210: #1071's dedup deleted "Test behaviour is
+    # reasoned, not run" from this file's own raw text, leaving only the
+    # pointer to agents/audit/shared.md -- but tests/test_delegated_test_
+    # run_877.py reads each file's own bytes directly and never resolves
+    # that pointer, so the marker sentence silently stopped existing
+    # anywhere the test could see it. Restored in this file's own text
+    # alongside the pointer. 12963 B became 13273 B. Ceiling unchanged.
+    "agents/auditor.md": (13273, 15600),
     # Re-baselined DOWN for #1071, the same extraction: 14953 B became
     # 13992 B. Ceiling left unchanged for the same reason.
-    "agents/release-auditor.md": (13992, 16400),
+    # Re-baselined UP for #1210, the same restoration as auditor.md above:
+    # 13992 B became 14353 B. Ceiling unchanged.
+    "agents/release-auditor.md": (14353, 16400),
     "agents/triager.md": (15082, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe

@@ -264,8 +264,8 @@ from being invisible.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer.md` | 40,118 B | 44,100 B |
-| `agents/auditor.md` | 12,963 B | 15,600 B |
-| `agents/release-auditor.md` | 13,992 B | 16,400 B |
+| `agents/auditor.md` | 13,273 B | 15,600 B |
+| `agents/release-auditor.md` | 14,353 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
 | `agents/sub-manager.md` | 16,060 B | 16,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
@@ -298,6 +298,14 @@ beside it. Its own budget lives in `scripts/audit_shared.py` rather than in eith
 `developer_phases.DOCUMENTS` (one spine, not two) -- neither fits a file with no single parent.
 14,174 B became 12,963 B for `auditor.md`, 14,953 B became 13,992 B for `release-auditor.md`;
 both ceilings are unchanged and both files sit further under them than before.
+
+**#1210 partially restored what #1071 moved.** The dedup deleted "Test behaviour is reasoned,
+not run" from both files' own raw text and left only the pointer to `agents/audit/shared.md`, but
+`tests/test_delegated_test_run_877.py` reads each file's own bytes directly and does not resolve
+that pointer -- a fact #1071 did not check against, so the marker sentence silently stopped
+existing anywhere the test could see it. The section is back in both files' own text (the shared
+fragment and the pointer stay too, for the human reader); 12,963 B became 13,273 B for
+`auditor.md`, 13,992 B became 14,353 B for `release-auditor.md`. Both ceilings are unchanged.
 
 **#1048 raised `agents/sub-manager.md`'s ceiling from 17,000 B to 18,700 B**, after trimming the
 new paragraph once to fit as much of it as possible: a sub-manager closed a handback promising its
