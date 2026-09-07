@@ -80,3 +80,29 @@ def test_dead_pattern_is_warn(tmp_path):
     dclp.check_lane_patterns(tmp_path, config)
     assert _states() == ["WARN"]
     assert "scripts/gone_*.py" in doctor.FINDINGS[0][1]
+
+
+def test_uncovered_count_is_surfaced_not_computed_and_discarded(tmp_path):
+    """A reviewer finding on #1229's own self-review: `lane_pattern_report`
+    computes `uncovered_count` with a real filesystem walk, and the first
+    version of this module read every OTHER field off the result but never
+    this one -- a full-tree walk performed on every doctor invocation purely
+    to compute a number nothing ever printed."""
+    _touch(tmp_path, "scripts/covered.py", "scripts/leftover.py")
+    config = {"labels": {"lane_patterns": {"lane-a": ["scripts/covered.py"]}}}
+    dclp.check_lane_patterns(tmp_path, config)
+    assert _states() == ["OK"]
+    assert "1" in doctor.FINDINGS[0][1]
+
+
+def test_non_dict_lane_patterns_is_warn_not_a_crash(tmp_path):
+    config = {"labels": {"lane_patterns": ["not", "a", "dict"]}}
+    dclp.check_lane_patterns(tmp_path, config)
+    assert _states() == ["WARN"]
+
+
+def test_non_list_per_lane_value_is_warn_not_a_crash(tmp_path):
+    config = {"labels": {"lane_patterns": {"lane-a": "abc"}}}
+    dclp.check_lane_patterns(tmp_path, config)
+    assert _states() == ["WARN"]
+    assert "lane-a" in doctor.FINDINGS[0][1]

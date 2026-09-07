@@ -168,23 +168,60 @@ def lane_pattern_report(repo, lane_patterns):
             "overlaps": [],
             "dead_patterns": [],
             "refused": [],
+            "malformed": [],
+            "uncovered_count": None,
+        }
+    # `oss_config.py`'s own shape validation already FAILs a `lane_patterns`
+    # that is not an object, or a per-lane value that is not a list -- but
+    # it does not null the value out of the returned config, so a caller
+    # reaching here can still see the malformed shape directly. Two
+    # findings from an auditor spawn on this issue's own self-review: a
+    # non-dict `lane_patterns` has no `.items()`, an uncaught `AttributeError`
+    # that crashed doctor.py's whole process (this repo's own "exit 0
+    # always" contract, broken); and a non-list per-lane value (a bare
+    # string) iterated character-by-character through `resolve_lane`,
+    # where every one-character "pattern" resolves as a `literal` --
+    # asserted, never checked -- so the check silently reported `ok` on
+    # the same run `check_config` already FAILed for the identical field.
+    # Both are caught here, before any resolution is attempted, rather
+    # than left to `oss_config.py`'s own separate check to catch alone.
+    if not isinstance(lane_patterns, dict):
+        return {
+            "state": "finding",
+            "overlaps": [],
+            "dead_patterns": [],
+            "refused": [],
+            "malformed": [
+                (
+                    None,
+                    "labels.lane_patterns is not an object (got {}) -- see "
+                    ".oss.json's own shape validation".format(
+                        type(lane_patterns).__name__
+                    ),
+                )
+            ],
             "uncovered_count": None,
         }
     lane_files = {}
     dead_patterns = []
     refused = []
+    malformed = []
     for lane, patterns in lane_patterns.items():
-        resolved = select_issues_overlap.resolve_lane(repo, patterns or [])
+        if not isinstance(patterns, list):
+            malformed.append((lane, patterns))
+            continue
+        resolved = select_issues_overlap.resolve_lane(repo, patterns)
         lane_files[lane] = resolved["files"]
         dead_patterns.extend(_dead_patterns(lane, resolved))
         refused.extend(_refused_patterns(lane, resolved))
     overlaps = _overlaps(lane_files)
     uncovered_count = _uncovered_count(repo, lane_files)
-    state = "finding" if (overlaps or dead_patterns or refused) else "ok"
+    state = "finding" if (overlaps or dead_patterns or refused or malformed) else "ok"
     return {
         "state": state,
         "overlaps": overlaps,
         "dead_patterns": dead_patterns,
         "refused": refused,
+        "malformed": malformed,
         "uncovered_count": uncovered_count,
     }

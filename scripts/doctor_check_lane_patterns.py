@@ -59,13 +59,30 @@ def check_lane_patterns(project_dir, config):
         )
         return
     if result["state"] == "ok":
-        doctor.report(
-            "OK",
+        message = (
             "lane patterns: every declared pattern resolves, and no two "
-            "lanes claim the same path.",
+            "lanes claim the same path."
         )
+        count = result["uncovered_count"]
+        if count:
+            message += (
+                " {} tracked-like file(s) inside an already-claimed "
+                "directory are covered by no lane -- informational only "
+                "(lane-other exists precisely for this; not a failing "
+                "invariant).".format(count)
+            )
+        doctor.report("OK", message)
         return
     parts = []
+    for lane, detail in result["malformed"]:
+        if lane is None:
+            parts.append(detail)
+        else:
+            parts.append(
+                "{}'s value in .oss.json's labels.lane_patterns is not a "
+                "list of glob strings ({!r}) -- fix its shape in "
+                ".oss.json.".format(lane, detail)
+            )
     for lane, pattern in result["dead_patterns"]:
         parts.append(
             "{0}'s pattern `{1}` matches no file on disk -- fix or remove it "

@@ -130,3 +130,28 @@ def test_uncovered_count_is_none_when_no_lane_resolves_any_file(tmp_path):
     lane_patterns = {"lane-a": ["scripts/gone_*.py"]}
     result = lane_pattern_coverage.lane_pattern_report(tmp_path, lane_patterns)
     assert result["uncovered_count"] is None
+
+
+def test_non_dict_lane_patterns_is_a_finding_not_ok(tmp_path):
+    """`labels.lane_patterns` failing `oss_config.py`'s own shape check (a
+    list instead of an object) must not be misread as clean here -- and
+    must not iterate `.items()` on something that has none (the auditor's
+    own reproduction: this crashed doctor.py's whole process before the
+    fix, an `AttributeError` with no `except` anywhere in the call chain)."""
+    result = lane_pattern_coverage.lane_pattern_report(tmp_path, ["not", "a", "dict"])
+    assert result["state"] == "finding"
+    assert result["malformed"]
+
+
+def test_non_list_per_lane_value_is_a_finding_not_a_char_by_char_walk(tmp_path):
+    """A lane's own value failing shape validation (a bare string instead
+    of a list of globs) must not be resolved character-by-character as a
+    string of one-letter literal patterns -- each of which `resolve_lane`
+    reports clean because a literal is asserted, never checked -- which
+    silently renders 'OK' on the same run `check_config` already FAILs for
+    this exact field."""
+    result = lane_pattern_coverage.lane_pattern_report(tmp_path, {"lane-a": "abc"})
+    assert result["state"] == "finding"
+    assert result["malformed"] == [("lane-a", "abc")]
+    assert result["dead_patterns"] == []
+    assert result["refused"] == []
