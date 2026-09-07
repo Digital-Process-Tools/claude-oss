@@ -113,6 +113,83 @@ def test_no_repo_specific_spellings_in_prose():
     )
 
 
+# trap.d/ fragments are prose logged mid-lane about a real incident in a real
+# worktree, and #1255 shipped one carrying the maintainer's own absolute home
+# paths into the installed plugin artifact. `_fact_bearing_documents()` above
+# does not reach trap.d/ at all (it is not "prose the loop executes", it is a
+# free-text incident log), and even if it did, the existing HARDCODED list only
+# matches the `~/...` spelling -- a trap.d fragment recorded during a live lane
+# writes the literal `/Users/<name>/...` (or `/home/<name>/...`) form a Bash
+# call actually saw, which none of those patterns catch. So this is a sibling
+# guard scoped to trap.d/ with its own pattern, not a widening of the list above.
+TRAP_D = sorted((REPO_ROOT / "trap.d").glob("*.md"))
+
+HARDCODED_HOME_PATH = [
+    (r"/Users/[A-Za-z0-9_.-]+", "an absolute macOS home path"),
+    (r"/home/[A-Za-z0-9_.-]+", "an absolute Linux home path"),
+]
+
+
+def _scan_for_hardcoded_paths(documents):
+    """documents: iterable of (label, text). Returns offender strings."""
+    offenders = []
+    for label, text in documents:
+        for pattern, what in HARDCODED_HOME_PATH:
+            for match in re.finditer(pattern, text):
+                line = text[: match.start()].count("\n") + 1
+                offenders.append(
+                    "{}:{}: {} ({!r})".format(label, line, what, match.group(0))
+                )
+    return offenders
+
+
+def test_trap_d_has_documents():
+    """A suite that silently found no trap.d fragments would pass the check below
+    vacuously."""
+    assert TRAP_D, "no trap.d/*.md found -- the check below would vacuously pass"
+
+
+def test_no_absolute_home_paths_in_trap_d():
+    """#1255: trap.d/ ships in the installed plugin artifact, so a fragment logged
+    mid-lane with the maintainer's own absolute home path bakes a machine-specific
+    fact into every install -- the same defect class CLAUDE.md's governing rule
+    forbids for skills and agents, landed through a directory that rule's own guard
+    does not scope to.
+    """
+    documents = [
+        (path.relative_to(REPO_ROOT), path.read_text(encoding="utf-8"))
+        for path in TRAP_D
+    ]
+    offenders = _scan_for_hardcoded_paths(documents)
+    assert not offenders, (
+        "trap.d/ ships in the installed plugin artifact, so an absolute home path "
+        "logged mid-lane bakes a machine-specific fact into every install. Redact "
+        "or generalize it (a relative form or a placeholder):\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_absolute_home_path_pattern_catches_a_planted_fixture():
+    """Positive control for the guard above: a fixture fragment shaped exactly like
+    a trap.d entry, carrying an absolute home path, must be caught. Without this,
+    a pattern that matched nothing would let the real check above pass vacuously
+    the same way a scope gap already let #1255 ship.
+    """
+    fixture_text = (
+        "While implementing #9999 in worktree "
+        "`/Users/exampleuser/Documents/claude-oss-wt/9999`, a write landed in "
+        "`/Users/exampleuser/Documents/claude-oss` instead.\n"
+    )
+    offenders = _scan_for_hardcoded_paths(
+        [("trap.d/9999.fixture-not-a-real-file.md", fixture_text)]
+    )
+    assert offenders, (
+        "the absolute-home-path pattern failed to catch a fixture fragment planted "
+        "with the exact shape #1255 reported -- the guard would not have caught the "
+        "real incident either"
+    )
+
+
 def test_skill_and_agents_declare_frontmatter():
     for path, text in _documents():
         rel = path.relative_to(REPO_ROOT)
