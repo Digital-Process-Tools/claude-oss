@@ -137,6 +137,31 @@ jobs:
       # `shell: bash` the coverage step briefly carried, and reproduced on a serial run
       # with no workers in the log at all. See that step's own comment.
       #
+      # #1176: 126 of the 428 tracked test files counted at filing time are content
+      # guards over this repo's own markdown/config -- their answer does not vary by OS
+      # or interpreter, and running
+      # them on all 12 legs buys nothing a reader ever sees. Marking every one of them
+      # was weighed and declined: the naive "no tmp_path/subprocess/monkeypatch" heuristic
+      # selects the CHEAP tests (9.67s total, ran locally), not the expensive ones -- the
+      # nine tests actually worth deselecting spawn a subprocess or read this repo's whole
+      # tree, and #1176 marks exactly those nine `invariant` (tests/test_invariant_
+      # marker_1176.py holds the registry). `-m "not invariant"` on every leg but the full
+      # one deselects them; the full leg is the SAME leg #1177 already designated to keep
+      # coverage, `(ubuntu-latest, 3.12)`, so this reuses one special-leg concept instead
+      # of inventing a second, and it keeps the deselect off the 51.6%-of-wall-clock
+      # Windows legs.
+      #
+      # Both flags live on the same unconditional step, each behind its own `${{ }}`
+      # ternary with the identical condition -- never two `if:`-guarded steps, because
+      # two conditions that are both false is a leg that runs no tests and reports
+      # success anyway (this repository's own defect class, installed in the merge gate
+      # on purpose). Each ternary is written `X && 'flag' || ''` rather than
+      # `X && '' || 'flag'`: the empty string is falsy in a GitHub expression, so the
+      # non-empty arm has to be the TRUE arm or the flag lands on every leg instead of
+      # eleven of them -- #1177's own fix for the identical mistake on the coverage flag.
+      - name: Run tests
+        run: |
+          pytest -n auto --dist loadfile ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '--no-cov' || '' }} ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '-m "not invariant"' || '' }}
   shell:
     runs-on: ubuntu-latest
     timeout-minutes: 10

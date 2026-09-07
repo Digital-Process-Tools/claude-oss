@@ -79,6 +79,7 @@ testpaths = ["tests"]
 # tests/must_assert_plugin.py is what holds the promise to account.
 markers = [
     "must_assert_on(platform): fails the whole session if this test is SKIPPED while sys.platform == platform (#430)",
+    "invariant: this test's answer does not vary by OS or interpreter -- it reads this repository's own tracked files/bytes and compares them against a declared constant. #1176 deselects it on 11 of the matrix's 12 legs (`-m \"not invariant\"`) and keeps it on exactly one (ubuntu-latest, 3.12), the same leg #1177 already designated to keep coverage. tests/test_invariant_marker_1176.py holds that split and the registry of which tests carry this marker.",
 ]
 # `-rs` prints the reason behind every skip. A skipped check is this plugin
 # saying it could not answer, and that third state only pays for itself if the
