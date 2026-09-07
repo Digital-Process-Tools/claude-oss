@@ -435,6 +435,7 @@ TOOLS_INDEX_EXPECTED = {
     "supertool-required.md": ("Read|Edit|Write|Glob|Grep", "block", "supertool"),
     "merge-gate.md": ("Bash", "remind", ""),
     "pr-create-gate.md": ("Bash", "remind", ""),
+    "tree-snapshot-compare.md": ("Bash", "remind", ""),
 }
 
 
