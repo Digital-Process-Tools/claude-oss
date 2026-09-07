@@ -252,7 +252,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # stdin-contract sentence is gone; `--board` fetches its own board
         # now, the same route the default mode uses, so there is no
         # exception left to describe. Budget unchanged.
-        53209,
+        # Re-baselined for #1198: 53209 B became 54117 B -- the four-word
+        # short-lane REASON passage now names `--claim --group-state STATE`
+        # (#1153) as the normal, mechanical derivation path, alongside
+        # `--short-reason`'s continued role as the explicit override for the
+        # unmapped `candidates` state. Budget unchanged; comfortably under.
+        54117,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
