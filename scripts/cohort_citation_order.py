@@ -293,6 +293,15 @@ def check_repo(claude_md_path, state_path, at):
     text = claude_md_path.read_text(encoding="utf-8", errors="replace")
     cited = extract_cited_cohort(text)
 
+    # A declined citation has nothing to verify against a state file at all
+    # (#1264) -- checked before the state file is even opened, so a state
+    # file that happens to be corrupt or unreadable can never downgrade an
+    # honest, self-contained decline into `could-not-check`. The declined
+    # branch inside `check_citation_order` would reach the same answer, but
+    # only once past a state-file read this case does not need to survive.
+    if isinstance(cited, dict) and cited.get("declined"):
+        return check_citation_order(cited, entries=[], comparison_at=at)
+
     try:
         entries = oss_state.read(state_path)
     except oss_state.StateError as exc:

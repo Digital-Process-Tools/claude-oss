@@ -383,6 +383,28 @@ def test_check_repo_end_to_end_declined(tmp_path):
     assert record["state"] == cco.CITATION_DECLINED
 
 
+def test_check_repo_declined_survives_a_corrupt_state_file(tmp_path):
+    """Self-review (#1264): a declined marker has nothing to verify against a
+    state file at all, so a state file that exists but fails to parse must
+    not downgrade `declined` into `could-not-check` -- an earlier version of
+    `check_repo` opened the state file before checking for a decline and lost
+    the declined signal on exactly this path."""
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text(
+        "**Cohort freeze: cannot be cleanly cited this release, and that is "
+        "stated rather than guessed past.** More prose follows.",
+        encoding="utf-8",
+    )
+    corrupt_state = tmp_path / "watch.json"
+    corrupt_state.write_text("{not valid json", encoding="utf-8")
+    record = cco.check_repo(
+        claude_md_path=claude_md,
+        state_path=corrupt_state,
+        at="2026-09-06T08:00:00Z",
+    )
+    assert record["state"] == cco.CITATION_DECLINED
+
+
 def test_this_repos_own_current_state_is_could_not_check_or_declined():
     """The real integration point: run against this repo's own tree, with the real
     (absent) `.max/claude-oss-watch.json`. Proves the honest third (or fourth)
@@ -393,12 +415,22 @@ def test_this_repos_own_current_state_is_could_not_check_or_declined():
     a real `cohort-N at M` citation renders `could-not-check` here (no state
     file exists to verify it against), while a stated decline renders
     `declined` regardless of the state file, since a decline has nothing to
-    verify in the first place. Either is honest; a silent `ok` never is."""
+    verify in the first place. Either is honest; a silent `ok` never is.
+
+    Self-review (#1264): an earlier version of this test derived `expected`
+    by calling `cco.extract_cited_cohort` itself -- the very function
+    `check_repo` calls internally -- so it would still have passed against a
+    build of `extract_cited_cohort` that never implemented decline detection
+    at all (both sides would have silently agreed on `could-not-check`). The
+    independent oracle here is a raw substring check against the file's own
+    bytes, the same shape `test_extract_cited_cohort_on_this_repos_own_
+    claude_md_cross_checked` already uses above, so a regression in
+    `extract_cited_cohort` cannot cancel out against this test's own
+    expectation."""
     text = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    cited = cco.extract_cited_cohort(text)
     expected = (
         cco.CITATION_DECLINED
-        if isinstance(cited, dict) and cited.get("declined")
+        if cco._DECLINE_TEXT in text
         else cco.CITATION_COULD_NOT_CHECK
     )
     record = cco.check_repo(
