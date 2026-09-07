@@ -1,0 +1,200 @@
+"""`tests/root_scratch_guard.py` end to end -- #1228.
+
+Same harness shape as `tests/test_must_assert_on_430.py`: the subject is
+SESSION-level exit-code behaviour (did the whole pytest run come back red
+because of an unexpected root-level entry), which no in-process assertion
+inside a test that same run is executing can observe -- `pytester` drives a
+real, separate pytest subprocess and hands back its exit code and output.
+
+Every case builds a small throwaway repository shape under `pytester.path`:
+a `tests/` subdirectory holding `root_scratch_guard.py` (the real module
+under test, loaded verbatim -- not a rewritten copy, so a bug in the module
+is exactly as visible here as it would be to the real suite) plus a
+`conftest.py` that registers it as a plugin, mirroring this real
+repository's own `tests/conftest.py`. `root_scratch_guard.REPO_ROOT` is
+computed from `Path(__file__).resolve().parent.parent`, so placing the
+module two directories under `pytester.path` makes `pytester.path` itself
+the "repository root" the guard watches -- the same relationship the real
+module has to the real repository.
+
+`_run()` below is a small, deliberately local re-implementation of the
+#719 harness-failure skip `tests/test_must_assert_on_430.py` already has
+for the identical `pytester` subprocess-import hazard (a `pytester` child's
+relocated `HOME` can leave it unable to import pytest, at which point every
+assertion here would be measuring nothing but reads as six false failures
+about `root_scratch_guard`, not about #719). Not shared with that file's
+own copy in this change; see this issue's own report for the follow-up.
+"""
+
+import re
+
+import pytest
+
+pytest_plugins = ["pytester"]
+
+_CHILD_COULD_NOT_IMPORT_PYTEST = re.compile(r"No module named ['\"]?pytest['\"]?\s*$")
+
+
+def _child_could_not_run(result):
+    if result.outlines:
+        return None
+    for line in result.errlines:
+        if _CHILD_COULD_NOT_IMPORT_PYTEST.search(line):
+            return line
+    return None
+
+
+def _run(pytester, *args):
+    result = pytester.runpytest_subprocess(*args)
+    reason = _child_could_not_run(result)
+    if reason is not None:
+        pytest.skip(
+            "the pytester child could not import pytest ({!r}) -- this "
+            "measures nothing about root_scratch_guard, not a defect in it "
+            "(#719)".format(reason)
+        )
+    return result
+
+
+def _root_scratch_guard_source():
+    import root_scratch_guard
+
+    from pathlib import Path
+
+    return Path(root_scratch_guard.__file__).read_text(encoding="utf-8")
+
+
+def _make_guarded_tree(pytester, probe_body):
+    """Lay out `pytester.path/tests/{root_scratch_guard.py,conftest.py,
+    test_probe.py}` -- the real plugin, registered exactly the way the real
+    repository registers it, watching `pytester.path` as its own
+    "repository root"."""
+    tests_dir = pytester.path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "root_scratch_guard.py").write_text(
+        _root_scratch_guard_source(), encoding="utf-8"
+    )
+    (tests_dir / "conftest.py").write_text(
+        "pytest_plugins = ['root_scratch_guard']\n", encoding="utf-8"
+    )
+    (tests_dir / "test_probe.py").write_text(probe_body, encoding="utf-8")
+    return tests_dir
+
+
+def test_a_leaked_root_level_entry_fails_the_whole_session(pytester):
+    """Must-fire case: a test creates a directory directly under the
+    watched root and never removes it -- exactly the shape of #1214's own
+    two original sites before their fixes, and of any future third site
+    this guard exists to catch. The session must come back red, naming the
+    entry, not green."""
+    tests_dir = _make_guarded_tree(
+        pytester,
+        "import time\n"
+        "from pathlib import Path\n"
+        "def test_it():\n"
+        "    root = Path(__file__).resolve().parent.parent\n"
+        "    (root / '_leaked_root_entry_1228').mkdir()\n"
+        # A trivial `assert True` test runs in well under a millisecond --
+        # faster than the guard's own 5ms poll interval can reliably win a
+        # race against, in this artificial harness alone (a real suite runs
+        # for tens of seconds). The sleep gives the background watcher
+        # thread at least one scheduling slice to see the entry before the
+        # session ends; it is a harness timing fix, not a change to what
+        # the guard itself watches for.
+        "    time.sleep(0.1)\n"
+        "    assert True\n",
+    )
+    result = _run(pytester, str(tests_dir))
+    assert result.ret != 0, "\n".join(result.outlines + result.errlines)
+    result.stdout.fnmatch_lines(["*root_scratch_guard*_leaked_root_entry_1228*"])
+
+
+def test_a_transient_root_level_entry_still_fails_the_session(pytester):
+    """Must-fire case, the harder half: the entry is created AND removed
+    within the run, the same way #1214's own two original instances were
+    transient (a directory that vanished mid-collection, not litter left at
+    the end). The guard polls continuously in the background (like
+    `_RootWatcher`'s own mechanism), not a before/after snapshot, so this
+    must be caught too -- a snapshot-only check would silently miss exactly
+    the failure mode #1214 was filed for."""
+    tests_dir = _make_guarded_tree(
+        pytester,
+        "import shutil\n"
+        "import time\n"
+        "from pathlib import Path\n"
+        "def test_it():\n"
+        "    root = Path(__file__).resolve().parent.parent\n"
+        "    scratch = root / '_transient_root_entry_1228'\n"
+        "    scratch.mkdir()\n"
+        "    time.sleep(0.1)\n"
+        "    shutil.rmtree(scratch)\n"
+        "    assert True\n",
+    )
+    result = _run(pytester, str(tests_dir))
+    assert result.ret != 0, "\n".join(result.outlines + result.errlines)
+    result.stdout.fnmatch_lines(["*root_scratch_guard*_transient_root_entry_1228*"])
+
+
+def test_an_ordinary_run_with_nothing_at_the_root_does_not_fail_the_session(pytester):
+    """Must-not-fire control: a completely ordinary test, touching nothing
+    at the root, must leave the session exactly as green as it would be
+    with no guard registered at all."""
+    tests_dir = _make_guarded_tree(pytester, "def test_it():\n    assert 1 + 1 == 2\n")
+    result = _run(pytester, str(tests_dir))
+    assert result.ret == 0, "\n".join(result.outlines + result.errlines)
+    assert "root_scratch_guard" not in "\n".join(result.outlines)
+
+
+def test_an_allowlisted_coverage_artifact_does_not_fail_the_session(pytester):
+    """Must-not-fire control for the allowlist: a per-worker coverage.py
+    data file (`.coverage.<host>.<pid>.<rand>`, the real shape pytest-cov /
+    coverage.py produce under xdist, and legitimately still present at
+    session end if the combine step has not run yet) must never be reported
+    as an unexpected entry -- the guard's whole point is a THIRD scratch
+    site, not this repository's own already-understood coverage machinery.
+    """
+    tests_dir = _make_guarded_tree(
+        pytester,
+        "from pathlib import Path\n"
+        "def test_it():\n"
+        "    root = Path(__file__).resolve().parent.parent\n"
+        "    (root / '.coverage.somehost.12345.abcdef').write_text('x')\n"
+        "    assert True\n",
+    )
+    result = _run(pytester, str(tests_dir))
+    assert result.ret == 0, "\n".join(result.outlines + result.errlines)
+    assert "root_scratch_guard" not in "\n".join(result.outlines)
+
+
+def test_the_guard_still_catches_a_leak_under_real_xdist_worker_execution(pytester):
+    """Design decision #2 (controller-only), proven rather than only
+    documented: under a real `-n 1 --dist loadfile` xdist run, the offending
+    test executes inside a WORKER process, never the controller. This must
+    still fail the session -- the controller's own watcher observes the
+    same shared filesystem every worker writes to, so it does not need to
+    run inside the worker at all to see what the worker leaves behind.
+
+    Skips (naming why) rather than failing outright if `pytest-xdist` is not
+    importable in the pytester child's own environment -- a genuine
+    could-not-check, not a false pass or a defect in the guard.
+    """
+    tests_dir = _make_guarded_tree(
+        pytester,
+        "import time\n"
+        "from pathlib import Path\n"
+        "def test_it():\n"
+        "    root = Path(__file__).resolve().parent.parent\n"
+        "    (root / '_leaked_under_xdist_1228').mkdir()\n"
+        "    time.sleep(0.1)\n"
+        "    assert True\n",
+    )
+    result = _run(pytester, "-n", "1", "--dist", "loadfile", str(tests_dir))
+    combined = "\n".join(result.outlines + result.errlines)
+    if "unrecognized arguments" in combined or "no such option" in combined.lower():
+        pytest.skip(
+            "pytest-xdist is not available to this pytester child -- this "
+            "measures nothing about the controller-only design decision, "
+            "not a defect in it: " + combined
+        )
+    assert result.ret != 0, combined
+    result.stdout.fnmatch_lines(["*root_scratch_guard*_leaked_under_xdist_1228*"])
