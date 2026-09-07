@@ -764,56 +764,64 @@ less than it appears to: `skills/manager/phases/handback.md`.
 """
 
 
-
-#: #1105 -- three traps from `claude-remember`'s trap.d/, curated into one rule about
-#: this plugin's own review-phase mutation check: the `cd` belongs on the same call as
-#: the compare (#456), a before-snapshot in the shared scratchpad can vanish mid-run
-#: (#539), and `could-not-compare` is a third verdict, never `clean` by default (also
-#: what caught a real index/worktree split at #527). `01-oss/` ships this into every
-#: managed repository because the flow it is about (`agents/developer/review.md`) is
-#: this plugin's own, not any one managed repo's fact -- a local append under a
-#: managed repo's own `00-manual/` would be destroyed by the next `/oss:scaffold
-#: --apply` regardless. `mode: remind`, matching the other two `tools` entries: this
-#: names a real hazard at the moment the call is about to run, it does not refuse it.
+#: #1105 -- curated into one rule about this plugin's own review-phase mutation check.
+#: Self-review (#1105's own developer lane) found the originally-curated content stale: it
+#: told every managed repo to chain `snapshot` and `compare` with a same-call `cd` to avoid
+#: reading the wrong cwd's git state, which was true before this script's own root-recording
+#: fix landed but is not true of the script as shipped today -- `compare` already defaults to
+#: the before-snapshot's own recorded root (see `tree_snapshot.py`'s own `--root` help text),
+#: so the rule as first drafted would have taught a workaround for an already-closed bug,
+#: contradicting `agents/developer/review.md`'s own current worked example (no `cd`, two
+#: separate calls). It also cited bare issue numbers from the repo the traps were originally
+#: logged in, which are not this repo's own numbers and resolve to unrelated issues when read
+#: from a different tracker -- none of the three sibling `tools` rules below cite an issue
+#: number at all, for exactly that reason. Rewritten to state the current, correct mechanism
+#: and dropped the issue citations to match that precedent. `01-oss/` ships this into every
+#: managed repository because the flow it is about (`agents/developer/review.md`) is this
+#: plugin's own, not any one managed repo's fact -- a local append under a managed repo's own
+#: `00-manual/` would be destroyed by the next `/oss:scaffold --apply` regardless. `mode:
+#: remind`, matching the other two `tools` entries: this names a real hazard at the moment the
+#: call is about to run, it does not refuse it.
 TOOLS_TREE_SNAPSHOT = """---
-title: "tree_snapshot compare: the cd, the snapshot's home, and the third verdict"
-description: "A compare run from the wrong cwd reports `mutated` about the wrong repo. A before-snapshot in the shared scratchpad can vanish mid-run. could-not-compare is never clean."
+title: "tree_snapshot compare: the recorded root, the snapshot's home, and the third verdict"
+description: "compare already defaults to the before-snapshot's own recorded root, not the live cwd -- but only once it says that root actually resolved. A before-snapshot in the shared scratchpad can vanish mid-run. could-not-compare is never clean."
 tool: Bash
 match: ~tree_snapshot
 mode: remind
 ---
 
-The review phase's mutation check has three failure modes, all observed in this repo, and each
-produces an answer that reads exactly like a real one.
+The review phase's mutation check has three things worth knowing, and each has produced an
+answer that read exactly like a genuine one.
 
-**Put the `cd` on the same Bash call as the compare.** The Bash tool's cwd resets between calls,
-so a `compare --before -` issued in a later call than the `cd` reads the **main clone's** git
-state, not the worktree's -- and reports `VERDICT: mutated -- HEAD moved from <worktree HEAD> to
-<clone HEAD>`. Observed (#456): a lane spent several seconds believing a spawned reviewer had
-mutated its tree; re-running as `cd <worktree> && cat before.json | ... compare --before -` in one
-call returned `clean`. The developer brief already says this for the three write ops (note, report,
-PR payload). It applies to read-only diagnostics too -- that is the gap this rule closes, because
-nothing about a diagnostic looks like it needs the same care.
+**`compare` already defaults to the before-snapshot's own recorded root, not the live cwd -- a
+same-call `cd` chaining `snapshot` to `compare` is not needed for the ordinary case.** An
+earlier version of this tool re-snapshotted whatever directory the later Bash call happened to
+be standing in, so a `compare --before -` issued after cwd had reset between calls read the
+wrong tree and reported a false `mutated` verdict about the wrong repository. `compare` now
+reuses the root `snapshot` recorded by default, provided the before-snapshot itself says that
+root actually resolved -- pass `--root` explicitly only to compare against a different directory
+on purpose, or if this pair ever lands on the wrong sibling worktree, in which case say so in the
+report rather than trusting the default silently.
 
-**Write the before-snapshot inside the worktree, not the shared scratchpad.** Observed (#539): a
-snapshot written to `<scratchpad>/before_snapshot.json`, verified readable immediately after the
-write, was simply gone several calls later while every neighbouring file written in the same window
-survived. No error at any point. The reviewers had run 3-4 minutes concurrently in between. Cause
-was never established -- scratchpad GC racing a long-running background agent is a guess, not a
-finding -- so the mitigation is positional, not a fix: a path inside the worktree is not subject to
-whatever collected that file.
+**Write the before-snapshot inside the worktree, not a shared scratchpad.** A snapshot written to
+a shared scratchpad location, verified readable immediately after the write, can simply be gone
+several calls later while every neighbouring file written in the same window survives, with no
+error at any point. Root cause unconfirmed -- scratchpad GC racing a long-running background
+agent is a guess, not a finding -- so the mitigation is positional, not a fix: a path inside the
+worktree is not subject to whatever collected the missing file.
 
-**`could-not-compare` is a third verdict and it is not `clean`.** When the snapshot is missing, the
-cwd is wrong, or the compare cannot run, say so in the report. `git status --porcelain` coming back
-empty is weaker indirect evidence, not a substitute -- it cannot see an index/worktree split.
+**`could-not-compare` is a third verdict and it is not `clean`.** When the snapshot is missing,
+the recorded root could not be resolved, or the compare cannot run, say so in the report.
+`git status --porcelain` coming back empty is weaker indirect evidence, not a substitute -- it
+cannot see an index/worktree split.
 
-**The check earns its cost -- it has caught a real one.** Observed (#527): an `Explore` reviewer,
-told explicitly not to mutate the tree, left the working tree at HEAD's blob and the **index** at
-`HEAD~1`'s. `git status` showed `MM scripts/post-tool-hook.sh` -- a false "modified" nobody made.
-HEAD never moved, and the reviewer's own final message claimed it had worked in an isolated scratch
-copy, so there was no admission to catch it by. Only the blob hashes showed it. Left alone, the next
-`git add -A` would have committed a silent revert of the fix. Cost to repair, once the snapshot
-named the file and the direction: one `git restore --staged <path>`.
+**The check earns its cost -- it has caught a real mutation.** A reviewer told explicitly not to
+mutate the tree can still leave the working tree at HEAD's blob and the **index** at a different
+commit's. `git status` then shows a false "modified" nobody made, HEAD never moved, and there is
+no admission to catch it by if the reviewer's own final message claims it worked only in an
+isolated scratch copy -- only the blob hashes show it. Left alone, the next `git add -A` commits a
+silent revert of the fix. Cost to repair, once the snapshot names the file and the direction: one
+`git restore --staged <path>`.
 """
 
 

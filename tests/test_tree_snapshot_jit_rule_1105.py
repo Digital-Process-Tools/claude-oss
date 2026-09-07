@@ -1,9 +1,17 @@
-"""#1105: three traps logged in `claude-remember`'s `trap.d/` (#456, #539, #527) turned
-out to be one rule about this plugin's own review-phase mutation check
-(`agents/developer/review.md`'s `tree_snapshot.py` snapshot/compare step). Curated
-there and filed here to land in the durable home -- this plugin's own generated
-`01-oss` layer, so every managed repository picks it up on install/update rather
-than only the one repo where the trap happened to be logged.
+"""#1105: traps about this plugin's own review-phase mutation check
+(`agents/developer/review.md`'s `tree_snapshot.py` snapshot/compare step), curated
+into one jit-context rule and filed here to land in the durable home -- this
+plugin's own generated `01-oss` layer, so every managed repository picks it up on
+install/update rather than only the one repo where a trap happened to be logged.
+
+Self-review on this same issue found the first draft of the rule stale: it told
+every managed repo to chain `snapshot` and `compare` with a same-call `cd`, which
+was true before this script's own root-recording fix landed but is not true of the
+script as shipped today (`compare` already defaults to the before-snapshot's own
+recorded root) -- and it cited bare issue numbers from the tracker the traps were
+originally logged in, which resolve to unrelated issues when read from a different
+one. The rule below is the corrected version; see `scripts/oss_rules.py`'s own
+comment above `TOOLS_TREE_SNAPSHOT` for the full account.
 
 Same shape as `tests/test_merge_gate_jit_rule_245.py`: the rule has to exist in
 `oss_rules.RULES["tools"]`, be indexed by `index_rows()`, be tracked byte-identically
@@ -90,13 +98,35 @@ def test_the_rule_is_a_reminder_not_a_block():
     )
 
 
-def test_the_rule_names_all_three_observed_incidents():
+def test_the_rule_names_no_bare_issue_number():
+    """Self-review finding (#1105): none of the sibling `tools` rules
+    (merge-gate.md, pr-create-gate.md, supertool-required.md) cite a bare issue
+    number in their shipped body -- a number from the repo the traps were
+    originally logged in resolves to an unrelated issue when read from a
+    different tracker (this repo's own #456 is an unrelated, already-merged PR).
+    The rule text stays self-contained instead."""
     body = _rule_body()
-    for issue in ("#456", "#539", "#527"):
-        assert issue in body, (
-            "the tree-snapshot rule's body does not cite {} -- one of the three "
-            "observed incidents it is curated from".format(issue)
+    for token in body.split():
+        stripped = token.strip("().,:;")
+        assert not (stripped.startswith("#") and stripped[1:].isdigit()), (
+            "the tree-snapshot rule's body cites a bare issue number ({!r}) -- "
+            "none of the shipped 01-oss tools rules do, because the number is "
+            "not necessarily this repo's own".format(stripped)
         )
+
+
+def test_the_rule_covers_all_three_observed_failure_modes():
+    """Content-shape check in place of citing issue numbers: the rule still has
+    to actually describe all three curated observations, just without numbering
+    them."""
+    body = _rule_body()
+    assert "recorded root" in body and "live cwd" in body, (
+        "the rule does not describe the recorded-root-vs-live-cwd mechanism"
+    )
+    assert "scratchpad" in body, "the rule does not describe the scratchpad hazard"
+    assert "index" in body and "HEAD" in body, (
+        "the rule does not describe the index/HEAD split incident"
+    )
 
 
 def test_the_rule_states_the_third_verdict_is_not_clean():
@@ -180,7 +210,7 @@ def test_the_rule_fires_on_a_real_tree_snapshot_command(tmp_path):
     title = oss_rules._frontmatter(body)
     # A short, distinctive fragment of the rule's own title -- proof the INJECTED
     # content is this rule and not some other one that happened to fire.
-    sentinel = "tree_snapshot compare: the cd"
+    sentinel = "tree_snapshot compare: the recorded root"
     assert sentinel in title, "test sentinel drifted from the rule's own title"
 
     answer, problem = jit_hook_harness.drive(
@@ -200,7 +230,7 @@ def test_the_rule_does_not_fire_on_an_unrelated_command(tmp_path):
     """Must-not-fire control, without which the assertion above is equally satisfied
     by a rule that injects on every Bash call."""
     bash, hook, project, version = _driven(tmp_path)
-    sentinel = "tree_snapshot compare: the cd"
+    sentinel = "tree_snapshot compare: the recorded root"
 
     answer, problem = jit_hook_harness.drive(
         bash,
