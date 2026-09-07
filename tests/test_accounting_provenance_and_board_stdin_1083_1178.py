@@ -11,15 +11,20 @@ label as settling authorship outright -- a labelled issue is unconditionally
 `author: "loop"`. A co-decided issue carrying the label would rank in the
 loop's own band instead of the maintainer's.
 
-#1178: `dispatch.md` and `tick-order.md` both point at
+#1178 found that `dispatch.md` and `tick-order.md` both pointed at
 `select_issues.py --board` right after truthfully describing the *default*,
-no-flags mode as taking no stdin input at all. `--board` is a different,
-older CLI mode that DOES read a board-shaped payload on stdin
-(`scripts/select_issues.py`'s own `main()` docstring says so explicitly) --
+no-flags mode as taking no stdin input at all, while `--board` was a
+different, older CLI mode that DID read a board-shaped payload on stdin --
 a careful reader who just read "no stdin payload" about the default mode
-draws the wrong conclusion at the `--board` call site and gets a
-`stdin: not valid JSON` failure for their trouble. This was observed live,
-three times in one tick.
+drew the wrong conclusion at the `--board` call site and got a
+`stdin: not valid JSON` failure for their trouble, observed live three
+times in one tick. #1178's own fix (PR #1195) documented the exception at
+both call sites; #1200 replaced that with the other shape -- `--board` now
+fetches its own board too, the same way the default mode does, so there is
+no exception left to document. The four tests #1195 added to pin the
+documented-exception shape are replaced below by tests pinning its
+opposite: no stdin contract left to describe, at either call site or in
+the code's own docstring.
 """
 
 import sys
@@ -75,47 +80,26 @@ def test_1083_is_cited():
     assert "#1083" in ACCOUNTING
 
 
-def test_board_mode_stdin_contract_is_stated_at_both_call_sites():
+def test_neither_call_site_documents_a_board_stdin_contract_any_more():
+    """#1200: `--board` no longer reads stdin at all, so #1178's own fix
+    (documenting the exception) has nothing left to document. Neither
+    phase file may still claim `--board` reads a board-shaped payload on
+    stdin -- that sentence describes code this branch deletes."""
     for name, text in (("dispatch.md", DISPATCH), ("tick-order.md", TICK_ORDER)):
         normalized = text.replace("\n", " ")
-        assert "--board" in text
-        assert "stdin" in normalized, name
-        assert "#1178" in normalized, name
+        assert "--board" in text, name
+        assert "reads a board-shaped payload on stdin" not in normalized, name
+        assert "reads the same board shape on stdin" not in normalized, name
 
 
-def test_dispatch_md_never_implies_board_shares_the_default_modes_no_input_contract():
-    """The true "no stdin, no --fetch mode" sentence about the *default* mode
-    must not be immediately followed by an unqualified `--board` reference --
-    the fix must state, in the same neighbourhood, that `--board` is a
-    different contract."""
-    normalized = DISPATCH.replace("\n", " ")
-    board_idx = normalized.index("--board")
-    window = normalized[max(0, board_idx - 400) : board_idx + 600]
-    assert "stdin" in window
-
-
-def test_select_issues_py_confirms_board_reads_stdin_and_default_does_not():
-    """Pins the code fact the prose fix depends on, so a future change to
-    select_issues.py's own contract fails this test rather than leaving the
-    prose stale."""
-    assert "`--board` still reads its own board-shaped payload on stdin" in (
-        SELECT_ISSUES
-    )
-    assert "there is no stdin fallback left in this mode" in SELECT_ISSUES
-
-
-def test_the_prose_does_not_overclaim_that_every_wrong_shape_fails_cleanly():
-    """A self-review round found the first version of both #1178 sentences
-    claimed a wrong-shaped `--board` payload always fails with a clean
-    `stdin: not valid JSON` error. Verified against the running script that
-    is false: a dict with no `declared` key exits 0 with a silently
-    degraded receipt, and a bare JSON list crashes with an uncaught
-    `AttributeError`. The corrected prose must not repeat that overclaim."""
-    for name, text in (("dispatch.md", DISPATCH), ("tick-order.md", TICK_ORDER)):
-        normalized = text.replace("\n", " ")
-        board_idx = normalized.index("--board")
-        window = normalized[board_idx : board_idx + 900]
-        assert "degraded" in window or "crash" in window, name
+def test_select_issues_py_no_longer_reads_stdin_for_board_either():
+    """Pins the code fact the prose depends on: `--board` fetches its own
+    board now, the identical route the default mode uses, so a future
+    change reintroducing a stdin read here fails this test rather than
+    leaving the prose stale."""
+    assert "still reads its own board-shaped payload on stdin" not in SELECT_ISSUES
+    assert "_read_stdin_json" not in SELECT_ISSUES
+    assert "fetches its own board too" in SELECT_ISSUES
 
 
 def test_skill_md_op_table_no_longer_states_the_unconditional_attach_rule():
