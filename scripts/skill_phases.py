@@ -396,13 +396,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # recount -- fixed by naming the recorded `froze <cohort> at N`
         # decision as the one to quote. Comfortably under the 23000 B
         # ceiling; ceiling unchanged.
-        # Re-baselined for #1220: 21569 B became 22406 B (22110 B, then +296 B
-        # in the same lane's self-review round fixing a wording inconsistency
-        # between this file and commands/release.md over what `--at` takes) --
-        # a pointer to the new mechanical ordering check,
+        # Re-baselined for #1220: 21569 B became 22428 B (22110 B, then +296 B
+        # fixing a wording inconsistency between this file and
+        # commands/release.md over what `--at` takes, then +22 B fixing a CI
+        # finding -- the script path shown bare rather than prefixed with
+        # ${CLAUDE_PLUGIN_ROOT}/, caught by test_script_path_resolution_647.py
+        # on 12 of 18 legs) -- a pointer to the new mechanical ordering check,
         # scripts/cohort_citation_order.py. Comfortably under the 23000 B
         # ceiling; ceiling unchanged.
-        22406,
+        22428,
         23000,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
