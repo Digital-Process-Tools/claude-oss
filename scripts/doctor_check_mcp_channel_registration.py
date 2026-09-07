@@ -29,6 +29,7 @@ is next rather than forgotten.
 Python 3.9 compatible.
 """
 
+import json
 import os
 import re
 import shutil
@@ -328,6 +329,148 @@ _CHANNEL_CONSUMER_SUFFIX_RE = re.compile(
 #: colons line up, which is why this is `[ \t]+` rather than a single space.
 _MCP_LIST_LINE_RE = re.compile(r"^([^\s:][^:]*):[ \t]+(.*)$")
 
+#: Where the harness records every currently installed plugin, keyed by
+#: `name@marketplace`, each carrying its own `installPath`. Same file
+#: `bin/oss-workspace`'s own `FIND_CONSUMER` heredoc reads to locate
+#: supertool's consumer script -- see the module-level note below for why
+#: this walks EVERY installed plugin rather than one hardcoded name.
+_PLUGIN_REGISTRY_PATH = os.path.join(
+    os.path.expanduser("~"), ".claude", "plugins", "installed_plugins.json"
+)
+
+
+def _plugin_install_paths(registry_path=None):
+    """``(pairs, None)`` or ``(None, reason)`` -- every ``(plugin_key,
+    installPath)`` the harness's own plugin registry records, across ALL
+    installed plugins, not only supertool.
+
+    #1241: the harness loads a plugin's own `.mcp.json` servers directly --
+    they are injected into the session under `plugin:<name>:<server>` and run
+    as a child process of the `claude` session itself -- and **no `claude
+    mcp` surface reports them**: `claude mcp list` omits them entirely, and
+    `claude mcp get plugin:<name>:<server>` answers "No MCP server named
+    ...". `channel_consumer_names` below, parsing `claude mcp list`, is
+    therefore not reading an incomplete rendering of the population -- the
+    population is not on that surface at all. This reads the SAME registry
+    `bin/oss-workspace`'s `FIND_CONSUMER` heredoc already reads to find
+    supertool's own consumer script, generalised past that one hardcoded
+    plugin name: any installed plugin can ship a `.mcp.json` with a
+    claude-channel consumer, and the census this module exists to run has no
+    business assuming only supertool ever will.
+
+    A registry that does not exist at all means no plugins are installed
+    through this mechanism -- ``([], None)``, not an error, mirroring
+    `FIND_CONSUMER`'s own treatment of the identical case. A registry that
+    exists but cannot be read or parsed is a real gap in what this census can
+    establish and must not silently read as "no plugins": ``(None, reason)``,
+    so the caller can render the third state rather than a false `single`/
+    `none`.
+    """
+    registry_path = registry_path or _PLUGIN_REGISTRY_PATH
+    try:
+        with open(registry_path, encoding="utf-8") as handle:
+            doc = json.load(handle)
+    except FileNotFoundError:
+        return [], None
+    except OSError as exc:
+        return None, "{} could not be read ({})".format(registry_path, exc)
+    except ValueError as exc:
+        return None, "{} is not valid JSON ({})".format(registry_path, exc)
+    if not isinstance(doc, dict):
+        return None, "{} is not a JSON object".format(registry_path)
+    plugins = doc.get("plugins")
+    if plugins is None:
+        plugins = {}
+    if not isinstance(plugins, dict):
+        return None, '{}\'s "plugins" entry is not a JSON object'.format(registry_path)
+    pairs = []
+    for key, entries in plugins.items():
+        if entries is None:
+            continue
+        if not isinstance(entries, list):
+            return None, "{}'s {} entry is not a JSON array".format(registry_path, key)
+        for entry in entries:
+            if not isinstance(entry, dict):
+                return (
+                    None,
+                    "{} lists an install entry for {} that is not a JSON object".format(
+                        registry_path, key
+                    ),
+                )
+            install_path = entry.get("installPath")
+            if isinstance(install_path, str) and install_path:
+                pairs.append((key, install_path))
+    return pairs, None
+
+
+def _plugin_channel_consumer_names(plugin_registry_path=None):
+    """``(names, None)`` or ``(None, reason)`` -- one label per installed
+    plugin whose OWN `.mcp.json` declares an MCP server resolving to the
+    claude-channel consumer script (#1241). Best-effort per install: a
+    plugin whose `.mcp.json` is simply absent contributes nothing (most
+    plugins ship none); a plugin whose `.mcp.json` EXISTS but cannot be read
+    or parsed is a real gap, and turns the whole result into
+    ``(None, reason)`` rather than silently omitting just that one plugin --
+    a partial read of this population is exactly the shape #911 already
+    named for the project-scope case, and the same caution applies here: an
+    unreadable neighbour must not make the others look like the whole
+    population.
+    """
+    pairs, reason = _plugin_install_paths(plugin_registry_path)
+    if pairs is None:
+        return None, reason
+    # #1241 self-review finding (dogfooded against this machine's own real
+    # registry): the registry records one row per PROJECT that ever
+    # installed a plugin, plus every version ever installed, not one row per
+    # currently-active server -- this machine's own `installed_plugins.json`
+    # carries 17 rows for `supertool@dpt-plugins` alone, mostly repeating the
+    # SAME installPath. Counting each row as a separate consumer turned a
+    # real, single collision into a reported "18 servers", which is not a
+    # fact about how many processes could ever actually race for the socket
+    # -- only one version of one plugin is ever loaded into a given session.
+    # Dedup on the label itself (`plugin:<key>:<server>`), first-seen order:
+    # the SAME (key, server) name found via a different install-path row (a
+    # different project's copy, or an older version whose `.mcp.json` still
+    # declares the identical server) is one consumer, not several.
+    names = []
+    seen = set()
+    for key, install_path in pairs:
+        mcp_path = os.path.join(install_path, ".mcp.json")
+        try:
+            with open(mcp_path, encoding="utf-8") as handle:
+                doc = json.load(handle)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            return None, "{} could not be read ({})".format(mcp_path, exc)
+        except ValueError as exc:
+            return None, "{} is not valid JSON ({})".format(mcp_path, exc)
+        if not isinstance(doc, dict):
+            return None, "{} is not a JSON object".format(mcp_path)
+        servers = doc.get("mcpServers")
+        if servers is None:
+            continue
+        if not isinstance(servers, dict):
+            return None, '{}\'s "mcpServers" entry is not a JSON object'.format(
+                mcp_path
+            )
+        for server_name, spec in servers.items():
+            if not isinstance(spec, dict):
+                continue
+            parts = []
+            command = spec.get("command")
+            if isinstance(command, str):
+                parts.append(command)
+            args = spec.get("args")
+            if isinstance(args, list):
+                parts.extend(a for a in args if isinstance(a, str))
+            if _CHANNEL_CONSUMER_SUFFIX_RE.search(" ".join(parts)):
+                label = "plugin:{}:{}".format(key, server_name)
+                if label not in seen:
+                    seen.add(label)
+                    names.append(label)
+    return names, None
+
 
 def channel_consumer_names(text):
     """Every MCP server name in `claude mcp list` output whose command/args end in
@@ -352,44 +495,13 @@ def channel_consumer_names(text):
     return names
 
 
-def channel_consumer_census_state(run=None, which=None, env=None):
-    """How many configured MCP servers resolve to the claude-channel consumer
-    script, for THIS machine's `claude` -- never assumed from `oss-channel`'s own
-    registration alone.
-
-    Returns ``(state, detail)``. Three states, and the third is the one the issue
-    names explicitly as never collapsing into the first: `claude mcp list` failing
-    to run, timing out, or exiting non-zero must read as `could-not-ask`, never as
-    "exactly one server" -- a crashed or refused probe is not evidence of a clean
-    census, and reading it as one would silently arm a collision this check exists
-    to catch.
-
-    * ``could-not-ask`` -- `claude` is not on PATH, the call itself did not run, or
-      it exited non-zero. `detail` says which.
-    * ``collision`` -- two or more servers resolve to the consumer script. `detail`
-      is the list of their names, in the order `claude mcp list` printed them.
-    * ``single`` -- exactly one. `detail` is that one name.
-    * ``none`` -- zero. `detail` is empty. Distinct from `single` because a caller
-      deciding whether it is safe to arm a channel flag needs "nothing configured
-      at all" told apart from "the one server I expect and nothing else" --
-      `check_channel_consumer_census` below folds both into the same OK line, but
-      the state itself keeps them separate for a caller that cares which.
-
-    `bin/oss-workspace` already runs THIS exact census, via THIS exact function,
-    a few lines before it shells out to `doctor.sh` -- so a launcher-opened
-    session paid for `claude mcp list` twice in the same session-open sequence
-    (review finding on #810, the identical shape #629 already fixed for
-    `mcp_channel_registration_state` above). When the launcher has already
-    asked, it exports the raw multi-line report (`OSS_WORKSPACE_CENSUS_CHECKED`,
-    `_REPORT` -- the census's own `state` line followed by its `collision`
-    names or `could-not-ask` detail, exactly the shape this function's own
-    embedded-python callers already print) and this reads that instead of
-    shelling out again. This is a relay, not a cache, on the same terms
-    `mcp_channel_registration_state`'s own docstring states: the two calls
-    happen seconds apart inside one session-open sequence, never across an
-    interval this repo's `statusline.py` cache history would call stale. A
-    relayed report this function does not recognise (empty, or an unrecognised
-    first line) falls through to a real ask rather than guessing.
+def _mcp_list_consumer_names(run=None, which=None, env=None):
+    """``(names, None)`` or ``(None, reason)`` -- the `claude mcp list`-visible
+    half of the census, split out of `channel_consumer_census_state` so #1241's
+    plugin-population half (below) can be folded in without duplicating the
+    launcher-relay handling. Same relay contract as before: `env`'s
+    `OSS_WORKSPACE_CENSUS_CHECKED`/`_REPORT` are read first, and a real `claude
+    mcp list` call happens only when no relay is present or recognised.
     """
     env = os.environ if env is None else env
     relayed = env.get("OSS_WORKSPACE_CENSUS_CHECKED") == "1"
@@ -398,13 +510,13 @@ def channel_consumer_census_state(run=None, which=None, env=None):
         state = lines[0].strip() if lines else ""
         rest = lines[1:]
         if state == "collision":
-            return "collision", rest
+            return rest, None
         if state == "could-not-ask":
-            return "could-not-ask", (rest[0] if rest else "")
+            return None, (rest[0] if rest else "")
         if state == "single":
-            return "single", (rest[0] if rest else "")
+            return (rest[0:1] if rest else []), None
         if state == "none":
-            return "none", ""
+            return [], None
         # An unrecognised or empty relay is not evidence of anything -- fall
         # through to a real ask rather than reporting a guess.
     which = shutil.which if which is None else which
@@ -415,7 +527,7 @@ def channel_consumer_census_state(run=None, which=None, env=None):
     # name), and both are fixed the same way.
     claude_bin = which("claude")
     if claude_bin is None:
-        return "could-not-ask", "claude is not on PATH"
+        return None, "claude is not on PATH"
     try:
         completed = run(
             [claude_bin, "mcp", "list"],
@@ -424,18 +536,83 @@ def channel_consumer_census_state(run=None, which=None, env=None):
             timeout=20,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return "could-not-ask", "`claude mcp list` did not run ({})".format(exc)
+        return None, "`claude mcp list` did not run ({})".format(exc)
     if completed.returncode != 0:
-        return "could-not-ask", "`claude mcp list` exited {}".format(
-            completed.returncode
-        )
+        return None, "`claude mcp list` exited {}".format(completed.returncode)
     stdout = completed.stdout
     text = (
         stdout.decode("utf-8", "replace")
         if isinstance(stdout, bytes)
         else str(stdout or "")
     )
-    names = channel_consumer_names(text)
+    return channel_consumer_names(text), None
+
+
+def channel_consumer_census_state(
+    run=None, which=None, env=None, plugin_registry_path=None
+):
+    """How many MCP servers resolve to the claude-channel consumer script,
+    across the TWO populations that can carry one -- never assumed from
+    `oss-channel`'s own registration alone.
+
+    Returns ``(state, detail)``. Three states, and the third is the one the
+    issue names explicitly as never collapsing into the first: either half
+    of the census failing to establish its own population must read as
+    `could-not-ask`, never as "exactly one server" -- a crashed or refused
+    probe is not evidence of a clean census, and reading it as one would
+    silently arm a collision this check exists to catch.
+
+    * ``could-not-ask`` -- either population could not be established:
+      `claude` is not on PATH, the `claude mcp list` call itself did not
+      run or exited non-zero, or the installed-plugin registry (or one
+      installed plugin's own `.mcp.json`) could not be read or parsed.
+      `detail` says which.
+    * ``collision`` -- two or more servers across BOTH populations resolve
+      to the consumer script. `detail` is their names, `claude mcp list`'s
+      own order first, then the plugin population in registry order.
+    * ``single`` -- exactly one, from either population. `detail` is that
+      one name.
+    * ``none`` -- zero in both. `detail` is empty.
+
+    #1241: `claude mcp list` reports only servers configured on a `claude
+    mcp` surface -- project or user scope. A server an INSTALLED PLUGIN
+    ships in its own `.mcp.json` is loaded by the harness directly and
+    appears on NO `claude mcp` surface at all (`claude mcp list` omits it;
+    `claude mcp get plugin:<name>:<server>` answers "No MCP server named
+    ..."), so the original single-population census could report `single`
+    while a second, plugin-provided consumer silently held the socket --
+    the issue's own repro. `_plugin_channel_consumer_names` (module-level,
+    above) reads the SAME registry `bin/oss-workspace`'s `FIND_CONSUMER`
+    heredoc already reads to answer this for supertool's own consumer,
+    generalised to every installed plugin. `plugin_registry_path` threads
+    through to it for the same reason `run`/`which`/`env` are injected here
+    -- every branch assertable without touching the real filesystem.
+
+    `bin/oss-workspace` already runs the `claude mcp list` half of this
+    census, via `_mcp_list_consumer_names` above -- so a launcher-opened
+    session paid for `claude mcp list` twice in the same session-open
+    sequence (review finding on #810, the identical shape #629 already
+    fixed for `mcp_channel_registration_state` above). When the launcher
+    has already asked, it exports the raw multi-line report
+    (`OSS_WORKSPACE_CENSUS_CHECKED`, `_REPORT`) and this reads that instead
+    of shelling out again -- a relay, not a cache, on the same terms
+    `mcp_channel_registration_state`'s own docstring states. The
+    plugin-population half is NOT relayed (the launcher's own `FIND_CONSUMER`
+    heredoc only ever answers about supertool's one install, not the full
+    population this function needs) and is always read fresh here.
+    """
+    mcp_names, mcp_reason = _mcp_list_consumer_names(run=run, which=which, env=env)
+    if mcp_names is None:
+        return "could-not-ask", mcp_reason
+    plugin_names, plugin_reason = _plugin_channel_consumer_names(plugin_registry_path)
+    if plugin_names is None:
+        return "could-not-ask", (
+            "the claude mcp list population resolved ({} found), but the "
+            "installed-plugin population could not be established: {}".format(
+                len(mcp_names), plugin_reason
+            )
+        )
+    names = list(mcp_names) + list(plugin_names)
     if len(names) >= 2:
         return "collision", names
     if len(names) == 1:
@@ -443,7 +620,9 @@ def channel_consumer_census_state(run=None, which=None, env=None):
     return "none", ""
 
 
-def check_channel_consumer_census(run=None, which=None, env=None):
+def check_channel_consumer_census(
+    run=None, which=None, env=None, plugin_registry_path=None
+):
     """One line: is any OTHER server racing `oss-channel` for the same socket?
 
     Never OK on `could-not-ask` -- an unasked question is not a clean census, and
@@ -454,34 +633,43 @@ def check_channel_consumer_census(run=None, which=None, env=None):
     relay described there -- passed explicitly rather than only defaulting, the
     same shape `check_mcp_channel_registration`'s own `precomputed` parameter
     takes, so a caller can stub the relay independently of the real environment.
+    `plugin_registry_path` threads through the same way for #1241's
+    plugin-population half.
     """
-    state, detail = channel_consumer_census_state(run=run, which=which, env=env)
+    state, detail = channel_consumer_census_state(
+        run=run, which=which, env=env, plugin_registry_path=plugin_registry_path
+    )
     if state == "could-not-ask":
         doctor.report(
             "WARN",
             "channel MCP consumer census: {}, so whether a second configured MCP "
-            "server also resolves to the claude-channel consumer script is "
-            "unknown -- not the same as a census that found none.".format(detail),
+            "server, or an installed plugin's own claude-channel consumer, also "
+            "resolves to the same script is unknown -- not the same as a census "
+            "that found none.".format(detail),
         )
         return
     if state == "collision":
         doctor.report(
             "WARN",
-            "channel MCP consumer census: {} configured MCP servers resolve to "
+            "channel MCP consumer census: {} MCP servers resolve to "
             "notifiers/claude-channel/channel.ts ({}) -- a session opened with the "
             "channel flag would race two servers for one Unix socket, and one is "
             "silently refused (channel:health degrades to CANNOT DETERMINE with no "
-            "error surfaced). bin/oss-workspace already declines to arm the flag "
-            "when it sees this. Deleting or editing whichever config declared the "
-            "extra one is not this diagnostic's call to make -- it names both and "
-            "stops, per this repo's own ownership contract.".format(
+            "error surfaced). A `plugin:` prefixed name is an installed plugin's "
+            "own `.mcp.json` server, loaded by the harness directly -- it appears "
+            "on no `claude mcp` surface at all, so `claude mcp remove` cannot "
+            "touch it; that plugin's own config is what declares it. "
+            "bin/oss-workspace already declines to arm the flag when it sees "
+            "this. Deleting or editing whichever config declared the extra one is "
+            "not this diagnostic's call to make -- it names both and stops, per "
+            "this repo's own ownership contract.".format(
                 len(detail), ", ".join(detail)
             ),
         )
         return
     doctor.report(
         "OK",
-        "channel MCP consumer census: {} configured MCP server(s) resolve to "
-        "notifiers/claude-channel/channel.ts, so no socket collision to "
-        "declare.".format(1 if state == "single" else 0),
+        "channel MCP consumer census: {} MCP server(s) (configured or "
+        "plugin-provided) resolve to notifiers/claude-channel/channel.ts, so no "
+        "socket collision to declare.".format(1 if state == "single" else 0),
     )

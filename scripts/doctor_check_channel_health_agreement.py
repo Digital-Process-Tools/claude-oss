@@ -236,7 +236,14 @@ def _preset_disabled(project_dir):
 
 
 def check_channel_health_agreement(
-    project_dir, run=None, which=None, env=None, allow_probe=None, now=None, probe=None
+    project_dir,
+    run=None,
+    which=None,
+    env=None,
+    allow_probe=None,
+    now=None,
+    probe=None,
+    plugin_registry_path=None,
 ):
     """One line: does doctor's own channel census agree with `channel:health`?
 
@@ -260,7 +267,7 @@ def check_channel_health_agreement(
     if allow_probe is None:
         allow_probe = bool(env.get(CHANNEL_HEALTH_PROBE_ENV))
     census_state, census_detail = channel_consumer_census_state(
-        run=run, which=which, env=env
+        run=run, which=which, env=env, plugin_registry_path=plugin_registry_path
     )
     health_raw_state, health_source, health_age = resolve_channel_health_reading(
         project_dir, allow_probe=allow_probe, probe=probe, now=now
