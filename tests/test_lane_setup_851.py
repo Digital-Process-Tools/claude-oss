@@ -149,7 +149,9 @@ def test_1045_real_open_issue_bodies_cite_their_own_distinct_file():
     hand-written to be well-behaved. Each names a different file in
     backticks; the false-positive shape reported against #1045 would have
     both candidates cited with the SAME file regardless of which lane is
-    claimed."""
+    claimed. Both bodies below are copied verbatim (the #1229 excerpt is its
+    own markdown table, unedited except for the surrounding rows this
+    fixture does not need)."""
     board = _board(
         [
             {
@@ -158,11 +160,20 @@ def test_1045_real_open_issue_bodies_cite_their_own_distinct_file():
                 "overlap, so a false disjointness claim is silent in a "
                 "managed repo",
                 "body": (
-                    "`oss_config.py` validates the shape.\n"
-                    "`scripts/doctor.py` and all 21 `doctor_check_*.py` -- "
-                    "nothing.\n"
-                    "`tests/test_lane_pattern_coverage_1201.py` was added "
-                    "by #1227.\n"
+                    "| `oss_config.py` | validates the **shape** of "
+                    "`labels.lane_patterns` -- an object mapping a lane "
+                    "label to a list of globs, or `null`. Never whether a "
+                    "pattern matches a file that exists, whether two lanes "
+                    "claim the same path, or whether anything is left "
+                    "uncovered. |\n"
+                    "| `scripts/doctor.py` and all 21 `doctor_check_*.py` | "
+                    "**nothing**. `grep lane_pattern scripts/doctor.py` "
+                    "returns 0 results. `.oss.json parsed and validated (15 "
+                    "keys)` is the shape check above and says nothing about "
+                    "coverage or overlap. |\n"
+                    "| `tests/test_lane_pattern_coverage_1201.py` | added "
+                    "by #1227, and the first real coverage check anywhere. "
+                    "It runs in **this** repository's CI. |\n"
                 ),
             },
             {
