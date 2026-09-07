@@ -1348,16 +1348,15 @@ def select_fleet(
     # label -- `select()`'s existing `is_lane_other`/solo-group machinery
     # (see "## Groups" above) already keeps it from ever gaining a
     # companion, so nothing extra is needed here to preserve that rule.
-    lane_labels = [l for l in (declared.get("lanes") or []) if isinstance(l, str)]
-    lane_other_label = declared.get("lane_other")
-    lane_other_label = (
-        lane_other_label
-        if isinstance(lane_other_label, str) and lane_other_label
-        else None
-    )
-    fleet_labels = list(lane_labels)
-    if lane_other_label and lane_other_label not in fleet_labels:
-        fleet_labels.append(lane_other_label)
+    #
+    # #1181: this derivation used to be a fourth independent reimplementation
+    # of "is this issue's label a lane" -- `oss_config.classify_labels`'s own
+    # prefix regex and `scripts/statusline.py`'s exact-membership test were
+    # the other two, and they disagreed. `oss_config.effective_lane_labels`
+    # is now the one place a caller holding a loaded config derives this
+    # list; this module already imports `oss_config`, so it calls that
+    # instead of re-deriving it here.
+    fleet_labels = oss_config.effective_lane_labels(config)
 
     def _run_one(filtered_issues, lane_label, cap_groups):
         payload = {

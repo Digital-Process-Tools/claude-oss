@@ -1646,33 +1646,41 @@ def _gh_unlabelled_issue_counts(repo, total, priority_labels, lane_labels):
             "-f",
             "per_page=100",
             "--jq",
-            ".[] | select(.pull_request == null)"
-            ' | "L:" + ([.labels[].name] | join(","))',
+            ".[] | select(.pull_request == null) | ([.labels[].name] | tojson)",
         ],
         timeout=25,
     )
     if out is None:
         return None
-    # The "L:" prefix on every line (rather than a bare comma-joined list) is not
-    # decoration -- `_run` strips the whole blob's leading/trailing whitespace, and
-    # an issue with zero labels would otherwise print a genuinely empty line. That
-    # line is real data (one issue read, and it carries neither axis's label), but a
-    # *trailing* empty line -- the last open issue in the page happening to carry no
-    # labels -- is indistinguishable from ordinary trailing whitespace and would be
-    # silently stripped away, undercounting `lines` by one against `total` below and
-    # failing the cross-check for a page that was, in fact, read completely. Every
-    # line is non-empty by construction with the prefix in place, so `.strip()` never
-    # eats one.
+    # #1226: one JSON array of label names per line (`tojson`, server-side),
+    # rather than the earlier `"L:" + join(",")` scheme this used to split
+    # back apart in Python. A GitHub label name may legally contain a comma
+    # -- a label literally named e.g. `blocked,lane-storage` split into two
+    # names under the old scheme, one of which (`lane-storage`) could
+    # coincidentally collide with a real declared lane, silently counting an
+    # issue as *placed in a lane* when no triage sweep had actually placed it
+    # there. The direction of that error was an undercount of
+    # `no_priority`/`no_lane`, the opposite of this function's own
+    # documented convention (never undercount) -- and the existing
+    # `len(lines) != total` cross-check below could not catch it, because
+    # the line count stayed correct; only the per-line parse was wrong.
+    # `tojson` needs no delimiter a label name could ever contain, and
+    # unlike the old scheme, `[]` (zero labels) is never an empty line, so
+    # there is no longer a trailing-blank-line hazard to guard against with
+    # a prefix the way the old `"L:"` marker did.
     lines = out.split("\n") if out else []
     if len(lines) != total:
         return None
     no_priority = 0
     no_lane = 0
     for line in lines:
-        if not line.startswith("L:"):
+        try:
+            parsed = json.loads(line)
+        except ValueError:
             return None
-        names = set(line[2:].split(",")) if line[2:] else set()
-        names.discard("")
+        if not isinstance(parsed, list):
+            return None
+        names = {str(name) for name in parsed}
         if priority_set and not (names & priority_set):
             no_priority += 1
         if lane_set and not (names & lane_set):
@@ -2133,7 +2141,27 @@ def refresh(root, now=None):
         priority_labels = labels_config.get("priority")
         priority_labels = priority_labels if isinstance(priority_labels, list) else []
         lane_labels = labels_config.get("lanes")
-        lane_labels = lane_labels if isinstance(lane_labels, list) else []
+        lane_labels = list(lane_labels) if isinstance(lane_labels, list) else []
+        # #1181: `labels.lane_other` is a completed triage decision -- "no
+        # real lane owns this issue's files" -- recorded on its own key
+        # rather than as a sixth entry in `labels.lanes` (#1130), because it
+        # carries no file pattern and select_issues.py dispatches it solo,
+        # never bundled. But that split left this exact-membership test as
+        # the one reader that answered "is this issue triaged into a lane?"
+        # without folding lane_other in, so a correctly lane-other-tagged
+        # issue counted toward `issues_no_lane` forever -- triaging it
+        # correctly made the number go up. A vendored copy of
+        # `oss_config.effective_lane_labels`'s own logic (this module cannot
+        # import that module -- #653's own standalone-vendoring reason):
+        # `lane_other` appended once, only if it is a non-blank string not
+        # already present. A `None`/absent `lane_other` changes nothing.
+        lane_other = labels_config.get("lane_other")
+        if (
+            isinstance(lane_other, str)
+            and lane_other.strip()
+            and lane_other not in lane_labels
+        ):
+            lane_labels.append(lane_other)
         unlabelled = _gh_unlabelled_issue_counts(
             repo, document["issues"], priority_labels, lane_labels
         )
