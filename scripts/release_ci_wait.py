@@ -54,6 +54,11 @@ up waiting" for a real conclusion of any kind -- a tag is not revocable, so
 way `pr_green.py --wait` does on timeout: the caller is expected to treat a
 timed-out wait the same as `red` -- do not tag.
 
+Exit codes never share 2 with argparse's own usage-error path -- self-review
+(#1266) found `pending` sitting on it, the identical defect class #1267
+fixes for `cohort_citation_order.py`'s `EXIT_DECLINED` in this same commit:
+green=0, red=1, could-not-read=3, pending=4.
+
 **`git rev-parse HEAD` on the full ref, never abbreviated, before calling
 this.** A short sha returns `[]` from `gh run list --commit` and exits 0,
 which reads as "no runs" when it actually means "no runs *matched this
@@ -79,11 +84,21 @@ STATE_RED = "red"
 STATE_PENDING = "pending"
 STATE_COULD_NOT_READ = "could-not-read"
 
+# Not 2 for any of these -- argparse.ArgumentParser.error() always exits 2
+# (a missing required flag, an unrecognised one, or this module's own
+# --commit-format refusal below), and a caller branching on exit code alone
+# must be able to tell "still pending" from "you invoked this wrong". Self-
+# review (#1266) found `STATE_PENDING` sitting on 2 here, the identical
+# defect class #1267 fixes for `cohort_citation_order.py`'s `EXIT_DECLINED`
+# in this same commit -- and this module's own `pr_green.py` sibling still
+# carries the same collision on its `STATE_PENDING`, unchanged, since that
+# file is out of this diff's scope; see this diff's own report for that as
+# a separate, filed finding.
 EXIT_CODES = {
     STATE_GREEN: 0,
     STATE_RED: 1,
-    STATE_PENDING: 2,
     STATE_COULD_NOT_READ: 3,
+    STATE_PENDING: 4,
 }
 
 # `gh run list --json status,conclusion` answers in the Actions REST API's
@@ -258,7 +273,8 @@ def main(argv=None, run=None):
     parser = argparse.ArgumentParser(
         description=(
             "Wait for one commit's own CI to conclude before it is tagged. "
-            "green=0 red=1 pending=2 could-not-read=3."
+            "green=0 red=1 could-not-read=3 pending=4 (2 is reserved for a "
+            "usage error)."
         )
     )
     parser.add_argument("--commit", required=True, help="the full 40-character sha")

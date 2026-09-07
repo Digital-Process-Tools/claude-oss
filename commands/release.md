@@ -462,7 +462,9 @@ COMMIT_SHA="$(git rev-parse HEAD)"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_ci_wait.py" --commit "$COMMIT_SHA" --wait
 ```
 
-Three outcomes, exit codes because a shell reads those and never reads prose:
+Four outcomes, exit codes because a shell reads those and never reads prose (2 is never one of
+them — reserved for an argparse usage error, the same discipline gate 3's `cohort_citation_order.py`
+exit codes now follow, #1267):
 
 - **exit 0, `GREEN`** — every run on this commit concluded and passed. Proceed to the tag, below.
 - **exit 1, `RED`** — a run failed, or completed with a conclusion this script has never seen
@@ -470,7 +472,11 @@ Three outcomes, exit codes because a shell reads those and never reads prose:
   the tag.** The release commit is already on the default branch and can be fixed forward like any
   other commit — `v0.27.1`'s own precedent: fix, push, and re-run this wait against the new commit
   before tagging.
-- **exit 2, `PENDING`** (including a timeout under `--wait --timeout N`) — nothing has concluded
+- **exit 3, `COULD-NOT-READ`** — the read itself failed: `gh` unreachable, a non-zero exit, output
+  the script could not parse. **Stop, the same as `RED`.** Never read as `PENDING` (that spins a
+  wait forever on a commit nobody can read) and never as `GREEN` (a tag cut over a run nobody
+  confirmed).
+- **exit 4, `PENDING`** (including a timeout under `--wait --timeout N`) — nothing has concluded
   either way. **Stop, the same as `RED`.** "No answer yet" is not "safe": a tag is not revocable,
   and reading a pending wait as green is exactly this repository's own named defect class — an
   absence the tool produced, read as a clean pass.

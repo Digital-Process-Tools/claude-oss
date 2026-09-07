@@ -25,6 +25,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -246,8 +248,36 @@ def test_wait_for_conclusion_returns_none_on_timeout_while_still_pending():
 # --------------------------------------------------------------- main() / exit codes
 
 
-def test_main_exit_codes_green_red_pending_could_not_read():
+def test_main_exit_codes_green_red_could_not_read_pending():
     assert rcw.EXIT_CODES[rcw.STATE_GREEN] == 0
     assert rcw.EXIT_CODES[rcw.STATE_RED] == 1
-    assert rcw.EXIT_CODES[rcw.STATE_PENDING] == 2
     assert rcw.EXIT_CODES[rcw.STATE_COULD_NOT_READ] == 3
+    assert rcw.EXIT_CODES[rcw.STATE_PENDING] == 4
+
+
+def test_exit_codes_never_collide_with_argparse_usage_error():
+    """Self-review (#1266): argparse.ArgumentParser.error() always exits 2 --
+    verified directly by the auditor spawn (`python3 scripts/release_ci_wait.py`
+    with no `--commit` exits 2). None of this module's own states may sit on
+    that number, the same discipline `cohort_citation_order.py`'s own
+    `EXIT_DECLINED` fix (#1267) applies in this same commit -- a caller
+    branching on exit code alone must be able to tell 'still pending' from
+    'you invoked this wrong'."""
+    values = list(rcw.EXIT_CODES.values())
+    assert len(values) == len(set(values)), "exit codes must be pairwise distinct"
+    assert 2 not in values, "exit 2 is reserved for argparse usage errors"
+
+
+def test_missing_commit_flag_exits_with_the_argparse_usage_code():
+    with pytest.raises(SystemExit) as excinfo:
+        rcw.main([], run=_run_sequence([]))
+    assert excinfo.value.code == 2
+
+
+def test_an_abbreviated_sha_is_refused_with_the_argparse_usage_code():
+    """#1266's own module docstring: a short sha silently returns no runs from
+    `gh run list --commit` rather than failing -- refused before any `gh`
+    call is made, rather than read as `pending`."""
+    with pytest.raises(SystemExit) as excinfo:
+        rcw.main(["--commit", "abc123"], run=_run_sequence([]))
+    assert excinfo.value.code == 2

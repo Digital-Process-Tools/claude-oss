@@ -369,8 +369,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Too small an overage to be worth trimming something else in the same
     # file to absorb, so the ceiling moved to 10900 B, ~10% headroom over
     # the new size, rather than cutting anything.
+    # Re-baselined in the same lane's own self-review round: 9918 B became
+    # 10035 B -- two reviewer findings fixed in place (the exit-code list
+    # undercounted release_ci_wait.py's four outcomes at three, and the new
+    # paragraph was ordered after the tag-push verification it is actually a
+    # precondition for). Comfortably under the 10900 B ceiling; unchanged.
     "skills/manager/phases/release.md": (
-        9918,
+        10035,
         10900,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
