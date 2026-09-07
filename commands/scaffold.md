@@ -111,7 +111,7 @@ The full list, so a plan line is never the first time you hear of a file:
 | `.supertool.json` | **changes your own tooling mid-session — see below** |
 | `.oss/README.md` | the ownership table, stated inside the repo — **replaced every run** |
 | `.oss/assemble_changelog.py` | the assembler CI calls — **replaced every run** |
-| `.oss/statusline.py` | the status line: board, next tick, plugin currency — **replaced every run** |
+| `.oss/statusline.py` | the status line: board, unlabelled-issue counts, trap.d backlog, plugin currency — **replaced every run** |
 | `.github/workflows/oss-changelog.yml` | the workflow that calls it — **replaced every run** |
 
 One key is written **inside** a file that is not ours: `statusLine` in
