@@ -169,10 +169,28 @@ _NO_FINDINGS = re.compile(
 # the adjacent form left an ordinary English sentence undetected. The
 # intervening words may not contain a full stop, so the match cannot cross a
 # sentence boundary and pair a verb with a direction word from the next thought.
+#
+# #1270: the direction word must not be immediately followed by another bare
+# word or digit run (only whitespace then punctuation, end-of-string, or a
+# non-alphanumeric character may follow). A genuine back-reference gesture --
+# "reported above", "found already", "noted previously" -- closes the verb
+# phrase right there; the direction word is the last thing needed to say
+# where the material sits, so whatever comes next is a new clause (comma,
+# period, parenthesis) or nothing at all. Ordinary English uses the same
+# words to continue the SAME predicate -- "found already installed", "noted
+# above 90%", "flagged an earlier draft", "identified previously unknown
+# users" -- and in every one of those a bare word or a digit immediately
+# follows the direction word. #1270's own reproduction ("found already
+# installed", a tool noted in a scratch venv, nothing to do with a prior
+# finding) is the first instance of this class; the fix generalizes to the
+# other three words rather than special-casing "already" alone, since the
+# same adjacency-without-a-clause-boundary shape reaches all four, and to
+# digits (the "noted above 90%" shape) rather than letters alone.
 _BACKREF = re.compile(
     r"\b(?:reported|report|found|listed|list|described|detailed|noted|note|"
     r"mentioned|stated|outlined|flagged|identified|documented|given|shown)"
     r"[ \t]+(?:[\w,'-]+[ \t]+){0,3}(?:above|earlier|previously|already)\b"
+    r"(?![ \t]*[A-Za-z0-9])"
     r"|\bas[ \t]+(?:noted|described|stated|mentioned)\b"
     r"|\b(?:see|per)[ \t]+(?:above|earlier|my[ \t]+\w+[ \t]+above)\b"
     r"|\b(?:above|earlier)[ \t]+(?:findings|analysis|review)\b",
