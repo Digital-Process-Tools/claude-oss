@@ -234,6 +234,21 @@ def test_could_not_check_when_no_cohort_was_cited():
     assert record["state"] == cco.CITATION_COULD_NOT_CHECK
 
 
+def test_no_citation_with_a_malformed_timestamp_reports_the_timestamp_reason():
+    """Self-review (#1268): validating `--at` before branching on `cited`
+    means a malformed `--at` now wins the diagnostic over "no citation found"
+    when both are true at once -- an intentional consequence of validating
+    the timestamp unconditionally, not an accident of the reorder. The final
+    `state` is unaffected (still `could-not-check` either way); only which
+    `reason` is reported changes, and this pins that choice down with a test
+    rather than leaving it as an unasserted side effect."""
+    record = cco.check_citation_order(
+        cited=None, entries=[], comparison_at="not-a-timestamp"
+    )
+    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+    assert "not-a-timestamp" in record["reason"]
+
+
 def test_declined_citation_is_its_own_state_not_could_not_check_not_ok():
     """#1264: a marker that explicitly declined to cite a cohort must render
     as its own state -- not folded into `could-not-check` (which already means
@@ -247,6 +262,34 @@ def test_declined_citation_is_its_own_state_not_could_not_check_not_ok():
     assert record["state"] == cco.CITATION_DECLINED
     assert record["state"] != cco.CITATION_COULD_NOT_CHECK
     assert record["state"] != cco.CITATION_OK
+
+
+def test_declined_still_validates_a_malformed_comparison_timestamp():
+    """#1268: the declined branch used to short-circuit before `comparison_at`
+    was ever parsed, so a malformed `--at` on a declined marker rendered as a
+    clean `declined` with the bad input never even read. `--at` is validated
+    on every path now, declined included."""
+    record = cco.check_citation_order(
+        cited={"cohort": None, "count": None, "declined": True},
+        entries=[],
+        comparison_at="not-a-timestamp",
+    )
+    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+    assert record["state"] != cco.CITATION_DECLINED
+    assert "not-a-timestamp" in record["reason"]
+
+
+def test_declined_still_reports_declined_with_a_well_formed_timestamp():
+    """Positive control paired with the malformed-timestamp test above: a
+    declined marker with a valid `--at` must still report `declined`, not
+    `could-not-check` -- the new validation must not swallow the honest
+    decline state when the timestamp is actually fine."""
+    record = cco.check_citation_order(
+        cited={"cohort": None, "count": None, "declined": True},
+        entries=[],
+        comparison_at="2026-08-10T09:00:00Z",
+    )
+    assert record["state"] == cco.CITATION_DECLINED
 
 
 def test_could_not_check_when_the_cited_cohort_has_no_freeze_record():
@@ -403,6 +446,53 @@ def test_check_repo_declined_survives_a_corrupt_state_file(tmp_path):
         at="2026-09-06T08:00:00Z",
     )
     assert record["state"] == cco.CITATION_DECLINED
+
+
+def test_check_repo_declined_with_a_malformed_at_is_could_not_check(tmp_path):
+    """#1268 end-to-end: `check_repo`'s declined short-circuit must not let a
+    malformed `--at` through unvalidated just because the marker itself is a
+    clean decline."""
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text(
+        "**Cohort freeze: cannot be cleanly cited this release, and that is "
+        "stated rather than guessed past.** More prose follows.",
+        encoding="utf-8",
+    )
+    missing_state = tmp_path / "does-not-exist.json"
+    record = cco.check_repo(
+        claude_md_path=claude_md,
+        state_path=missing_state,
+        at="not-a-timestamp",
+    )
+    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+    assert record["state"] != cco.CITATION_DECLINED
+
+
+def test_check_repo_corrupt_state_still_validates_a_malformed_at(tmp_path):
+    """#1268 self-review finding: `check_repo`'s own `except StateError` early
+    return (a corrupt or unreadable state file) is a *second* short-circuit
+    that bypasses `check_citation_order` entirely, exactly like the declined
+    one #1268's first fix addressed -- and it skipped `--at` validation too.
+    A real, non-declined citation paired with a corrupt state file and a
+    malformed `--at` must report `could-not-check` because of the malformed
+    timestamp being read, not silently ignore it and report the state-file
+    reason instead with the bad `--at` never even parsed."""
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text(
+        "## What is not proven yet\n"
+        "**Cohort freeze: cohort-21 at 32 open issues, against cohort-20's "
+        "29.**\n",
+        encoding="utf-8",
+    )
+    corrupt_state = tmp_path / "watch.json"
+    corrupt_state.write_text("{not valid json", encoding="utf-8")
+    record = cco.check_repo(
+        claude_md_path=claude_md,
+        state_path=corrupt_state,
+        at="not-a-timestamp",
+    )
+    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+    assert "not-a-timestamp" in record["reason"]
 
 
 def test_this_repos_own_current_state_is_could_not_check_or_declined():
