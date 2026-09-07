@@ -128,8 +128,18 @@ def test_files_from_git_survives_a_locale_that_cannot_decode_the_output(
     plain ASCII (never touching `subprocess.run`'s own explicit
     `encoding=`/`errors=` kwargs) and prove a non-ASCII filename still comes
     back as a reported result rather than a raised exception.
+
+    `locale.getencoding` (PEP 597) does not exist before Python 3.11 -- this
+    repo's declared floor is 3.9 (CLAUDE.md) and CI runs the matrix down to
+    it, so `raising=False` is required here or `monkeypatch.setattr` raises
+    its own `AttributeError` on 3.9/3.10 before the test body even runs
+    (observed on CI, `pytest (ubuntu-latest, 3.9)`). On those interpreters
+    `subprocess`'s own text-mode default-encoding resolution never calls
+    `locale.getencoding` either -- it only exists there via `raising=False`
+    for symmetry with 3.11+, and the `locale.getpreferredencoding` patch
+    below is what actually forces the ASCII codec pre-3.11.
     """
-    monkeypatch.setattr("locale.getencoding", lambda: "ascii")
+    monkeypatch.setattr("locale.getencoding", lambda: "ascii", raising=False)
     monkeypatch.setattr(
         "locale.getpreferredencoding", lambda do_setlocale=True: "ascii"
     )
