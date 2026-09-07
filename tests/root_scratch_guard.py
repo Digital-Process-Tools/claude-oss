@@ -72,10 +72,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # Root-level entries a real CI run legitimately creates or touches, and
 # which this guard must never treat as a scratch artifact a test forgot to
-# clean up. Kept intentionally short: #1214's own fixes moved every known
-# nested-pytest scratch site off the shared root entirely, so growth here
-# should be rare, and each addition should be a real, named, understood
-# multi-worker artifact rather than a guess.
+# clean up.
+#
+# Deliberately a small, NAMED list of understood tool-internal mechanisms --
+# not a broad "trust anything a recognised tool created" rule. A guard that
+# cannot tell "a trusted tool created this" from "test content created this"
+# without deep inspection would have to either read every writer's call
+# stack (not available from a plain filesystem poll) or give up and trust
+# process identity, which is exactly the widening that would let a real
+# leak launder itself as tool output. So growth here should be rare, and
+# each addition is a specific, cited, understood mechanism -- never a
+# guess, and never a pattern broad enough to match test-authored content.
 _ALLOWLIST_EXACT = frozenset({".coverage", ".pytest_cache"})
 _ALLOWLIST_GLOBS = (
     # coverage.py / pytest-cov per-worker data files under xdist, combined
@@ -92,6 +99,24 @@ _ALLOWLIST_GLOBS = (
     # ordinary run of the suite, deterministically, which is exactly the
     # "misattributed failure" #1228 exists to prevent, self-inflicted.
     "_watcher_selftest_*",
+    # `_pytest.cacheprovider._make_cachedir`'s own atomic-rename tempfile,
+    # created via `tempfile.mkdtemp(prefix="pytest-cache-files-", dir=target
+    # .parent)` and renamed to `.pytest_cache` -- literally `target.parent`,
+    # i.e. the repository root itself, one directory up from the final
+    # `.pytest_cache` name already allowlisted above. This is #1214's own
+    # original "Instance B", named and documented in that issue's own text
+    # (`pytest-cache-files-<hex>, pytest's own internal cache-dir atomic-
+    # rename tempfile") -- #1214's fix disabled `-p no:cacheprovider` on
+    # the two known NESTED stub invocations so THEY would never trigger it,
+    # but the real, OUTER top-level suite invocation (CI's own `pytest
+    # tests/ -n auto --dist loadfile`) still runs cacheprovider normally,
+    # and creates `.pytest_cache` fresh on the very first run against a
+    # checkout that does not already have one -- exactly the case a fresh
+    # CI checkout is every time. A CI failure on job 101700147592 (#1228's
+    # own follow-up round) is what surfaced this: verified against
+    # `_pytest.cacheprovider._make_cachedir`'s own source (installed
+    # pytest 9.1.1) rather than guessed from the failure message alone.
+    "pytest-cache-files-*",
 )
 
 

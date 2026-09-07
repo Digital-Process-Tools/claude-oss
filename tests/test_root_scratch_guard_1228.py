@@ -180,6 +180,66 @@ def test_an_allowlisted_watcher_selftest_artifact_does_not_fail_the_session(pyte
     assert "root_scratch_guard" not in "\n".join(result.outlines)
 
 
+def test_pytest_cache_files_tempname_is_allowed_by_the_pure_check():
+    """Fast, deterministic unit check for the allowlist rule itself,
+    against the exact prefix `_pytest.cacheprovider._make_cachedir`
+    creates (`tempfile.mkdtemp(prefix="pytest-cache-files-", ...)`,
+    verified against installed pytest's own source) -- no subprocess, no
+    timing dependency on winning the real atomic-rename race."""
+    assert root_scratch_guard._is_allowed("pytest-cache-files-q0w20222")
+    assert root_scratch_guard._is_allowed("pytest-cache-files-abcdefgh")
+
+
+def test_an_allowlisted_pytest_cache_bootstrap_does_not_fail_the_session(pytester):
+    """Regression for PR #1249's own CI failure (job 101700147592, ubuntu
+    3.9): `_pytest.cacheprovider._make_cachedir` creates its own atomic-
+    rename tempfile -- `tempfile.mkdtemp(prefix="pytest-cache-files-",
+    dir=target.parent)`, where `target.parent` is the repository root
+    itself -- then renames it to `.pytest_cache`. #1214's own fix disabled
+    `-p no:cacheprovider` on the two known NESTED stub invocations, but the
+    real, OUTER top-level suite invocation still runs cacheprovider
+    normally and creates `.pytest_cache` fresh on any checkout that does
+    not already have one -- exactly a fresh CI checkout, every time.
+    Reproduced here by driving a real nested pytest run against a fresh
+    throwaway tree with no pre-existing `.pytest_cache` and cacheprovider
+    left ENABLED (the default `_run()` call already leaves it on -- no
+    `-p no:cacheprovider` is passed anywhere in this harness), which is
+    the exact condition that exercises the real mechanism end to end
+    rather than only a synthetic literal."""
+    tests_dir = _make_guarded_tree(pytester, "def test_it():\n    assert True\n")
+    result = _run(pytester, str(tests_dir))
+    assert result.ret == 0, "\n".join(result.outlines + result.errlines)
+    assert "root_scratch_guard" not in "\n".join(result.outlines)
+
+
+def test_a_real_non_tool_owned_leak_still_fails_after_the_pytest_cache_allowlisting(
+    pytester,
+):
+    """Must-fire control, paired with the two must-not-fire cases above:
+    adding `pytest-cache-files-*` to the allowlist must not widen it far
+    enough to swallow a genuine leak. A name that shares no prefix with
+    any allowlisted pattern must still fail the session, exactly as
+    `test_a_leaked_root_level_entry_fails_the_whole_session` already
+    proves for the pre-existing allowlist -- re-verified here, in the same
+    round the allowlist grew, so the guard is confirmed to still have
+    teeth rather than merely assumed to."""
+    tests_dir = _make_guarded_tree(
+        pytester,
+        "import time\n"
+        "from pathlib import Path\n"
+        "def test_it():\n"
+        "    root = Path(__file__).resolve().parent.parent\n"
+        "    (root / '_genuinely_unaccounted_for_1228').mkdir()\n"
+        "    time.sleep(0.1)\n"
+        "    assert True\n",
+    )
+    result = _run(pytester, str(tests_dir))
+    assert result.ret != 0, "\n".join(result.outlines + result.errlines)
+    result.stdout.fnmatch_lines(
+        ["*root_scratch_guard*_genuinely_unaccounted_for_1228*"]
+    )
+
+
 def test_an_allowlisted_coverage_artifact_does_not_fail_the_session(pytester):
     """Must-not-fire control for the allowlist: a per-worker coverage.py
     data file (`.coverage.<host>.<pid>.<rand>`, the real shape pytest-cov /
