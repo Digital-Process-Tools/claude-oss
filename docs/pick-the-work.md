@@ -198,7 +198,8 @@ Both cost more than the single call the fold would save. So the *write* stays he
 
     lane-dispatch :: Tick machinery: select_issues, lane_setup, ranking_table, tick_handback, review_return
     lane-doctor   :: Diagnostics: doctor.py, doctor_check_*.py, install-audit, the oss-workspace launcher route
-    lane-prose    :: The loop's markdown: skills/manager, agents, commands, CLAUDE.md -- budgets and parity
+    lane-prose    :: The loop's markdown: skills/manager, agents, commands, CLAUDE.md,
+                     skill_phases.py, agent_budgets.py, command_budgets.py, developer_phases.py -- budgets and parity
     lane-release  :: Release and changelog: release_*.py, assemble_changelog, the six gates, version sites
     lane-scaffold :: What is written into another repo: scaffold.py, oss_rules.py, the ownership contracts
 

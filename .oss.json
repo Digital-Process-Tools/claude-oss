@@ -38,7 +38,11 @@
         "skills/manager",
         "agents",
         "commands",
-        "CLAUDE.md"
+        "CLAUDE.md",
+        "scripts/skill_phases.py",
+        "scripts/agent_budgets.py",
+        "scripts/command_budgets.py",
+        "scripts/developer_phases.py"
       ],
       "lane-release": [
         "scripts/release_*.py",
