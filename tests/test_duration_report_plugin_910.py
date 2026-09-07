@@ -41,6 +41,15 @@ def _run_stub_test(extra_args, keep=None):
     `keep`, if given, is a callable invoked with the stub directory before it
     is removed, so a case can inspect files the plugin wrote (a recorded
     baseline) before cleanup.
+
+    `-p no:cacheprovider` (#1214): this nested pytest's rootdir always
+    resolves to the repository root (pytest walks UP from the stub path to
+    find `pyproject.toml`), which every concurrent nested pytest subprocess
+    xdist can spawn shares too. Disabling the cache plugin -- unneeded here,
+    since this is a one-off single-file smoke run -- means this invocation
+    never touches the rootdir-shared `.pytest_cache` directory, removing it
+    as a party to the write race #1214 observed there
+    (`pytest-cache-files-*`, pytest's own cache-dir atomic-rename tempfile).
     """
     stub_dir = REPO_ROOT / "tests" / ("_durprobe_910_" + uuid.uuid4().hex[:8])
     stub_dir.mkdir()
@@ -53,6 +62,8 @@ def _run_stub_test(extra_args, keep=None):
                 "-m",
                 "pytest",
                 "-q",
+                "-p",
+                "no:cacheprovider",
                 "-o",
                 "addopts=" + _STUB_ADDOPTS,
             ]
