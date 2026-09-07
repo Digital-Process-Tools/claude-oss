@@ -435,7 +435,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/dispatch.md` | 54,117 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,430 B | 23,000 B |
-| `skills/manager/phases/tick-order.md` | 33,396 B | 36,000 B |
+| `skills/manager/phases/tick-order.md` | 34,556 B | 36,000 B |
 | `skills/manager/phases/release.md` | 9,425 B | 9,800 B |
 | `skills/manager/phases/review.md` | 10,829 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 9,326 B | 10,300 B |

@@ -445,7 +445,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # input contract" read as the opposite of what #1178 found (the
         # two modes did NOT share one); reworded for clarity. Budget
         # unchanged.
-        33396,
+        # Re-baselined for #1137: 33396 B became 34556 B -- a new paragraph
+        # documenting the classifier's own retry convention for
+        # oss_state.py/agent_role.py calls. Budget unchanged; comfortably
+        # under it.
+        34556,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
