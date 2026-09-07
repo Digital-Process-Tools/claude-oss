@@ -343,8 +343,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # third state (BLOCKING_UNKNOWN / None -> could-not-decide) alongside
     # True/False, so gate3_disposition.py's own paragraph here now names it.
     # Budget unchanged; still comfortably under it.
+    # Re-baselined for #1077: 9170 B became 9425 B -- gate 5's version-site
+    # sweep gained one sentence naming CLAUDE.md's own currency marker as a
+    # step the sweep does not catch, pointing at commands/release.md's own
+    # gate 4 for the mechanics. Budget unchanged; still under it.
     "skills/manager/phases/release.md": (
-        9170,
+        9425,
         9800,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
