@@ -111,7 +111,9 @@ agent-spawning-agent, confirmed rather than assumed (#695, point 6).
 ceiling. Fill by companion search: each candidate's declared lane against the top issue's,
 over the open board. `--against` between lanes you already picked is the conflict check, a different
 question (#918). A short lane names `board-exhausted`, `no-adjacent`, `did-not-search` or
-`could-not-tell`; naming none is the defect (#867). Record every dispatched lane's fill with `--lane-fill PRIMARY:COUNT[:REASON]` on the same
+`could-not-tell` -- derive it mechanically via `--claim --group-state STATE` (#1198, mapping in
+dispatch.md) or give `--short-reason` explicitly; naming none is the defect (#867). Record every
+dispatched lane's fill with `--lane-fill PRIMARY:COUNT[:REASON]` on the same
 `oss_state.py --decision` call `skills/manager/phases/tick-order.md` step 6 already makes -- it
 refuses the whole call when a short lane arrives unreasoned, so the receipt is the check, not a
 repeated read of this paragraph.

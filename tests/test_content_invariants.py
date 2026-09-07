@@ -5346,3 +5346,31 @@ def test_sub_manager_names_select_issues_literally():
         "own directive (past its default read window) has nothing to fall back on"
     )
     assert "#1179" in text, "sub-manager.md no longer cites #1179 for this line"
+
+
+def test_dispatch_and_sub_manager_name_group_state_as_the_normal_reason_path():
+    """#1198: `scripts/lane_setup.py --claim` gained a `--group-state STATE`
+    flag (#1153) that mechanically derives `--lane-fill`'s REASON word from
+    `select_issues.py`'s own group `state` field for three of its four
+    states, via `group_short_reason()`. Before this fix, both
+    `skills/manager/phases/dispatch.md` (the four-word reason passage) and
+    `agents/sub-manager.md` (its own short-lane-naming paragraph) described
+    only a human choosing/typing the REASON word by hand, with no mention of
+    `--group-state` at all -- so a sub-manager reading either file had no way
+    to learn the mechanical path exists. `--short-reason` must still be
+    named too: it is the documented override for the unmapped `candidates`
+    state and for a lane composed some other way.
+    """
+    dispatch = (REPO_ROOT / "skills" / "manager" / "phases" / "dispatch.md").read_text(
+        encoding="utf-8"
+    )
+    sub_manager = (REPO_ROOT / "agents" / "sub-manager.md").read_text(encoding="utf-8")
+    for label, text in (("dispatch.md", dispatch), ("sub-manager.md", sub_manager)):
+        assert "--group-state" in text, (
+            f"{label} does not name --group-state (#1198) -- the mechanical "
+            "REASON-derivation path #1153 added is undocumented here"
+        )
+        assert "--short-reason" in text, (
+            f"{label} does not name --short-reason (#1198) -- the override "
+            "path for the unmapped 'candidates' state must stay documented"
+        )

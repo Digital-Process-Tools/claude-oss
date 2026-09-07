@@ -335,6 +335,17 @@ tick**, and the four are a closed set: a free-text reason is unreadable by anyth
 (#773). A board never measured, one whose measurement failed, and one measured and found empty are
 three different facts.
 
+**Get the word from `--group-state`, not by retyping it (#1198).** `lane_setup.py --claim`'s
+`--group-state STATE` takes `select_issues.py`'s own group `state` field unchanged and derives the
+REASON word mechanically for three of the four states -- `none` to `no-adjacent`, `could-not-tell`
+to `could-not-tell`, `lane-other` to `did-not-search` -- via `group_short_reason()`, so paste the
+state select_issues.py already printed rather than translating it by hand. `--short-reason` stays
+the explicit override: it is the only route for the fourth state, `candidates` (some companions
+found, still short), which is deliberately left unmapped because `board-exhausted` is a claim about
+the whole board's remaining disjoint candidate count that one group's own state never establishes --
+and it wins outright when both flags are given, for a lane composed some other way than
+`select_issues.py`'s own grouping.
+
 **Two of the four carry a count that can refute them (#871, #918).**
 `--lane-fill PRIMARY:COUNT:board-exhausted:CANDIDATES` takes the file-disjoint candidate count;
 `oss_state.py --decision` refuses the call when it is three or more.

@@ -158,7 +158,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # window never saw it and went hunting by ls/find. The literal command
     # now lives directly in this file, never truncated. Ceiling unchanged;
     # 170 B of headroom remains.
-    "agents/sub-manager.md": (16630, 16800),
+    # Re-baselined for #1198: 16630 B became 16758 B -- the short-lane
+    # REASON paragraph now names --claim --group-state STATE (#1153) as the
+    # mechanical derivation path, pointing at dispatch.md for the full
+    # mapping, alongside --short-reason. Ceiling unchanged; 42 B of
+    # headroom remains.
+    "agents/sub-manager.md": (16758, 16800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

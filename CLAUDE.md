@@ -278,7 +278,7 @@ from being invisible.
 | `agents/auditor.md` | 14,046 B | 15,600 B |
 | `agents/release-auditor.md` | 14,424 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
-| `agents/sub-manager.md` | 16,630 B | 16,800 B |
+| `agents/sub-manager.md` | 16,758 B | 16,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
@@ -432,7 +432,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 41,601 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 53,209 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 54,117 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 21,569 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 33,396 B | 36,000 B |
