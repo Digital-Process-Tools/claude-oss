@@ -398,7 +398,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1200: 33532 B became 33371 B -- the identical
         # stdin-contract removal dispatch.md's own re-baseline note
         # describes. Budget unchanged.
-        33371,
+        # Re-baselined again in the same lane's own self-review round:
+        # 33371 B became 33396 B -- a reviewer found "the two shared no
+        # input contract" read as the opposite of what #1178 found (the
+        # two modes did NOT share one); reworded for clarity. Budget
+        # unchanged.
+        33396,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
