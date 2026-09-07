@@ -116,7 +116,17 @@ def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twic
     out to `doctor.sh`, which runs `check_channel_consumer_census()` again --
     the identical shape #629 already fixed once for the registration check.
     `claude mcp list` must be called exactly ONCE across the whole launch, not
-    once per checker."""
+    once per checker.
+
+    Opts INTO the real diagnostic explicitly (#1214 made skipping it `run()`'s
+    own default, and this file's other tests never needed doctor.sh to run for
+    real at all): without `doctor.sh` genuinely running, this assertion is
+    trivially satisfied by the launcher's own single `claude mcp list` call
+    regardless of whether the relay this test exists to guard against still
+    works -- a real, unfiled regression an #1214 review round caught by
+    reintroducing the #810 double-ask bug and confirming this test stayed
+    green.
+    """
     repo = _repo(tmp_path)
     consumer = _consumer_path(repo)
     done, argv = run(
@@ -124,7 +134,7 @@ def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twic
         with_channel=True,
         mcp_get=_mcp_get_output(str(consumer)),
         mcp_list=_own_row(repo),
-        env_extra=_NO_AUTO_UPDATE,
+        env_extra=dict(_NO_AUTO_UPDATE, OSS_WORKSPACE_SKIP_DOCTOR=""),
     )
     assert any("development-channels" in a for a in argv), (argv, done.stderr)
     list_calls = [
@@ -137,9 +147,11 @@ def test_a_session_that_never_arms_the_flag_omits_it_and_says_why(tmp_path):
     """No registered consumer means channel_ready is already 0 well before the
     census -- the flag stays unarmed, for the reason the earlier registration
     arm already gives (not this issue's own collision message). `/oss:doctor`'s
-    OWN mirror still runs `claude mcp list` unconditionally as part of its
-    diagnostic -- that is a separate, always-on check, not the launcher's
-    arm-or-not decision this file is about."""
+    OWN mirror still runs `claude mcp list` as part of its diagnostic when that
+    diagnostic runs at all -- a separate check from the launcher's arm-or-not
+    decision this file is about, and one this test does not exercise: #1214
+    made `run()` default to skipping the real diagnostic, so it does not run
+    here."""
     repo = _repo(tmp_path)
     done, argv = run(repo, with_channel=False, env_extra=_NO_AUTO_UPDATE)
     assert not any("development-channels" in a for a in argv), argv
