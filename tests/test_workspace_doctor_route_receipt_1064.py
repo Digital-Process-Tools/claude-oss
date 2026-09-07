@@ -17,6 +17,7 @@ The diagnostic's own `VERDICT:` line still comes from a hand-written stub
 needs the real `doctor.py`.
 """
 
+import ast
 import json
 import os
 import shutil
@@ -43,27 +44,56 @@ GIT = shutil.which("git")
 
 DOCTOR_MODE = 0o644
 
-# Everything the receipt logic actually imports by name: doctor.py for
-# `plugin_identity`, oss_config.py to resolve `state_file`, oss_state.py for the
-# receipt itself, select_issues_rank.py because oss_state.py imports it
-# unconditionally at module scope, gh_which.py because doctor.py imports it
-# unconditionally at module scope too (#1157 -- only four of the
-# `doctor_check_*.py` modules import gh_which themselves, but doctor.py's own
-# unconditional import already forces it into this list regardless), and
-# every `doctor_check_*.py` because doctor.py imports each of THOSE
-# unconditionally too (the per-check module convention, #497/#630) -- omit
-# even one and `import doctor` itself raises ModuleNotFoundError, which is a
-# real state this suite tests separately (`real_modules=False`), not one to
-# trip into by accident here.
-_REAL_MODULES = [
-    "doctor.py",
-    "oss_config.py",
-    "oss_state.py",
-    "select_issues_rank.py",
-    "gh_which.py",
-]
-_REAL_MODULES += sorted(
-    p.name for p in (REPO_ROOT / "scripts").glob("doctor_check_*.py")
+# What the receipt logic imports by name, derived rather than hand-listed
+# (#1229 follow-up): a hand-kept list is exactly the gap that shipped once
+# already -- `doctor_check_lane_patterns.py` (#1229) imports
+# `lane_pattern_coverage`, which imports `select_issues_overlap`, neither of
+# which matched the old `doctor_check_*.py` glob or the five fixed names, so
+# `import doctor` raised ModuleNotFoundError inside this fixture's fake
+# plugin root even though every module the OLD list named was present. The
+# per-check convention (#497/#630) only guarantees doctor.py imports every
+# `doctor_check_*.py`; it says nothing about what THOSE modules import in
+# turn, and a hand-list has no way to notice a new transitive import was
+# added. So this walks the real, on-disk import graph starting from the
+# modules the receipt logic actually names directly, and follows every local
+# `import x` / `from x import y` (top-level module names that resolve to a
+# file under `scripts/`) to a fixed point -- statically, via `ast`, without
+# executing anything. Add a new `doctor_check_*.py`, or give an existing
+# module a new local import, and this closure picks it up on the next run
+# with no edit here.
+_SEED_MODULES = ["doctor", "oss_config", "oss_state", "select_issues_rank", "gh_which"]
+
+
+def _local_import_closure(seed_names, scripts_dir):
+    """Every module under `scripts_dir` reachable from `seed_names` by
+    following top-level `import x` / `from x import y` statements whose `x`
+    resolves to another file in `scripts_dir` (never a dotted submodule of
+    one, and never a relative import -- this repo's `scripts/` modules use
+    neither). Read via `ast.parse`, so nothing here is executed."""
+    available = {p.stem: p for p in scripts_dir.glob("*.py")}
+    seen = set()
+    queue = list(seed_names)
+    while queue:
+        name = queue.pop()
+        if name in seen or name not in available:
+            continue
+        seen.add(name)
+        tree = ast.parse(available[name].read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                candidates = [alias.name.split(".")[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                candidates = [node.module.split(".")[0]]
+            else:
+                continue
+            for candidate in candidates:
+                if candidate in available and candidate not in seen:
+                    queue.append(candidate)
+    return seen
+
+
+_REAL_MODULES = sorted(
+    name + ".py" for name in _local_import_closure(_SEED_MODULES, REPO_ROOT / "scripts")
 )
 
 
