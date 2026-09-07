@@ -2141,7 +2141,21 @@ def refresh(root, now=None):
         priority_labels = labels_config.get("priority")
         priority_labels = priority_labels if isinstance(priority_labels, list) else []
         lane_labels = labels_config.get("lanes")
-        lane_labels = list(lane_labels) if isinstance(lane_labels, list) else []
+        # Self-review finding: `oss_config.effective_lane_labels` filters
+        # `labels.lanes` down to string entries before appending
+        # `lane_other` -- `oss_config.validate` checks `labels.lanes` is a
+        # list but never that every element is a string, so a malformed
+        # config (e.g. a stray integer) can carry a non-string entry through
+        # validation. This vendored copy has to filter the same way, or a
+        # non-string entry would survive here (later coerced to a string by
+        # `_gh_unlabelled_issue_counts`'s own `{str(label) for label in
+        # lane_labels}`) while `effective_lane_labels` drops it, reopening
+        # the exact "readers disagree" defect this fix exists to close.
+        lane_labels = (
+            [l for l in lane_labels if isinstance(l, str)]
+            if isinstance(lane_labels, list)
+            else []
+        )
         # #1181: `labels.lane_other` is a completed triage decision -- "no
         # real lane owns this issue's files" -- recorded on its own key
         # rather than as a sixth entry in `labels.lanes` (#1130), because it

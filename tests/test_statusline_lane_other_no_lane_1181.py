@@ -68,3 +68,24 @@ def test_undeclared_lane_other_behaves_exactly_as_before(tmp_path, monkeypatch):
     labels = {"priority": ["priority-high"], "lanes": ["lane-a", "lane-b"]}
     document = _refresh_with_labels(tmp_path, monkeypatch, labels, '["lane-other"]')
     assert document["issues_no_lane"] == 1
+
+
+def test_a_non_string_lane_entry_is_dropped_like_effective_lane_labels_drops_it(
+    tmp_path, monkeypatch
+):
+    """Self-review finding: `oss_config.validate` checks `labels.lanes` is a
+    list but never that every element is a string, so a malformed config can
+    carry a non-string entry through validation. `oss_config.
+    effective_lane_labels` filters those out before appending `lane_other`;
+    this vendored copy has to filter the same way, or a non-string entry
+    would survive here (stringified later) while the shared helper drops it
+    -- reopening the exact "readers disagree" defect this fix exists to
+    close. The one open issue carries only the stringified non-string entry
+    (`"123"`), which must NOT be read as a real declared lane."""
+    labels = {
+        "priority": ["priority-high"],
+        "lanes": [123, "lane-a"],
+        "lane_other": "lane-other",
+    }
+    document = _refresh_with_labels(tmp_path, monkeypatch, labels, '["123"]')
+    assert document["issues_no_lane"] == 1
