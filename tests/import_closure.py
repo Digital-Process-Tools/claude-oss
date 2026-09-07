@@ -55,10 +55,17 @@ def _call_candidates(node):
 
 def local_import_closure(seed_names, scripts_dir):
     """Every module under ``scripts_dir`` reachable from ``seed_names`` by
-    following top-level ``import x`` / ``from x import y`` statements, and
-    a string-literal ``importlib.import_module(...)`` / ``__import__(...)``
+    following an ``import x`` / ``from x import y`` statement, or a
+    string-literal ``importlib.import_module(...)`` / ``__import__(...)``
     call, whose ``x`` resolves to another file in ``scripts_dir`` (never a
-    dotted submodule of one, and never a relative import). Read via
+    dotted submodule of one, and never a relative import). Found via
+    ``ast.walk``, so a nested import -- inside a function body, an ``if``,
+    a ``try`` -- is followed exactly like a module-level one; it is not
+    limited to top-level statements despite this repo's `scripts/` modules
+    only ever using those in practice (self-review, #1237/#1236: an
+    earlier draft of this docstring, and its own predecessor in `tests/
+    test_workspace_doctor_route_receipt_1064.py`, said "top-level" and
+    that was never actually true of the implementation). Read via
     ``ast.parse``, so nothing here is executed."""
     available = {p.stem: p for p in scripts_dir.glob("*.py")}
     seen = set()

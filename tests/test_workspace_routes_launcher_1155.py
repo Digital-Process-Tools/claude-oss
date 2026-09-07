@@ -118,7 +118,14 @@ def _doctor(log, body, status=0):
     )
 
 
-def _plugin(tmp_path, doctor_body=_OK_DOCTOR_BODY):
+def _plugin(tmp_path, doctor_body=_OK_DOCTOR_BODY, omit_module=None):
+    """Build the fake plugin root. `omit_module` (a bare name, e.g.
+    "select_issues_overlap") drops one module from the derived closure's own
+    copy list -- the positive control for the `run()` assertion below: a
+    fixture built with a module genuinely missing from the closure's reach
+    must make `import doctor` (or `import workspace_routes`) fail loudly
+    inside the launcher, proving the assertion can fire and is not a
+    "must not fire" case with nothing pairing it (#1237 self-review)."""
     root = tmp_path / "_plugin"
     (root / "bin").mkdir(parents=True)
     (root / "scripts").mkdir(parents=True)
@@ -128,6 +135,8 @@ def _plugin(tmp_path, doctor_body=_OK_DOCTOR_BODY):
     path.write_text(_doctor(log, doctor_body), encoding="utf-8")
     path.chmod(DOCTOR_MODE)
     for name in _REAL_MODULES:
+        if omit_module is not None and name == omit_module + ".py":
+            continue
         shutil.copy2(str(REPO_ROOT / "scripts" / name), str(root / "scripts" / name))
     return root
 
@@ -185,6 +194,20 @@ def run(repo, plugin_root):
     # under test) must never raise inside the launcher's subprocess.
     assert "ModuleNotFoundError" not in done.stderr, done.stderr
     return done, argv
+
+
+def test_a_missing_transitive_module_makes_the_new_assertion_fire(tmp_path):
+    """MUST FIRE -- the positive control for `run()`'s own `ModuleNotFoundError`
+    assertion (#1237 self-review): with `select_issues_overlap.py` deliberately
+    dropped from the fake plugin root's copy (a real transitive dependency of
+    `doctor.py`, via `doctor_check_lane_patterns` -> `lane_pattern_coverage`),
+    the launcher's own `import doctor` must raise inside its subprocess, and
+    `run()`'s assertion must catch it rather than let a broken fixture pass
+    silently the way this file's fixture did before #1237."""
+    root = _plugin(tmp_path, omit_module="select_issues_overlap")
+    repo = _repo(tmp_path / "repo")
+    with pytest.raises(AssertionError, match="ModuleNotFoundError"):
+        run(repo, root)
 
 
 def test_no_threshold_configured_opens_the_ordinary_tick(tmp_path):
