@@ -53,6 +53,15 @@ def _run_stub_test(extra_args, keep=None):
     never touches the rootdir-shared `.pytest_cache` directory, removing it
     as a party to the write race #1214 observed there
     (`pytest-cache-files-*`, pytest's own cache-dir atomic-rename tempfile).
+
+    `-p no:root_scratch_guard` (#1228): living under `tests/` means this
+    nested pytest also inherits `tests/conftest.py`'s `root_scratch_guard`
+    registration -- a session-wide watcher whose whole subject is the real
+    suite's own repository root, not this throwaway stub run's. Without the
+    disable, every invocation here spins up a second, redundant watcher
+    thread inside an already-nested process for no reason (the same
+    isolation gap `tests/test_durations_recorded_881.py`'s own `_run_stub_
+    test` documents and disables for its three plugins).
     """
     stub_dir = REPO_ROOT / "tests" / ("_durprobe_910_" + uuid.uuid4().hex[:8])
     stub_dir.mkdir()
@@ -67,6 +76,8 @@ def _run_stub_test(extra_args, keep=None):
                 "-q",
                 "-p",
                 "no:cacheprovider",
+                "-p",
+                "no:root_scratch_guard",
                 "-o",
                 "addopts=" + _STUB_ADDOPTS,
             ]

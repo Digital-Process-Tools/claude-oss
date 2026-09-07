@@ -27,8 +27,15 @@ own copy in this change; see this issue's own report for the follow-up.
 """
 
 import re
+import sys
+from pathlib import Path
 
 import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+import root_scratch_guard  # noqa: E402
 
 pytest_plugins = ["pytester"]
 
@@ -57,10 +64,6 @@ def _run(pytester, *args):
 
 
 def _root_scratch_guard_source():
-    import root_scratch_guard
-
-    from pathlib import Path
-
     return Path(root_scratch_guard.__file__).read_text(encoding="utf-8")
 
 
@@ -145,6 +148,38 @@ def test_an_ordinary_run_with_nothing_at_the_root_does_not_fail_the_session(pyte
     assert "root_scratch_guard" not in "\n".join(result.outlines)
 
 
+def test_an_allowlisted_watcher_selftest_artifact_does_not_fail_the_session(pytester):
+    """Regression for a reviewer finding on this same round: `tests/test_
+    root_scratch_isolation_1214.py`'s own must-fire positive control
+    (`test_root_watcher_actually_sees_a_root_level_entry_appear`)
+    deliberately creates and removes a `_watcher_selftest_<hex>` directory
+    directly at the real repository root, on purpose, to prove ITS OWN
+    local watcher can see one. Without an allowlist entry for that exact
+    shape, this whole-suite guard flagged that pre-existing, entirely
+    legitimate self-test as a false "unexpected" leak on essentially every
+    ordinary run of the real suite -- confirmed by running that real test
+    against the real repository with this plugin active before this
+    allowlist entry existed (`EXIT: 1` on a run every individual test in
+    reported `passed`). Reproduced here in the harness's own isolated tree
+    instead, so it stays a fast, deterministic regression rather than a
+    dependency on the real suite's own layout."""
+    tests_dir = _make_guarded_tree(
+        pytester,
+        "import time\n"
+        "from pathlib import Path\n"
+        "def test_it():\n"
+        "    root = Path(__file__).resolve().parent.parent\n"
+        "    probe = root / '_watcher_selftest_deadbeef'\n"
+        "    probe.mkdir()\n"
+        "    time.sleep(0.1)\n"
+        "    probe.rmdir()\n"
+        "    assert True\n",
+    )
+    result = _run(pytester, str(tests_dir))
+    assert result.ret == 0, "\n".join(result.outlines + result.errlines)
+    assert "root_scratch_guard" not in "\n".join(result.outlines)
+
+
 def test_an_allowlisted_coverage_artifact_does_not_fail_the_session(pytester):
     """Must-not-fire control for the allowlist: a per-worker coverage.py
     data file (`.coverage.<host>.<pid>.<rand>`, the real shape pytest-cov /
@@ -198,3 +233,36 @@ def test_the_guard_still_catches_a_leak_under_real_xdist_worker_execution(pytest
         )
     assert result.ret != 0, combined
     result.stdout.fnmatch_lines(["*root_scratch_guard*_leaked_under_xdist_1228*"])
+
+
+# ------------------------------------------------------- an auditor finding on this round
+
+
+def test_could_not_watch_is_true_when_every_read_of_the_root_fails(monkeypatch):
+    """A root that raises OSError on construction AND on every poll -- the
+    watcher NEVER once managed to read it -- must report `could_not_watch()`
+    True. Without this, `offenders()` renders identically empty whether the
+    run was genuinely clean or the watcher was blind the whole time, which
+    is the exact absence-vs-absence defect CLAUDE.md names, one level down
+    inside the module meant to catch it (an auditor finding on this round).
+    """
+
+    class _AlwaysBroken:
+        def iterdir(self):
+            raise OSError("pretend the root is unreadable")
+
+    watcher = root_scratch_guard._SessionRootWatcher(_AlwaysBroken())
+    # One manual poll iteration, standing in for what the background
+    # thread would do -- exercised directly rather than raced against a
+    # real thread, for a deterministic unit test.
+    watcher._poll_once_for_test()
+    assert watcher.could_not_watch() is True
+
+
+def test_could_not_watch_is_false_once_any_read_succeeds(tmp_path):
+    """Must-not-fire control: a root that answers at least once -- even if
+    every check afterward is on a genuinely empty, unchanged directory --
+    must never report `could_not_watch()`. This is the ordinary, everyday
+    case the check above must not accidentally start flagging."""
+    watcher = root_scratch_guard._SessionRootWatcher(tmp_path)
+    assert watcher.could_not_watch() is False

@@ -36,15 +36,16 @@ Every assertion is paired with a positive or negative control per CLAUDE.md's
 is invoked without it (the pre-#881 string, explicitly), proving the probe would
 have caught the exact silent-drop failure #881 names.
 
-The one subprocess spawn here (`_run_stub_test`) goes through `tests/spawn_guard.run`
-rather than bare `subprocess.run`, so a runner too slow to answer within the
-timeout skips (naming the binary, the timeout and what went unmeasured) instead
-of reporting a real assertion failure about a durations header that nothing
-actually observed (#716) -- a test whose whole subject is timing is exactly the
-shape #716 exists to keep off the guard's own blind side, and both `run()`
-outcomes (a real answer, and a genuine no-answer) still return or skip
-identically for every caller here, so the guard changes nothing the controls
-themselves assert.
+Every subprocess spawn here -- `_run_stub_test`'s own, and (#1228) the second,
+independent one inside `test_stub_run_coverage_isolation_check_is_not_vacuous`'s
+own must-fire control -- goes through `tests/spawn_guard.run` rather than bare
+`subprocess.run`, so a runner too slow to answer within the timeout skips (naming
+the binary, the timeout and what went unmeasured) instead of reporting a real
+assertion failure about a durations header that nothing actually observed (#716)
+-- a test whose whole subject is timing is exactly the shape #716 exists to keep
+off the guard's own blind side, and both `run()` outcomes (a real answer, and a
+genuine no-answer) still return or skip identically for every caller here, so the
+guard changes nothing the controls themselves assert.
 """
 
 import os
@@ -113,16 +114,20 @@ def _run_stub_test(addopts_override=None, extra_args=None):
 
     Living under `tests/` means pytest's own ancestor-conftest discovery
     loads `tests/conftest.py` on the way down to the stub, which registers
-    `pytester`, `must_assert_plugin` and `duration_report_plugin` for the
-    REAL suite (see that file's own docstring) -- plugins this probe was
-    never meant to carry: this module's whole point is an *isolated* second
-    Config resolution ("nesting a second Config resolution inside that
-    process is exactly the kind of thing coverage instrumentation can
-    perturb"), and inheriting them silently, e.g. `duration_report_plugin`
-    reading the real `tests/duration-baseline.json`, would undercut that
-    (caught in #1214's own self-review). All three are disabled by name
-    below so the location fix does not trade one #1214 defect for a second,
-    quieter one.
+    `pytester`, `must_assert_plugin`, `duration_report_plugin` and (#1228)
+    `root_scratch_guard` for the REAL suite (see that file's own docstring)
+    -- plugins this probe was never meant to carry: this module's whole
+    point is an *isolated* second Config resolution ("nesting a second
+    Config resolution inside that process is exactly the kind of thing
+    coverage instrumentation can perturb"), and inheriting them silently,
+    e.g. `duration_report_plugin` reading the real `tests/duration-
+    baseline.json`, or a second, redundant `root_scratch_guard` watcher
+    thread spun up inside this already-nested process for no reason (a
+    reviewer finding on this same round: #1228 added the fourth plugin to
+    `tests/conftest.py` after this exclusion list already existed, and the
+    list was not updated to match), would undercut that (caught in #1214's
+    own self-review). All four are disabled by name below so the location
+    fix does not trade one #1214 defect for a second, quieter one.
 
     `-p no:cacheprovider` is passed unconditionally for the same underlying
     reason: this is a one-off, single-file smoke run that gains nothing from
@@ -170,6 +175,8 @@ def _run_stub_test(addopts_override=None, extra_args=None):
             "no:must_assert_plugin",
             "-p",
             "no:duration_report_plugin",
+            "-p",
+            "no:root_scratch_guard",
             "--no-cov",
         ]
         if addopts_override is not None:

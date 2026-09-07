@@ -82,6 +82,16 @@ _ALLOWLIST_GLOBS = (
     # into `.coverage` at session finish; briefly present, sometimes still
     # present if the combine step has not run yet when this checks.
     ".coverage.*",
+    # tests/test_root_scratch_isolation_1214.py's own must-fire positive
+    # control (`test_root_watcher_actually_sees_a_root_level_entry_appear`)
+    # deliberately creates and removes exactly this shape at the real
+    # repository root, on purpose, to prove ITS OWN local watcher can see a
+    # transient root-level entry -- a reviewer finding on this same round:
+    # a whole-suite guard with no entry for it flagged that pre-existing,
+    # entirely legitimate self-test as a false "unexpected" leak on every
+    # ordinary run of the suite, deterministically, which is exactly the
+    # "misattributed failure" #1228 exists to prevent, self-inflicted.
+    "_watcher_selftest_*",
 )
 
 
@@ -103,8 +113,20 @@ class _SessionRootWatcher(object):
 
     def __init__(self, root):
         self.root = root
+        # Tracked separately from `_seen_new` so a root that is unreadable
+        # for the WHOLE run can be told apart from one that was genuinely
+        # clean -- an auditor finding on this same round: `except OSError:
+        # pass` on every single poll, forever, would leave `offenders()`
+        # empty for the same reason a clean run leaves it empty, and
+        # `pytest_sessionfinish` would report nothing either way. A caller
+        # reading a green run could not then tell "nothing appeared" from
+        # "this watcher never once actually managed to read the directory"
+        # -- the exact absence-vs-absence defect this repository is named
+        # after, one level down inside the very module meant to catch it.
+        self._ever_read_root = False
         try:
             self._baseline = set(p.name for p in root.iterdir())
+            self._ever_read_root = True
         except OSError:
             self._baseline = set()
         self._seen_new = set()
@@ -120,18 +142,41 @@ class _SessionRootWatcher(object):
 
     def _poll(self):
         while not self._stop.is_set():
-            try:
-                for p in self.root.iterdir():
-                    if p.name not in self._baseline:
-                        self._seen_new.add(p.name)
-            except OSError:
-                pass
+            self._poll_once()
             time.sleep(0.005)
+
+    def _poll_once(self):
+        """One read of the root, folded into `_seen_new`/`_ever_read_root`.
+        Split out of `_poll()`'s loop so a test can drive exactly one
+        iteration deterministically, without racing a real background
+        thread (`tests/test_root_scratch_guard_1228.py`'s own
+        `_poll_once_for_test`, a thin public alias for this)."""
+        try:
+            for p in self.root.iterdir():
+                if p.name not in self._baseline:
+                    self._seen_new.add(p.name)
+            self._ever_read_root = True
+        except OSError:
+            pass
+
+    def _poll_once_for_test(self):
+        """Public alias for `_poll_once()`, named for what a caller outside
+        this module is actually doing with it: driving one deterministic
+        poll iteration in a unit test, not participating in the real
+        session's own polling loop."""
+        self._poll_once()
 
     def offenders(self):
         """Every name seen new during the run that the allowlist does not
         excuse -- sorted, for a deterministic report."""
         return sorted(name for name in self._seen_new if not _is_allowed(name))
+
+    def could_not_watch(self):
+        """True only if EVERY read of the root -- construction and every
+        poll -- raised `OSError`, for the run's entire lifetime. Distinct
+        from `offenders()` being empty, which just as validly means a
+        genuinely clean run; this means the watcher never once looked."""
+        return not self._ever_read_root
 
 
 _watcher = None
@@ -151,11 +196,34 @@ def pytest_sessionstart(session):
     _watcher.start()
 
 
+def _report(session, message):
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_sep("=", message, red=True)
+    else:
+        sys.stderr.write(message + "\n")
+    session.exitstatus = 1
+
+
 def pytest_sessionfinish(session, exitstatus):
     global _watcher
     if _watcher is None:
         return
     _watcher.stop()
+    # Checked before `offenders()`, and reported as its own, distinct
+    # state: a root that could never be read for the whole run must never
+    # render as "watched and found nothing" -- the two are opposite claims
+    # that would otherwise print identically as a quiet green pass.
+    if _watcher.could_not_watch():
+        _watcher = None
+        _report(
+            session,
+            "root_scratch_guard: could not watch the repository root at "
+            "all during this run -- every read of it raised OSError, so "
+            "this session's own claim of no unexpected root-level entries "
+            "is not established, not confirmed clean (#1228)",
+        )
+        return
     offenders = _watcher.offenders()
     _watcher = None
     if not offenders:
