@@ -165,3 +165,24 @@ So, in order:
 
 The unresolved name is itself a finding about the plugin, not just an obstacle to route around.
 Report it even when the fallback ran cleanly.
+
+## Fixing a finding is a new diff, and sometimes a new subject (#1047)
+
+**A review's subject is the diff at the instant it ran; the fix for its findings is a later diff,
+and nothing makes that one a subject again by default.** PR #921's fix for two findings shipped
+unreviewed, and a later re-audit found two more real bugs inside it. Most fixes are one line and
+re-reviewing them is waste, so compute the trigger rather than trusting the moment you most
+believe the work is done:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/fix_commit_scope.py" --repo . --base <pre-fix> --head HEAD
+```
+
+`needs-second-pass` -- 3+ files touched, or any file this repo governs with its own byte-budget
+table -- means spawn one more lightweight round over the fix alone before reporting, same shape as
+the first. `within-scope` means the fix stayed small; `could-not-determine` is its own outcome,
+never a quiet `within-scope` -- say so and fall back to judgement.
+
+**The third condition is not mechanized on purpose.** Whether a touched function is a guard is a
+judgement about behaviour a file list cannot answer -- if the fix changes what a guard *does*,
+treat it as `needs-second-pass` regardless of what the script reports.

@@ -5326,3 +5326,23 @@ def test_the_closed_unmerged_gap_is_named_not_silently_solved():
         "the closed-unmerged release rule no longer names the gap it does not "
         "cover -- a pull request closed by an event this loop did not see (#465)"
     )
+
+
+def test_sub_manager_names_select_issues_literally():
+    """#1179: the select_issues.py directive sits at lines 304-315 of
+    tick-order.md, past the ~292-line window a supertool `read` with no
+    explicit end returns by default (a 20,000-byte cap). A sub-manager that
+    reads only the first window never sees it, goes hunting for the script by
+    ls/find, and burns turns on the auto-mode classifier denying then
+    allowing the identical read-only command. The literal, runnable command
+    has to live directly in agents/sub-manager.md, which is injected whole
+    on every turn and never truncated.
+    """
+    text = (REPO_ROOT / "agents" / "sub-manager.md").read_text(encoding="utf-8")
+    needle = 'scripts/select_issues.py" --repo .'
+    assert needle in text, (
+        "agents/sub-manager.md no longer states the literal select_issues.py "
+        "invocation inline (#1179) -- a sub-manager that misses tick-order.md "
+        "own directive (past its default read window) has nothing to fall back on"
+    )
+    assert "#1179" in text, "sub-manager.md no longer cites #1179 for this line"

@@ -69,9 +69,19 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
     ),
     "agents/developer/review-return.md": (
-        11249,
-        12400,
-        "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails",
+        # Re-baselined for #1047: 11249 B became 12465 B. The fix-for-a-
+        # finding commit was a diff nothing made a subject again by
+        # default -- PR #921's own fix commit shipped unreviewed and a
+        # later re-audit found two more real bugs in it. The new section
+        # names the mechanized half of the trigger (scripts/
+        # fix_commit_scope.py: file count, byte-budgeted files) and states
+        # the unmechanized third (a guard's behaviour changing) as
+        # judgement rather than pretending to derive it. Nothing already
+        # in the file argued that point, so nothing was cut to make room;
+        # ceiling raised to 13700 B, ~10% headroom over the new size.
+        12465,
+        13700,
+        "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails, when a fix-for-a-finding needs its own pass",
     ),
     "agents/developer/report.md": (
         17401,

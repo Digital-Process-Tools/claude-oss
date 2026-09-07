@@ -278,7 +278,7 @@ from being invisible.
 | `agents/auditor.md` | 14,046 B | 15,600 B |
 | `agents/release-auditor.md` | 14,424 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
-| `agents/sub-manager.md` | 16,060 B | 16,800 B |
+| `agents/sub-manager.md` | 16,630 B | 16,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
@@ -357,6 +357,16 @@ rule stacked beside the two it removes. A self-review round grew it once more (1
 16,060 B): a placeholder example that wrapped across a markdown line, and step 2's `--wait` call
 having no branch for a `pending` timeout, both closed in place.
 
+**#1179 re-baselined `agents/sub-manager.md` without raising its ceiling**: 16,060 B became
+16,630 B, still under the 16,800 B budget. The `select_issues.py` dispatch-selection call sits
+at lines 304-315 of `skills/manager/phases/tick-order.md`, past the ~292-line window a
+`supertool read` with no explicit end returns by default (a 20,000-byte cap), so a sub-manager
+reading only the first window never sees the directive, goes hunting for the script by
+`ls`/`find`, and burns turns on the auto-mode classifier denying then allowing the identical
+read-only command. The literal command now lives directly in `agents/sub-manager.md` itself,
+which is injected whole on every turn and never truncated, rather than only in the phase file a
+bounded read might still miss.
+
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
 number of bytes on every platform unless something pins line endings — a CRLF checkout of an
@@ -384,10 +394,19 @@ only the lane can report.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer/review.md` | 10,132 B | 10,500 B |
-| `agents/developer/review-return.md` | 11,249 B | 12,400 B |
+| `agents/developer/review-return.md` | 12,465 B | 13,700 B |
 | `agents/developer/report.md` | 17,401 B | 19,100 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
+
+**#1047 raised `agents/developer/review-return.md`'s ceiling from 12,400 B to 13,700 B**: 11,249 B
+became 12,465 B. A fix commit answering an audit's own findings is a diff nothing makes a subject
+again by default -- PR #921's fix for two findings shipped unreviewed and a later re-audit found
+two more real bugs inside it. The new section names the mechanized half of the trigger
+(`scripts/fix_commit_scope.py`: file count, byte-budgeted files touched) and states the
+unmechanized third (a guard's behaviour changing) as judgement rather than pretending to derive
+it. Nothing already in the file argued that point, so nothing was cut to make room; the ceiling
+carries the same ~10% headroom the other re-baselines in this table use.
 
 **#1114: `tests/test_baseline_matches_disk_1014.py` did not cover `developer_phases.DOCUMENTS`,
 and its two rows had already drifted from disk by the time the gap was found.** #1014 closed
@@ -418,13 +437,21 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/accounting.md` | 21,569 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 33,396 B | 36,000 B |
 | `skills/manager/phases/release.md` | 9,425 B | 9,800 B |
-| `skills/manager/phases/review.md` | 10,353 B | 11,400 B |
+| `skills/manager/phases/review.md` | 10,829 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 9,326 B | 10,300 B |
 | `skills/manager/phases/merge.md` | 14,230 B | 15,400 B |
 | `skills/manager/phases/ci-green.md` | 2,646 B | 2,700 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
+
+**#1047 re-baselined `skills/manager/phases/review.md` without raising its ceiling**: 10,353 B
+became 10,829 B. A fix commit answering an audit's own findings is a diff nothing makes a subject
+again by default -- PR #921's fix for two findings shipped unreviewed and a later re-audit found
+two more real bugs inside it. A new bullet on the maintainer's own closed checklist names the
+backstop: check `scripts/fix_commit_scope.py` against a fix-for-a-finding commit the report is
+silent about, the same gap `agents/developer/review-return.md`'s own new section (also #1047)
+closes on the developer side. Comfortably under the ceiling; no change needed there.
 
 **#1162 adds a new phase file, `ci-green.md` (2,454 B), rather than growing an existing one.** The
 `pr_green.py` wait and its #1086 substring trap used to live only inline in `agents/sub-manager.md`;

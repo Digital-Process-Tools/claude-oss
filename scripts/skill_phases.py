@@ -270,9 +270,16 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # spine's cross-platform band moved in, being what a reviewer audits a diff
     # against rather than something every tick needs loaded.
     "skills/manager/phases/review.md": (
-        10353,
+        # Re-baselined for #1047: 10353 B became 10829 B. A new bullet on
+        # the maintainer's own closed checklist -- checking
+        # scripts/fix_commit_scope.py against a fix-for-a-finding commit
+        # the report is silent about -- names the maintainer-side backstop
+        # for the same gap agents/developer/review-return.md's own new
+        # section closes on the developer side. Ceiling unchanged;
+        # comfortably under it.
+        10829,
         11400,
-        "reviewing a returned diff, and what an issue body filed out of one looks like",
+        "reviewing a returned diff, and what an issue body filed out of one looks like, when a fix-for-a-finding needs its own pass",
     ),
     "skills/manager/phases/findings.md": (
         9326,

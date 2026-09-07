@@ -73,6 +73,18 @@ sized well under the truncation point, for every read of that file from your ver
 `commands/tick.md` itself is much smaller post-split and does not need this care, but read it the
 same way out of habit.
 
+**The dispatch-selection call itself is short enough to state directly, so here it is, never
+truncated even if the bounded read above is skipped (#1179):**
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --repo . < /dev/null
+```
+
+That is `scripts/select_issues.py` (#970, #1036) -- the one entry point tick-order.md's own
+dispatch-selection step names, past that file's default read window. It takes no input (#1145);
+`< /dev/null` guards a stray stdin read rather than one this call needs today. Do not `ls`/`find`
+for the script -- it is this line.
+
 Then follow your own order of operations at `skills/manager/phases/tick-order.md` -- steps 1
 through 6, and "What ends a tick" (#1037). Nothing about *how* a tick runs changes because you are
 the one running it rather than a human-invoked session: the state file read, the board read, the
