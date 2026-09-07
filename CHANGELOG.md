@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-09-07
+
+### Fixed
+
+- `scripts/cohort_citation_order.py` gained a third citation state, `declined`,
+  distinct from `ok`/`finding` and from the existing `could-not-check`. A release
+  marker that honestly declines to cite a specific cohort count -- because its own
+  tooling produced two disagreeing numbers rather than one it could trust -- used
+  to be indistinguishable from a marker that simply forgot to cite anything, and
+  the guard's own cross-check test failed deterministically on every CI leg
+  against the v0.27.0 release commit, whose marker correctly took that honest
+  path (#1264).
+
 ## [0.27.0] - 2026-09-07
 
 ### Added
@@ -9729,7 +9742,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.27.1
 [0.27.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.27.0
 [0.26.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.26.0
 [0.25.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.25.0
