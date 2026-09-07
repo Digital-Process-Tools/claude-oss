@@ -693,39 +693,106 @@ def test_the_prose_check_fires_on_a_silent_instruction():
 
 
 # ---------------------------------------------------------- #834: encoding
+#
+# #1200: `select_issues.py --board` no longer reads a board payload on
+# stdin -- it fetches its own board the same way the default mode does. The
+# stdin-decode half of #834 (`json.load(sys.stdin)` under a hostile console
+# codepage) no longer applies to this entry point at all: there is no more
+# caller-supplied stdin to mis-decode, and `_fetch_board` already decodes a
+# `gh` subprocess's stdout as UTF-8 explicitly (`_run_gh`'s own
+# `.decode("utf-8", "replace")`), never through the console's codepage. The
+# stdout-encode half still applies -- the receipt is still printed through
+# the same `_reconfigure_streams()` regardless of mode -- so those two
+# tests are kept, driven through a fake `gh` on PATH instead of stdin.
 
 
 def _select_issues_script():
-    # #1069: dispatch_rank.py's own CLI (and the #834 stdin/stdout encoding
-    # fixes that lived in it) is gone -- folded into select_issues.py's
-    # `--board` mode, which carries the identical `_reconfigure_streams`/
-    # `_read_stdin_json` guards. Every test below drives that script with
-    # `--board` instead.
     return str(repo_root() / "scripts" / "select_issues.py")
 
 
-def test_stdout_survives_an_unencodable_character_834():
+def _fake_gh_bin(tmp_path, label):
+    """A `gh` stand-in on PATH answering only `gh api graphql ...`, the one
+    call `_fetch_board` makes -- one issue, carrying `label`, so the
+    receipt's own "unrecognised priority" line can be driven with a
+    controlled, possibly non-ASCII label without a real, authenticated
+    `gh` session. Mirrors `test_lane_setup_claim_worktree_865.py`'s own
+    `_fake_gh_bin` shape for the identical POSIX-shebang-vs-Windows-PATHEXT
+    reason given there.
+    """
+    payload = json.dumps(
+        {
+            "data": {
+                "repository": {
+                    "issues": {
+                        "nodes": [
+                            {
+                                "number": 1,
+                                "title": "t",
+                                "body": "b",
+                                "labels": {"nodes": [{"name": label}]},
+                                "authorAssociation": "OWNER",
+                            }
+                        ],
+                        "pageInfo": {"hasNextPage": False},
+                    }
+                }
+            }
+        },
+        ensure_ascii=False,
+    )
+    bin_dir = tmp_path / "fakebin"
+    bin_dir.mkdir(exist_ok=True)
+    if os.name == "nt":
+        gh_path = bin_dir / "gh.cmd"
+        gh_path.write_text(
+            "@echo off\r\n"
+            "chcp 65001 > nul\r\n"
+            "echo {0}\r\n".format(payload.replace("%", "%%")),
+            encoding="utf-8",
+        )
+    else:
+        gh_path = bin_dir / "gh"
+        gh_path.write_text(
+            "#!/bin/sh\n" "cat <<'BOARD_EOF'\n{0}\nBOARD_EOF\n".format(payload),
+            encoding="utf-8",
+        )
+        gh_path.chmod(0o755)
+    return bin_dir
+
+
+def _write_board_config(tmp_path):
+    config = {
+        "repo": "Digital-Process-Tools/claude-oss",
+        "default_branch": "main",
+        "branch_pattern": "fix/{issue}",
+        "worktree_root": str(tmp_path / "wt"),
+        "labels": DECLARED,
+    }
+    (tmp_path / ".oss.json").write_text(json.dumps(config), encoding="utf-8")
+
+
+def test_stdout_survives_an_unencodable_character_834(tmp_path):
     """#834's stdout half. A console codepage that cannot represent a
     character in an issue's label used to crash this CLI with
     `UnicodeEncodeError` at the `print` -- after the ranking had already
-    been computed. `tests/test_dispatch_order_798_799.py`'s existing tests
-    drive `main()` in-process with a monkeypatched `StringIO`, whose stdout
-    is always UTF-8 capable and can never exercise this: the bar is 'would
-    this test still pass if the code did nothing', and an in-process test
-    would. This one goes through a real subprocess with
+    been computed. This drives a real subprocess with
     `PYTHONIOENCODING=ascii`, which is what a narrow console codepage looks
     like from Python's point of view, and puts a non-ASCII character in a
-    label that lands in the printed 'unrecognised priority' receipt."""
-    payload = json.dumps(
-        {
-            "declared": DECLARED,
-            "issues": [{"number": 1, "labels": ["priority-héllo"]}],
-        }
-    )
+    label that lands in the printed 'unrecognised priority' receipt --
+    fetched from a fake `gh` on PATH rather than piped on stdin (#1200:
+    `--board` no longer reads stdin at all)."""
+    _write_board_config(tmp_path)
+    bin_dir = _fake_gh_bin(tmp_path, "priority-héllo")
     env = dict(os.environ, PYTHONIOENCODING="ascii")
+    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
     result = subprocess.run(
-        [sys.executable, _select_issues_script(), "--board"],
-        input=payload.encode("utf-8"),
+        [
+            sys.executable,
+            _select_issues_script(),
+            "--board",
+            "--repo",
+            str(tmp_path),
+        ],
         capture_output=True,
         env=env,
     )
@@ -734,7 +801,7 @@ def test_stdout_survives_an_unencodable_character_834():
     assert "UnicodeEncodeError" not in stderr, stderr
 
 
-def test_stdout_crashes_without_the_fix_positive_control_834():
+def test_stdout_crashes_without_the_fix_positive_control_834(tmp_path):
     """Positive control for the test above, run against the file as it
     stood before #834's fix -- the case that establishes the harness can
     actually see the crash it is meant to catch, rather than a subprocess
@@ -764,20 +831,16 @@ def test_stdout_crashes_without_the_fix_positive_control_834():
         fh.write(broken)
         broken_path = fh.name
     try:
-        payload = json.dumps(
-            {
-                "declared": DECLARED,
-                "issues": [{"number": 1, "labels": ["priority-héllo"]}],
-            }
-        )
+        _write_board_config(tmp_path)
+        bin_dir = _fake_gh_bin(tmp_path, "priority-héllo")
         env = dict(
             os.environ,
             PYTHONIOENCODING="ascii",
             PYTHONPATH=str(repo_root() / "scripts"),
         )
+        env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
         result = subprocess.run(
-            [sys.executable, broken_path, "--board"],
-            input=payload.encode("utf-8"),
+            [sys.executable, broken_path, "--board", "--repo", str(tmp_path)],
             capture_output=True,
             env=env,
         )
@@ -788,103 +851,5 @@ def test_stdout_crashes_without_the_fix_positive_control_834():
                 "UNTESTED here: the encode failure this control exists to show"
             )
         assert "UnicodeEncodeError" in stderr, (result.returncode, stderr)
-    finally:
-        os.unlink(broken_path)
-
-
-def test_stdin_is_decoded_as_utf8_regardless_of_console_codepage_834():
-    """#834's stdin half. `json.load(sys.stdin)` used to decode with
-    whatever codepage the console reports. `UnicodeDecodeError` is a
-    `ValueError`, so the existing `except ValueError` around the read
-    caught it and told the caller 'stdin is not JSON' -- false: it was
-    valid JSON, and the reader simply could not decode the bytes with the
-    wrong codec. 'A' (U+00C1) UTF-8-encodes to the two bytes 0xC3 0x81, and
-    0x81 is undefined in cp1252 -- decoding those bytes as cp1252 raises
-    reliably, which is what makes this a real positive control rather than
-    a guess at what might fail. Forcing UTF-8 on stdin regardless of the
-    console codepage is the fix; this must decode cleanly under it."""
-    payload = json.dumps(
-        {
-            "declared": DECLARED,
-            "issues": [{"number": 1, "labels": ["priority-Á"]}],
-        },
-        ensure_ascii=False,
-    )
-    env = dict(os.environ, PYTHONIOENCODING="cp1252")
-    result = subprocess.run(
-        [sys.executable, _select_issues_script(), "--board"],
-        input=payload.encode("utf-8"),
-        capture_output=True,
-        env=env,
-    )
-    out = result.stdout.decode("utf-8", errors="backslashreplace")
-    assert result.returncode == 0, (result.returncode, out, result.stderr)
-    assert "COULD NOT READ" not in out, out
-
-
-def test_stdin_reads_as_malformed_without_the_fix_positive_control_834():
-    """Positive control for the test above: with stdin decoded via the
-    console codepage instead of UTF-8, valid UTF-8 JSON containing the same
-    byte 0x81 that is undefined in cp1252 raises `UnicodeDecodeError`
-    inside `json.load(sys.stdin)`, and the pre-fix `except ValueError` around
-    it renders that as 'stdin is not JSON' -- proving the harness can see
-    the exact defect #834 reports, not merely a plausible-sounding one."""
-    script = repo_root() / "scripts" / "select_issues.py"
-    original = script.read_text(encoding="utf-8")
-    fixed_block = (
-        "    try:\n"
-        '        sys.stdin.reconfigure(encoding="utf-8")\n'
-        "    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper\n"
-        "        pass\n"
-        "    try:\n"
-        "        return json.load(sys.stdin), None\n"
-        "    except UnicodeDecodeError as exc:\n"
-        "        return None, _could_not_select(\n"
-        '            "stdin: could not be decoded as UTF-8 ({0})".format(exc)\n'
-        "        )\n"
-        "    except ValueError as exc:\n"
-    )
-    pre_fix_block = (
-        "    try:\n"
-        "        return json.load(sys.stdin), None\n"
-        "    except ValueError as exc:\n"
-    )
-    assert fixed_block in original, "the fixed try/except block was not found to remove"
-    broken = original.replace(fixed_block, pre_fix_block, 1)
-    assert broken != original, "the stdin-reconfigure block was not found to remove"
-    import tempfile
-
-    with tempfile.NamedTemporaryFile(
-        "w", suffix=".py", delete=False, encoding="utf-8"
-    ) as fh:
-        fh.write(broken)
-        broken_path = fh.name
-    try:
-        payload = json.dumps(
-            {
-                "declared": DECLARED,
-                "issues": [{"number": 1, "labels": ["priority-Á"]}],
-            },
-            ensure_ascii=False,
-        )
-        env = dict(
-            os.environ,
-            PYTHONIOENCODING="cp1252",
-            PYTHONPATH=str(repo_root() / "scripts"),
-        )
-        result = subprocess.run(
-            [sys.executable, broken_path, "--board"],
-            input=payload.encode("utf-8"),
-            capture_output=True,
-            env=env,
-        )
-        out = result.stdout.decode("utf-8", errors="backslashreplace")
-        if result.returncode != 2 or "COULD NOT READ" not in out:
-            pytest.skip(
-                "this platform's cp1252 decoding did not reproduce the "
-                "defect -- UNTESTED here: the decode failure this control "
-                "exists to show"
-            )
-        assert "not JSON" in out, out
     finally:
         os.unlink(broken_path)

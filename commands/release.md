@@ -310,6 +310,34 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
 
    **The number swept for comes from the section below, not from an impression of the delta.**
 
+   **`CLAUDE.md`'s own "What is not proven yet" marker, if this repo carries one, is not on
+   `version_sites` and the sweep above will not find it stale** (#1077). Its job is to name the
+   release something was *measured against*, not to spell the version being bumped to, so a plain
+   grep for the new version string neither finds it nor tells you it needs re-deriving. This repo
+   really did ship three releases in a row (`v0.22.0` through `v0.24.0`) with the marker naming the
+   *prior* release, caught only because an unrelated later PR happened to reactivate a dormant test
+   — see that test's own history for why "reactivate" is the operative word.
+
+   Treat it as its own gate, run every release, not only when remembered:
+
+   1. Re-derive whatever the section claims to have re-derived — the delta count, the audit rounds,
+      anything else the section states as measured — against the tree you are about to tag, and
+      rewrite the marker paragraph to name this release and the commit it was written at.
+      **A cohort freeze is the one figure this step must never re-derive for the release being
+      cut** (#1122): the freeze below runs after the tag, and the commit carrying this marker is
+      written before it, so this release's own cohort count does not exist yet at this step. Cite
+      only a cohort that already finished freezing — see `skills/manager/phases/accounting.md`'s
+      cohort-citation rule for what that means in practice.
+   2. After folding the changelog and before the release commit, run the repo's own
+      `tests/test_claude_md_currency.py` (`python3 -m pytest`, not a plugin script under
+      `${CLAUDE_PLUGIN_ROOT}`, so it stays a prose instruction rather than a fenced command line).
+      Its `test_the_marker_never_lags_the_newest_cut_release_even_with_nothing_pending` compares
+      the marker's named release against `CHANGELOG.md`'s newest heading **unconditionally** — it
+      does not wait for `changelog.d` fragments, which is exactly the signal that goes quiet the
+      moment a release empties that directory and is what let the `v0.22.0`-`v0.24.0` gap go
+      unnoticed for three releases. Stage the marker edit with the rest of the release commit; the
+      commit is not the release until this passes.
+
 ## Which number the release gets
 
 The fragments already carry the evidence, so the number is read rather than felt:
@@ -566,3 +594,8 @@ before saying the release is done.
 At the tag, label everything then-open as a frozen cohort — in the same minute, by hand. Nothing
 joins a cohort ever, so it can only shrink. This is the maintainer's act; the triager must never
 write one.
+
+This freeze runs strictly *after* the tag it labels, and the marker gate above is written *before*
+that same tag exists — so the cohort this step is about to create is never the one the marker gate
+cites. See `skills/manager/phases/accounting.md`'s cohort-citation rule (#1122) for which cohort the
+marker may name.

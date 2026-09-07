@@ -101,6 +101,43 @@ def test_candidates_state_names_the_issue_and_the_overlapping_paths():
     assert result["candidates"] == [{"number": 100, "files": ["scripts/lane_setup.py"]}]
 
 
+def test_1045_three_candidates_each_cite_their_own_distinct_file_not_one_shared_file():
+    """#1045, not independently reproduced by the maintainer either: a
+    sub-manager reported this sweep citing "the same file for every
+    candidate regardless of actual body content". Three genuinely unrelated
+    candidates, three genuinely distinct files, one of which is inside the
+    claimed set and two of which are not -- the false-positive shape would
+    be every candidate answering with the SAME file (the claimed one, or
+    any other single file), rather than each answering with its own."""
+    board = _board(
+        [
+            {
+                "number": 300,
+                "title": "touches the claimed lane",
+                "body": "see `scripts/lane_setup.py` for the fix",
+            },
+            {
+                "number": 301,
+                "title": "unrelated, a different file",
+                "body": "touches `scripts/doctor.py` only",
+            },
+            {
+                "number": 302,
+                "title": "unrelated, yet another file",
+                "body": "touches `README.md` only",
+            },
+        ]
+    )
+    result = lane_setup.suggest_companions(
+        REPO_ROOT, 851, ["scripts/lane_setup.py"], board
+    )
+    assert result["state"] == "candidates"
+    # Only #300 overlaps the claimed set -- #301 and #302 must not appear,
+    # and #300's own cited file must be the one it actually named, not a
+    # copy of some other candidate's.
+    assert result["candidates"] == [{"number": 300, "files": ["scripts/lane_setup.py"]}]
+
+
 def test_own_issue_is_excluded_from_the_sweep():
     board = _board(
         [{"number": 851, "title": "self", "body": "`scripts/lane_setup.py`"}]

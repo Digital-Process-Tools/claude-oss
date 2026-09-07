@@ -185,10 +185,21 @@ separately rather than one list.
   release session edits `CLAUDE.md` unless editing it was the thing it was explicitly asked to do. A
   lane that finds a trap worth recording routes it per the rule above, says so in its handback, and
   files an issue; it does not append a paragraph here. An append is invisible at the moment it is
-  made and a document that grows by accretion stops being read, which no budget can measure. Two
-  exceptions, both an explicit ask rather than initiative: the release session updating `What is not
-  proven yet`'s marker inside the release commit, and a change whose subject *is* this file.
-  **Nothing enforces either rule**; they are followed because a session read them, which is the
+  made and a document that grows by accretion stops being read, which no budget can measure. Three
+  exceptions, each drawn as narrowly as the sentence naming it: the release session updating `What
+  is not proven yet`'s marker inside the release commit; a change whose subject *is* this file; and
+  a lane whose own diff changes a budgeted file (`agents/*.md`, `skills/manager/**`,
+  `commands/tick.md`) such that this file's declared row for it no longer matches disk (#1134) --
+  whether by pushing the measured size past its ceiling, or by shrinking it, since
+  `tests/test_baseline_matches_disk_1014.py` fires on either direction of drift, not only overage.
+  The third case MAY touch only that file's own table row -- the measured size and, if the ceiling
+  moved, the new ceiling -- plus the explanatory paragraph this convention already asks for beside a
+  raised ceiling; nothing else in `CLAUDE.md` moves for that reason alone, and a lane open here for
+  one of these three reasons still may not fold in an unrelated edit while it is here. In
+  particular, a re-baseline lane is not obliged to reconcile a prose sum-total sentence elsewhere in
+  this file against the row it just changed -- those drift between fixes and are corrected as their
+  own change (#1057), not as a silent rider on somebody else's re-baseline.
+  **Nothing enforces any of the three**; they are followed because a session read them, which is the
   weakest kind of guard this repository has and is named as such.
 
 - **Do not tune a test until it passes.** A test that reconstructs shell behaviour inside a
@@ -396,11 +407,11 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 41,601 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 53,485 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 53,209 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
-| `skills/manager/phases/accounting.md` | 18,549 B | 19,500 B |
-| `skills/manager/phases/tick-order.md` | 33,532 B | 36,000 B |
-| `skills/manager/phases/release.md` | 9,170 B | 9,800 B |
+| `skills/manager/phases/accounting.md` | 21,569 B | 23,000 B |
+| `skills/manager/phases/tick-order.md` | 33,396 B | 36,000 B |
+| `skills/manager/phases/release.md` | 9,425 B | 9,800 B |
 | `skills/manager/phases/review.md` | 10,353 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 9,326 B | 10,300 B |
 | `skills/manager/phases/merge.md` | 14,230 B | 15,400 B |
@@ -461,6 +472,20 @@ moved by the same #762: one paragraph, naming where the filing-time label attach
 10,348 B to 11,637 B and past its old 11,400 B ceiling by 237 B -- too small an overage to be worth
 trimming something else in the same file to absorb, so it was raised too.
 
+**`accounting.md`'s budget was raised again for #1122**, past the same growth-by-accretion pattern
+this table calls out for #675 and #1029: 18,549 B became 20,894 B, past the 19,500 B ceiling by
+1,394 B. The new paragraph states which cohort's count the release-commit marker may cite -- only
+the previous release's, already fully frozen, never the current release's own not-yet-frozen one --
+closing a structural gap where `v0.25.0`'s marker cited cohort-21's count inside the commit written
+*before* cohort-21's own freeze ran (the freeze runs after the tag; the marker is written before
+it), and the two numbers (30 cited, 32 actually applied) disagreed. Nothing already in the file
+argued that point, so nothing was cut to make room; ceiling moved to 23,000 B, ~10% headroom over
+the new size. Re-baselined again in the same lane's own self-review round: 20,894 B became
+21,569 B after a reviewer spawn found "settled count" ambiguous between the recorded freeze
+decision and a fresh recount taken later, once a cohort has shrunk further -- fixed by naming the
+recorded `froze <cohort> at N` decision as the one to quote rather than a re-run of the check.
+Ceiling unchanged; comfortably under it.
+
 **`merge.md`'s budget was raised for #1007**, which closes the race a tick's own cleanup
 guard was overridden through: 10,012 B measured became 13,198 B. The new bullet states two
 things together -- re-read the tree's HEAD immediately before a force-remove and refuse the
@@ -519,15 +544,28 @@ same lane's own self-review round fixing several bare-mention (no `scripts/` pre
 sites an auditor spawn found, then a third pass (maintainer review) putting `--label`'s two worked
 examples back on positional arguments -- matching `fleet_label.py`'s own old call length plus the
 one unavoidable `--label` mode-selector token -- which shrank three of the five rows again; no new
-row. The spine's directive blocks and each phase file's own header are a second, shorter statement
+row. **Re-summed for #1057: 231,916 B fell to 209,239 B**, the first drop rather than growth in this
+sentence's own history. The driver is #1136, landed after the #1069 figure above and never re-summed
+until now: its rationale cut removed 581,678 B down to 480,591 B across 23 loop-markdown files (see
+below), and this table's own rows fell with it even as several were also re-baselined upward in the
+same window (#1085/#1056, #1091, #1162's new `ci-green.md` row). #1057 found this sentence and the
+one below it stale by the same mechanism #1014 already named for the per-file baselines -- nobody
+re-sums a prose total when a row changes -- and, unlike a baseline, a summed total has no
+`scripts/skill_phases.py` counterpart to compare against; it is re-derived by hand from the table
+above each time this sentence is touched, which stays true after this fix. A test that ties this
+sentence to the table mechanically was weighed and declined: it would force every future
+budget-touching lane to also edit this sentence, which is exactly the class of forced `CLAUDE.md`
+edit #1134 narrowed rather than widened (see `Working here`'s third exception, which does not cover
+it). The spine's directive blocks and each phase file's own header are a second, shorter statement
 of what the phase file then argues at length, and that is a real cost paid on every read of the phase
 file. It buys the number that actually matters here — what a session loads before it knows which
-phase it will reach. **122,423 B became 44,358 B, -63.8%**, in three rounds: the original split, then
-#958 (the ranking table and upstream filing out to `phases/findings.md`, 62,829 -> 54,751 B), then
-#960 (the pre-flight and dispatch order to `dispatch.md`, the platform band to `review.md`, cadence and
-the loop doctrine's argument to `accounting.md`, 54,751 -> 42,604 B, since re-baselined to 42,867 B
-by #1014's own measurement and again to 44,358 B by #1029's). Quote both numbers, or the saving
-reads as free.
+phase it will reach. **122,423 B became 41,601 B, -66.0%** (previously reported as 44,358 B / -63.8%,
+stale by the same #1136 cut above and never re-baselined until #1057), in three rounds: the original
+split, then #958 (the ranking table and upstream filing out to `phases/findings.md`, 62,829 ->
+54,751 B), then #960 (the pre-flight and dispatch order to `dispatch.md`, the platform band to
+`review.md`, cadence and the loop doctrine's argument to `accounting.md`, 54,751 -> 42,604 B, since
+re-baselined to 42,867 B by #1014's own measurement, to 44,358 B by #1029's, and to 41,601 B
+by #1136's cut and later re-baselines). Quote both numbers, or the saving reads as free.
 
 **#958's own reasoning, because the rejected alternative is the interesting half.** Moving that
 prose to `.claude/jit-context/` was weighed and refused: jit's shown-set dedup is keyed on
@@ -692,14 +730,26 @@ fixes above but replaced on the board by their own non-blocking siblings and fol
 that grew, which is a trend rather than an artefact, and this release's own gate 3 is a visibly
 larger contributor to it than `v0.25.0`'s was.
 
+**This citation is itself an instance of the exact defect #1122 fixes, written before that fix
+existed.** Cohort-22 did not exist yet at the moment this marker was committed -- its freeze runs
+at `v0.26.0`'s own tag, strictly after this commit -- so "42" here was a number taken before the
+freeze it claims to report, the same premature measurement `v0.25.0`'s marker made for cohort-21
+(cited 30, applied 32). #1122's fix governs the marker written for the release that follows this
+one onward; it does not rewrite this one, because doing so would misdate prose that already
+shipped as read at the time it was written. The honest correction lands where the rule now says it
+must: the next release's own marker cites cohort-22's settled count, once its freeze has actually
+run, in place of guessing its own not-yet-frozen cohort's.
+
 **The reach probe was NOT re-derived at `v0.26.0`** -- it is still `v0.21.0`'s, measured at `c565488`,
 eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of the field
 readings were not either: the owned-files table, the two installs and the `doctor` run are still
 `v0.17.0`'s, measured at `ad38b93` and now carried through **nine** tags (`v0.18.0` through
-`v0.26.0`). `#815` tracks re-deriving them, and a ninth release disclosing the identical,
-unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low priority
-against everything else this loop spends a tick on, or the disclosure is not actually driving
-anyone to close it. Both are worth naming and neither is decided here — the honest content of this
+`v0.26.0`). `#1127` tracks re-deriving them -- replacing `#815`, which closed at `v0.18.0` having
+tracked only the marker-paragraph fix (#817), never the full pass, and had been cited here as the
+tracker for over eight releases after it stopped being one. A ninth release disclosing the
+identical, unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low
+priority against everything else this loop spends a tick on, or the disclosure is not actually
+driving anyone to close it. Both are worth naming and neither is decided here — the honest content of this
 paragraph is the count itself, nine releases running, not a conclusion drawn from it. **The
 readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
 marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release

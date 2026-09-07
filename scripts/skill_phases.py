@@ -248,7 +248,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # stdin-parse error; verified against the running script it can
         # instead exit 0 with a silently degraded receipt, or crash with an
         # unrelated traceback, and the sentence now says so.
-        53485,
+        # Re-baselined for #1200: 53485 B became 53209 B -- the
+        # stdin-contract sentence is gone; `--board` fetches its own board
+        # now, the same route the default mode uses, so there is no
+        # exception left to describe. Budget unchanged.
+        53209,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -339,8 +343,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # third state (BLOCKING_UNKNOWN / None -> could-not-decide) alongside
     # True/False, so gate3_disposition.py's own paragraph here now names it.
     # Budget unchanged; still comfortably under it.
+    # Re-baselined for #1077: 9170 B became 9425 B -- gate 5's version-site
+    # sweep gained one sentence naming CLAUDE.md's own currency marker as a
+    # step the sweep does not catch, pointing at commands/release.md's own
+    # gate 4 for the mechanics. Budget unchanged; still under it.
     "skills/manager/phases/release.md": (
-        9170,
+        9425,
         9800,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
@@ -366,8 +374,23 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # loop's own initiative) rather than on which call site typed the
         # issue up, so a co-decided issue is never tagged even when the loop
         # files it. Budget unchanged; comfortably under it.
-        18549,
-        19500,
+        # Raised for #1122: 18549 B became 20894 B, past the 19500 B ceiling
+        # by 1394 B. The new paragraph states which cohort's count the
+        # release-commit marker may cite -- the previous release's, already
+        # fully frozen, never the current release's own not-yet-frozen one --
+        # closing the gap where v0.25.0's marker cited cohort-21's count
+        # inside the commit written before cohort-21's own freeze ran, and
+        # the two numbers (30 cited, 32 applied) disagreed. Nothing already
+        # in the file argued that point, so nothing was cut to make room;
+        # ceiling moved to 23000 B, ~10% headroom over the new size.
+        # Re-baselined in the same lane's self-review round: 20894 B became
+        # 21569 B after a reviewer spawn found the new rule left "settled
+        # count" ambiguous between the recorded freeze decision and a fresh
+        # recount -- fixed by naming the recorded `froze <cohort> at N`
+        # decision as the one to quote. Comfortably under the 23000 B
+        # ceiling; ceiling unchanged.
+        21569,
+        23000,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
     # New for #1037: `commands/tick.md` used to inject its own numbered steps 1-6
@@ -391,7 +414,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined again in the same lane's own self-review round:
         # 33334 B became 33532 B -- the same wrong-shaped-payload
         # correction dispatch.md's own re-baseline note describes.
-        33532,
+        # Re-baselined for #1200: 33532 B became 33371 B -- the identical
+        # stdin-contract removal dispatch.md's own re-baseline note
+        # describes. Budget unchanged.
+        # Re-baselined again in the same lane's own self-review round:
+        # 33371 B became 33396 B -- a reviewer found "the two shared no
+        # input contract" read as the opposite of what #1178 found (the
+        # two modes did NOT share one); reworded for clarity. Budget
+        # unchanged.
+        33396,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
