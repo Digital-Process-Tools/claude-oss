@@ -359,23 +359,31 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # sweep gained one sentence naming CLAUDE.md's own currency marker as a
     # step the sweep does not catch, pointing at commands/release.md's own
     # gate 4 for the mechanics. Budget unchanged; still under it.
-    # Raised for #1266: 9425 B became 9918 B, past the 9800 B ceiling by
-    # 118 B. `v0.27.0` was tagged and published before its own release
-    # commit's CI run had even started, and that run concluded RED -- gates
-    # 1-6 verify the default branch before the commit is written, and
-    # nothing verified the commit's own content. The new paragraph names
-    # this as a seventh, unnumbered check and points at commands/release.md
-    # for the mechanics, the same pointer shape gate 3 already uses.
-    # Too small an overage to be worth trimming something else in the same
-    # file to absorb, so the ceiling moved to 10900 B, ~10% headroom over
-    # the new size, rather than cutting anything.
+    # Re-baselined for #1246: 9425 B became 9685 B -- gate 1 gained a pointer
+    # sentence naming that a push-triggered run alone does not satisfy it in a
+    # repo whose own CI runs a reduced push matrix, with the mechanics left in
+    # commands/release.md's own gate 1 (the single source, per #321's rule
+    # for gate 3). Budget unchanged; still under it.
+    # Raised for #1266 (landed independently, same file): 9425 B became
+    # 9918 B, past the 9800 B ceiling by 118 B. `v0.27.0` was tagged and
+    # published before its own release commit's CI run had even started, and
+    # that run concluded RED -- gates 1-6 verify the default branch before
+    # the commit is written, and nothing verified the commit's own content.
+    # The new paragraph names this as a seventh, unnumbered check and points
+    # at commands/release.md for the mechanics, the same pointer shape gate 3
+    # already uses. Too small an overage to be worth trimming something else
+    # in the same file to absorb, so the ceiling moved to 10900 B, ~10%
+    # headroom over the new size, rather than cutting anything.
     # Re-baselined in the same lane's own self-review round: 9918 B became
     # 10035 B -- two reviewer findings fixed in place (the exit-code list
     # undercounted release_ci_wait.py's four outcomes at three, and the new
     # paragraph was ordered after the tag-push verification it is actually a
     # precondition for). Comfortably under the 10900 B ceiling; unchanged.
+    # Re-measured after merging #1246 and #1266 together (both landed the
+    # same tick, each adding independent prose to this file): 10035 B became
+    # 10295 B. Ceiling unchanged at 10900 B; still comfortably under it.
     "skills/manager/phases/release.md": (
-        10035,
+        10295,
         10900,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
