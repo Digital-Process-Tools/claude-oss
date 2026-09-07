@@ -247,21 +247,49 @@ def _file_to_lanes(repo, lane_patterns):
     return mapping, malformed
 
 
-def lane_coupling_report(repo, lane_patterns, test_dir="tests"):
+def lane_coupling_report(repo, lane_patterns, test_dir="tests", allowlist=None):
     """``dict`` -- see this module's own docstring for the three states and
-    the `spans`/`unreadable`/`malformed` fields.
+    the `spans`/`unreadable`/`malformed`/`acknowledged` fields.
 
     `spans` is a sorted list of ``(test_file, [(lane, [refs...]), ...])``
-    for every test file whose static references resolve into two or more
-    lanes. `unreadable` lists ``(test_file, detail)`` for a file that could
-    not be parsed. `malformed` lists the lane names whose own
-    `lane_patterns` value has the wrong shape.
+    for every UNACKNOWLEDGED test file whose static references resolve into
+    two or more lanes -- this is what drives `state`. `unreadable` lists
+    ``(test_file, detail)`` for a file that could not be parsed. `malformed`
+    lists the lane names whose own `lane_patterns` value has the wrong
+    shape.
+
+    ``allowlist`` (#1244) is an optional iterable of test-file paths
+    (repo-relative POSIX, matching `spans`' own `test_file` spelling) that
+    this repository's maintainer has reviewed and confirmed span multiple
+    lanes ON PURPOSE -- a whole-repo guard test reading several lanes' files
+    to check a cross-cutting invariant, not an accidental #1201-shaped
+    collision. A real trial run over this repo's own suite found 48 of 465
+    test files already span two or more lanes, almost all of that shape,
+    and wiring this module into `doctor.py` unconditionally would either
+    warn permanently on a healthy repo -- this repo's own doctor-check-
+    contract rule is "if nothing can clear it, the bug is in the check" --
+    or need exactly this kind of noise reduction.
+
+    A span whose `test_file` is in ``allowlist`` moves from `spans` into
+    the new `acknowledged` list (identical shape) and does not, by itself,
+    make `state` `"finding"` -- but it is never silently dropped: it is
+    still visible in `acknowledged` for a caller (`doctor_check_lane_
+    coupling.py`) to report as an informational count, the same shape
+    `lane_pattern_coverage.py`'s own `uncovered_count` already uses one
+    checker over. ``allowlist=None`` (the default) is #1234's own original
+    module, byte-for-byte -- every span is unacknowledged, so nothing
+    calling this function before #1244 changes behaviour. The allowlist
+    itself is a fact about THIS repository (which tests intentionally span
+    lanes), so it is read from `.oss.json` by the caller, never hardcoded
+    here -- this repo's own governing rule that a fact about one repository
+    never lives in shared code.
     """
     repo = Path(repo)
     if not lane_patterns:
         return {
             "state": "not-configured",
             "spans": [],
+            "acknowledged": [],
             "unreadable": [],
             "malformed": [],
         }
@@ -269,11 +297,14 @@ def lane_coupling_report(repo, lane_patterns, test_dir="tests"):
         return {
             "state": "finding",
             "spans": [],
+            "acknowledged": [],
             "unreadable": [],
             "malformed": [None],
         }
+    allowed = set(allowlist) if allowlist else set()
     file_lanes, malformed = _file_to_lanes(repo, lane_patterns)
     spans = []
+    acknowledged = []
     unreadable = []
     test_root = repo / test_dir
     if not test_root.is_dir():
@@ -309,11 +340,16 @@ def lane_coupling_report(repo, lane_patterns, test_dir="tests"):
                 for lane in file_lanes.get(ref, []):
                     lanes_touched.setdefault(lane, []).append(ref)
             if len(lanes_touched) >= 2:
-                spans.append((rel, sorted(lanes_touched.items())))
+                entry = (rel, sorted(lanes_touched.items()))
+                if rel in allowed:
+                    acknowledged.append(entry)
+                else:
+                    spans.append(entry)
     state = "finding" if (spans or malformed or unreadable) else "ok"
     return {
         "state": state,
         "spans": spans,
+        "acknowledged": acknowledged,
         "unreadable": unreadable,
         "malformed": malformed,
     }

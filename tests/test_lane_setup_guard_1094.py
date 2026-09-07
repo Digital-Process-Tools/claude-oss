@@ -59,8 +59,10 @@ def test_an_unrelated_skills_file_does_not_trip_it():
 
 def test_known_guards_now_carries_six_distinct_test_files():
     """#432's own sizing test pinned five; this issue adds a sixth guard test to
-    the enumeration, so the count moves with it rather than silently drifting."""
+    the enumeration, so the count moves with it rather than silently drifting.
+    #1222 later added a seventh (`tests/test_bare_gh_git_spawn_sweep_1165.py`),
+    so the count here reflects that too rather than going stale."""
     known = lane_setup.known_guards()
     test_paths = [entry["test"] for entry in known]
-    assert len(test_paths) == 6
+    assert len(test_paths) == 7
     assert "tests/test_command_references.py" in test_paths

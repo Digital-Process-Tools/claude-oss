@@ -2731,6 +2731,13 @@ from doctor_check_fragments_readme import (
 # overlap is reported as a refactoring signal, never a dispatch gate.
 from doctor_check_lane_patterns import check_lane_patterns
 
+# scripts/doctor_check_lane_coupling.py (#1244), its own module per the same
+# #497/#630 convention -- wraps scripts/lane_coupling.py's own
+# not-configured/ok/finding states. See that module's docstring for the
+# noise-reduction design (an .oss.json-declared allowlist) and why it was
+# chosen over a threshold or a narrower literal scope.
+from doctor_check_lane_coupling import check_lane_coupling
+
 # scripts/doctor_check_test_measurement.py (#932): a maintainer attestation
 # that this repo's pytest run measures test duration and coverage -- its own
 # module per the #497/#630 convention. The full path is named here because
@@ -9124,6 +9131,10 @@ def main(argv=None):
     # docs/pick-the-work.md describes, for this repo's own tree? See
     # doctor_check_lane_patterns.py for the three states.
     check_lane_patterns(project_dir, config)
+    # #1244: does any tests/*.py file's static references span two or more
+    # declared lanes, unacknowledged? See doctor_check_lane_coupling.py for
+    # the three states and the allowlist-based noise-reduction design.
+    check_lane_coupling(project_dir, config)
     # #932: a maintainer attestation, not a derived fact -- see the module's
     # own docstring for why this never parses `addopts` itself.
     check_test_measurement(project_dir, config)
