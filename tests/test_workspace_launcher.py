@@ -713,7 +713,9 @@ def test_unknown_radar_declaration_skips_the_never_spawned_check_loudly(tmp_path
     #1214 found, but does not fix, that `"skipped" in done.stderr` is satisfied
     here by the REAL diagnostic's own unrelated "supertool: not on PATH;
     anything needing it will be skipped" line rather than by the launcher's own
-    ASK_CONSUMER message this test is named for (filed separately).
+    ASK_CONSUMER message this test is named for. Not yet filed as its own
+    issue -- reported to the maintainer alongside #1214 rather than filed by
+    this lane, whose own publishing clause is unconditional.
     """
     repo = _repo(tmp_path)
     (repo / ".supertool.json").write_text("{not json at all", encoding="utf-8")
