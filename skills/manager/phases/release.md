@@ -123,7 +123,9 @@ Gates, each a call and not a feeling:
 5. **Every version site bumped**, swept **unfiltered** — a README is not a `.json` and an allowlist by
    extension cannot see it. A sweep keyed on the *outgoing* version only finds sites that are
    half-bumped; it cannot find one frozen at some third value, which is the one most likely to be
-   wrong.
+   wrong. **`CLAUDE.md`'s own currency marker, if this repo carries one, is not caught by that
+   sweep** — it names what was measured, not the version being bumped to — so it is its own
+   checked step; mechanics in `commands/release.md`'s own gate 4 (#1077).
 6. **The tag is not the delivery.** For plugin users the manifest version is what the updater
    compares; for catalogue users the pin is a commit sha somebody else advances. Report which
    surfaces the release actually reached, in those words — "tagged, not yet in the catalogue" rather
