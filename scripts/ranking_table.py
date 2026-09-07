@@ -181,6 +181,53 @@ def extract_ranking_table(text):
     return STATE_FOUND, table, None
 
 
+#: Exact value the `Blocks a release?` column carries on a blocking row.
+BLOCKS_UNCONDITIONALLY = "yes, unconditionally"
+
+
+def parse_rows(table):
+    """``{class_name: blocks_value}`` for every data row in ``table`` -- the
+    string ``extract_ranking_table`` (or ``load_table``) returned under
+    ``STATE_FOUND``. Call it on nothing else; this assumes the shape already
+    validated.
+
+    #1275: this is the one place that reads which classes block a release
+    and which do not, so a routing rule naming either set can derive it here
+    rather than keep a second, hand-copied list that drifts (#577, #1014).
+    """
+    rows = {}
+    lines = table.splitlines()
+    for line in lines[2:]:
+        stripped = _strip_eol(line).strip()
+        if not stripped.startswith("|"):
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if len(cells) < 2:
+            continue
+        class_match = re.match(r"^`([^`]+)`", cells[0])
+        if not class_match:
+            continue
+        rows[class_match.group(1)] = cells[1]
+    return rows
+
+
+def blocking_classes(table):
+    """Classes whose row answers ``BLOCKS_UNCONDITIONALLY`` in the
+    ``Blocks a release?`` column, sorted."""
+    return sorted(
+        cls
+        for cls, value in parse_rows(table).items()
+        if value == BLOCKS_UNCONDITIONALLY
+    )
+
+
+def non_blocking_classes(table):
+    """Every other ranked class, sorted -- the rows a routing rule sends to
+    ``trap.d/`` instead of the tracker (#1275)."""
+    blocking = set(blocking_classes(table))
+    return sorted(cls for cls in parse_rows(table) if cls not in blocking)
+
+
 def load_table(plugin_root):
     """``(state, table, reason)`` for the ranking table under ``plugin_root``.
 

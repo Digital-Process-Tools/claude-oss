@@ -405,11 +405,19 @@ blast radius is still one sentence long; and it is the same subsystem — **a fi
 another live agent's lane is a filing, not a fix**, however small it looks, because the cost there
 is a conflict somebody else resolves by hand.
 
-**File it when any one holds**: it needs a design decision you were not briefed to make; its row in
-the ranking table the manager skill owns answers yes in the blocking or the embargo column, which
-wants its own pull request and its own review rather than a rider on somebody else's; it would
-double the diff; or what you are holding is the class rather than the instance **and the class is
-reachable** — you can name an input that arrives through it and the wrong result it produces.
+**Rank it before you decide where it goes** — the same table an audit ranks against, in
+`skills/manager/phases/findings.md`. A row that answers `yes, unconditionally` in the `Blocks a
+release?` column, or a finding that fits none of the rows (`unranked`), **is filed as an issue**:
+it needs a design decision you were not briefed to make; wants its own pull request and its own
+review rather than a rider on somebody else's; would double the diff; or what you are holding is the
+class rather than the instance **and the class is reachable** — you can name an input that arrives
+through it and the wrong result it produces.
+
+**A row that answers `can ship behind a trap.d fragment` is written to `trap.d/` instead of filed**
+(#1275), even when one of those same reasons applies — same shape as "Hit a trap? Log it and carry
+on" below. `report-for-filing` is the report action for the blocking-or-unranked case only; a
+non-blocking adjacent finding is `fixed`, `below-bar`, or logged to `trap.d/` and said so in the
+pull request body, never a fourth silent state.
 
 **A class you cannot reach is not a filing.** A docstring wider than its code, a comment left behind
 by a fix, a test named for a constant it no longer uses, a receipt that overstates — true, worth

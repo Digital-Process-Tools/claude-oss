@@ -287,10 +287,17 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         "reviewing a returned diff, and what an issue body filed out of one looks like, when a fix-for-a-finding needs its own pass",
     ),
     "skills/manager/phases/findings.md": (
-        9326,
-        10300,
-        "ranking a finding: the eleven classes, the blocking and embargo columns, and filing on a dependency's own board",
+        11222,
+        12400,
+        "ranking a finding: the eleven classes, the blocking and embargo columns, routing by row (#1275), and filing on a dependency's own board",
     ),
+    # Raised for #1275: 9326 B became 11222 B, past the old 10300 B ceiling by
+    # 922 B. The new "Routing a finding" section states where a ranked finding
+    # goes once it is ranked -- filed as an issue for a blocking or unranked
+    # row, a trap.d/ fragment for everything else -- closing the gap #1275
+    # named: 21 of 30 open issues carried filed-by-loop, because nothing
+    # routed a non-blocking finding anywhere but the tracker. Ceiling moved to
+    # 12400 B, ~10% headroom over the new size, rather than trimming anything.
     # Re-baselined for #1029: 14455 B on disk against a stale 13198 declared
     # baseline -- #1026 grew this file (#976's push-to-main rule, #1017's
     # worktree-reap fix) without touching this table. Budget unchanged; the

@@ -56,7 +56,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # in the same diff so this class of drift is caught going forward rather
     # than re-discovered by hand again. Budgets (the ceilings) are unchanged;
     # every file measured here was already comfortably under its own.
-    "agents/developer.md": (40118, 44100),
+    "agents/developer.md": (40699, 44100),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
@@ -73,7 +73,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # that pointer, so the marker sentence silently stopped existing
     # anywhere the test could see it. Restored in this file's own text
     # alongside the pointer. 12963 B became 13273 B. Ceiling unchanged.
-    "agents/auditor.md": (14046, 15600),
+    "agents/auditor.md": (14402, 15600),
     # Re-baselined DOWN for #1071, the same extraction: 14953 B became
     # 13992 B. Ceiling left unchanged for the same reason.
     # Re-baselined UP for #1210, the same restoration as auditor.md above,
@@ -81,7 +81,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # tests/test_audit_shared_1071.py's own duplication threshold (< 150
     # shared 8-grams between the two files) from being crossed again by the
     # restoration: 13992 B became 14424 B. Ceiling unchanged.
-    "agents/release-auditor.md": (14424, 16400),
+    "agents/release-auditor.md": (14636, 16400),
     "agents/triager.md": (15082, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
@@ -163,7 +163,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # mechanical derivation path, pointing at dispatch.md for the full
     # mapping, alongside --short-reason. Ceiling unchanged; 42 B of
     # headroom remains.
-    "agents/sub-manager.md": (16758, 16800),
+    # Raised for #1275: 16630 B became 17104 B, past the old 16800 B ceiling
+    # by 304 B. The new paragraph points a tick's own review-time findings at
+    # findings.md's new routing rule instead of silently keeping the old
+    # file-everything default. Ceiling moved to 18800 B, ~10% headroom over
+    # the new size, rather than trimming something else to absorb it.
+    "agents/sub-manager.md": (17104, 18800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

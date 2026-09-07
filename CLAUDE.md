@@ -124,6 +124,19 @@ It bites inside this repo too, repeatedly:
 
 If you write a checker, ask what it prints when it cannot look.
 
+## Findings route by whether they block a release (#1275)
+
+A finding the loop produces — an audit, a review, a lane's own adjacent discovery — is **filed as an
+issue only when its row in `skills/manager/phases/findings.md`'s ranking table answers `yes,
+unconditionally` in the `Blocks a release?` column, or fits none of the rows (`unranked`)**.
+Everything else is written to `trap.d/` as a fragment instead, for `/oss:curate` to promote, merge or
+decline later — the classification already existed; this only decides where each row's finding goes.
+Issues filed by anyone outside the loop are untouched: they are the public surface and are not ours
+to compress. The measurement behind this rule: 21 of 30 open issues carried `filed-by-loop` the day
+it was decided, and every one of them came from the same circuit — the loop audits itself, files
+against itself, fixes itself, and the next audit reads the result — with nothing in that circuit
+closing an issue that was merely a lesson rather than a defect.
+
 ## Three ownership contracts
 
 The plugin writes into other people's repositories. What it may touch is fixed:
@@ -274,11 +287,11 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 40,118 B | 44,100 B |
-| `agents/auditor.md` | 14,046 B | 15,600 B |
-| `agents/release-auditor.md` | 14,424 B | 16,400 B |
+| `agents/developer.md` | 40,699 B | 44,100 B |
+| `agents/auditor.md` | 14,402 B | 15,600 B |
+| `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
-| `agents/sub-manager.md` | 16,758 B | 16,800 B |
+| `agents/sub-manager.md` | 17,104 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
@@ -367,6 +380,14 @@ read-only command. The literal command now lives directly in `agents/sub-manager
 which is injected whole on every turn and never truncated, rather than only in the phase file a
 bounded read might still miss.
 
+**#1275 raised `agents/sub-manager.md`'s ceiling from 16,800 B to 18,800 B**: 16,630 B became
+17,104 B, past the old ceiling by 304 B. The new paragraph points a tick's own review-time findings
+at `findings.md`'s new routing rule -- blocking to an issue, non-blocking to `trap.d/` -- so a
+sub-manager's own filing follows the same rule an audit and a developer lane now follow, rather than
+silently keeping the old file-everything default. Too small an overage to be worth trimming
+something else in the same file to absorb, so the ceiling moved with ~10% headroom over the new
+size rather than cutting anything.
+
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
 number of bytes on every platform unless something pins line endings — a CRLF checkout of an
@@ -438,12 +459,20 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 10,829 B | 11,400 B |
-| `skills/manager/phases/findings.md` | 9,326 B | 10,300 B |
+| `skills/manager/phases/findings.md` | 11,222 B | 12,400 B |
 | `skills/manager/phases/merge.md` | 14,230 B | 15,400 B |
 | `skills/manager/phases/ci-green.md` | 2,646 B | 2,700 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
+
+**#1275 raised `skills/manager/phases/findings.md`'s ceiling from 10,300 B to 12,400 B**: 9,326 B
+became 11,222 B, past the old ceiling by 922 B. The new "Routing a finding" section states where a
+ranked finding goes once it is ranked -- filed as an issue for a blocking or unranked row, a
+`trap.d/` fragment for everything else -- closing the gap #1275 named: 21 of 30 open issues carried
+`filed-by-loop`, because nothing routed a non-blocking finding anywhere but the tracker. Nothing
+already in the file argued that point, so nothing was cut to make room; the ceiling carries the same
+~10% headroom the other re-baselines in this table use.
 
 **#1047 re-baselined `skills/manager/phases/review.md` without raising its ceiling**: 10,353 B
 became 10,829 B. A fix commit answering an audit's own findings is a diff nothing makes a subject

@@ -117,9 +117,11 @@ What is yours and not theirs is the **composition** lens over the range:
 Round one over the whole delta. If it comes back with findings, the maintainer fixes them and you run
 **round two** over the range plus the fixes.
 
-**There is no round three.** After round two, whatever remains is filed against the **next milestone**
-and the release ships. Say in your round-two report which findings are being carried forward, so the
-filing is somebody's explicit act and not an omission.
+**There is no round three.** After round two, whatever remains is non-blocking by construction --
+the next paragraph is why a blocking row cannot reach this point -- and it routes per
+`skills/manager/phases/findings.md`'s "Routing a finding" section (#1275): a `trap.d/` fragment, not
+an issue filed against the next milestone. Say in your round-two report which findings are being
+carried forward this way, so the routing is somebody's explicit act and not an omission.
 
 **The cap does not outrank the ranking.** A finding in a blocking row is not eligible to be carried
 forward out of round two, and a round-two report that lists one under carry-forward has let the
