@@ -275,7 +275,7 @@ from being invisible.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer.md` | 40,118 B | 44,100 B |
-| `agents/auditor.md` | 13,273 B | 15,600 B |
+| `agents/auditor.md` | 14,046 B | 15,600 B |
 | `agents/release-auditor.md` | 14,424 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
 | `agents/sub-manager.md` | 16,060 B | 16,800 B |
@@ -322,6 +322,12 @@ one. `release-auditor.md`'s copy was reworded (same four required substrings, di
 surrounding prose) rather than left byte-identical to `auditor.md`'s, bringing the pair back to 132
 shared 8-grams. 12,963 B became 13,273 B for `auditor.md`, 13,992 B became 14,424 B for
 `release-auditor.md`. Both ceilings are unchanged.
+
+**#1186 raised `auditor.md`'s own measurement again, without touching the ceiling.** The
+Report format section now requires every finding to open with a list marker
+`scripts/review_return.py` already recognises, closing the gap that let a compliant auditor state
+a real finding as bare prose under a class label and have it read back as `could-not-classify`.
+13,273 B became 14,046 B; the ceiling stays at 15,600 B, ~1,550 B of headroom left.
 
 **#1048 raised `agents/sub-manager.md`'s ceiling from 17,000 B to 18,700 B**, after trimming the
 new paragraph once to fit as much of it as possible: a sub-manager closed a handback promising its
