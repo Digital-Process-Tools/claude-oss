@@ -53,6 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import agent_budgets  # noqa: E402
 import command_budgets  # noqa: E402
 import developer_phases  # noqa: E402
+import gh_which  # noqa: E402
 import skill_phases  # noqa: E402
 
 #: See the module docstring's "file count" bullet for why 3, not a measured
@@ -110,10 +111,18 @@ def files_from_git(repo, base, head):
     `(files, error)` -- `error` is `None` on success, a message otherwise.
     Never returns `([], None)` for a call that could not actually run: a
     quiet empty list here would render a broken repo identically to a fix
-    commit that touched nothing."""
+    commit that touched nothing.
+
+    Resolves `git` via `gh_which.safe_which` rather than spawning the bare
+    argv literal (#1157, #1165's own repo-wide sweep) -- a bare name reaches
+    `CreateProcess` on Windows, which only auto-appends `.exe` and never
+    `.cmd`/`.bat`, so a `git.cmd` shim on `PATH` is invisible to it."""
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
+        return None, "git not found on PATH"
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", "{0}..{1}".format(base, head)],
+            [git_bin, "diff", "--name-only", "{0}..{1}".format(base, head)],
             cwd=str(repo),
             capture_output=True,
             text=True,
