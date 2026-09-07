@@ -359,9 +359,19 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # sweep gained one sentence naming CLAUDE.md's own currency marker as a
     # step the sweep does not catch, pointing at commands/release.md's own
     # gate 4 for the mechanics. Budget unchanged; still under it.
+    # Raised for #1266: 9425 B became 9918 B, past the 9800 B ceiling by
+    # 118 B. `v0.27.0` was tagged and published before its own release
+    # commit's CI run had even started, and that run concluded RED -- gates
+    # 1-6 verify the default branch before the commit is written, and
+    # nothing verified the commit's own content. The new paragraph names
+    # this as a seventh, unnumbered check and points at commands/release.md
+    # for the mechanics, the same pointer shape gate 3 already uses.
+    # Too small an overage to be worth trimming something else in the same
+    # file to absorb, so the ceiling moved to 10900 B, ~10% headroom over
+    # the new size, rather than cutting anything.
     "skills/manager/phases/release.md": (
-        9425,
-        9800,
+        9918,
+        10900,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
     # Raised (#960): measured 22,237 B against the prior 16,600 B budget. Two

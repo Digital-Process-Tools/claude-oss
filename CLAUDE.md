@@ -436,7 +436,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,700 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
-| `skills/manager/phases/release.md` | 9,425 B | 9,800 B |
+| `skills/manager/phases/release.md` | 9,918 B | 10,900 B |
 | `skills/manager/phases/review.md` | 10,829 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 9,326 B | 10,300 B |
 | `skills/manager/phases/merge.md` | 14,230 B | 15,400 B |
@@ -452,6 +452,17 @@ two more real bugs inside it. A new bullet on the maintainer's own closed checkl
 backstop: check `scripts/fix_commit_scope.py` against a fix-for-a-finding commit the report is
 silent about, the same gap `agents/developer/review-return.md`'s own new section (also #1047)
 closes on the developer side. Comfortably under the ceiling; no change needed there.
+
+**#1266 raised `skills/manager/phases/release.md`'s ceiling from 9,800 B to 10,900 B**: 9,425 B
+became 9,918 B, past the old ceiling by 118 B. `v0.27.0` was tagged and published at `fb73907`
+before that commit's own `tests` run had even started, and that run concluded RED four minutes
+later, on every non-CodeQL leg, on all three operating systems -- gates 1-6 verify the default
+branch is green *before* the release commit is written, and nothing verified the commit itself. The
+new paragraph names this as a seventh, unnumbered check and points at `commands/release.md` for the
+mechanics (a new `scripts/release_ci_wait.py`, mirroring `pr_green.py`'s shape for a commit pushed
+straight to the default branch rather than a pull request). Too small an overage to be worth
+trimming something else in the same file to absorb, so the ceiling moved to 10,900 B, ~10% headroom
+over the new size, rather than cutting anything.
 
 **#1162 adds a new phase file, `ci-green.md` (2,454 B), rather than growing an existing one.** The
 `pr_green.py` wait and its #1086 substring trap used to live only inline in `agents/sub-manager.md`;

@@ -133,3 +133,9 @@ Gates, each a call and not a feeling:
 
 A quiet `git push origin <tag>` can die inside a wrapper and read exactly like a push that worked.
 Verify with `git ls-remote --tags origin <tag>`, or create the ref through the API.
+
+**A seventh check, unnumbered because it is not about the delta: the release commit's own CI, before
+the tag exists (#1266).** Gates 1-6 verify the default branch is green *before* the commit is
+written -- nothing verifies the commit itself, and `v0.27.0` shipped without this and turned out RED.
+Wait for it; stop on anything but green. Mechanics -- the exact call, the three exit codes, what
+resumes where -- live in `commands/release.md`'s own numbered section, this gate's single source.

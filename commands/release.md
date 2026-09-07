@@ -420,8 +420,9 @@ to carry, not only the release's own (#710). Name the paths the release actually
 folded changelog, the version-site files, anything else this run wrote — and stage those, or
 `git add` each one explicitly before a pathless commit.
 
-Fold the changelog if this repo uses fragments (`/oss:changelog`), commit with `commit_subject` —
-or with `chore(release): {version}` when it is null, per the rule above — and tag.
+Fold the changelog if this repo uses fragments (`/oss:changelog`), and commit with
+`commit_subject` — or with `chore(release): {version}` when it is null, per the rule above. **Do
+not create the tag yet** — the release commit's own CI has to conclude first (#1266, below).
 
 **This commit lands on the default branch outside a pull request, and `CLAUDE.md`'s "Who decides"
 table lists that as a stop row with no content exception (#1119).** On an account holding bypass
@@ -444,13 +445,46 @@ rendered the same as `clean`. `could-not-tell` means nothing was actually captur
 that must never read as either `clean` or `bypassed`, and a sign to re-run the capture and the scan
 in the same call rather than trust the result.
 
-Then **verify the tag exists on the remote**:
+## Wait for the release commit's own CI before it is tagged (#1266)
+
+Gates 1-6 above verify the default branch is green **before** this commit was written — the right
+check for the delta being released, but not a check on the commit itself. Its own content (the
+folded changelog, the bumped version sites, the rewritten `CLAUDE.md` marker) has been verified by
+nothing yet. `v0.27.0` shipped without this: tagged and published the moment the push completed,
+before its own `tests` run had even started, and that run concluded RED four minutes later, on
+every non-CodeQL leg, on all three operating systems.
+
+Resolve the pushed commit's own full sha — never abbreviated, see the script's own docstring for
+why — and wait on it:
 
 ```bash
+COMMIT_SHA="$(git rev-parse HEAD)"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_ci_wait.py" --commit "$COMMIT_SHA" --wait
+```
+
+Three outcomes, exit codes because a shell reads those and never reads prose:
+
+- **exit 0, `GREEN`** — every run on this commit concluded and passed. Proceed to the tag, below.
+- **exit 1, `RED`** — a run failed, or completed with a conclusion this script has never seen
+  (including `cancelled` — a concurrency-superseded run is not a green run). **Stop. Do not create
+  the tag.** The release commit is already on the default branch and can be fixed forward like any
+  other commit — `v0.27.1`'s own precedent: fix, push, and re-run this wait against the new commit
+  before tagging.
+- **exit 2, `PENDING`** (including a timeout under `--wait --timeout N`) — nothing has concluded
+  either way. **Stop, the same as `RED`.** "No answer yet" is not "safe": a tag is not revocable,
+  and reading a pending wait as green is exactly this repository's own named defect class — an
+  absence the tool produced, read as a clean pass.
+
+Only on `GREEN` does the tag get created, and only then is it pushed:
+
+```bash
+git tag <tag>
+git push origin <tag>
 git ls-remote --tags origin <tag>
 ```
 
-A quiet `git push origin <tag>` can die inside a wrapper and read exactly like a push that worked.
+A quiet `git push origin <tag>` can die inside a wrapper and read exactly like a push that worked —
+the `ls-remote` line above is the check, not decoration.
 
 ## Then publish the release, if this repo publishes
 
