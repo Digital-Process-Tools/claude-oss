@@ -13,7 +13,11 @@ maintainer's full clone and fail every leg.
 What this file cannot do is the reason it is small. It cannot tell a section re-derived this morning
 from one whose marker was hand-edited, and it cannot read the tree the marker names. It converts
 "stale and silent" into "stale and dated" -- and, since #206, into "stale and red while a release is
-pending", which is the only moment the answer is actionable.
+pending". Since #1077, staleness is no longer actionable only at that moment: a second,
+unconditional check further down compares the marker against `CHANGELOG.md`'s newest heading on
+every run, needing no signal that a release is being prepared -- three releases in a row shipped
+with the marker naming the prior one before the fragment-gated check below ever caught it, because
+it only fires while `changelog.d` happens to be non-empty.
 
 That last part is the addition. Until it, every check here was satisfied by `v0.3.0` -- a release
 this repo really did cut -- for the whole of the 0.4.0 cycle and into the 0.5.0 one, so the guard
@@ -494,16 +498,24 @@ def test_an_absent_fragment_directory_is_no_release_pending_rather_than_an_error
 # does not distinguish from the between-releases window at all -- the two together cover both.
 
 
+#: `_marker_lag`'s three outcomes are three different reasons, and each gets its own shape rather
+#: than collapsing into `None`: `None` is "compared, and current" -- `"no-baseline"` is "nothing cut
+#: yet, there is nothing to lag" -- and `(named, cut)`, where `named` may itself be `None`, is an
+#: actual mismatch. Folding "nothing to compare" into "compared and matched" is exactly the
+#: silent-absence defect this repository is named after: a repo with no releases yet and a repo
+#: whose marker is perfectly current would otherwise render identically (caught in #1077's own
+#: review round).
 def _marker_lag(claude_md_text, changelog_text):
-    """None if the marker is current or there is no cut release yet to lag; else (named, cut)."""
+    """ "no-baseline", or None if current, or (named, cut) if it lags -- named is None if the
+    marker paragraph names no release in backticks at all."""
     cut = _changelog_releases(changelog_text)
     if not cut:
-        return None
+        return "no-baseline"
     newest_cut = max(cut, key=_version_key)
     marker = _marker_paragraph(_section(claude_md_text))
     named = _releases(marker)
     if not named:
-        return ("(none)", newest_cut)
+        return (None, newest_cut)
     newest_named = max(named, key=_version_key)
     if newest_named == newest_cut:
         return None
@@ -515,11 +527,27 @@ def test_the_marker_never_lags_the_newest_cut_release_even_with_nothing_pending(
     lag = _marker_lag(
         CLAUDE_MD.read_text(encoding="utf-8"), CHANGELOG.read_text(encoding="utf-8")
     )
-    assert lag is None, (
+    if lag == "no-baseline":
+        pytest.skip(
+            "CHANGELOG.md records no released version yet, so there is nothing for the marker "
+            "to lag behind"
+        )
+    if lag is None:
+        return
+    named, cut = lag
+    if named is None:
+        pytest.fail(
+            "CLAUDE.md's 'What is not proven yet' marker paragraph names no release in backticks "
+            "at all, while CHANGELOG.md's newest release is `v{}`. A version cited later in the "
+            "prose is not a marker -- write one at the top of the section (#1077).".format(
+                cut
+            )
+        )
+    pytest.fail(
         "CLAUDE.md's 'What is not proven yet' marker names `v{}` while CHANGELOG.md's newest "
         "release is `v{}`. Re-derive the section against this tree and update the marker "
         "paragraph -- this check does not wait for changelog.d fragments to notice (#1077).".format(
-            *lag
+            named, cut
         )
     )
 
@@ -533,3 +561,16 @@ def test_the_unconditional_lag_check_fires_on_a_stale_marker_with_nothing_pendin
 def test_the_unconditional_lag_check_is_silent_on_a_current_marker():
     """The must-fire case above's paired must-not-fire control."""
     assert _marker_lag(CURRENT, CHANGELOG_FIXTURE) is None
+
+
+def test_the_unconditional_lag_check_tells_no_baseline_from_current():
+    """The absence #1077's own review round caught: both used to be `None`, so a repo with no
+    releases yet and a repo whose marker matched perfectly rendered identically."""
+    assert _marker_lag(CURRENT, "## [Unreleased]\n") == "no-baseline"
+
+
+def test_the_unconditional_lag_check_tells_no_marker_from_a_stale_one():
+    """The other absence: a marker paragraph naming no release at all must not format as `v(none)`
+    or otherwise be mistaken for a real, comparable release name."""
+    no_marker = SECTION_HEADING + "\n\nNothing measured yet.\n"
+    assert _marker_lag(no_marker, CHANGELOG_FIXTURE) == (None, "0.4.0")
