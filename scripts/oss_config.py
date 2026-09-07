@@ -2210,6 +2210,31 @@ def validate(config):
                                     "non-empty list of glob pattern strings, got "
                                     "{1!r}".format(lane_name, patterns)
                                 )
+            # #1244: which test files intentionally span more than one declared
+            # lane (a whole-repo guard test reading several lanes' files to
+            # check a cross-cutting invariant, e.g.
+            # tests/test_content_invariants.py) -- a fact about THIS
+            # repository's own test suite, read by
+            # scripts/lane_coupling.py's `lane_coupling_report` so a
+            # reviewed, intentional span never renders as a fresh #1201-
+            # shaped incident. Optional, null-is-fine, same opt-in terms as
+            # `filed_by_loop`/`reserved`/`lane_other` above: a repo that has
+            # not declared one yet is not a typo, it is "nothing
+            # acknowledged yet" at report time.
+            if "lane_coupling_allowlist" in labels:
+                lane_coupling_allowlist = labels["lane_coupling_allowlist"]
+                if lane_coupling_allowlist is not None and (
+                    not isinstance(lane_coupling_allowlist, list)
+                    or not all(
+                        isinstance(p, str) and p.strip()
+                        for p in lane_coupling_allowlist
+                    )
+                ):
+                    problems.append(
+                        "labels.lane_coupling_allowlist: expected a list of "
+                        "test-file path strings, or null for 'not declared', "
+                        "got {!r}".format(lane_coupling_allowlist)
+                    )
 
     for field in ("version_sites", "docs_targets"):
         if field in config and not isinstance(config[field], list):
