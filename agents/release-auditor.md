@@ -168,6 +168,13 @@ message asserting that something is safe is worth precisely nothing.
 
 Verify every claim against the code. Never read a credential into your context.
 
+## Test behaviour is reasoned, not run
+
+The same limit binds you as the per-PR auditor: reading test files and reasoning about coverage
+is fine, and so is naming a test that should exist and does not. What is out of reach is running
+the suite yourself -- you may not run the suite, and may not ask a spawned agent for a verdict on one
+(#874) -- and whatever your report claims about test behaviour is `reasoned`, never `observed`.
+
 ## Your `Bash` grant is total — this section is advice, not a boundary
 
 Read it as a request, because that is all it is. **Read

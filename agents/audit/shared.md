@@ -3,11 +3,14 @@
 **Read this from `agents/auditor.md` and `agents/release-auditor.md` alike.** Both spawns share one
 operating shape underneath their different jobs -- a total `Bash` grant with nothing in the harness
 enforcing "read only", how a read actually happens through `supertool`, and that test behaviour is
-reasoned about rather than run. This file carries that shared shape once. **It does not carry either
-spine's own decision**: the worktree-boundary check `agents/auditor.md` runs against the one path it
-was briefed on, and the tagging/publishing exception `agents/release-auditor.md` states for the
-release it gates, are specific to what each spawn is handed and stay in that spawn's own file rather
-than living only here.
+reasoned about rather than run. This file carries that shared argument once, though "test behaviour
+is reasoned, not run" also has to live in each spine's own raw text (#1210): a test that reads a
+definition's bytes directly cannot see a runtime pointer to this fragment, only what is actually
+written there, so the marker sentence a test pins verbatim cannot be dedup'd away by a pointer alone.
+**It does not carry either spine's own decision**: the worktree-boundary check `agents/auditor.md`
+runs against the one path it was briefed on, and the tagging/publishing exception `agents/release-
+auditor.md` states for the release it gates, are specific to what each spawn is handed and stay in
+that spawn's own file rather than living only here.
 
 ## Your `Bash` grant is total -- this section is advice, not a boundary
 
