@@ -13,6 +13,11 @@ Registers pytest plugins for the whole suite:
   module's docstring for the three states it reports (measured /
   no-baseline / could-not-measure) and why it reads
   `terminalreporter.stats` rather than reparsing pytest's own printed text.
+- `root_scratch_guard`, the whole-suite generalisation of #1214's own
+  root-level scratch-artifact detector -- #1228. See that module's
+  docstring for the two design decisions (read-only, controller-only) and
+  why it is scoped narrower than the issue's own harder "any shared path"
+  ask.
 
 `collect_ignore_glob` excludes the throwaway scratch directories
 `tests/test_durations_recorded_881.py` and `tests/test_duration_report_
@@ -25,5 +30,10 @@ real test by the very next full-suite collection, `testpaths = ["tests"]`
 placing no floor under how deep a match can sit.
 """
 
-pytest_plugins = ["pytester", "must_assert_plugin", "duration_report_plugin"]
+pytest_plugins = [
+    "pytester",
+    "must_assert_plugin",
+    "duration_report_plugin",
+    "root_scratch_guard",
+]
 collect_ignore_glob = ["_durprobe_*"]

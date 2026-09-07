@@ -36,17 +36,19 @@ Every assertion is paired with a positive or negative control per CLAUDE.md's
 is invoked without it (the pre-#881 string, explicitly), proving the probe would
 have caught the exact silent-drop failure #881 names.
 
-The one subprocess spawn here (`_run_stub_test`) goes through `tests/spawn_guard.run`
-rather than bare `subprocess.run`, so a runner too slow to answer within the
-timeout skips (naming the binary, the timeout and what went unmeasured) instead
-of reporting a real assertion failure about a durations header that nothing
-actually observed (#716) -- a test whose whole subject is timing is exactly the
-shape #716 exists to keep off the guard's own blind side, and both `run()`
-outcomes (a real answer, and a genuine no-answer) still return or skip
-identically for every caller here, so the guard changes nothing the controls
-themselves assert.
+Every subprocess spawn here -- `_run_stub_test`'s own, and (#1228) the second,
+independent one inside `test_stub_run_coverage_isolation_check_is_not_vacuous`'s
+own must-fire control -- goes through `tests/spawn_guard.run` rather than bare
+`subprocess.run`, so a runner too slow to answer within the timeout skips (naming
+the binary, the timeout and what went unmeasured) instead of reporting a real
+assertion failure about a durations header that nothing actually observed (#716)
+-- a test whose whole subject is timing is exactly the shape #716 exists to keep
+off the guard's own blind side, and both `run()` outcomes (a real answer, and a
+genuine no-answer) still return or skip identically for every caller here, so the
+guard changes nothing the controls themselves assert.
 """
 
+import os
 import re
 import shutil
 import sys
@@ -112,16 +114,20 @@ def _run_stub_test(addopts_override=None, extra_args=None):
 
     Living under `tests/` means pytest's own ancestor-conftest discovery
     loads `tests/conftest.py` on the way down to the stub, which registers
-    `pytester`, `must_assert_plugin` and `duration_report_plugin` for the
-    REAL suite (see that file's own docstring) -- plugins this probe was
-    never meant to carry: this module's whole point is an *isolated* second
-    Config resolution ("nesting a second Config resolution inside that
-    process is exactly the kind of thing coverage instrumentation can
-    perturb"), and inheriting them silently, e.g. `duration_report_plugin`
-    reading the real `tests/duration-baseline.json`, would undercut that
-    (caught in #1214's own self-review). All three are disabled by name
-    below so the location fix does not trade one #1214 defect for a second,
-    quieter one.
+    `pytester`, `must_assert_plugin`, `duration_report_plugin` and (#1228)
+    `root_scratch_guard` for the REAL suite (see that file's own docstring)
+    -- plugins this probe was never meant to carry: this module's whole
+    point is an *isolated* second Config resolution ("nesting a second
+    Config resolution inside that process is exactly the kind of thing
+    coverage instrumentation can perturb"), and inheriting them silently,
+    e.g. `duration_report_plugin` reading the real `tests/duration-
+    baseline.json`, or a second, redundant `root_scratch_guard` watcher
+    thread spun up inside this already-nested process for no reason (a
+    reviewer finding on this same round: #1228 added the fourth plugin to
+    `tests/conftest.py` after this exclusion list already existed, and the
+    list was not updated to match), would undercut that (caught in #1214's
+    own self-review). All four are disabled by name below so the location
+    fix does not trade one #1214 defect for a second, quieter one.
 
     `-p no:cacheprovider` is passed unconditionally for the same underlying
     reason: this is a one-off, single-file smoke run that gains nothing from
@@ -130,6 +136,26 @@ def _run_stub_test(addopts_override=None, extra_args=None):
     at all -- removing it as a party to #1214's second logged instance
     (`pytest-cache-files-*`, pytest's own cache-dir atomic-rename tempfile,
     also written at the shared rootdir).
+
+    `--no-cov` is passed unconditionally too (#1228 site 4): with no
+    override, this call inherits `pyproject.toml`'s real `addopts` verbatim,
+    which includes `--cov=scripts`, so this nested pytest used to start its
+    own, fully separate coverage.py session against the SAME shared
+    `.coverage` file at the repository root that the OUTER suite (or a
+    concurrent xdist sibling's own nested run) may be reading, combining or
+    erasing at that exact moment --
+    `coverage/sqldata.py -> erase() -> os.remove(path)` racing a sibling's
+    open handle on Windows (`PermissionError: [WinError 32]`), observed five
+    times in one day across three interpreters, three on `main` itself
+    (#1228's own issue thread). This probe has nothing to say about
+    coverage -- its whole subject is whether `--durations` reached pytest's
+    resolved config -- so `--no-cov` removes it from that race entirely
+    rather than trying to win it. `pytest_cov.plugin.CovPlugin.__init__`
+    returns immediately when `--no-cov` is set, before `self.start()` is
+    ever called, so this nested run now never touches the shared
+    `.coverage` file at all -- confirmed by `test_stub_run_never_touches_
+    the_shared_coverage_file` below rather than assumed from the plugin's
+    source.
     """
     stub_dir = REPO_ROOT / "tests" / ("_durprobe_881_" + uuid.uuid4().hex[:8])
     stub_dir.mkdir()
@@ -149,6 +175,9 @@ def _run_stub_test(addopts_override=None, extra_args=None):
             "no:must_assert_plugin",
             "-p",
             "no:duration_report_plugin",
+            "-p",
+            "no:root_scratch_guard",
+            "--no-cov",
         ]
         if addopts_override is not None:
             args += ["-o", "addopts=" + addopts_override]
@@ -232,6 +261,98 @@ def test_a_config_without_durations_would_fail_this_check():
         "the durations header appeared even with addopts overridden to the "
         "pre-#881 string with no --durations flag -- this check cannot actually "
         "detect the option being dropped, which is the exact failure #881 names"
+    )
+
+
+# --------------------------------------------------------- #1228 site 4: coverage isolation
+
+
+def test_stub_run_never_touches_the_shared_coverage_file():
+    """The mitigated half of #1228 site 4: a real stub run, with no addopts
+    override -- pyproject.toml's real `addopts` inherited verbatim, exactly
+    the invocation `test_addopts_durations_actually_reaches_pytests_resolved_
+    configuration` above already drives -- must leave the repository's own
+    shared `.coverage` file exactly as it found it. Checked against the real
+    file rather than a fixture copy, because the whole defect is this
+    subprocess racing the SAME path a concurrent xdist sibling (or the outer
+    suite's own coverage session) may be touching -- this is the site the
+    issue's own thread observed firing five times in one day
+    (`PermissionError: [WinError 32] ... .coverage`), and it is what
+    `--no-cov` above is for.
+    """
+    coverage_path = REPO_ROOT / ".coverage"
+    existed_before = coverage_path.exists()
+    mtime_before = coverage_path.stat().st_mtime_ns if existed_before else None
+    output = _run_stub_test()
+    assert _DURATIONS_HEADER.search(output), (
+        "the stub run stopped reporting durations once --no-cov was added -- "
+        "the fix for #1228 site 4 must not silently break #881's own "
+        "check:\n" + output
+    )
+    assert coverage_path.exists() == existed_before, (
+        "the stub run changed whether .coverage exists at the repository "
+        "root -- #1228 site 4's fix (--no-cov) should mean this nested run "
+        "never touches that shared file at all:\n" + output
+    )
+    if existed_before:
+        assert coverage_path.stat().st_mtime_ns == mtime_before, (
+            "the stub run modified the shared .coverage file's mtime even "
+            "though it still exists -- #1228 site 4's fix (--no-cov) should "
+            "mean this nested run never touches that shared file at "
+            "all:\n" + output
+        )
+
+
+def test_stub_run_coverage_isolation_check_is_not_vacuous(tmp_path, monkeypatch):
+    """Must-fire positive control for the check above: run the identical stub
+    setup WITHOUT --no-cov -- pyproject.toml's real addopts, exactly as this
+    file invoked it before #1228's fix -- and confirm a coverage.py session
+    really does start, proving the assertion above would have caught this
+    fix being silently dropped rather than always passing because nothing in
+    this environment ever writes a coverage file.
+
+    Isolated via `COVERAGE_FILE` pointed at `tmp_path` rather than run
+    against the real repository `.coverage`: this control deliberately
+    reproduces the pre-fix behaviour to prove the bug it is checking for is
+    real, and doing that against the actual shared file would itself be the
+    exact root-level interference #1228's own first design constraint warns
+    against -- the same trap #1225's self-review caught in an earlier
+    version of a different fix that verified a flag by deleting the shared
+    `.pytest_cache`.
+    """
+    isolated = tmp_path / "isolated.coverage"
+    stub_dir = REPO_ROOT / "tests" / ("_durprobe_881_ctrl2_" + uuid.uuid4().hex[:8])
+    stub_dir.mkdir()
+    try:
+        stub_path = stub_dir / "test_stub.py"
+        stub_path.write_text(_STUB_TEST_BODY, encoding="utf-8")
+        monkeypatch.setenv("COVERAGE_FILE", str(isolated))
+        result = spawn_guard.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                str(stub_path),
+            ],
+            subject="whether a nested pytest run with no --no-cov flag starts "
+            "a coverage.py session at all",
+            timeout=60,
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, COVERAGE_FILE=str(isolated)),
+        )
+        output = result.stdout + result.stderr
+    finally:
+        shutil.rmtree(stub_dir, ignore_errors=True)
+    assert isolated.exists(), (
+        "a nested pytest run with no --no-cov flag never started a coverage "
+        "session even with COVERAGE_FILE isolated to a throwaway path -- the "
+        "check above cannot actually detect #1228 site 4's fix being "
+        "dropped:\n" + output
     )
 
 
