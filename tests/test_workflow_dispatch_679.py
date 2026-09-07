@@ -174,11 +174,14 @@ def test_the_parser_the_structural_half_needs_is_present_on_ci():
 @pytest.mark.skipif(yaml is None, reason="pyyaml is not installed here")
 def test_tests_workflow_reads_no_event_context_outside_the_concurrency_flag():
     """Question 1 from #679, pinned: adding workflow_dispatch must not make any leg
-    conditional. tests.yml read `github.event.*` nowhere at all until #962, and this
-    keeps every *job and step* that way, or forces whoever adds such a read to reckon
-    with a third event type explicitly.
+    conditional on which *job or step runs*. tests.yml read `github.event.*` nowhere
+    at all until #962, and this keeps every job's and step's own `if:` that way, or
+    forces whoever adds such a read to reckon with a third event type explicitly.
+    #1246 widened the set of accounted-for expressions from one to two -- the matrix
+    *shape* is now event-conditional too -- and this test now tracks both rather than
+    only the first.
 
-    #962 added exactly one expression, at workflow level rather than in a leg:
+    #962 added the first expression, at workflow level rather than in a leg:
     `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`. Reckoned with
     rather than exempted quietly, which is what this test's own instruction asks for:
 
@@ -193,9 +196,24 @@ def test_tests_workflow_reads_no_event_context_outside_the_concurrency_flag():
       cancelling one because another dispatch followed would take away the remedy this
       workflow's own `on:` block was extended to provide.
 
-    Nothing here becomes conditional: both jobs and every step still run on every
-    event. That is the property the assertion below now states directly, instead of
-    inferring it from the absence of a substring.
+    #1246 added the second, on the `pytest` job's `strategy.matrix.exclude` -- not a
+    job or step `if:`, so the loop above still sees no conditional job or step, but it
+    is a `${{ github.event` expression and belongs in the accounted-for list below:
+
+    - on a **push** or **pull_request** run `github.event_name` is never
+      `'workflow_dispatch'`, so the condition is `false` and the eight-entry exclude
+      list applies -- the reduced five-leg matrix #1246 measured and kept.
+    - on an **ordinary workflow_dispatch** (the #679 remedy, `full_matrix` left at its
+      `false` default) the condition is still `false` -- same reduced matrix, so
+      recreating a dropped push run does not silently balloon to every leg.
+    - only a **workflow_dispatch with `full_matrix: true`** makes the condition
+      `true`, excluding nothing: the full 3x4 matrix, which is what a release run
+      dispatches explicitly to satisfy the release gate.
+
+    Nothing here makes a *job or step* conditional: both jobs and every step still
+    run on every event, and only the pytest job's own matrix membership varies. That
+    is the property the assertion below now states directly, instead of inferring it
+    from the absence of a substring.
     """
     text = _text("tests.yml")
     doc = yaml.safe_load(text)
@@ -218,11 +236,18 @@ def test_tests_workflow_reads_no_event_context_outside_the_concurrency_flag():
                 "this test's docstring".format(name, i)
             )
 
-    # And the event context is read in exactly one place, which the docstring above
+    # And the event context is read in exactly the two places the docstring above
     # accounts for event by event. `${{` is what turns `github.event...` from prose
     # (this file's own comments discuss the fact) into a live expression.
-    live = [line.strip() for line in text.splitlines() if "${{ github.event" in line]
-    assert live == ["cancel-in-progress: ${{ github.event_name == 'pull_request' }}"], (
+    live = [
+        line.strip()
+        for line in text.splitlines()
+        if "${{" in line and "github.event" in line
+    ]
+    assert live == [
+        "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+        'exclude: ${{ (github.event_name == \'workflow_dispatch\' && github.event.inputs.full_matrix == \'true\') && fromJson(\'[]\') || fromJson(\'[{"os":"ubuntu-latest","python-version":"3.10"},{"os":"ubuntu-latest","python-version":"3.11"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.10"},{"os":"macos-latest","python-version":"3.11"},{"os":"windows-latest","python-version":"3.9"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.11"}]\') }}',
+    ], (
         "tests.yml evaluates a github.event.* expression this test has not reckoned "
         "with: {!r}. Add the event-by-event reasoning to the docstring above rather "
         "than widening this list.".format(live)

@@ -9,9 +9,23 @@ on:
   # workflow_dispatch, and `gh run rerun` needs a run id that does not exist when
   # nothing was ever created. Deliberately not on changelog.yml -- see
   # tests/test_workflow_dispatch_679.py for why that would be actively broken rather
-  # than merely unused. Neither job here reads github.event_name or github.event.* --
-  # the matrix is unconditional -- so a dispatch run behaves exactly like a push run.
+  # than merely unused. `pytest` now reads `github.event_name` and
+  # `github.event.inputs.full_matrix` (#1246, below) to size its matrix, so a bare
+  # dispatch (input left at its `false` default) still behaves like a push run --
+  # only `full_matrix: true` diverges from that.
+  # #1246: `full_matrix` defaults false, so an ordinary dispatch (the #679
+  # dropped-push-run remedy) still mirrors the reduced push matrix below rather than
+  # silently ballooning to every OS x Python combination. The release process sets it
+  # true when it dispatches this workflow against the commit about to be tagged, which
+  # is the only route to the full matrix -- see the `exclude:` expression on the
+  # `pytest` job's matrix.
   workflow_dispatch:
+    inputs:
+      full_matrix:
+        description: "Run every OS x Python leg instead of the reduced push/PR set (release gate use)"
+        required: false
+        default: false
+        type: boolean
 
 # One run per ref at a time, and the superseded one is cancelled -- but only for a pull
 # request (#962). Three pushes to one branch in fifteen minutes used to start 42 legs and
@@ -42,11 +56,23 @@ jobs:
   pytest:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    # #1246: the `os` x `python-version` product below is the full 3x4 release matrix,
+    # unconditionally -- so `full_matrix: true` restores full coverage by excluding
+    # nothing, rather than needing a second, separately-maintained matrix to drift out
+    # of sync with this one. An ordinary push/pull_request, or a workflow_dispatch left
+    # at its `false` default, drops to the five legs #1246 measured and kept: ubuntu
+    # 3.12 (cheap default), ubuntu 3.9 (the declared floor), windows 3.12 (the observed
+    # failure platform), macos 3.12 (the third OS), plus the unconditional `shell` job
+    # below. `exclude:` lists the eight combinations that reduction drops; each entry
+    # must name both `os` and `python-version` or GitHub Actions treats it as a
+    # wildcard on the field left out, excluding every python-version for that os (or
+    # vice versa) instead of the one combination intended.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
+        exclude: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.full_matrix == 'true') && fromJson('[]') || fromJson('[{"os":"ubuntu-latest","python-version":"3.10"},{"os":"ubuntu-latest","python-version":"3.11"},{"os":"macos-latest","python-version":"3.9"},{"os":"macos-latest","python-version":"3.10"},{"os":"macos-latest","python-version":"3.11"},{"os":"windows-latest","python-version":"3.9"},{"os":"windows-latest","python-version":"3.10"},{"os":"windows-latest","python-version":"3.11"}]') }}
     env:
       # The exact CPython patch `setup-python` resolves "3.9" to on the hosted
       # windows-latest runner today. Both the cache path and the cache key below are

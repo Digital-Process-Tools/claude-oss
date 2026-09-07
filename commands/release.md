@@ -57,6 +57,27 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    change, and on the day it changes the workflow moves from the middle state to the blocking one
    with nothing announcing it. Which workflow it is, is a per-repo fact and belongs in no document
    here.
+
+   **A push-triggered run alone does not satisfy this gate when the repo's own CI runs a reduced
+   matrix on ordinary pushes (#1246).** Check `.github/workflows/tests.yml`'s own `on:
+   workflow_dispatch: inputs:` block for a `full_matrix`-shaped input before relying on this
+   shortcut — its presence is per-repo, like everything else in this gate, and is read rather than
+   assumed. Where it exists, the push-triggered run for the commit being tagged is the *reduced*
+   matrix by design, and gate 1 is satisfied only by also dispatching, and reading, the full one:
+
+   ```bash
+   git rev-parse HEAD
+   gh workflow run tests.yml --ref <default_branch> -f full_matrix=true
+   ```
+
+   Dispatch immediately after the commit lands on the default branch, so `--ref <default_branch>`
+   resolves to the exact SHA just recorded above — a race against a second push in between is a
+   real risk this repo has not yet had to guard against and is not solved here. Wait for that run
+   the same way any other CI wait in this loop is done (`skills/manager/phases/ci-green.md`), and
+   re-read `gh-branch` for the tagged commit afterward rather than trusting the dispatch's own exit
+   code: two runs of the same workflow can now exist on one commit — the push-triggered reduced one
+   and the dispatched full one — and gate 1 is satisfied only once the full one is green, not by the
+   reduced one alone reporting green first.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean, findings, or
    **could not run**. An audit that did not execute must never render as an audit that found nothing.
