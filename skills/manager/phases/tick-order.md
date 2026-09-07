@@ -342,18 +342,15 @@ tool, and you are gone by the time step 7 would run.
    distribution across the whole history, so a run of `could-not-tell` becomes a visible number.
 
    **A `Blocked by classifier` denial on an `oss_state.py`/`agent_role.py` call is not the same
-   thing as a maintainer-meant refusal, and neither script can tell you which one happened
-   (#1137).** The denial fires at the harness's own permission layer, before either script's
-   process is ever launched, so there is nothing inside `oss_state.py` or `agent_role.py` to add
-   that would let it report a state it never sees -- a real disk-write failure once the process
-   does run is already reported distinctly (`StateError` -> `FAIL`, shipped for #222, well before
-   this issue). Retry the identical, unmodified call once before treating the denial as real --
-   two isolated occurrences cleared on a byte-identical retry with nothing changed. If a retry
-   still fails, one isolation's own workaround (dropping a hash-prefixed reference from the
-   `--decision`/`--wait-cleared-by` text, `PR 590` rather than `PR #590`) is worth trying, but it
-   is an unconfirmed correlation from a single session, not an established cause -- do not build
-   automation around it, and do not let a silently abandoned retry render as a tick that recorded
-   nothing.
+   thing as a maintainer-meant refusal, and neither script can observe it: the denial fires at
+   the harness's own permission layer, before either script's process is ever launched (#1137).**
+   A real disk-write failure, once the process does run, is reported distinctly instead of as
+   that denial -- `oss_state.py` raises `StateError`, printed as `FAIL` (#222); `agent_role.py`'s
+   CLI names the OS error rather than claiming "not a git repository" (#1137). Retry the
+   identical, unmodified call once before treating a classifier denial as real. If it still
+   fails, dropping a hash-prefixed reference from the `--decision`/`--wait-cleared-by` text
+   (`PR 590` rather than `PR #590`) is worth trying, but is not a confirmed cause -- do not
+   automate around it.
 
    **This step is this tick's one dispatch, not the first of however many rounds a red lane takes
    (#880).** One fan-out here, filled per the rules above, and the tick then sees those lanes
