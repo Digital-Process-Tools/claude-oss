@@ -623,16 +623,13 @@ one checks what goes into a lane, the other what comes back out of it.
 - **Select in the dispatch order, and compute it rather than feel it (#798, extended by #993).**
   Two axes, author before priority within a band. `python3
   "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` is the one place the table lives; call it
-  rather than re-deriving it here. **`--board` is a different mode from the default, no-flags call
-  documented above, and the two do not share an input contract (#1178): `--board` reads a
-  board-shaped payload on stdin, while the default mode takes no input at all.** Piping nothing
-  fails with `stdin: not valid JSON …`, and a wrong-shaped payload does not fail the same clean
-  way — verified: a dict with no `declared` key runs to exit 0 and silently reads every issue as
-  unrankable, and a bare JSON list crashes with an uncaught `AttributeError` rather than a parse
-  error. Give it the actual assembled board payload the ranking receipt expects, never an
-  improvised shape, and do not read a clean exit as proof the shape was right. The rows below transcribe `scripts/select_issues_rank.py`'s own
-  `ROWS` (the module was `dispatch_rank.py` before #1069); a table that disagrees with it is a bug
-  in this file, not a second opinion.
+  rather than re-deriving it here. **`--board` fetches its own board too, the same way the
+  default, no-flags call documented above does (#1200)** — #1178 had found the two modes did not
+  share an input contract (`--board` read a board-shaped payload on stdin), and #1200 closed that
+  the other way, by removing the stdin read rather than documenting it. Neither mode takes a
+  caller-built payload any more; a failed fetch answers `could-not-select` for either one. The rows
+  below transcribe `scripts/select_issues_rank.py`'s own `ROWS` (the module was `dispatch_rank.py`
+  before #1069); a table that disagrees with it is a bug in this file, not a second opinion.
 
   | Rank | Who filed | Priority |
   | --- | --- | --- |

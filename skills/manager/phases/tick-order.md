@@ -303,12 +303,10 @@ tool, and you are gone by the time step 7 would run.
    the same or lower band while a blocking-class defect the loop found still outranks an ordinary
    ask. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --board` is the one place that
    table lives; the spine's *Deciding what to build* states it and `skills/manager/phases/dispatch.md`
-   says how a lane is filled from it. **`--board` is not the default, no-input mode described
-   elsewhere in this file (#1178) — it reads a board-shaped payload on stdin, a separate,
-   older CLI contract folded in from `dispatch_rank.py`. Feeding it nothing fails with a
-   stdin-parse error; feeding it a wrong-shaped-but-valid payload does not fail the same way —
-   it can exit 0 with a silently degraded receipt, or crash with an unrelated traceback. Give it
-   the real assembled board payload rather than an improvised one.**
+   says how a lane is filled from it. **`--board` fetches its own board too, the same way the
+   default, no-input mode described elsewhere in this file does (#1200)** — #1178 had found the
+   two shared no input contract (`--board` read a board-shaped payload on stdin instead), and
+   #1200 closed that the other way, by removing the stdin read rather than documenting it.
 
    **Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself, not
    the ranking/staleness/collision/claim reads joined by hand.** It composes ranking
