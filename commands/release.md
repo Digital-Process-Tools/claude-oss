@@ -462,9 +462,9 @@ COMMIT_SHA="$(git rev-parse HEAD)"
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_ci_wait.py" --commit "$COMMIT_SHA" --wait
 ```
 
-Four outcomes, exit codes because a shell reads those and never reads prose (2 is never one of
-them — reserved for an argparse usage error, the same discipline gate 3's `cohort_citation_order.py`
-exit codes now follow, #1267):
+Four outcomes from `release_ci_wait.py`, read as an exit code rather than as prose (2 is never
+one of them — reserved for an argparse usage error, the same discipline gate 3's
+`cohort_citation_order.py` exit codes now follow, #1267):
 
 - **exit 0, `GREEN`** — every run on this commit concluded and passed. Proceed to the tag, below.
 - **exit 1, `RED`** — a run failed, or completed with a conclusion this script has never seen
