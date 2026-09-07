@@ -92,9 +92,15 @@ def _looks_like_path_literal(value):
     """A conservative filter on which string constants are even worth an
     `is_file()` stat -- not every string in a test file is a path, and
     most are not. Whitespace, an empty string, a leading `/` (absolute,
-    never a repo-relative reference), a drive letter or a `~` are refused
-    outright; anything else is a *candidate*, checked against the real
-    tree by the caller before being trusted."""
+    never a repo-relative reference), a `~`, any `:` (a drive letter is
+    the concrete case, but every colon is refused), a backslash (#1234 --
+    `pathlib` treats it as a separator on Windows and a literal character
+    on POSIX, so a backslash-bearing literal would resolve inconsistently
+    by platform), and a `..` path segment anywhere in the literal (#1256
+    -- otherwise a caller's own `(repo / literal).is_file()` stat could
+    land outside `repo`) are all refused outright; anything else is a
+    *candidate*, checked against the real tree by the caller before being
+    trusted."""
     if not value or not value.strip() or value != value.strip():
         return False
     if "\n" in value or "\t" in value:
@@ -112,6 +118,17 @@ def _looks_like_path_literal(value):
     # disagreeing between them; this repo's own real path literals are
     # forward-slash-only (confirmed by survey), so nothing genuine is lost.
     if "\\" in value:
+        return False
+    # #1256: a `..` path segment was not refused here, so a literal like
+    # "../secret.txt" survived as a "candidate" and `extract_references`'s
+    # own `(repo / literal).is_file()` stat could then resolve outside
+    # `repo` -- contradicting this module's own docstring claim that it
+    # only returns paths that exist under `repo`. Split on "/" (this
+    # module's own literals are forward-slash-only, per the backslash
+    # refusal above) and refuse `..` as a segment anywhere in the literal,
+    # not only when it leads -- the same check `select_issues_overlap.
+    # resolve_lane` already applies on the sibling (pattern) side.
+    if ".." in value.split("/"):
         return False
     return True
 
