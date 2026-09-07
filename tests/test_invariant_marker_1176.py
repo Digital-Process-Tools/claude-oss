@@ -1,6 +1,7 @@
 """#1176: content-guard sweeps (marked `invariant`) run once, not on all 12 legs.
 
-126 of 428 tracked test files touch no `tmp_path`, no `subprocess` and no `monkeypatch` --
+126 of the 428 tracked test files #1176 counted at filing time touch no `tmp_path`, no
+`subprocess` and no `monkeypatch` --
 content guards over this repository's own markdown/config. #1176's own measurement found
 that heuristic is the wrong SET for savings: it selects the cheap tests (9.67s total, none
 of the 25 slowest on `pytest (ubuntu-latest, 3.12)`). The actually expensive content-guard

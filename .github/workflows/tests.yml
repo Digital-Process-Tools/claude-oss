@@ -137,8 +137,9 @@ jobs:
       # `shell: bash` the coverage step briefly carried, and reproduced on a serial run
       # with no workers in the log at all. See that step's own comment.
       #
-      # #1176: 126 of 428 tracked test files are content guards over this repo's own
-      # markdown/config -- their answer does not vary by OS or interpreter, and running
+      # #1176: 126 of the 428 tracked test files counted at filing time are content
+      # guards over this repo's own markdown/config -- their answer does not vary by OS
+      # or interpreter, and running
       # them on all 12 legs buys nothing a reader ever sees. Marking every one of them
       # was weighed and declined: the naive "no tmp_path/subprocess/monkeypatch" heuristic
       # selects the CHEAP tests (9.67s total, ran locally), not the expensive ones -- the
