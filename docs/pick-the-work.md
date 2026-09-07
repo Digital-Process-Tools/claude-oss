@@ -208,11 +208,15 @@ labels, five concurrent lanes, up to three issues each: at most fifteen issues i
 comes from configuration like every other per-repo fact, and it needs no measurement study to
 justify it.
 
-**And the lanes are disjoint by construction.** The labels already partition the codebase by
-subsystem, which is the exact property the grouping machinery otherwise tries to establish by
-comparing file sets and hoping. Two issues in different lanes cannot collide, because their lanes
-name different files. That is what makes them lanes rather than buckets: one worker each, no
-crossing.
+**And the lanes are declared disjoint, not disjoint by construction.** The labels partition the
+codebase by subsystem as a matter of triage judgement, not as a property anything verifies at
+dispatch time -- and nothing did, until `scripts/doctor_check_lane_patterns.py` /
+`scripts/lane_pattern_coverage.py` (#1229) started reporting when two lanes' `lane_patterns`
+overlap. **A file resolving into two lanes is a finding about the codebase, not a violated
+guarantee**: it means one file is doing two subsystems' jobs, and the fix is to split the file, not
+to route lanes around it. Two issues in different lanes are *expected* not to collide, and the
+doctor check is what catches it when they do -- git's own conflict detection catches the same
+failure independently and cheaply besides.
 
 `lane-other` (#1130) is the exception that proves the rule. It means *triaged, and no lane owns
 these files* -- so it has no subsystem, cannot be made disjoint by construction, and is dispatched
