@@ -742,6 +742,7 @@ def test_sharing_the_corpus_cannot_produce_a_false_green(tmp_path):
     assert pins_a2 == pins_a, "the shared corpus was mutated by the intervening call"
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked .py files; same on every OS/interpreter
 def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next(real_corpus):
     """#399's real cost is that the release commit is the worst moment to learn
     this. The next minor is knowable now, so it is asked now.
@@ -811,6 +812,7 @@ def test_the_sweep_is_clean_for_the_version_this_repository_reaches_next(real_co
         warn_on_far_horizon_pins(far_pins, far_horizon)
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked .py files; same on every OS/interpreter
 def test_no_test_file_pins_the_current_version(real_corpus):
     version = current_version()
     pins, collisions, unscannable, scanned = sweep_from_corpus(real_corpus, version)
@@ -946,6 +948,7 @@ def test_a_literal_two_minors_out_warns_rather_than_fails(tmp_path):
         assert caught == [], "no pins beyond the horizon; nothing should warn"
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked .py files; same on every OS/interpreter
 def test_the_real_sweep_two_minors_out_is_reported_as_a_warning_not_a_failure(
     real_corpus,
 ):

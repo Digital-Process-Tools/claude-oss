@@ -286,6 +286,7 @@ def test_tier2_reports_could_not_derive_flags_for_a_broken_script(tmp_path):
 # --- survey: three states, real corpus -----------------------------------------
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked prose/scripts; same on every OS/interpreter
 def test_survey_over_this_repos_own_prose_has_no_findings():
     """The real corpus, checked against itself: this is the guard, not just a
     fixture exercise. A finding here means shipped prose names a script that
