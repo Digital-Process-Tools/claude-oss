@@ -47,8 +47,55 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12"]
+    env:
+      # The exact CPython patch `setup-python` resolves "3.9" to on the hosted
+      # windows-latest runner today. Both the cache path and the cache key below are
+      # derived from it, and the disclosure step checks the interpreter that actually
+      # ran against it -- two literals that must agree is a bug waiting for the day
+      # one of them is edited without the other.
+      WIN_PY39_PATCH: "3.9.13"
     steps:
       - uses: actions/checkout@v7
+      # CPython 3.9 has left the windows-latest image, so `setup-python` reports
+      # `Version 3.9 was not found in the local cache` and downloads and installs it --
+      # measured at 44s of a 229s critical-path leg under xdist (#1196; #1177 landed
+      # first and made this leg the critical path in the first place). Restoring the
+      # hosted tool cache here is the whole fix: `setup-python` then finds the tree
+      # and skips the download.
+      #
+      # `Digital-Process-Tools/claude-supertool` already ships this pattern for its
+      # own CI (#1127 there); this step and its trap comment are ported from that
+      # workflow (confirmed via `gh api
+      # repos/Digital-Process-Tools/claude-supertool/contents/.github/workflows/tests.yml`
+      # rather than retyped from a description).
+      #
+      # The cached path is the VERSION directory, not `.../x64` beneath it.
+      # `@actions/tool-cache` records an installed tool by writing a sibling marker
+      # `x64.complete` next to `x64/`, and its `find()` returns a miss when that
+      # marker is absent -- so caching only `x64/` restores a tree `setup-python`
+      # then ignores, and every run is a cache HIT that saves nothing.
+      #
+      # Windows-only and 3.9-only on purpose: the other three Windows legs already
+      # have the interpreter baked into the image, and macOS pays a similar ~22s for
+      # 3.9 but is never the critical path (107s against Windows' 266-305s), so
+      # caching there would buy billed minutes and no wall clock.
+      #
+      # A cache written on a pull request branch is visible only to that branch: the
+      # `push: [main]` run is what populates the key every other branch restores
+      # from, so the first PR after this change lands may still miss -- expected, not
+      # a failure. The "Tool cache state" step below discloses which happened rather
+      # than leaving it to be inferred from `Set up Python`'s own duration.
+      - name: Restore the CPython ${{ env.WIN_PY39_PATCH }} tool cache (#1196)
+        id: toolcache-39
+        if: runner.os == 'Windows' && matrix.python-version == '3.9'
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.tool_cache }}/Python/${{ env.WIN_PY39_PATCH }}
+          key: ${{ runner.os }}-${{ runner.arch }}-toolcache-python-${{ env.WIN_PY39_PATCH }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
       # Windows Defender's real-time scanner walks every file this job touches on the
       # runner's own disk, and the suite creates many small temp files per assertion
       # (each `mktemp` fixture, each rewritten .claude/jit-context/ under test). This is
@@ -66,10 +113,47 @@ jobs:
         run: |
           Add-MpPreference -ExclusionPath "${{ github.workspace }}"
           Add-MpPreference -ExclusionPath "$env:RUNNER_TEMP"
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
+      # Three states, never a silent one. `cache-hit: true` on its own is not
+      # evidence the cache did anything: `WIN_PY39_PATCH` is a literal, and if
+      # `setup-python` ever resolves "3.9" to a different patch, the step above would
+      # restore -- and then re-save -- a directory nothing reads. A permanent HIT
+      # sitting next to a permanent 44s download is this repo's own defect class
+      # exactly (an absence produced by the tool, read as an absence in the world),
+      # so the check is against the interpreter that actually ran, not against the
+      # cache action's own opinion of itself.
+      #
+      # `::error::` annotates the run summary without failing the step: a
+      # runner-image change is not the fault of whoever pushes next.
+      #
+      # NOT `always()`: GitHub runs `bash` with `set -eo pipefail`, so if the step
+      # above failed there is no guarantee `python` behaves the same way, and a step
+      # that cannot run is not itself a finding -- it is reported as `skipped`.
+      - name: Tool cache state (#1196)
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          PY_VERSION: ${{ matrix.python-version }}
+          CACHE_HIT: ${{ steps.toolcache-39.outputs.cache-hit }}
+        run: |
+          if [ "$PY_VERSION" != "3.9" ]; then
+            echo "toolcache   : skipped     (CPython $PY_VERSION is baked into the windows-latest image; only 3.9 is missing from it)"
+            exit 0
+          fi
+          resolved=$(python -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" || true)
+          if [ -z "$resolved" ]; then
+            echo "toolcache   : skipped     (could not read the interpreter version -- this says nothing about the cache either way)"
+            exit 0
+          fi
+          if [ "$resolved" != "$WIN_PY39_PATCH" ]; then
+            echo "::error::toolcache stale pin - this workflow caches CPython $WIN_PY39_PATCH but setup-python resolved $resolved, so the restore can never be read. Set WIN_PY39_PATCH to $resolved in .github/workflows/tests.yml."
+            echo "toolcache   : finding     (stale pin: cached $WIN_PY39_PATCH, running $resolved -- the restore is dead weight)"
+            exit 0
+          fi
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo "toolcache   : ok          (hit -- CPython $resolved restored, no download)"
+          else
+            echo "toolcache   : miss        (CPython $resolved downloaded; the tool cache is saved at job end, for the next run -- expected on the first run after this change on a given branch, since a cache written on a PR branch is visible only to that branch)"
+          fi
       # markdown-it-py is not a test tool, it is the assembler's one dependency, and the
       # suite over scripts/assemble_changelog.py cannot reach a single assertion without
       # it -- the script refuses to run rather than fall back to text scanning. Absent
