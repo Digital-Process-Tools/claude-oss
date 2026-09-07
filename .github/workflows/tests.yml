@@ -107,12 +107,30 @@ jobs:
       # at the time this landed -- the shape below is that PR's actual diff, not a
       # retyped guess). The measured saving on this repo's own suite is pending a live
       # CI round; see #938.
+      #
+      # Each Add-MpPreference call is wrapped in try/catch rather than given a bare
+      # continue-on-error (#1081): the cmdlet has been observed to fail on a hosted
+      # runner with 0x800106ba (the Defender service itself unavailable), a cause
+      # unrelated to the change under test, and an unguarded step failure there fails
+      # the whole leg and renders identically to a real Windows test failure in
+      # gh-pr:N:status -- distinguishable only by opening the job log.
+      # continue-on-error alone would stop that but stays silent about which
+      # happened; try/catch keeps the step from failing the job AND lets one place
+      # disclose "applied" vs "failed" per path, reusing the hit/miss/skip
+      # disclosure shape #1196 already put in this workflow (see "Tool cache state"
+      # below) rather than inventing a second one.
       - name: Exclude the checkout and temp dir from Windows Defender scanning
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-          Add-MpPreference -ExclusionPath "$env:RUNNER_TEMP"
+          foreach ($path in @("${{ github.workspace }}", "$env:RUNNER_TEMP")) {
+            try {
+              Add-MpPreference -ExclusionPath $path -ErrorAction Stop
+              Write-Host "defender-exclusion: ok      ($path excluded)"
+            } catch {
+              Write-Host "::warning::defender-exclusion: failed  ($path not excluded -- $($_.Exception.Message))"
+            }
+          }
       # Three states, never a silent one. `cache-hit: true` on its own is not
       # evidence the cache did anything: `WIN_PY39_PATCH` is a literal, and if
       # `setup-python` ever resolves "3.9" to a different patch, the step above would
