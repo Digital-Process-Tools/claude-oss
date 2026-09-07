@@ -2714,6 +2714,11 @@ from doctor_check_trap_queue import check_trap_queue
 # check exists and what it does not claim to fix.
 from doctor_check_vanished_worktree import check_vanished_worktrees
 
+# scripts/doctor_check_stale_branches.py (#1046), its own module per the same
+# #497/#630 convention -- see that module's docstring for why the tracker is
+# read instead of ancestry, and why this check reports rather than deletes.
+from doctor_check_stale_branches import check_stale_branches
+
 from doctor_check_fragments_readme import (
     COMPATIBILITY_BULLET,
     _fragments_directory,
@@ -9194,6 +9199,12 @@ def main(argv=None):
     # in this plugin's own code. Placed beside the two checks above for the same
     # reason: all three are about a worktree reap going wrong.
     check_vanished_worktrees(project_dir, config)
+    # #1046: merged-but-undeleted remote branches never checked before -- a
+    # curated trap found 57 of 58 origin/fix/* refs on this repo's own forge
+    # were exactly this, months old. Placed beside the worktree-reap checks
+    # above for the same reason: all four are about a merge's own cleanup
+    # step going wrong or being refused and never revisited.
+    check_stale_branches(project_dir, config)
     # Same reason, one layer down: an allowlist rule can exist and the merge
     # can still refuse for want of |force (#421). Needs no config either --
     # both live in supertool's file and this process's environment.

@@ -1022,6 +1022,15 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_codeql_scan",
         lambda *a, **kw: doctor.report("OK", "CodeQL coverage"),
     )
+    # #1046: `check_stale_branches` makes its own real `gh api
+    # repos/owner/name/git/matching-refs/...` call against this fixture's
+    # `owner/name` repo, which does not exist on GitHub -- exactly the same
+    # reason every check above is stubbed rather than measured here.
+    monkeypatch.setattr(
+        doctor,
+        "check_stale_branches",
+        lambda *a, **kw: doctor.report("OK", "stale merged branches"),
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether the Windows gap below is real is a question about
