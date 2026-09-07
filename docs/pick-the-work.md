@@ -219,8 +219,8 @@ doctor check is what catches it when they do -- git's own conflict detection cat
 failure independently and cheaply besides.
 
 `lane-other` (#1130) is the exception that proves the rule. It means *triaged, and no lane owns
-these files* -- so it has no subsystem, cannot be made disjoint by construction, and is dispatched
-**solo**: never given a companion, never offered as one.
+these files* -- so it has no subsystem to be declared against, no `lane_patterns` for the doctor
+check to compare, and is dispatched **solo**: never given a companion, never offered as one.
 
 ## The rule the steps converge on
 
