@@ -1,12 +1,15 @@
 """`tests/duration_report_plugin.py` end to end -- #910.
 
 Drives a real, separate `pytest` subprocess over a trivial stub test placed
-INSIDE `tests/` (not at the repository root, unlike `tests/test_durations_
-recorded_881.py`'s own stub) so pytest's normal conftest discovery picks up
+INSIDE `tests/` so pytest's normal conftest discovery picks up
 `tests/conftest.py` on the way down and registers `duration_report_plugin`
 for that subprocess exactly the way it is registered for the real suite --
 proving the wiring, not just the pure functions `tests/test_test_durations_
-910.py` already covers directly.
+910.py` already covers directly. `tests/test_durations_recorded_881.py`'s
+own stub also lives under `tests/` (#1214), but explicitly disables that
+same conftest wiring (`-p no:pytester -p no:must_assert_plugin -p
+no:duration_report_plugin`) -- that file needs an isolated Config
+resolution, this one needs the opposite.
 
 Every case passes `--duration-baseline-path` pointing at a throwaway
 `tmp_path`, never at the real `tests/duration-baseline.json` -- this file
@@ -41,6 +44,15 @@ def _run_stub_test(extra_args, keep=None):
     `keep`, if given, is a callable invoked with the stub directory before it
     is removed, so a case can inspect files the plugin wrote (a recorded
     baseline) before cleanup.
+
+    `-p no:cacheprovider` (#1214): this nested pytest's rootdir always
+    resolves to the repository root (pytest walks UP from the stub path to
+    find `pyproject.toml`), which every concurrent nested pytest subprocess
+    xdist can spawn shares too. Disabling the cache plugin -- unneeded here,
+    since this is a one-off single-file smoke run -- means this invocation
+    never touches the rootdir-shared `.pytest_cache` directory, removing it
+    as a party to the write race #1214 observed there
+    (`pytest-cache-files-*`, pytest's own cache-dir atomic-rename tempfile).
     """
     stub_dir = REPO_ROOT / "tests" / ("_durprobe_910_" + uuid.uuid4().hex[:8])
     stub_dir.mkdir()
@@ -53,6 +65,8 @@ def _run_stub_test(extra_args, keep=None):
                 "-m",
                 "pytest",
                 "-q",
+                "-p",
+                "no:cacheprovider",
                 "-o",
                 "addopts=" + _STUB_ADDOPTS,
             ]
