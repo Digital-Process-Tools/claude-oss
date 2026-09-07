@@ -31,6 +31,7 @@
       "lane-doctor": [
         "scripts/doctor.py",
         "scripts/doctor_check_*.py",
+        "scripts/lane_pattern_coverage.py",
         "scripts/oss-workspace",
         "bin/oss-workspace"
       ],
