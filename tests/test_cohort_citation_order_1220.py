@@ -440,3 +440,86 @@ def test_this_repos_own_current_state_is_could_not_check_or_declined():
     )
     assert record["state"] == expected
     assert record["state"] != cco.CITATION_OK
+
+
+# ---------------------------------------------------------------------------
+# #1267: EXIT_DECLINED must never collide with argparse's own usage-error
+# exit code (also 2) -- a caller branching on exit code alone must be able to
+# tell an honest decline from a usage mistake.
+# ---------------------------------------------------------------------------
+
+
+def test_exit_declined_is_not_the_argparse_usage_exit_code():
+    """argparse.ArgumentParser.error() always exits 2 -- verified directly in
+    the issue body (`python3 scripts/cohort_citation_order.py` with no args,
+    or with an unrecognised flag, both exit 2). `EXIT_DECLINED` must not sit
+    on that same number, or a caller reading the exit code alone cannot tell
+    an honest decline from a usage mistake."""
+    assert cco.EXIT_DECLINED != 2
+
+
+def test_exit_codes_are_pairwise_distinct_and_cover_every_state():
+    """Every sibling state script in this family (`select_issues_preflight.py`,
+    `gate3_disposition.py`, `transcript_refusals.py`) reserves exit 2 for
+    usage only, or skips it entirely. Pin the whole table here so a future
+    edit cannot silently collide two states, or a state with usage-error 2,
+    ever again."""
+    codes = cco._EXIT_CODES
+    assert set(codes) == {
+        cco.CITATION_OK,
+        cco.CITATION_FINDING,
+        cco.CITATION_DECLINED,
+        cco.CITATION_COULD_NOT_CHECK,
+    }
+    values = list(codes.values())
+    assert len(values) == len(set(values)), "exit codes must be pairwise distinct"
+    assert 2 not in values, "exit 2 is reserved for argparse usage errors"
+
+
+# ---------------------------------------------------------------------------
+# #1269: extract_cited_cohort must anchor its search to the current marker's
+# own section, not the whole file -- a stale numeric citation narrated
+# earlier in the document (this repo's own prose routinely quotes prior
+# releases' cohort counts) must never win over a later, honest decline.
+# ---------------------------------------------------------------------------
+
+
+def test_extract_cited_cohort_ignores_a_stale_numeric_citation_before_the_marker_section():
+    """A numeric `Cohort freeze: cohort-N at M` citation narrating a past
+    release, sitting *before* the '## What is not proven yet' section, must
+    not be matched -- only the current marker, inside that section, decides
+    the result. Reproduces #1269's own described failure mode: today's
+    `_MARKER_RE.search` would match the stale one first and never even look
+    at the real, later, honest decline."""
+    text = (
+        "Some earlier prose narrates history: Cohort freeze: cohort-20 at 10 "
+        "open issues, against cohort-19's 8.\n\n"
+        "## What is not proven yet\n\n"
+        "**Cohort freeze: cannot be cleanly cited this release, and that is "
+        "stated rather than guessed past.** More prose follows.\n"
+    )
+    cited = cco.extract_cited_cohort(text)
+    assert cited == {"cohort": None, "count": None, "declined": True}
+
+
+def test_extract_cited_cohort_ignores_a_stale_numeric_citation_before_a_current_numeric_one():
+    """Same shape, but the current marker is itself a real citation rather
+    than a decline -- the stale, earlier numeric mention must still lose to
+    the one actually inside the marker section."""
+    text = (
+        "History: Cohort freeze: cohort-20 at 10 open issues, against "
+        "cohort-19's 8.\n\n"
+        "## What is not proven yet\n\n"
+        "**Cohort freeze: cohort-22 at 42 open issues, against cohort-21's "
+        "29.**\n"
+    )
+    cited = cco.extract_cited_cohort(text)
+    assert cited == {"cohort": "cohort-22", "count": 42}
+
+
+def test_extract_cited_cohort_falls_back_to_whole_text_with_no_marker_heading():
+    """Backward compatible: text with no '## What is not proven yet' heading
+    at all (a synthetic fixture, or a repo whose CLAUDE.md predates the
+    section) still searches the whole string rather than finding nothing."""
+    cited = cco.extract_cited_cohort(MARKER_TEXT)
+    assert cited == {"cohort": "cohort-22", "count": 42}

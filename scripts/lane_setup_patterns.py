@@ -60,6 +60,20 @@ CROSS_CUTTING_GUARDS = (
         "tests/test_gate_state_consumers_328.py",
         "may add or lose a consumer of the changelog scaffolding gate's state",
     ),
+    # #1222: `tests/test_bare_gh_git_spawn_sweep_1165.py`'s own docstring says it
+    # "scans every `scripts/*.py` file" for a bare, unrouted `gh`/`git` subprocess
+    # spawn -- the same repo-wide-scan shape `test_gate_state_consumers_328.py`
+    # already justifies a directory-prefix trigger for, immediately above. This
+    # repo has paid for the missing instance of this guard five times over
+    # (#1157, #1163, #1168, #1172, #1173) and it was never declared here, so a
+    # brand-new file under `scripts/` reported zero guards for the one class of
+    # defect this repository keeps re-finding by hand.
+    (
+        "scripts/",
+        "tests/test_bare_gh_git_spawn_sweep_1165.py",
+        "a new or touched scripts/*.py file may add a bare, unrouted gh/git "
+        "subprocess spawn -- route it through gh_which.safe_which instead",
+    ),
     (
         "CLAUDE.md",
         "tests/test_claude_md_currency.py",
