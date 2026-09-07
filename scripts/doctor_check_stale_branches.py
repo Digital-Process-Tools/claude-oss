@@ -89,17 +89,39 @@ _STALE_PR_STATE = "MERGED"
 
 _REFS_HEADS_PREFIX = "refs/heads/"
 
+#: `gh pr list`'s own page cap for this call. Self-review finding (both
+#: spawned reviewers, independently, against the live `Digital-Process-Tools/
+#: claude-oss` repo): `gh pr list --state all` sorts newest-first, so once a
+#: repository's PR count exceeds this limit the OLDEST merged PRs -- the
+#: "months old" leftovers this check exists to find -- are exactly the ones
+#: a single capped call drops, and a dropped row renders identically to "this
+#: branch was never merged". `scripts/lane_setup_claim.py`'s own
+#: `_PR_LIST_LIMIT` already names this same hazard and the same fix for its
+#: own `gh pr list` call: treat hitting the limit as `could-not-derive`
+#: (here, `could-not-read`), never as a complete read.
+_PR_LIST_LIMIT = 500
+
 
 def _branch_prefix(pattern):
     """The literal text before `{issue}` in `branch_pattern`, or ``None`` when
-    the pattern cannot be used to derive a glob -- not a string, or missing
-    the placeholder entirely. Never invented: a pattern with no placeholder
-    would make every branch on the remote match, which is answering a
-    different, much louder question than the one this check exists to ask.
+    the pattern cannot be used to derive a glob -- not a string, missing the
+    placeholder entirely, or the placeholder is the pattern's own first
+    token (`"{issue}-fix"`), which would derive an EMPTY prefix. Self-review
+    finding: an empty prefix is not "no glob" -- it is the widest possible
+    one, and `_list_matching_branches` would pass it straight through to
+    `git/matching-refs/heads/`, which returns every branch on the whole
+    forge in one response. That is the same "never invented" hazard this
+    function already refuses for a placeholder-free pattern, reachable
+    through a second, schema-legal shape this function used to let through.
+    Never invented either way: a pattern this check cannot use to derive a
+    real, non-empty glob is `could-not-read`, not "check everything".
     """
     if not isinstance(pattern, str) or ISSUE_PLACEHOLDER not in pattern:
         return None
-    return pattern.split(ISSUE_PLACEHOLDER)[0]
+    prefix = pattern.split(ISSUE_PLACEHOLDER)[0]
+    if not prefix:
+        return None
+    return prefix
 
 
 def _gh_json(gh_bin, args, run):
@@ -200,6 +222,15 @@ def _list_pull_requests(gh_bin, slug, run):
         return None, "gh pr list output did not parse as JSON ({})".format(exc)
     if not isinstance(rows, list):
         return None, "gh pr list output was not a list"
+    if len(rows) >= _PR_LIST_LIMIT:
+        return None, (
+            "gh pr list returned {} pull request(s), at or past the {}-PR page "
+            "limit -- newest-first, so the OLDEST merged PRs (exactly the "
+            "leftovers this check exists to find) are the ones a truncated "
+            "read would drop; the result cannot be trusted complete".format(
+                len(rows), _PR_LIST_LIMIT
+            )
+        )
     return rows, None
 
 

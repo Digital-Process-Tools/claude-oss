@@ -239,6 +239,40 @@ def test_matching_refs_call_failure_is_could_not_read(tmp_path, monkeypatch):
     assert result["state"] == "could-not-read"
 
 
+def test_branch_pattern_with_placeholder_first_is_could_not_read(tmp_path, monkeypatch):
+    """Self-review finding: `{issue}-fix` derives an EMPTY prefix, which is not
+    "no glob" -- it is the widest possible one, and would otherwise flag every
+    branch on the whole forge as a candidate."""
+    monkeypatch.setattr(sb.gh_which, "safe_which", _which_gh_only)
+    result = sb.stale_branches_state(
+        tmp_path, config=_config(branch_pattern="{issue}-fix")
+    )
+    assert result["state"] == "could-not-read"
+    assert "branch_pattern" in result["detail"]
+
+
+def test_gh_pr_list_hitting_the_page_limit_is_could_not_read_not_ok(
+    tmp_path, monkeypatch
+):
+    """Self-review finding (both spawned reviewers, independently): `gh pr
+    list --state all` sorts newest-first, so a truncated 500-row read drops
+    the OLDEST merged PRs first -- exactly the "months old" leftovers this
+    check exists to find. Hitting the limit must never render as a clean
+    "not stale", the same convention `lane_setup_claim.py`'s own
+    `_PR_LIST_LIMIT` already applies to its own `gh pr list` call. Must-fire
+    pair for `test_a_merged_branch_is_flagged_as_stale`'s positive control:
+    it is the exact same shape one row short of the cap."""
+    monkeypatch.setattr(sb.gh_which, "safe_which", _which_gh_only)
+    huge = [
+        {"number": n, "headRefName": "fix/{}".format(n), "state": "OPEN"}
+        for n in range(sb._PR_LIST_LIMIT)
+    ]
+    run = _run_sequence([_matching_refs(["fix/1"]), _pr_list_json(huge)])
+    result = sb.stale_branches_state(tmp_path, config=_config(), run=run)
+    assert result["state"] == "could-not-read"
+    assert str(sb._PR_LIST_LIMIT) in result["detail"]
+
+
 def test_undecodable_bytes_do_not_crash_the_check(tmp_path, monkeypatch):
     """#1019's own trap: bytes decoded with errors="replace", never
     universal_newlines=True, or a byte the runner's locale codec cannot
