@@ -79,14 +79,176 @@ def test_extract_references_import_statement(tmp_path):
     assert refs == ["scripts/bar.py"]
 
 
-def test_extract_references_ignores_runtime_assembled_path(tmp_path):
-    """#1234's own stated open question 1 (how to resolve a runtime-
-    assembled path) is deliberately NOT resolved here: `Path("scripts") /
-    "baz.py"` is two literals joined at runtime, invisible to a static
-    reader, and must not be silently guessed at."""
+def test_extract_references_resolves_a_fully_literal_path_join(tmp_path):
+    """#1245: a `Path(<literal>) / <literal>` chain where every leaf is a
+    literal string constant is now resolved -- an AST walker can see both
+    operands are already known and fold them exactly as the interpreter
+    itself would, which is a narrower claim than "invisible to a static
+    reader" (#1234's own original wording for this exact shape)."""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "baz.py").write_text("x = 1\n", encoding="utf-8")
     source = 'from pathlib import Path\nP = Path("scripts") / "baz.py"\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == ["scripts/baz.py"]
+    assert problem is None
+
+
+def test_extract_references_resolves_os_path_join_of_literals(tmp_path):
+    """The same fold, through `os.path.join(...)` rather than `Path(...) /
+    ...` -- both are #1245's genuinely resolvable slice."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "qux.py").write_text("x = 1\n", encoding="utf-8")
+    source = 'import os\nP = os.path.join("scripts", "qux.py")\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == ["scripts/qux.py"]
+    assert problem is None
+
+
+def test_extract_references_still_ignores_a_variable_path_join(tmp_path):
+    """Positive control for the two tests above: #1245's own stated
+    boundary against building a constant-folding interpreter for arbitrary
+    Python. `root` is a variable here -- its value is only known at
+    runtime -- so the join stays genuinely unresolved, not silently
+    guessed at."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "baz.py").write_text("x = 1\n", encoding="utf-8")
+    source = 'from pathlib import Path\nroot = "scripts"\nP = Path(root) / "baz.py"\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
+def test_extract_references_resolved_join_still_rejects_traversal(tmp_path):
+    """#1256's traversal refusal reused here rather than re-litigated: a
+    folded literal is exactly as capable of naming something outside
+    `repo` as a hand-typed one, and must be refused the same way."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path.parent / "secret.txt").write_text("shh\n", encoding="utf-8")
+    source = 'from pathlib import Path\nP = Path("..") / "secret.txt"\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
+def test_extract_references_resolves_glob_driven_read(tmp_path):
+    """#1245's second named gap, closed the same way this module already
+    answers "does this literal exist" -- by checking against the real repo
+    tree. `Path("scripts").glob("*.py")` is run at diagnostic time and
+    every match added as a reference."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "one.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "scripts" / "two.py").write_text("x = 1\n", encoding="utf-8")
+    source = (
+        'from pathlib import Path\nfor p in Path("scripts").glob("*.py"):\n    pass\n'
+    )
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == ["scripts/one.py", "scripts/two.py"]
+    assert problem is None
+
+
+def test_extract_references_resolves_rglob_driven_read(tmp_path):
+    """The recursive sibling of the test above."""
+    (tmp_path / "scripts" / "sub").mkdir(parents=True)
+    (tmp_path / "scripts" / "sub" / "nested.py").write_text("x = 1\n", encoding="utf-8")
+    source = (
+        'from pathlib import Path\nfor p in Path("scripts").rglob("*.py"):\n    pass\n'
+    )
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == ["scripts/sub/nested.py"]
+    assert problem is None
+
+
+def test_extract_references_glob_base_still_refuses_traversal(tmp_path):
+    """Positive control: a glob whose base literal tries to escape `repo`
+    is refused the same way a plain literal is (#1256's own rule), before
+    the glob ever touches the filesystem."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path.parent / "outside.py").write_text("x = 1\n", encoding="utf-8")
+    source = 'from pathlib import Path\nfor p in Path("..").glob("*.py"):\n    pass\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
+def test_extract_references_still_ignores_glob_with_dynamic_base(tmp_path):
+    """Genuinely unresolvable: the base directory of the glob is a
+    variable, not a literal -- this module cannot know what it names
+    without running the test."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "one.py").write_text("x = 1\n", encoding="utf-8")
+    source = (
+        "from pathlib import Path\n"
+        'root = "scripts"\n'
+        'for p in Path(root).glob("*.py"):\n'
+        "    pass\n"
+    )
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
+def test_extract_references_refuses_absolute_glob_pattern_without_crashing(tmp_path):
+    """Self-review finding (Explore spawn, #1245): `Path.glob`/`rglob` raise
+    `NotImplementedError("Non-relative patterns are unsupported")` for a
+    non-relative pattern -- an earlier version of `_glob_call_targets` did
+    not refuse this shape, so one test file anywhere in the scanned tree
+    with an absolute glob pattern took the whole scan down instead of being
+    recorded per-file, the way a `SyntaxError` already is. Refused before
+    the glob call is ever made: no crash, no reference."""
+    (tmp_path / "scripts").mkdir()
+    source = (
+        'from pathlib import Path\nfor p in Path("scripts").glob("/etc/*"):\n    pass\n'
+    )
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
+def test_extract_references_refuses_backslash_glob_pattern(tmp_path):
+    """Self-review finding (oss:auditor spawn, #1245): `pathlib.Path.glob`
+    splits a pattern on `/` only on POSIX but on both `/` and a backslash
+    on Windows (`ntpath`), so an identical literal pattern containing a
+    backslash could resolve to different matches purely by which OS runs
+    the diagnostic -- the same platform inconsistency
+    `_looks_like_path_literal` already refuses for a plain literal. The
+    glob pattern earns no exemption from it."""
+    (tmp_path / "scripts" / "sub").mkdir(parents=True)
+    (tmp_path / "scripts" / "sub" / "nested.py").write_text("x = 1\n", encoding="utf-8")
+    source = (
+        "from pathlib import Path\n"
+        'for p in Path("scripts").glob("sub\\\\*.py"):\n'
+        "    pass\n"
+    )
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
+def test_fold_join_replicates_real_absolute_tail_semantics(tmp_path):
+    """Self-review finding (Explore spawn, #1245): real `os.path.join`/
+    `Path.__truediv__` DISCARD every earlier component when a later part is
+    absolute (`os.path.join("scripts", "/etc/passwd") == "/etc/passwd"`).
+    An earlier version of `_fold_literal_path_expr`'s join step always
+    concatenated instead, producing `"scripts/etc/passwd"` -- a result that
+    does not start with `/` and so could slip past `_looks_like_path_
+    literal`'s own absolute-path refusal, hiding an absolute-path join
+    from the same safety check a hand-typed absolute literal cannot avoid.
+    """
+    import ast
+
+    tree = ast.parse('import os\nP = os.path.join("scripts", "/etc/passwd")\n')
+    call = next(n for n in ast.walk(tree) if isinstance(n, ast.Call))
+    assert lane_coupling._fold_literal_path_expr(call) == "/etc/passwd"
+
+
+def test_extract_references_still_refuses_the_absolute_tail_join(tmp_path):
+    """Positive control for the fold-semantics fix above, through the full
+    `extract_references` path: the corrected fold now produces an absolute
+    string, which `_looks_like_path_literal`'s own leading-`/` refusal
+    correctly rejects -- so the join is refused, not silently mis-resolved
+    to a wrong repo-relative path."""
+    (tmp_path / "scripts").mkdir()
+    source = 'import os\nP = os.path.join("scripts", "/etc/passwd")\n'
     refs, problem = lane_coupling.extract_references(tmp_path, source)
     assert refs == []
     assert problem is None
