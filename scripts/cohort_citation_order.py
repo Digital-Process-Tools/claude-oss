@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""Check that a release's cohort citation names an already-frozen cohort -- #1220.
+
+#1122 (PR #1218) rewrote the "What is not proven yet" marker's rule so it only ever
+cites a cohort that has already finished freezing -- the previous release's, settled --
+never the release-being-cut's own not-yet-frozen one. That closed one live mismatch
+(v0.25.0's marker cited cohort-21 at 30; the count actually applied when the freeze ran,
+on the far side of the tag, was 32) but left the ordering rule itself as release-process
+prose in `skills/manager/phases/accounting.md` and `commands/release.md` -- read and
+followed by a release session, not verified by a test. A future release commit that
+repeats the mistake would pass every test in the suite today.
+
+Two shapes were on the table for the mechanical check (the issue names both): diff two
+release commits' cited cohort numbers against their own tagger dates, or check a cited
+cohort against the two-route `cohort_freeze` decision `oss_state.py` already records
+(``detail.cohort_freeze``). This module builds the second. The first needs full git
+history across release tags; this repository's own CI checkout is `actions/checkout`'s
+default depth of 1 (`test_claude_md_currency.py` notes the same constraint for a
+different check), so a tag-walking design could not run on the leg that matters most,
+and would need a shallow-clone third state layered on top of the ones below anyway. The
+state file route needs no git history at all: it reads the current worktree's own
+CLAUDE.md and the state file the loop already keeps, and the state file *is* the actual
+source of truth for "when did this cohort finish freezing" -- `cohort_freeze.py` derives
+the count from a tag's own tagger date, but only the state entry keeps that fact, git
+does not.
+
+The cost this pays for that cheapness: `.max/` (the state file's own directory) is
+git-ignored, so a freshly-cloned tree -- every CI leg included -- carries no state file
+at all, and this check can only ever report `could-not-check` there. That is disclosed,
+not hidden: see `check_repo`'s own third state below and the test proving it against
+this repo's real, absent state file. This is a tool a release session runs from its own
+working tree, where a state file that has actually been written this cycle exists to be
+read, not a repo-wide pytest gate that fires on every checkout.
+
+Three states, same discipline as `cohort_freeze` and `push_bypass`:
+
+  ok               the cited cohort's recorded freeze (``detail.cohort_freeze``, state
+                    ``measured``) happened strictly before the citation's own timestamp.
+  finding          the cited cohort's recorded freeze happened at or after the
+                    citation's own timestamp -- v0.25.0's own mistake, mechanically
+                    caught.
+  could-not-check  no cohort was found in the marker, no freeze record exists for the
+                    cited cohort, or the only recorded freeze for it is not `measured`
+                    (`unknown` or `could-not-count` cannot be trusted as a boundary
+                    either). Never rendered the same as `ok` -- an absent check is not a
+                    clean one.
+
+Timestamps are arguments, never read from the clock in here, the same discipline
+`oss_state.py` states for itself: a function that reads the clock cannot be tested for
+what it decided, and a release gate built on this module is evidence.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import oss_state  # noqa: E402
+
+CITATION_OK = "ok"
+CITATION_FINDING = "finding"
+CITATION_COULD_NOT_CHECK = "could-not-check"
+
+EXIT_OK = 0
+EXIT_FINDING = 1
+EXIT_COULD_NOT_CHECK = 3
+
+# The live marker's own shape (CLAUDE.md, "What is not proven yet"):
+#   **Cohort freeze: cohort-22 at 42 open issues, against cohort-21's 29.**
+# Only the newest-cited cohort (the one under question) is extracted -- the
+# previous cohort named later in the same sentence is prose recording where the
+# comparison came from, not a citation this check judges.
+_MARKER_RE = re.compile(r"Cohort freeze:\s*cohort-(\d+)\s+at\s+(\d+)")
+
+
+def extract_cited_cohort(text):
+    """The newest cohort the marker cites, as ``{"cohort": "cohort-N", "count": M}``.
+
+    ``None`` when the marker's own sentence is not present at all -- a caller must
+    treat that as "nothing to check", never as a clean pass.
+    """
+    match = _MARKER_RE.search(text or "")
+    if not match:
+        return None
+    number, count = match.groups()
+    return {"cohort": "cohort-{}".format(number), "count": int(count)}
+
+
+def _measured_freeze_ats(entries, cohort):
+    """Every ``at`` timestamp at which ``cohort`` was recorded as `measured`.
+
+    A cohort can only shrink (#407), so more than one `measured` recording for the
+    same cohort is a later re-count refining the number, not a second freeze -- the
+    *earliest* one is when the ordering question actually settled, and using a later
+    one would let a re-count silently move a real `finding` into an `ok`.
+    """
+    ats = []
+    for entry in entries or []:
+        detail = entry.get("detail") if isinstance(entry, dict) else None
+        freeze = detail.get("cohort_freeze") if isinstance(detail, dict) else None
+        if not isinstance(freeze, dict):
+            continue
+        if freeze.get("cohort") != cohort:
+            continue
+        if freeze.get("state") != oss_state.COHORT_MEASURED:
+            continue
+        at = entry.get("at")
+        if isinstance(at, str) and at.strip():
+            ats.append(at)
+    return sorted(ats)
+
+
+def check_citation_order(cited, entries, comparison_at):
+    """The ordering rule itself, against a list of state-file entries.
+
+    ``cited`` is ``extract_cited_cohort``'s return (or ``None``). ``entries`` is the
+    state file's own list shape (``oss_state.read``'s return -- oldest first,
+    ``{"at", "decision", "detail"}``). ``comparison_at`` is the citing commit's own
+    timestamp, an ISO 8601 string, given by the caller rather than read from the
+    clock here.
+
+    ISO 8601 strings sort correctly as plain strings when they share a format (all
+    `Z`-suffixed UTC, as every timestamp `oss_state.py` writes is), so this compares
+    them lexically rather than parsing -- one less way for a parse to disagree with
+    the very code that wrote the timestamps in the first place.
+    """
+    if not cited:
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": None,
+            "reason": ("no cohort citation found in the marker -- nothing to check"),
+        }
+    cohort = cited["cohort"]
+    if not comparison_at or not str(comparison_at).strip():
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cohort,
+            "reason": "no comparison timestamp was given",
+        }
+    freeze_ats = _measured_freeze_ats(entries, cohort)
+    if not freeze_ats:
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cohort,
+            "reason": (
+                "no `measured` freeze record exists for {} in the given state-file "
+                "entries -- an unmeasured or absent freeze cannot be trusted as a "
+                "boundary, so this citation cannot be verified either way".format(
+                    cohort
+                )
+            ),
+        }
+    freeze_at = freeze_ats[0]
+    if freeze_at < str(comparison_at):
+        return {"state": CITATION_OK, "cohort": cohort, "reason": None}
+    return {
+        "state": CITATION_FINDING,
+        "cohort": cohort,
+        "reason": (
+            "cites {} whose recorded freeze ({}) had not yet run when this "
+            "citation was written ({}) -- the same shape as v0.25.0's own "
+            "marker, guessing a cohort's count ahead of its own freeze".format(
+                cohort, freeze_at, comparison_at
+            )
+        ),
+    }
+
+
+def check_repo(claude_md_path, state_path, at):
+    """The live wrapper: read CLAUDE.md and a state file, then apply the rule.
+
+    ``at`` is the citing commit's own timestamp -- an ISO 8601 string the caller
+    supplies (the release commit's own timestamp, or "now" for a pre-commit gate).
+    Never read from the clock here, for the same reason `oss_state.py` never reads
+    it: a function that reads the clock cannot be tested for what it decided.
+    """
+    claude_md_path = Path(claude_md_path)
+    if not claude_md_path.is_file():
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": None,
+            "reason": "{} does not exist".format(claude_md_path),
+        }
+    text = claude_md_path.read_text(encoding="utf-8", errors="replace")
+    cited = extract_cited_cohort(text)
+
+    try:
+        entries = oss_state.read(state_path)
+    except oss_state.StateError as exc:
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cited["cohort"] if cited else None,
+            "reason": "state file at {} is unreadable: {}".format(state_path, exc),
+        }
+
+    return check_citation_order(cited, entries, at)
+
+
+def citation_order_line(record):
+    """One line a release report can print. The state decides the sentence."""
+    state = record.get("state")
+    cohort = record.get("cohort") or "an unstated cohort"
+    if state == CITATION_OK:
+        return "cohort citation order: ok -- {} was already frozen".format(cohort)
+    if state == CITATION_FINDING:
+        return "cohort citation order: FINDING -- {}".format(record.get("reason"))
+    if state == CITATION_COULD_NOT_CHECK:
+        return "cohort citation order: could-not-check -- {}".format(
+            record.get("reason") or "no reason recorded"
+        )
+    return "cohort citation order: unrecognised state {!r}, nothing claimed".format(
+        state
+    )
+
+
+_EXIT_CODES = {
+    CITATION_OK: EXIT_OK,
+    CITATION_FINDING: EXIT_FINDING,
+    CITATION_COULD_NOT_CHECK: EXIT_COULD_NOT_CHECK,
+}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description=(
+            "Check that CLAUDE.md's cohort-freeze marker cites only an "
+            "already-frozen cohort, against the state file's own cohort_freeze "
+            "decisions (#1220)."
+        )
+    )
+    parser.add_argument(
+        "--claude-md",
+        default=str(Path(__file__).resolve().parent.parent / "CLAUDE.md"),
+        help="path to CLAUDE.md (default: this repo's own)",
+    )
+    parser.add_argument(
+        "--state",
+        required=True,
+        help="path to the tick state file (.oss.local.json's state_file)",
+    )
+    parser.add_argument(
+        "--at",
+        required=True,
+        help="the citing commit's own ISO 8601 timestamp",
+    )
+    args = parser.parse_args(argv)
+
+    record = check_repo(args.claude_md, args.state, args.at)
+    print(citation_order_line(record))
+    return _EXIT_CODES.get(record["state"], EXIT_COULD_NOT_CHECK)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
