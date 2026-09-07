@@ -53,6 +53,7 @@ what it decided, and a release gate built on this module is evidence.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import re
 import sys
 from pathlib import Path
@@ -114,6 +115,37 @@ def _measured_freeze_ats(entries, cohort):
     return sorted(ats)
 
 
+def _parse_timestamp(value):
+    """An ISO 8601 timestamp as a tz-aware UTC ``datetime``, or ``None``.
+
+    Self-review (#1220) found two spawned reviewers converging on the same real
+    bug: an earlier version of this function compared timestamps as plain
+    strings, on the assumption that every one of them shares an identical
+    `Z`-suffixed, fraction-free format. Neither half of that assumption holds --
+    a `comparison_at` obtained via ``git log --format=%cI`` or ``date
+    +%Y-%m-%dT%H:%M:%S%z`` (both named in this diff's own doc pointers) carries
+    an explicit ``+HH:MM`` offset rather than `Z`, and a state-file `at` with
+    fractional seconds sorts *before* a bare-second one lexically while being
+    chronologically *after* it -- both silently flip a real `finding` into a
+    false `ok`. So this parses rather than compares strings, and refuses a
+    naive (timezone-less) timestamp outright rather than guessing it means UTC:
+    guessing a timezone is exactly the class of guess this whole module exists
+    to remove.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z") or text.endswith("z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = _dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(_dt.timezone.utc)
+
+
 def check_citation_order(cited, entries, comparison_at):
     """The ordering rule itself, against a list of state-file entries.
 
@@ -121,12 +153,11 @@ def check_citation_order(cited, entries, comparison_at):
     state file's own list shape (``oss_state.read``'s return -- oldest first,
     ``{"at", "decision", "detail"}``). ``comparison_at`` is the citing commit's own
     timestamp, an ISO 8601 string, given by the caller rather than read from the
-    clock here.
-
-    ISO 8601 strings sort correctly as plain strings when they share a format (all
-    `Z`-suffixed UTC, as every timestamp `oss_state.py` writes is), so this compares
-    them lexically rather than parsing -- one less way for a parse to disagree with
-    the very code that wrote the timestamps in the first place.
+    clock here. Both this value and every recorded freeze ``at`` are parsed with
+    ``_parse_timestamp`` and compared as real instants -- never as strings -- so a
+    difference in offset or fractional-second precision between the two sides
+    (they come from different sources and are never guaranteed to match byte for
+    byte) cannot flip the verdict.
     """
     if not cited:
         return {
@@ -141,6 +172,18 @@ def check_citation_order(cited, entries, comparison_at):
             "cohort": cohort,
             "reason": "no comparison timestamp was given",
         }
+    comparison_dt = _parse_timestamp(comparison_at)
+    if comparison_dt is None:
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cohort,
+            "reason": (
+                "the comparison timestamp {!r} could not be parsed as a "
+                "timezone-aware ISO 8601 timestamp -- a bare value with no `Z` "
+                "suffix and no explicit UTC offset is refused rather than "
+                "assumed to be UTC".format(comparison_at)
+            ),
+        }
     freeze_ats = _measured_freeze_ats(entries, cohort)
     if not freeze_ats:
         return {
@@ -154,8 +197,27 @@ def check_citation_order(cited, entries, comparison_at):
                 )
             ),
         }
-    freeze_at = freeze_ats[0]
-    if freeze_at < str(comparison_at):
+    parsed_freezes = []
+    unparseable = []
+    for raw in freeze_ats:
+        freeze_dt = _parse_timestamp(raw)
+        if freeze_dt is None:
+            unparseable.append(raw)
+        else:
+            parsed_freezes.append((freeze_dt, raw))
+    if not parsed_freezes:
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cohort,
+            "reason": (
+                "every recorded freeze timestamp for {} failed to parse as a "
+                "timezone-aware ISO 8601 timestamp ({}) -- cannot verify "
+                "ordering".format(cohort, ", ".join(unparseable))
+            ),
+        }
+    parsed_freezes.sort(key=lambda pair: pair[0])
+    freeze_dt, freeze_at = parsed_freezes[0]
+    if freeze_dt < comparison_dt:
         return {"state": CITATION_OK, "cohort": cohort, "reason": None}
     return {
         "state": CITATION_FINDING,

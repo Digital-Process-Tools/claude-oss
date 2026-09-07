@@ -73,13 +73,83 @@ def test_extract_cited_cohort_reads_the_live_marker_shape():
     assert cited == {"cohort": "cohort-22", "count": 42}
 
 
-def test_extract_cited_cohort_on_this_repos_own_claude_md():
-    """The real file, not a fixture -- proves the regex matches production prose."""
+# ---------------------------------------------------------------------------
+# Self-review (#1220): both spawned reviewers found the same real bug --
+# comparing timestamps as plain strings breaks the moment the two sides do not
+# share an identical format. A `comparison_at` with an explicit UTC offset
+# (the natural shape of `git log --format=%cI` or `date +%Y-%m-%dT%H:%M:%S%z`,
+# both named as ways to obtain it in this diff's own doc pointers) or a
+# `freeze_at` carrying fractional seconds must still compare correctly.
+# ---------------------------------------------------------------------------
+
+
+def test_finding_survives_a_non_utc_offset_on_the_comparison_timestamp():
+    """`comparison_at` with an explicit +02:00 offset, naming the same instant
+    as a bare UTC time one hour later, must still be read as *before* a freeze
+    recorded in UTC an hour after that -- not compared lexically, where the
+    '+02:00' string sorts before 'Z' and would falsely read as earlier."""
+    entries = [_freeze_entry("cohort-21", at="2026-08-10T12:00:00Z")]
+    record = cco.check_citation_order(
+        cited={"cohort": "cohort-21", "count": 30},
+        entries=entries,
+        # 2026-08-10T09:00:00+02:00 == 2026-08-10T07:00:00Z, well before the freeze.
+        comparison_at="2026-08-10T09:00:00+02:00",
+    )
+    assert record["state"] == cco.CITATION_FINDING
+
+
+def test_fractional_seconds_do_not_flip_a_finding_into_an_ok():
+    """'.5Z' sorts lexically *before* the bare-second 'Z' string it is actually
+    chronologically after -- a purely lexical comparison reads this backwards."""
+    entries = [_freeze_entry("cohort-21", at="2026-08-10T12:00:00.500000Z")]
+    record = cco.check_citation_order(
+        cited={"cohort": "cohort-21", "count": 30},
+        entries=entries,
+        comparison_at="2026-08-10T12:00:00Z",
+    )
+    assert record["state"] == cco.CITATION_FINDING
+
+
+def test_could_not_check_on_an_unparseable_comparison_timestamp():
+    entries = [_freeze_entry("cohort-21", at="2026-08-10T12:00:00Z")]
+    record = cco.check_citation_order(
+        cited={"cohort": "cohort-21", "count": 30},
+        entries=entries,
+        comparison_at="not-a-timestamp",
+    )
+    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+
+
+def test_could_not_check_on_a_bare_timestamp_with_no_timezone():
+    """A naive timestamp (no `Z`, no offset) is refused rather than silently
+    assumed to be UTC -- guessing a timezone is exactly the class of guess
+    this module exists to remove."""
+    entries = [_freeze_entry("cohort-21", at="2026-08-10T12:00:00Z")]
+    record = cco.check_citation_order(
+        cited={"cohort": "cohort-21", "count": 30},
+        entries=entries,
+        comparison_at="2026-08-10T09:00:00",
+    )
+    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+
+
+def test_extract_cited_cohort_on_this_repos_own_claude_md_cross_checked():
+    """Strengthens the weak version a reviewer spawn flagged: independently
+    derive the cited cohort and count by a different mechanism (plain string
+    slicing, not `_MARKER_RE`) and assert the two agree -- this is what would
+    actually catch a regex change that picked up the *previous* cohort named
+    later in the same sentence instead of the newest one."""
     text = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     cited = cco.extract_cited_cohort(text)
     assert cited is not None
-    assert cited["cohort"].startswith("cohort-")
-    assert isinstance(cited["count"], int)
+
+    marker = "Cohort freeze: cohort-"
+    start = text.index(marker)
+    sentence_end = text.index(".", start)
+    after = text[start + len(marker) : sentence_end]
+    number_str, rest = after.split(" at ", 1)
+    count_str = rest.split(" ", 1)[0]
+    assert cited == {"cohort": "cohort-" + number_str, "count": int(count_str)}
 
 
 def test_extract_cited_cohort_absent_marker_is_none():

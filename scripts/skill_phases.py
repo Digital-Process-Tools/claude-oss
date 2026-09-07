@@ -396,10 +396,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # recount -- fixed by naming the recorded `froze <cohort> at N`
         # decision as the one to quote. Comfortably under the 23000 B
         # ceiling; ceiling unchanged.
-        # Re-baselined for #1220: 21569 B became 22110 B -- a pointer to the
-        # new mechanical ordering check, scripts/cohort_citation_order.py.
-        # Comfortably under the 23000 B ceiling; ceiling unchanged.
-        22110,
+        # Re-baselined for #1220: 21569 B became 22406 B (22110 B, then +296 B
+        # in the same lane's self-review round fixing a wording inconsistency
+        # between this file and commands/release.md over what `--at` takes) --
+        # a pointer to the new mechanical ordering check,
+        # scripts/cohort_citation_order.py. Comfortably under the 23000 B
+        # ceiling; ceiling unchanged.
+        22406,
         23000,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
