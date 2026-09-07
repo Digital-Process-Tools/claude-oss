@@ -363,9 +363,11 @@ report is a survey -- a `state` beside its `items`. **Read the state before the 
 is gone, or the review could not run, run it yourself.
 
 **Read `skills/manager/phases/review.md` when the diff is yours.** It carries what
-`disposition: refused` costs when accepted unread, the three receipts every `report-for-filing` item
-must get and the #254 instance behind them, why `below-bar` is already receipted rather than work,
-and the four-part shape an issue body filed out of a review takes.
+`disposition: refused` costs when accepted unread, the four receipts every `report-for-filing` item
+must get -- ranked against `findings.md`'s table first (#1275), so a non-blocking row's receipt is a
+`trap.d/` fragment rather than a new issue -- and the #254 instance behind them, why `below-bar` is
+already receipted rather than work, and the four-part shape an issue body filed out of a review
+takes.
 
 ## Merge gates
 

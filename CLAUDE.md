@@ -414,11 +414,19 @@ only the lane can report.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer/review.md` | 10,132 B | 10,500 B |
+| `agents/developer/review.md` | 10,576 B | 11,600 B |
 | `agents/developer/review-return.md` | 12,465 B | 13,700 B |
 | `agents/developer/report.md` | 17,401 B | 19,100 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
+
+**#1275 raised `agents/developer/review.md`'s ceiling from 10,500 B to 11,600 B**: 10,132 B became
+10,576 B, past the old ceiling by 76 B. Both self-review spawns (the `Explore` reviewer and
+`oss:auditor`) independently found `report-for-filing` still described here as the disposition for
+any real, out-of-scope finding, after the sibling rule -- a non-blocking row routes to `trap.d/`
+instead -- landed in `agents/developer.md`'s own spine and every other site this diff touches. Too
+small an overage to trim something else in the same file to absorb, so the ceiling moved with ~10%
+headroom over the new size rather than cutting anything.
 
 **#1047 raised `agents/developer/review-return.md`'s ceiling from 12,400 B to 13,700 B**: 11,249 B
 became 12,465 B. A fix commit answering an audit's own findings is a diff nothing makes a subject
@@ -452,13 +460,13 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 41,601 B | 44,800 B |
+| `skills/manager/SKILL.md` | 41,738 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 54,117 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,700 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
-| `skills/manager/phases/review.md` | 10,829 B | 11,400 B |
+| `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 11,222 B | 12,400 B |
 | `skills/manager/phases/merge.md` | 14,230 B | 15,400 B |
 | `skills/manager/phases/ci-green.md` | 2,646 B | 2,700 B |
@@ -503,6 +511,13 @@ now shared by that file and `agents/releaser.md`, each holding a one-line pointe
 reasoning as `tick-order.md`'s own addition: a new subject earns a new file rather than being
 folded into `merge.md`, whose own row moved from 13,985 B to 14,230 B for the one pointer sentence
 it gained in place of restating anything.
+
+**#1275 re-baselined `SKILL.md` and `phases/review.md` in the same self-review round that raised
+`agents/developer/review.md`'s ceiling above**, without raising either of these two ceilings: 41,601 B
+became 41,738 B for `SKILL.md` (a stale "the three receipts" summary sentence, corrected to four),
+and 10,829 B became 11,390 B for `phases/review.md` (the receipt list itself gained the fourth entry
+-- a `trap.d/` fragment for a non-blocking row -- and a rank-first instruction). Both files stayed
+under their existing ceilings; `phases/review.md` now has 10 B of headroom left.
 
 **#1136 cut the rationale out of the loop's own markdown: 581,678 B became 480,591 B across 23 files, -17.4%.** The rule applied, written down as `.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`: **a loop markdown file is an operator's manual for the tools its phase runs.** The rule, the call, every state and every payload field stay; the measurement that justified a constant belongs beside the constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each rule keeps a bare issue citation for provenance. `dispatch.md`'s selection band was the worked example -- 14,240 B to 6,601 B, prose still explaining how to drive by hand the four scripts `select_issues.py` had already composed (#970, #1068, #1129). Every ceiling came down with its measurement rather than being left where it was (#958, #960). Four content guards refused cuts that went too far and every one was right: the bundle cap rule, the #499 citation, the `27m36s` threshold, and an unhyphenated `could not tell` -- each restored as a rule, without its narrative.
 

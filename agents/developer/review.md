@@ -109,11 +109,18 @@ verdict in a report somebody reads, rather than a wrong verdict nothing can see.
 and say why — that is an outcome no bounce-and-repush loop produces. Report all three under
 `review.findings`, each with its disposition: what it flagged, what you fixed, what you refused.
 
-**A disposition is not a filing.** A finding you judged real and out of this diff's scope is
-`report-for-filing`, and `report-for-filing` is a request addressed to the maintainer — it says
-*this should be filed, by you, and nothing has happened yet*. **You never file it yourself**: your
-publishing clause is unconditional, opening a tracker issue is publishing under somebody else's
-credentials. So there is no word here for a completed filing and there is not meant to be (#254).
+**`report-for-filing` is the blocking-or-unranked case only (#1275).** Rank a real, out-of-scope
+finding against `findings.md`'s table before you reach for this disposition: a row that blocks a
+release, or fits none of the rows, is `report-for-filing`; a non-blocking row is written to
+`trap.d/` instead and reported as `fixed`, `below-bar`, or logged-to-`trap.d/` in the pull request
+body, never `report-for-filing`.
+
+**A disposition is not a filing.** A finding you judged real, out of this diff's scope, and
+blocking (or unranked) is `report-for-filing`, and `report-for-filing` is a request addressed to the
+maintainer — it says *this should be filed, by you, and nothing has happened yet*. **You never file
+it yourself**: your publishing clause is unconditional, opening a tracker issue is publishing under
+somebody else's credentials. So there is no word here for a completed filing and there is not meant
+to be (#254).
 Give every `report-for-filing` item a `reason` saying why you did not simply fix it -- and if what
 you hold is another instance of a class the tracker already carries (the brief's sibling-issue list
 is usually where you would know it from), name that issue in the `reason`: the maintainer's receipt

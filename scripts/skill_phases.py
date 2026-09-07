@@ -129,7 +129,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # stated #818's "always hand back" rule as the whole answer,
         # contradicting the new decision procedure agents/sub-manager.md
         # gained the same round. Budget unchanged; comfortably under it.
-        41601,
+        # Re-baselined for #1275's own self-review round: 41601 B became
+        # 41738 B -- the "report-for-filing" summary sentence still claimed
+        # "the three receipts", stale the moment review.md gained a fourth
+        # (a trap.d/ fragment for a non-blocking row). Budget unchanged;
+        # comfortably under it.
+        41738,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -282,7 +287,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # for the same gap agents/developer/review-return.md's own new
         # section closes on the developer side. Ceiling unchanged;
         # comfortably under it.
-        10829,
+        # Re-baselined for #1275's self-review round: 10829 B became
+        # 11390 B. A self-review round found the three-receipts list still
+        # defaulted a non-blocking finding to a new issue, so the receipt
+        # list gained a fourth entry (a trap.d/ fragment) and a rank-first
+        # instruction. Ceiling unchanged; comfortably under it.
+        11390,
         11400,
         "reviewing a returned diff, and what an issue body filed out of one looks like, when a fix-for-a-finding needs its own pass",
     ),

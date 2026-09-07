@@ -80,16 +80,22 @@ checked.
 No agent can file: opening an issue is publishing, and the publishing clause is unconditional. The
 schema carries no word for a completed filing at all (#254). Read every `report-for-filing` item as
 an open request with your name on it, and close it in the same pass that merges the pull request.
-Closing it is a routing decision, not automatically a new issue -- three receipts, and every item
-gets exactly one of them:
+Closing it is a routing decision, not automatically a new issue -- four receipts, and every item
+gets exactly one of them. **Rank the item against `findings.md`'s table first (#1275)**: only a
+row that blocks a release, or is unranked, may still reach the first two receipts below; a
+non-blocking row goes to the fourth.
 
-- **a new issue**, when the finding clears the intake bar (defined beside the intake metric below)
-  and no issue already carries its class;
-- **a comment on the class issue**, when the tracker already carries the class -- another instance
-  is evidence on that issue, `path:line` and one sentence, not a sibling row. The class issue
-  accumulates a checklist; the board does not accumulate rows;
+- **a new issue**, when the finding blocks a release (or is unranked) and clears the intake bar
+  (defined beside the intake metric below), and no issue already carries its class;
+- **a comment on the class issue**, when the finding blocks a release (or is unranked) and the
+  tracker already carries the class -- another instance is evidence on that issue, `path:line` and
+  one sentence, not a sibling row. The class issue accumulates a checklist; the board does not
+  accumulate rows;
 - **a line in the pull request** being merged, or in the state entry, when the finding is real and
-  below the bar -- a named decision, never a silent drop.
+  below the bar -- a named decision, never a silent drop;
+- **a `trap.d/` fragment**, when the row is non-blocking -- write it the same way
+  `agents/developer.md`'s "Hit a trap? Log it and carry on" does, and say so in the state entry.
+  This is the ordinary receipt now; a non-blocking finding does not default to the first two.
 
 **When the receipt is a new issue, attach `labels.filed_by_loop`'s label in the same
 `gh-issue-create` payload, if `.oss.json` declares one (#762).** That single write is the whole
