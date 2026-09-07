@@ -1205,11 +1205,24 @@ def _attach_bodies(groups_result, issues_by_number):
     constraint. A post-processing step over `select()`'s own output rather
     than a change to `select()` itself, so `select()`'s existing contract and
     every test of it are untouched by this.
+
+    #1160: `issues_by_number.get(member.get("number"))` used to fall through
+    a bare `or {}` on a miss, so a member with no matching row read back as
+    `_fenced_body(None)` -- `body_length: 0`, `body_truncated: False` --
+    exactly what a genuinely empty real body also produces. Every current
+    call path builds `issues_by_number` from the same board fetch that
+    produced these members, so the miss cannot happen today (see the
+    report); `body_state` is a guard against a future change that fetches
+    the two lists separately, not a fix for an observed bad payload.
+    `"fetched"` means the row was found (its body may still be empty);
+    `"no-matching-row"` means it was not, and the fenced body attached
+    alongside it is a placeholder empty body, never a real one.
     """
     for group in groups_result.get("groups") or []:
         for member in group.get("members") or []:
-            row = issues_by_number.get(member.get("number")) or {}
-            member.update(_fenced_body(row.get("body")))
+            row = issues_by_number.get(member.get("number"))
+            member.update(_fenced_body(row.get("body") if row is not None else None))
+            member["body_state"] = "fetched" if row is not None else "no-matching-row"
     return groups_result
 
 
