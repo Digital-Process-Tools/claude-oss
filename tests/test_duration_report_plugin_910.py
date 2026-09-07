@@ -1,12 +1,15 @@
 """`tests/duration_report_plugin.py` end to end -- #910.
 
 Drives a real, separate `pytest` subprocess over a trivial stub test placed
-INSIDE `tests/` (not at the repository root, unlike `tests/test_durations_
-recorded_881.py`'s own stub) so pytest's normal conftest discovery picks up
+INSIDE `tests/` so pytest's normal conftest discovery picks up
 `tests/conftest.py` on the way down and registers `duration_report_plugin`
 for that subprocess exactly the way it is registered for the real suite --
 proving the wiring, not just the pure functions `tests/test_test_durations_
-910.py` already covers directly.
+910.py` already covers directly. `tests/test_durations_recorded_881.py`'s
+own stub also lives under `tests/` (#1214), but explicitly disables that
+same conftest wiring (`-p no:pytester -p no:must_assert_plugin -p
+no:duration_report_plugin`) -- that file needs an isolated Config
+resolution, this one needs the opposite.
 
 Every case passes `--duration-baseline-path` pointing at a throwaway
 `tmp_path`, never at the real `tests/duration-baseline.json` -- this file
