@@ -133,6 +133,102 @@ def test_import_and_literal_together_span_two_lanes(tmp_path):
     assert "tests/test_mixed.py" in files
 
 
+def test_extract_references_ignores_fstring_literal_segments(tmp_path):
+    """#1234 self-review finding: `ast.walk` descends into a `JoinedStr`
+    (f-string)'s own literal segments, each a separate `ast.Constant` --
+    without filtering those out, an f-string whose literal prefix happens
+    to equal a real repo file (`f"CLAUDE.md{suffix}"`) was silently
+    resolved, contradicting the "runtime-assembled path is not resolved"
+    claim this module's docstring and
+    `test_extract_references_ignores_runtime_assembled_path` both make."""
+    (tmp_path / "CLAUDE.md").write_text("x\n", encoding="utf-8")
+    source = 'suffix = ""\nX = f"CLAUDE.md{suffix}"\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert problem is None
+    assert refs == []
+
+
+def test_extract_references_rejects_backslash_literal(tmp_path):
+    """#1234 self-review finding: a backslash-separated literal resolves
+    inconsistently by platform (`pathlib` treats a backslash as a
+    separator on Windows, a literal character on POSIX). Refused outright,
+    on every platform, so this module's own verdict cannot silently
+    disagree between CI legs."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "foo.py").write_text("x = 1\n", encoding="utf-8")
+    source = 'PATH = "scripts\\\\foo.py"\n'
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert problem is None
+    assert refs == []
+
+
+def test_malformed_per_lane_value_is_finding_the_must_fire_case(tmp_path):
+    """#1234 self-review finding: only the top-level "lane_patterns is not
+    a dict" shape had a test; a single lane's own value being malformed
+    (empty list, non-string item) had no positive control at all."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "alpha.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    lane_patterns = {"lane-a": ["scripts/alpha*.py"], "lane-b": []}
+    result = lane_coupling.lane_coupling_report(tmp_path, lane_patterns)
+    assert result["state"] == "finding"
+    assert result["malformed"] == ["lane-b"]
+
+
+def test_well_formed_lanes_do_not_report_malformed_the_must_not_fire_control(
+    tmp_path,
+):
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "alpha.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    lane_patterns = {"lane-a": ["scripts/alpha*.py"]}
+    result = lane_coupling.lane_coupling_report(tmp_path, lane_patterns)
+    assert result["malformed"] == []
+
+
+def test_missing_test_dir_is_finding_not_a_silent_ok(tmp_path):
+    """#1234 self-review finding: a missing/mistyped `test_dir` used to
+    fall through the scan loop with nothing to iterate, reporting `ok` --
+    identical to a real scan that found zero coupling. This plugin's own
+    defect class, one level up: an absence the tool produced must not
+    render as an absence in the world."""
+    (tmp_path / "scripts").mkdir()
+    lane_patterns = {"lane-a": ["scripts/alpha*.py"]}
+    result = lane_coupling.lane_coupling_report(
+        tmp_path, lane_patterns, test_dir="no-such-tests-dir"
+    )
+    assert result["state"] == "finding"
+    assert any("no-such-tests-dir" in rel for rel, _detail in result["unreadable"])
+
+
+def test_present_test_dir_with_no_coupling_is_ok_the_must_not_fire_control(tmp_path):
+    _scaffold_two_lane_repo(tmp_path)
+    (tmp_path / "tests" / "test_ok.py").write_text(
+        'REF = "scripts/alpha.py"\n', encoding="utf-8"
+    )
+    lane_patterns = {"lane-a": ["scripts/alpha*.py"], "lane-b": ["scripts/beta*.py"]}
+    result = lane_coupling.lane_coupling_report(tmp_path, lane_patterns)
+    assert result["state"] == "ok"
+    assert result["unreadable"] == []
+
+
+def test_non_utf8_test_file_is_unreadable_not_a_crash(tmp_path):
+    """#1234 self-review finding: `except OSError` alone does not catch
+    `UnicodeDecodeError` (a `ValueError` subclass) -- a non-UTF-8 test file
+    used to crash the whole derivation instead of being recorded as
+    `unreadable`, the exact silent-crash shape `unreadable` exists to
+    avoid."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "alpha.py").write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_bad_encoding.py").write_bytes(b"\xff\xfe\x00\x01")
+    lane_patterns = {"lane-a": ["scripts/alpha*.py"]}
+    result = lane_coupling.lane_coupling_report(tmp_path, lane_patterns)
+    assert result["state"] == "finding"
+    files = [rel for rel, _detail in result["unreadable"]]
+    assert "tests/test_bad_encoding.py" in files
+
+
 def test_real_repo_finds_the_1201_incident():
     """The definitive check: run against this repo's own real .oss.json
     and its own real test suite, the mechanism finds

@@ -66,9 +66,11 @@ neither may look like a repo that DOES have a problem.
                       the same shape check `lane_pattern_coverage.py`
                       already applies, repeated here rather than imported
                       because the two checks can run independently), a
-                      test file could not be parsed (`unreadable`), or at
-                      least one test file's references span two-plus lanes
-                      (`spans`)
+                      test file could not be parsed or read (`unreadable`
+                      -- also carries the case `test_dir` itself does not
+                      exist, so "nothing coupled" and "nothing scanned"
+                      never render the same way), or at least one test
+                      file's references span two-plus lanes (`spans`)
     not-configured   labels.lane_patterns is null, absent, or an empty
                       object
 
@@ -101,13 +103,45 @@ def _looks_like_path_literal(value):
         return False
     if ":" in value:
         return False
+    # #1234 self-review finding: a backslash-separated literal
+    # ("tests\\foo.py") resolves inconsistently by platform -- `pathlib`
+    # treats `\` as a separator on Windows (so the same literal can match a
+    # real file there and nowhere else) but as a literal character on
+    # POSIX. Refusing it outright, on every platform, keeps this module's
+    # own verdict identical across every CI leg rather than silently
+    # disagreeing between them; this repo's own real path literals are
+    # forward-slash-only (confirmed by survey), so nothing genuine is lost.
+    if "\\" in value:
+        return False
     return True
 
 
+def _joined_str_segment_ids(tree):
+    """`id()`s of every `ast.Constant` node that is a literal *segment* of an
+    f-string (`ast.JoinedStr`), not a standalone string. #1234 self-review
+    finding: `ast.walk` descends into a `JoinedStr`'s own `values`, and each
+    literal segment is itself an `ast.Constant` -- so `f"CLAUDE.md{suffix}"`
+    put `"CLAUDE.md"` into the same walk as a genuine top-level literal,
+    silently resolving exactly the runtime-assembled shape this module's own
+    docstring says is out of scope. Filtering by identity here (rather than
+    tracking parents while walking) keeps `_string_literal_candidates` a
+    plain, single-pass `ast.walk`."""
+    ids = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            for value in node.values:
+                if isinstance(value, ast.Constant):
+                    ids.add(id(value))
+    return ids
+
+
 def _string_literal_candidates(tree):
+    skip = _joined_str_segment_ids(tree)
     found = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in skip:
+                continue
             if _looks_like_path_literal(node.value):
                 found.append(node.value)
     return found
@@ -126,12 +160,19 @@ def _import_module_names(tree):
 
 
 def _candidate_paths_for_module(module_name):
+    """A dotted module name resolved against `_IMPORT_ROOTS`, matching the
+    flat `sys.path.insert(0, ROOT / "scripts")` convention this repo's own
+    tests use before `import bare_module_name` -- e.g. `select_issues_
+    overlap` -> `scripts/select_issues_overlap.py`. #1234 self-review: an
+    earlier version also generated a `.../__init__.py` candidate for a
+    package-style import, but `scripts/` has no subpackages in this repo
+    and nothing exercised that shape -- speculative, untested code for a
+    layout this module has no way to resolve correctly without knowing
+    which segment of a dotted name is the package boundary. Dropped rather
+    than left untested; a repo with real subpackages under `scripts/` is a
+    real follow-up, not a guess landed here."""
     rel = module_name.replace(".", "/")
-    candidates = []
-    for root in _IMPORT_ROOTS:
-        candidates.append("{}/{}.py".format(root, rel))
-        candidates.append("{}/{}/__init__.py".format(root, rel))
-    return candidates
+    return ["{}/{}.py".format(root, rel) for root in _IMPORT_ROOTS]
 
 
 def extract_references(repo, source_text):
@@ -218,12 +259,28 @@ def lane_coupling_report(repo, lane_patterns, test_dir="tests"):
     spans = []
     unreadable = []
     test_root = repo / test_dir
-    if test_root.is_dir():
+    if not test_root.is_dir():
+        # #1234 self-review finding: a missing/mistyped `test_dir` used to
+        # fall straight through to the loop below with nothing to iterate,
+        # reporting `ok` -- identical to a real scan that found zero
+        # coupling. A caller cannot tell "this repo's tests are clean" from
+        # "nothing was scanned at all", which is exactly the absence this
+        # plugin is named after, one level up. Recorded in `unreadable`
+        # (reusing the existing field rather than adding a new one) so the
+        # state is `finding`, never a silent `ok`.
+        unreadable.append((test_dir, "directory does not exist"))
+    else:
         for path in sorted(test_root.glob("*.py")):
             rel = path.relative_to(repo).as_posix()
             try:
                 source = path.read_text(encoding="utf-8")
-            except OSError as exc:
+            except (OSError, UnicodeDecodeError) as exc:
+                # `UnicodeDecodeError` is a `ValueError`, not an `OSError`
+                # -- a non-UTF-8 test file used to propagate uncaught out
+                # of this function instead of being recorded as
+                # `unreadable`, the same silent-crash shape this module's
+                # own docstring says `unreadable` exists to avoid (#1234
+                # self-review finding).
                 unreadable.append((rel, "{}: {}".format(type(exc).__name__, exc)))
                 continue
             refs, problem = extract_references(repo, source)
