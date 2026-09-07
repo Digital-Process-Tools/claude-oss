@@ -116,16 +116,40 @@ def files_from_git(repo, base, head):
     Resolves `git` via `gh_which.safe_which` rather than spawning the bare
     argv literal (#1157, #1165's own repo-wide sweep) -- a bare name reaches
     `CreateProcess` on Windows, which only auto-appends `.exe` and never
-    `.cmd`/`.bat`, so a `git.cmd` shim on `PATH` is invisible to it."""
+    `.cmd`/`.bat`, so a `git.cmd` shim on `PATH` is invisible to it.
+
+    Decodes stdout with `encoding="utf-8", errors="replace"` (#1251) rather
+    than bare `text=True`, which decodes under the runner's own locale
+    codec at `errors="strict"` -- a path git prints that codec cannot
+    represent would otherwise raise `UnicodeDecodeError`, escaping this
+    function's own `except (OSError, subprocess.TimeoutExpired)` clause and
+    this module's documented `(files, error)` contract entirely. Matches
+    the same fix already applied at `tree_snapshot.py`, `batch_hint.py`,
+    `ruff_ratchet.py`, `lane_setup.py` and `release_delta.py`."""
     git_bin = gh_which.safe_which("git")
     if git_bin is None:
         return None, "git not found on PATH"
     try:
         result = subprocess.run(
-            [git_bin, "diff", "--name-only", "{0}..{1}".format(base, head)],
+            [
+                git_bin,
+                "diff",
+                "--name-only",
+                # `--end-of-options` (git >= 2.24) closes option parsing
+                # before the revision range is read, so a `base`/`head`
+                # beginning with `-` (e.g. `--output=<path>`) is refused by
+                # git as a bad option rather than reinterpreted as one --
+                # unlike a trailing `--`, which only disambiguates a
+                # pathspec section and does nothing for an option-shaped
+                # token that comes before it (#1254).
+                "--end-of-options",
+                "{0}..{1}".format(base, head),
+            ],
             cwd=str(repo),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:

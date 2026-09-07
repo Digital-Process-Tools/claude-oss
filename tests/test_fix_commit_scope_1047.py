@@ -109,3 +109,83 @@ def test_main_could_not_determine_when_neither_input_given(capsys):
     out = capsys.readouterr().out
     assert rc != 0
     assert "VERDICT: could-not-determine" in out
+
+
+# --- #1251: a locale codec that cannot decode git's output must not raise ----
+
+
+def test_files_from_git_survives_a_locale_that_cannot_decode_the_output(
+    tmp_path, monkeypatch
+):
+    """Under the old bare `text=True` (no explicit `encoding=`/`errors=`),
+    stdout is decoded with `locale.getpreferredencoding(False)` under
+    `errors="strict"`. A path git prints that codec cannot represent raises
+    `UnicodeDecodeError` -- a `ValueError`, uncaught by this function's own
+    `except (OSError, subprocess.TimeoutExpired)` clause -- escaping this
+    module's documented `(files, error)` contract entirely.
+
+    This is the positive control: force the ambient locale codec down to
+    plain ASCII (never touching `subprocess.run`'s own explicit
+    `encoding=`/`errors=` kwargs) and prove a non-ASCII filename still comes
+    back as a reported result rather than a raised exception.
+    """
+    monkeypatch.setattr("locale.getencoding", lambda: "ascii")
+    monkeypatch.setattr(
+        "locale.getpreferredencoding", lambda do_setlocale=True: "ascii"
+    )
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    # Without this, git quotes any non-ASCII byte in a pathname as a
+    # backslash-octal escape (`"caf\\303\\251.txt"`), which is pure ASCII on
+    # the wire and never exercises the decode this test targets.
+    _git(repo, "config", "core.quotepath", "false")
+    (repo / "one.txt").write_text("a\n")
+    _git(repo, "add", "one.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True
+    ).stdout.strip()
+    (repo / "café.txt").write_text("b\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "fix")
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=str(repo), capture_output=True, text=True
+    ).stdout.strip()
+
+    files, error = fix_commit_scope.files_from_git(repo, base, head)
+    assert error is None
+    assert any("caf" in f for f in files)
+
+
+# --- #1254: an unbounded revision argument needs a `--` separator -----------
+
+
+def test_files_from_git_does_not_let_a_leading_dash_base_be_read_as_an_option(
+    tmp_path,
+):
+    """The negative control for the positive git-diff read above: a
+    `base`/`head` beginning with `-` must be rejected by git as a bad
+    revision (because of the `--` separator), never accepted and
+    reinterpreted as an option such as `--output=<path>`. Proves the
+    dangerous mechanism is closed by checking the attacker-chosen path is
+    never created."""
+    repo = tmp_path / "r"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    (repo / "one.txt").write_text("a\n")
+    _git(repo, "add", "one.txt")
+    _git(repo, "commit", "-q", "-m", "base")
+
+    target = tmp_path / "pwned.txt"
+    files, error = fix_commit_scope.files_from_git(
+        repo, "--output={0}".format(target), "HEAD"
+    )
+    assert not target.exists()
+    assert files is None
+    assert error
