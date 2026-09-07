@@ -73,7 +73,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # that pointer, so the marker sentence silently stopped existing
     # anywhere the test could see it. Restored in this file's own text
     # alongside the pointer. 12963 B became 13273 B. Ceiling unchanged.
-    "agents/auditor.md": (13273, 15600),
+    "agents/auditor.md": (14046, 15600),
     # Re-baselined DOWN for #1071, the same extraction: 14953 B became
     # 13992 B. Ceiling left unchanged for the same reason.
     # Re-baselined UP for #1210, the same restoration as auditor.md above,
