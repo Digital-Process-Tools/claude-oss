@@ -32,18 +32,29 @@ this repo's real, absent state file. This is a tool a release session runs from 
 working tree, where a state file that has actually been written this cycle exists to be
 read, not a repo-wide pytest gate that fires on every checkout.
 
-Three states, same discipline as `cohort_freeze` and `push_bypass`:
+Four states, same discipline as `cohort_freeze` and `push_bypass`:
 
   ok               the cited cohort's recorded freeze (``detail.cohort_freeze``, state
                     ``measured``) happened strictly before the citation's own timestamp.
   finding          the cited cohort's recorded freeze happened at or after the
                     citation's own timestamp -- v0.25.0's own mistake, mechanically
                     caught.
-  could-not-check  no cohort was found in the marker, no freeze record exists for the
-                    cited cohort, or the only recorded freeze for it is not `measured`
-                    (`unknown` or `could-not-count` cannot be trusted as a boundary
-                    either). Never rendered the same as `ok` -- an absent check is not a
-                    clean one.
+  declined         the marker explicitly declined to cite a specific cohort-N-at-M
+                    figure this release, using the stated decline phrase below, instead
+                    of guessing between two counts its own tooling had just shown to
+                    disagree (#1264). Nothing was verified, but nothing was forgotten
+                    either -- a stated decline is not a finding (there is no false
+                    citation to catch) and not a clean `ok` (no ordering was actually
+                    checked), so it gets its own state rather than being folded into
+                    either.
+  could-not-check  no cohort was found in the marker at all (neither a numeric citation
+                    nor a stated decline -- the marker was silently forgotten or
+                    garbled), no freeze record exists for a cited cohort, or the only
+                    recorded freeze for it is not `measured` (`unknown` or
+                    `could-not-count` cannot be trusted as a boundary either). Never
+                    rendered the same as `ok` -- an absent check is not a clean one --
+                    and never the same as `declined`, which is stated on purpose rather
+                    than missing.
 
 Timestamps are arguments, never read from the clock in here, the same discipline
 `oss_state.py` states for itself: a function that reads the clock cannot be tested for
@@ -64,10 +75,12 @@ import oss_state  # noqa: E402
 
 CITATION_OK = "ok"
 CITATION_FINDING = "finding"
+CITATION_DECLINED = "declined"
 CITATION_COULD_NOT_CHECK = "could-not-check"
 
 EXIT_OK = 0
 EXIT_FINDING = 1
+EXIT_DECLINED = 2
 EXIT_COULD_NOT_CHECK = 3
 
 # The live marker's own shape (CLAUDE.md, "What is not proven yet"):
@@ -77,18 +90,37 @@ EXIT_COULD_NOT_CHECK = 3
 # comparison came from, not a citation this check judges.
 _MARKER_RE = re.compile(r"Cohort freeze:\s*cohort-(\d+)\s+at\s+(\d+)")
 
+# The marker's own greppable way to say "I looked, and I am not going to guess"
+# (#1264): a release whose own tooling produced two disagreeing counts for the
+# only citable cohort should say so rather than pick one. This is a literal
+# substring match on purpose, not a loose "cannot ... cited" pattern -- a marker
+# that wants this state has to use these exact words, the same way a real
+# citation has to match `_MARKER_RE`'s exact shape.
+_DECLINE_TEXT = "Cohort freeze: cannot be cleanly cited this release"
+
 
 def extract_cited_cohort(text):
-    """The newest cohort the marker cites, as ``{"cohort": "cohort-N", "count": M}``.
+    """The newest cohort the marker cites.
 
-    ``None`` when the marker's own sentence is not present at all -- a caller must
-    treat that as "nothing to check", never as a clean pass.
+    Three distinguishable returns:
+
+    * ``{"cohort": "cohort-N", "count": M}`` -- a real numeric citation.
+    * ``{"cohort": None, "count": None, "declined": True}`` -- the marker used
+      the stated decline phrase instead of naming a cohort. Distinguishable from
+      both a real citation (no ``"declined"`` key there) and from ``None`` by
+      identity and by shape, so a caller cannot mistake either for the other.
+    * ``None`` -- the marker's own sentence is not present at all, in either
+      shape. A caller must treat this as "nothing to check", never as a clean
+      pass and never as a stated decline.
     """
-    match = _MARKER_RE.search(text or "")
-    if not match:
-        return None
-    number, count = match.groups()
-    return {"cohort": "cohort-{}".format(number), "count": int(count)}
+    text = text or ""
+    match = _MARKER_RE.search(text)
+    if match:
+        number, count = match.groups()
+        return {"cohort": "cohort-{}".format(number), "count": int(count)}
+    if _DECLINE_TEXT in text:
+        return {"cohort": None, "count": None, "declined": True}
+    return None
 
 
 def _measured_freeze_ats(entries, cohort):
@@ -159,6 +191,17 @@ def check_citation_order(cited, entries, comparison_at):
     (they come from different sources and are never guaranteed to match byte for
     byte) cannot flip the verdict.
     """
+    if isinstance(cited, dict) and cited.get("declined"):
+        return {
+            "state": CITATION_DECLINED,
+            "cohort": None,
+            "reason": (
+                "the marker explicitly declined to cite a specific cohort this "
+                "release, using its stated decline phrase, rather than guess "
+                "between two disagreeing counts -- nothing was verified, but "
+                "nothing was forgotten either"
+            ),
+        }
     if not cited:
         return {
             "state": CITATION_COULD_NOT_CHECK,
@@ -250,6 +293,15 @@ def check_repo(claude_md_path, state_path, at):
     text = claude_md_path.read_text(encoding="utf-8", errors="replace")
     cited = extract_cited_cohort(text)
 
+    # A declined citation has nothing to verify against a state file at all
+    # (#1264) -- checked before the state file is even opened, so a state
+    # file that happens to be corrupt or unreadable can never downgrade an
+    # honest, self-contained decline into `could-not-check`. The declined
+    # branch inside `check_citation_order` would reach the same answer, but
+    # only once past a state-file read this case does not need to survive.
+    if isinstance(cited, dict) and cited.get("declined"):
+        return check_citation_order(cited, entries=[], comparison_at=at)
+
     try:
         entries = oss_state.read(state_path)
     except oss_state.StateError as exc:
@@ -270,6 +322,10 @@ def citation_order_line(record):
         return "cohort citation order: ok -- {} was already frozen".format(cohort)
     if state == CITATION_FINDING:
         return "cohort citation order: FINDING -- {}".format(record.get("reason"))
+    if state == CITATION_DECLINED:
+        return "cohort citation order: declined -- {}".format(
+            record.get("reason") or "no reason recorded"
+        )
     if state == CITATION_COULD_NOT_CHECK:
         return "cohort citation order: could-not-check -- {}".format(
             record.get("reason") or "no reason recorded"
@@ -282,6 +338,7 @@ def citation_order_line(record):
 _EXIT_CODES = {
     CITATION_OK: EXIT_OK,
     CITATION_FINDING: EXIT_FINDING,
+    CITATION_DECLINED: EXIT_DECLINED,
     CITATION_COULD_NOT_CHECK: EXIT_COULD_NOT_CHECK,
 }
 

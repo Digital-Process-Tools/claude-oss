@@ -20,19 +20,25 @@ file already keeps: no tags, no history walk, and it is the actual source of tru
 did this cohort finish freezing" (`cohort_freeze.py` derives it from a tag's own tagger date,
 but that number lives in the state entry, not in git). This module builds the second shape.
 
-Three states, same discipline as `cohort_freeze` and `push_bypass` above it:
+Four states, same discipline as `cohort_freeze` and `push_bypass` above it:
 
   ok               the cited cohort's recorded freeze (`detail.cohort_freeze`, state
                     "measured") happened strictly before the citation's own timestamp.
   finding          the cited cohort's recorded freeze happened at or after the citation's own
                     timestamp -- exactly v0.25.0's own mistake shape, mechanically caught.
-  could-not-check  no cohort was found in the marker, no freeze record exists for the cited
-                    cohort, or the recorded freeze itself is not `measured` (`unknown` or
-                    `could-not-count`, which cannot be trusted as a boundary either). This is
-                    the ordinary case for this repository's own tree today: `.max/` is
-                    git-ignored, so a fresh checkout (CI included) carries no state file at
-                    all, and this must never render as `ok` -- an absent check is not a clean
-                    one.
+  declined         the marker used its stated decline phrase instead of naming a cohort
+                    (#1264) -- a release whose own tooling produced two disagreeing counts
+                    said so honestly rather than guessing between them. Not `ok` (nothing was
+                    verified) and not a `finding` (there is no false citation to catch), so it
+                    gets its own state rather than colliding with either.
+  could-not-check  no cohort was found in the marker in either shape (no numeric citation and
+                    no stated decline -- the marker was silently forgotten or garbled), no
+                    freeze record exists for the cited cohort, or the recorded freeze itself is
+                    not `measured` (`unknown` or `could-not-count`, which cannot be trusted as a
+                    boundary either). This is the ordinary case for this repository's own tree
+                    today: `.max/` is git-ignored, so a fresh checkout (CI included) carries no
+                    state file at all, and this must never render as `ok` -- an absent check is
+                    not a clean one -- and never as `declined`, which is stated on purpose.
 """
 
 import sys
@@ -138,22 +144,55 @@ def test_extract_cited_cohort_on_this_repos_own_claude_md_cross_checked():
     derive the cited cohort and count by a different mechanism (plain string
     slicing, not `_MARKER_RE`) and assert the two agree -- this is what would
     actually catch a regex change that picked up the *previous* cohort named
-    later in the same sentence instead of the newest one."""
+    later in the same sentence instead of the newest one.
+
+    #1264: this repository's own live marker can legitimately be either shape
+    -- a real `cohort-N at M` citation, or a stated decline when the release's
+    own tooling could not produce a trustworthy number. Cross-check whichever
+    shape is actually present rather than assuming the numeric one, and prove
+    the two are still told apart (a declined marker must never silently read
+    as a numeric citation, and vice versa)."""
     text = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     cited = cco.extract_cited_cohort(text)
     assert cited is not None
 
-    marker = "Cohort freeze: cohort-"
+    marker = "Cohort freeze: "
     start = text.index(marker)
     sentence_end = text.index(".", start)
-    after = text[start + len(marker) : sentence_end]
-    number_str, rest = after.split(" at ", 1)
-    count_str = rest.split(" ", 1)[0]
-    assert cited == {"cohort": "cohort-" + number_str, "count": int(count_str)}
+    sentence = text[start + len(marker) : sentence_end]
+
+    if sentence.startswith("cannot be cleanly cited this release"):
+        assert cited == {"cohort": None, "count": None, "declined": True}
+    else:
+        number_str, rest = sentence[len("cohort-") :].split(" at ", 1)
+        count_str = rest.split(" ", 1)[0]
+        assert cited == {"cohort": "cohort-" + number_str, "count": int(count_str)}
+
+
+def test_extract_cited_cohort_recognises_the_declined_form():
+    """Positive control for the declined shape itself, independent of whatever
+    this repository's own live CLAUDE.md happens to say at any given moment."""
+    text = (
+        "**Cohort freeze: cannot be cleanly cited this release, and that is "
+        "stated rather than guessed past.** Some further prose."
+    )
+    cited = cco.extract_cited_cohort(text)
+    assert cited == {"cohort": None, "count": None, "declined": True}
 
 
 def test_extract_cited_cohort_absent_marker_is_none():
+    """Negative control: a section that names neither shape (silently
+    forgotten, or garbled past recognising) must still return `None`, not be
+    swept up by the new declined pattern's broader net."""
     assert cco.extract_cited_cohort("nothing about cohorts here") is None
+
+
+def test_extract_cited_cohort_garbled_marker_is_still_none():
+    """A near-miss on the decline wording (paraphrased rather than the exact
+    stated phrase) must not match either pattern -- the decline form is a
+    literal substring on purpose, not a loose paraphrase-tolerant match."""
+    text = "Cohort freeze: we are not going to guess a number this time."
+    assert cco.extract_cited_cohort(text) is None
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +232,21 @@ def test_could_not_check_when_no_cohort_was_cited():
         cited=None, entries=[], comparison_at="2026-08-10T09:00:00Z"
     )
     assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+
+
+def test_declined_citation_is_its_own_state_not_could_not_check_not_ok():
+    """#1264: a marker that explicitly declined to cite a cohort must render
+    as its own state -- not folded into `could-not-check` (which already means
+    "no record to verify against", a different thing from "nothing to
+    verify"), and not `ok` either, since nothing was actually checked."""
+    record = cco.check_citation_order(
+        cited={"cohort": None, "count": None, "declined": True},
+        entries=[],
+        comparison_at="2026-08-10T09:00:00Z",
+    )
+    assert record["state"] == cco.CITATION_DECLINED
+    assert record["state"] != cco.CITATION_COULD_NOT_CHECK
+    assert record["state"] != cco.CITATION_OK
 
 
 def test_could_not_check_when_the_cited_cohort_has_no_freeze_record():
@@ -311,13 +365,78 @@ def test_check_repo_end_to_end_ok(tmp_path):
     assert record["state"] == cco.CITATION_OK
 
 
-def test_this_repos_own_current_state_is_could_not_check():
+def test_check_repo_end_to_end_declined(tmp_path):
+    """#1264: a declined marker with no state file at all -- the ordinary case
+    for a fresh checkout -- still reports `declined`, not `could-not-check`."""
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text(
+        "**Cohort freeze: cannot be cleanly cited this release, and that is "
+        "stated rather than guessed past.** More prose follows.",
+        encoding="utf-8",
+    )
+    missing_state = tmp_path / "does-not-exist.json"
+    record = cco.check_repo(
+        claude_md_path=claude_md,
+        state_path=missing_state,
+        at="2026-09-06T08:00:00Z",
+    )
+    assert record["state"] == cco.CITATION_DECLINED
+
+
+def test_check_repo_declined_survives_a_corrupt_state_file(tmp_path):
+    """Self-review (#1264): a declined marker has nothing to verify against a
+    state file at all, so a state file that exists but fails to parse must
+    not downgrade `declined` into `could-not-check` -- an earlier version of
+    `check_repo` opened the state file before checking for a decline and lost
+    the declined signal on exactly this path."""
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text(
+        "**Cohort freeze: cannot be cleanly cited this release, and that is "
+        "stated rather than guessed past.** More prose follows.",
+        encoding="utf-8",
+    )
+    corrupt_state = tmp_path / "watch.json"
+    corrupt_state.write_text("{not valid json", encoding="utf-8")
+    record = cco.check_repo(
+        claude_md_path=claude_md,
+        state_path=corrupt_state,
+        at="2026-09-06T08:00:00Z",
+    )
+    assert record["state"] == cco.CITATION_DECLINED
+
+
+def test_this_repos_own_current_state_is_could_not_check_or_declined():
     """The real integration point: run against this repo's own tree, with the real
-    (absent) `.max/claude-oss-watch.json`. Proves the third state renders honestly on
-    the exact tree CI actually checks out, rather than being only a fixture claim."""
+    (absent) `.max/claude-oss-watch.json`. Proves the honest third (or fourth)
+    state renders on the exact tree CI actually checks out, rather than being
+    only a fixture claim.
+
+    #1264: this repository's own live marker is not always the same shape --
+    a real `cohort-N at M` citation renders `could-not-check` here (no state
+    file exists to verify it against), while a stated decline renders
+    `declined` regardless of the state file, since a decline has nothing to
+    verify in the first place. Either is honest; a silent `ok` never is.
+
+    Self-review (#1264): an earlier version of this test derived `expected`
+    by calling `cco.extract_cited_cohort` itself -- the very function
+    `check_repo` calls internally -- so it would still have passed against a
+    build of `extract_cited_cohort` that never implemented decline detection
+    at all (both sides would have silently agreed on `could-not-check`). The
+    independent oracle here is a raw substring check against the file's own
+    bytes, the same shape `test_extract_cited_cohort_on_this_repos_own_
+    claude_md_cross_checked` already uses above, so a regression in
+    `extract_cited_cohort` cannot cancel out against this test's own
+    expectation."""
+    text = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    expected = (
+        cco.CITATION_DECLINED
+        if cco._DECLINE_TEXT in text
+        else cco.CITATION_COULD_NOT_CHECK
+    )
     record = cco.check_repo(
         claude_md_path=REPO_ROOT / "CLAUDE.md",
         state_path=REPO_ROOT / ".max" / "claude-oss-watch.json",
         at="2026-09-07T00:00:00Z",
     )
-    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+    assert record["state"] == expected
+    assert record["state"] != cco.CITATION_OK
