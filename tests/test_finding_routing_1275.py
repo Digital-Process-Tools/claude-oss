@@ -90,3 +90,59 @@ def test_claude_md_states_the_governing_rule():
     text = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
     assert "trap.d" in text
     assert "Blocks a release" in text or "blocks a release" in text.lower()
+
+
+# --------------------------------------------------------------------------
+# A row whose first cell has no backtick-quoted class name must not vanish
+# silently from parse_rows -- that is the same absence-read-as-world defect
+# this repository is named after, sitting in the one function the routing
+# rule reads. Maintainer review on #1275 caught it: extract_ranking_table
+# only guarantees a row starts with "|" and that its cell count matches the
+# header; nothing validates the first cell's shape.
+
+_HEADER_AND_DIVIDER = (
+    "| Class | Blocks a release? | Embargo when reported upstream? |\n"
+    "| --- | --- | --- |\n"
+)
+
+# Positive control: every row well-formed, in the identical shape the
+# malformed fixture below uses -- so a change that made the assertion pass
+# vacuously (nothing parses at all) would fail this one instead.
+_WELL_FORMED_TABLE = _HEADER_AND_DIVIDER + (
+    "| `destroys` -- data gone | yes, unconditionally | yes |\n"
+    "| `misreports` | can ship behind a trap.d fragment | no |\n"
+)
+
+# The same two rows, except the first has lost its backticks -- exactly the
+# shape maintainer review named.
+_MALFORMED_TABLE = _HEADER_AND_DIVIDER + (
+    "| destroys -- data gone | yes, unconditionally | yes |\n"
+    "| `misreports` | can ship behind a trap.d fragment | no |\n"
+)
+
+
+def test_parse_rows_parses_every_row_of_a_well_formed_table():
+    rows = ranking_table.parse_rows(_WELL_FORMED_TABLE)
+    assert rows == {
+        "destroys": "yes, unconditionally",
+        "misreports": "can ship behind a trap.d fragment",
+    }
+
+
+def test_parse_rows_raises_loudly_on_a_row_with_no_backticked_class_name():
+    try:
+        ranking_table.parse_rows(_MALFORMED_TABLE)
+    except ValueError as exc:
+        assert "destroys" in str(exc)
+    else:
+        raise AssertionError(
+            "parse_rows silently dropped a row with no backtick-quoted class "
+            "name instead of raising"
+        )
+
+
+def test_the_real_findings_table_has_no_unbackticked_rows():
+    # A positive control at the real table's own scale: parse_rows must not
+    # raise against skills/manager/phases/findings.md itself.
+    table = _findings_table()
+    ranking_table.parse_rows(table)  # raises if any row is malformed
