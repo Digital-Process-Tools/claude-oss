@@ -363,9 +363,13 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
       `"${CLAUDE_PLUGIN_ROOT}/scripts/cohort_citation_order.py" --state <state file> --at <now>`
       before committing (#1220)
       — `<now>` needs an explicit `Z` suffix or UTC offset (`date -u +%Y-%m-%dT%H:%M:%SZ`), since a
-      bare timestamp with neither is refused rather than assumed to be UTC. `ok`, `could-not-check`
-      (no state file) or `declined` (the marker honestly declined a number rather than guessing one
-      -- #1264) are all fine; `finding` means this citation is about to repeat v0.25.0's own mistake.
+      bare timestamp with neither is refused rather than assumed to be UTC, **on every path,
+      including a marker that honestly declines to cite a cohort** (#1268: an earlier version
+      validated `--at` only on the path that goes on to compare it, so a malformed `--at` paired
+      with a declined marker silently rendered `declined` with the bad input never even read).
+      `ok`, `could-not-check` (no state file, or a malformed `--at`) or `declined` (the marker
+      honestly declined a number rather than guessing one -- #1264) are all fine; `finding` means
+      this citation is about to repeat v0.25.0's own mistake.
    2. After folding the changelog and before the release commit, run the repo's own
       `tests/test_claude_md_currency.py` (`python3 -m pytest`, not a plugin script under
       `${CLAUDE_PLUGIN_ROOT}`, so it stays a prose instruction rather than a fenced command line).

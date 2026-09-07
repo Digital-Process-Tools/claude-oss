@@ -222,7 +222,36 @@ def check_citation_order(cited, entries, comparison_at):
     difference in offset or fractional-second precision between the two sides
     (they come from different sources and are never guaranteed to match byte for
     byte) cannot flip the verdict.
+
+    #1268: ``comparison_at`` is validated on *every* path, declined included,
+    before any branch on ``cited`` runs. `--at` is a required argument on
+    every invocation of this module, not a value some callers happen to pass
+    and others don't -- so a caller that hands this function a malformed
+    timestamp has made a real invocation mistake regardless of which shape
+    the marker turns out to be, and a declined marker (which never uses the
+    timestamp for a comparison) is not a reason to skip telling them. The
+    earlier version validated ``comparison_at`` only on the path that goes
+    on to actually compare it, so a declined marker paired with a garbled
+    `--at` silently reported `declined` with the bad input never even read.
     """
+    if not comparison_at or not str(comparison_at).strip():
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cited.get("cohort") if isinstance(cited, dict) else None,
+            "reason": "no comparison timestamp was given",
+        }
+    comparison_dt = _parse_timestamp(comparison_at)
+    if comparison_dt is None:
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cited.get("cohort") if isinstance(cited, dict) else None,
+            "reason": (
+                "the comparison timestamp {!r} could not be parsed as a "
+                "timezone-aware ISO 8601 timestamp -- a bare value with no `Z` "
+                "suffix and no explicit UTC offset is refused rather than "
+                "assumed to be UTC".format(comparison_at)
+            ),
+        }
     if isinstance(cited, dict) and cited.get("declined"):
         return {
             "state": CITATION_DECLINED,
@@ -241,24 +270,6 @@ def check_citation_order(cited, entries, comparison_at):
             "reason": ("no cohort citation found in the marker -- nothing to check"),
         }
     cohort = cited["cohort"]
-    if not comparison_at or not str(comparison_at).strip():
-        return {
-            "state": CITATION_COULD_NOT_CHECK,
-            "cohort": cohort,
-            "reason": "no comparison timestamp was given",
-        }
-    comparison_dt = _parse_timestamp(comparison_at)
-    if comparison_dt is None:
-        return {
-            "state": CITATION_COULD_NOT_CHECK,
-            "cohort": cohort,
-            "reason": (
-                "the comparison timestamp {!r} could not be parsed as a "
-                "timezone-aware ISO 8601 timestamp -- a bare value with no `Z` "
-                "suffix and no explicit UTC offset is refused rather than "
-                "assumed to be UTC".format(comparison_at)
-            ),
-        }
     freeze_ats = _measured_freeze_ats(entries, cohort)
     if not freeze_ats:
         return {
