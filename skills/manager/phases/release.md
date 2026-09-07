@@ -33,7 +33,9 @@ Gates, each a call and not a feeling:
 
    The middle one is a measurement of an `on:` block, so re-read it from the op each release rather
    than remembering it: a workflow that gains a `push:` trigger moves to the blocking state with
-   nothing announcing it.
+   nothing announcing it. **A push run alone is not enough where the repo's own CI runs a reduced
+   push matrix (#1246)** — mechanics (finding the wider dispatch, waiting on it, re-reading
+   `gh-branch`) are `commands/release.md`'s own gate 1, the single source, not restated here.
 
    **Resolve the commit before you ask about it: `git rev-parse HEAD`, never an abbreviated sha.**
    That holds for whatever asks the forge which workflows ran — `gh-branch` above, or a raw

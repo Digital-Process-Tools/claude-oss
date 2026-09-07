@@ -359,8 +359,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # sweep gained one sentence naming CLAUDE.md's own currency marker as a
     # step the sweep does not catch, pointing at commands/release.md's own
     # gate 4 for the mechanics. Budget unchanged; still under it.
+    # Re-baselined for #1246: 9425 B became 9685 B -- gate 1 gained a pointer
+    # sentence naming that a push-triggered run alone does not satisfy it in a
+    # repo whose own CI runs a reduced push matrix, with the mechanics left in
+    # commands/release.md's own gate 1 (the single source, per #321's rule
+    # for gate 3). Budget unchanged; still under it.
     "skills/manager/phases/release.md": (
-        9425,
+        9685,
         9800,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),

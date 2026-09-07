@@ -58,16 +58,19 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    with nothing announcing it. Which workflow it is, is a per-repo fact and belongs in no document
    here.
 
-   **A push-triggered run alone does not satisfy this gate when the repo's own CI runs a reduced
-   matrix on ordinary pushes (#1246).** Check `.github/workflows/tests.yml`'s own `on:
-   workflow_dispatch: inputs:` block for a `full_matrix`-shaped input before relying on this
-   shortcut — its presence is per-repo, like everything else in this gate, and is read rather than
-   assumed. Where it exists, the push-triggered run for the commit being tagged is the *reduced*
-   matrix by design, and gate 1 is satisfied only by also dispatching, and reading, the full one:
+   **A push-triggered run alone does not satisfy this gate in a repo whose own CI runs a reduced
+   matrix on ordinary pushes and reserves fuller coverage for a manual dispatch — this repository is
+   one instance of exactly that shape (#1246), and it is a per-repo fact rather than something to
+   assume here.** Read the workflow file and the dispatch input from `.github/workflows/*.yml`
+   itself at the time of the release, the same way every other fact in this gate is read rather than
+   named: look for an `on: workflow_dispatch: inputs:` entry that requests wider coverage than the
+   push/pull_request trigger runs. Where one exists, the push-triggered run for the commit being
+   tagged is not the full picture, and gate 1 is satisfied only by also dispatching, and reading, the
+   wider one:
 
    ```bash
    git rev-parse HEAD
-   gh workflow run tests.yml --ref <default_branch> -f full_matrix=true
+   gh workflow run <workflow file> --ref <default_branch> -f <dispatch input>=<value requesting full coverage>
    ```
 
    Dispatch immediately after the commit lands on the default branch, so `--ref <default_branch>`
@@ -76,8 +79,16 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    the same way any other CI wait in this loop is done (`skills/manager/phases/ci-green.md`), and
    re-read `gh-branch` for the tagged commit afterward rather than trusting the dispatch's own exit
    code: two runs of the same workflow can now exist on one commit — the push-triggered reduced one
-   and the dispatched full one — and gate 1 is satisfied only once the full one is green, not by the
-   reduced one alone reporting green first.
+   and the dispatched wider one — and gate 1 is satisfied only once the wider one is green, not by
+   the reduced one alone reporting green first.
+
+   **A matrix reduction that drops a leg's job name is also a branch-protection fact, and it lives
+   outside every file this loop reads.** If any of the dropped legs was configured as a required
+   status check, pull requests wait forever for a check nothing will ever report again — silently,
+   with no red anywhere this gate can see. Sweep the repo's own required-status-check list against
+   the workflow's current job names whenever a matrix shrinks or renames a leg, and update it in the
+   same change; this is a GitHub Settings fact, not a tracked file, so nothing here can check it for
+   you.
 2. **Nothing in flight is mid-review.**
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean, findings, or
    **could not run**. An audit that did not execute must never render as an audit that found nothing.
