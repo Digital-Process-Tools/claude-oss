@@ -36,6 +36,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 
+import import_closure  # noqa: E402
 import launcher_env  # noqa: E402
 import shell_probe  # noqa: E402
 
@@ -50,29 +51,38 @@ GIT = shutil.which("git")
 DOCTOR_MODE = 0o644
 
 #: Everything `scripts/workspace_routes.py` imports, directly or (through
-#: `oss_state.py`) transitively -- same reasoning as the doctor-route
-#: suite's own `_REAL_MODULES`: omit one and `import workspace_routes` itself
-#: raises `ModuleNotFoundError` inside the launcher's own subprocess, which
-#: is a real, separate state (`could not evaluate`), not one to trip into by
-#: accident here.
-_REAL_MODULES = [
-    "doctor.py",
-    "oss_config.py",
-    "oss_state.py",
-    "select_issues_rank.py",
-    "gh_which.py",
-    "workspace_routes.py",
-    "trap_curate.py",
-    "release_version.py",
-    # release_version.py imports this unconditionally at module scope, the
-    # same shape the doctor-route suite's own `_REAL_MODULES` comment
-    # documents for its own list -- omit it and `import workspace_routes`
-    # crashes with `ModuleNotFoundError`, found by running the launcher
-    # against this fixture directly during self-review.
-    "release_delta.py",
+#: `oss_state.py` and, since #1237, the doctor route's own `import doctor`
+#: pulled in by the same fixture) transitively -- derived by
+#: `import_closure.py` rather than hand-listed, the identical mechanism the
+#: doctor-route suite (`test_workspace_doctor_route_receipt_1064.py`, #1229
+#: follow-up) already uses for the same reason: a hand-kept list is exactly
+#: the gap that shipped once already there, and this file carried it
+#: silently until #1237 found `doctor` -> `doctor_check_lane_patterns` ->
+#: `lane_pattern_coverage` -> `select_issues_overlap` reaching modules this
+#: list never named, so `import doctor` inside `bin/oss-workspace`'s own
+#: doctor-route logic (which this fixture also exercises, quietly, ahead of
+#: the new block under test) raised `ModuleNotFoundError` and the launcher
+#: failed open with none of this file's five tests noticing. Omit a module
+#: from the closure's reach and `import workspace_routes`, or `import
+#: doctor`, raises `ModuleNotFoundError` inside the launcher's own
+#: subprocess -- a real, separate state (`could not evaluate`), not one to
+#: trip into by accident here.
+_SEED_MODULES = [
+    "doctor",
+    "oss_config",
+    "oss_state",
+    "select_issues_rank",
+    "gh_which",
+    "workspace_routes",
+    "trap_curate",
+    "release_version",
+    "release_delta",
 ]
-_REAL_MODULES += sorted(
-    p.name for p in (REPO_ROOT / "scripts").glob("doctor_check_*.py")
+_REAL_MODULES = sorted(
+    name + ".py"
+    for name in import_closure.local_import_closure(
+        _SEED_MODULES, REPO_ROOT / "scripts"
+    )
 )
 
 
@@ -108,7 +118,14 @@ def _doctor(log, body, status=0):
     )
 
 
-def _plugin(tmp_path, doctor_body=_OK_DOCTOR_BODY):
+def _plugin(tmp_path, doctor_body=_OK_DOCTOR_BODY, omit_module=None):
+    """Build the fake plugin root. `omit_module` (a bare name, e.g.
+    "select_issues_overlap") drops one module from the derived closure's own
+    copy list -- the positive control for the `run()` assertion below: a
+    fixture built with a module genuinely missing from the closure's reach
+    must make `import doctor` (or `import workspace_routes`) fail loudly
+    inside the launcher, proving the assertion can fire and is not a
+    "must not fire" case with nothing pairing it (#1237 self-review)."""
     root = tmp_path / "_plugin"
     (root / "bin").mkdir(parents=True)
     (root / "scripts").mkdir(parents=True)
@@ -118,6 +135,8 @@ def _plugin(tmp_path, doctor_body=_OK_DOCTOR_BODY):
     path.write_text(_doctor(log, doctor_body), encoding="utf-8")
     path.chmod(DOCTOR_MODE)
     for name in _REAL_MODULES:
+        if omit_module is not None and name == omit_module + ".py":
+            continue
         shutil.copy2(str(REPO_ROOT / "scripts" / name), str(root / "scripts" / name))
     return root
 
@@ -166,7 +185,29 @@ def run(repo, plugin_root):
     argv = (
         argv_log.read_text(encoding="utf-8").splitlines() if argv_log.exists() else []
     )
+    # #1237: a module missing from `_SEED_MODULES`'s closure does not fail
+    # any of this file's own assertions -- the launcher fails open and every
+    # route falls back to `/oss:tick`, which is what "no threshold
+    # configured" already asserts. So assert here, once, for every test that
+    # calls `run()`: this fixture's own `import doctor` (the doctor-route
+    # logic every one of these cases also exercises, ahead of the new block
+    # under test) must never raise inside the launcher's subprocess.
+    assert "ModuleNotFoundError" not in done.stderr, done.stderr
     return done, argv
+
+
+def test_a_missing_transitive_module_makes_the_new_assertion_fire(tmp_path):
+    """MUST FIRE -- the positive control for `run()`'s own `ModuleNotFoundError`
+    assertion (#1237 self-review): with `select_issues_overlap.py` deliberately
+    dropped from the fake plugin root's copy (a real transitive dependency of
+    `doctor.py`, via `doctor_check_lane_patterns` -> `lane_pattern_coverage`),
+    the launcher's own `import doctor` must raise inside its subprocess, and
+    `run()`'s assertion must catch it rather than let a broken fixture pass
+    silently the way this file's fixture did before #1237."""
+    root = _plugin(tmp_path, omit_module="select_issues_overlap")
+    repo = _repo(tmp_path / "repo")
+    with pytest.raises(AssertionError, match="ModuleNotFoundError"):
+        run(repo, root)
 
 
 def test_no_threshold_configured_opens_the_ordinary_tick(tmp_path):
