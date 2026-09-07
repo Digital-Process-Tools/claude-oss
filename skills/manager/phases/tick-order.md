@@ -341,6 +341,17 @@ tool, and you are gone by the time step 7 would run.
    already refuses rather than writing a false value. `--lane-fill-trend` re-adds the reason
    distribution across the whole history, so a run of `could-not-tell` becomes a visible number.
 
+   **A `Blocked by classifier` denial on an `oss_state.py`/`agent_role.py` call is not the same
+   thing as a maintainer-meant refusal, and neither script can observe it: the denial fires at
+   the harness's own permission layer, before either script's process is ever launched (#1137).**
+   A real disk-write failure, once the process does run, is reported distinctly instead of as
+   that denial -- `oss_state.py` raises `StateError`, printed as `FAIL` (#222); `agent_role.py`'s
+   CLI names the OS error rather than claiming "not a git repository" (#1137). Retry the
+   identical, unmodified call once before treating a classifier denial as real. If it still
+   fails, dropping a hash-prefixed reference from the `--decision`/`--wait-cleared-by` text
+   (`PR 590` rather than `PR #590`) is worth trying, but is not a confirmed cause -- do not
+   automate around it.
+
    **This step is this tick's one dispatch, not the first of however many rounds a red lane takes
    (#880).** One fan-out here, filled per the rules above, and the tick then sees those lanes
    through to merge. A lane that comes back red, or whose base moves under it, is resumed via

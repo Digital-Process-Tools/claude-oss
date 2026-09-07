@@ -230,6 +230,48 @@ def _marker_path(root: str = ".") -> Path | None:
     return git_dir / MARKER_NAME
 
 
+#: `_write_role_marker_detail`/`_clear_role_marker_detail`'s own three states
+#: (#1137). `write_role_marker`/`clear_role_marker` collapse all of this to a
+#: bool for every existing caller -- that contract is unchanged below -- but
+#: the CLI's own message used to print "not inside a git repository" for
+#: NOT_A_REPO and OS_ERROR alike, so a real write/unlink failure inside a
+#: perfectly good repository (permissions, a full disk, a read-only mount)
+#: was reported with a cause that was not the one that happened. That is
+#: this repository's own named defect class -- an absence rendered as a
+#: different, wrong, but confident answer -- one level down from where #1137
+#: itself was filed (a harness-level permission denial neither script can
+#: see at all): once the process *is* running, a real disk failure inside it
+#: must not be reported as if the repository were not there.
+_MARKER_OK = "ok"
+_MARKER_CLEARED = "cleared"
+_MARKER_NOT_A_REPO = "not-a-repo"
+_MARKER_ABSENT = "absent"
+_MARKER_OS_ERROR = "os-error"
+
+
+def _write_role_marker_detail(role, root=".", written_at=None):
+    """`write_role_marker`'s own work, plus which of three things happened.
+
+    Returns `(state, exc)`: `_MARKER_OK` (written, `exc` is `None`),
+    `_MARKER_NOT_A_REPO` (`root` is not inside a git repository this
+    process can ask about, `exc` is `None`), or `_MARKER_OS_ERROR` (the
+    repository was found and the write itself failed, `exc` is the
+    `OSError`). Only this function's caller -- the CLI -- reads the
+    distinction; every other caller uses `write_role_marker`'s bool.
+    """
+    path = _marker_path(root)
+    if path is None:
+        return _MARKER_NOT_A_REPO, None
+    if written_at is None:
+        written_at = time.time()
+    payload = {"role": role.strip(), "written_at": written_at}
+    try:
+        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+    except OSError as exc:
+        return _MARKER_OS_ERROR, exc
+    return _MARKER_OK, None
+
+
 def write_role_marker(
     role: str, root: str = ".", written_at: float | None = None
 ) -> bool:
@@ -239,22 +281,36 @@ def write_role_marker(
     to construct an already-stale marker deterministically rather than
     sleeping past `MARKER_TTL_SECONDS`; a real caller never passes it.
 
-    Returns whether the write happened -- `False` when `root` is not inside
-    a git repository this process can ask about, rather than raising, so a
-    caller in a plain (non-git) directory gets a value to check instead of
-    a crash on a release path.
+    Returns whether the write happened -- `False` for both "`root` is not
+    inside a git repository this process can ask about" and "the write
+    itself failed", rather than raising, so a caller in a plain (non-git)
+    directory gets a value to check instead of a crash on a release path.
+    The CLI tells the two `False` causes apart via
+    `_write_role_marker_detail`; this function's own contract -- a plain
+    bool -- is unchanged.
+    """
+    state, _exc = _write_role_marker_detail(role, root=root, written_at=written_at)
+    return state == _MARKER_OK
+
+
+def _clear_role_marker_detail(root="."):
+    """`clear_role_marker`'s own work, plus which of three things happened.
+
+    Returns `(state, exc)`: `_MARKER_CLEARED` (a file was removed, `exc` is
+    `None`), `_MARKER_ABSENT` (no marker was there, or `root` is not inside
+    a git repository -- the two `clear_role_marker` itself does not tell
+    apart either, `exc` is `None`), or `_MARKER_OS_ERROR` (a marker was
+    found and the removal itself failed, `exc` is the `OSError`). Only this
+    function's caller -- the CLI -- reads the distinction.
     """
     path = _marker_path(root)
-    if path is None:
-        return False
-    if written_at is None:
-        written_at = time.time()
-    payload = {"role": role.strip(), "written_at": written_at}
+    if path is None or not path.is_file():
+        return _MARKER_ABSENT, None
     try:
-        path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
-    except OSError:
-        return False
-    return True
+        path.unlink()
+    except OSError as exc:
+        return _MARKER_OS_ERROR, exc
+    return _MARKER_CLEARED, None
 
 
 def clear_role_marker(root: str = ".") -> bool:
@@ -263,16 +319,13 @@ def clear_role_marker(root: str = ".") -> bool:
     Returns whether a file was actually removed -- `False` for both "no
     marker was there" and "root is not inside a git repository", so a
     caller cannot tell those apart from the return value alone, but a
-    caller that only wants "is a marker gone now" gets exactly that.
+    caller that only wants "is a marker gone now" gets exactly that. A
+    third cause -- a marker was found and the removal itself failed --
+    also renders `False` here; the CLI tells it apart via
+    `_clear_role_marker_detail`.
     """
-    path = _marker_path(root)
-    if path is None or not path.is_file():
-        return False
-    try:
-        path.unlink()
-    except OSError:
-        return False
-    return True
+    state, _exc = _clear_role_marker_detail(root=root)
+    return state == _MARKER_CLEARED
 
 
 def _read_marker(root: str = ".") -> dict:
@@ -421,16 +474,31 @@ def main(argv=None) -> int:
         return 2
 
     if args.clear:
-        removed = clear_role_marker(root=args.root)
-        print("cleared" if removed else "nothing to clear for {0!r}".format(args.root))
+        state, exc = _clear_role_marker_detail(root=args.root)
+        if state == _MARKER_OS_ERROR:
+            print(
+                "could not clear the role marker for {0!r}: {1} -- the "
+                "marker may still be on disk".format(args.root, exc)
+            )
+            return 1
+        print(
+            "cleared"
+            if state == _MARKER_CLEARED
+            else "nothing to clear for {0!r}".format(args.root)
+        )
         return 0
 
     if args.write is not None:
-        ok = write_role_marker(args.write, root=args.root)
-        if not ok:
+        state, exc = _write_role_marker_detail(args.write, root=args.root)
+        if state == _MARKER_NOT_A_REPO:
             print(
                 "could not write the role marker for {0!r} -- not inside a "
                 "git repository this process can ask about".format(args.root)
+            )
+            return 1
+        if state == _MARKER_OS_ERROR:
+            print(
+                "could not write the role marker for {0!r}: {1}".format(args.root, exc)
             )
             return 1
         print("wrote role {0!r} for {1!r}".format(args.write.strip(), args.root))
