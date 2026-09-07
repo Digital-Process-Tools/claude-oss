@@ -409,7 +409,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/SKILL.md` | 41,601 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 53,209 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
-| `skills/manager/phases/accounting.md` | 20,894 B | 23,000 B |
+| `skills/manager/phases/accounting.md` | 21,569 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 33,396 B | 36,000 B |
 | `skills/manager/phases/release.md` | 9,425 B | 9,800 B |
 | `skills/manager/phases/review.md` | 10,353 B | 11,400 B |
@@ -480,7 +480,11 @@ closing a structural gap where `v0.25.0`'s marker cited cohort-21's count inside
 *before* cohort-21's own freeze ran (the freeze runs after the tag; the marker is written before
 it), and the two numbers (30 cited, 32 actually applied) disagreed. Nothing already in the file
 argued that point, so nothing was cut to make room; ceiling moved to 23,000 B, ~10% headroom over
-the new size.
+the new size. Re-baselined again in the same lane's own self-review round: 20,894 B became
+21,569 B after a reviewer spawn found "settled count" ambiguous between the recorded freeze
+decision and a fresh recount taken later, once a cohort has shrunk further -- fixed by naming the
+recorded `froze <cohort> at N` decision as the one to quote rather than a re-run of the check.
+Ceiling unchanged; comfortably under it.
 
 **`merge.md`'s budget was raised for #1007**, which closes the race a tick's own cleanup
 guard was overridden through: 10,012 B measured became 13,198 B. The new bullet states two
@@ -725,6 +729,16 @@ fixes above but replaced on the board by their own non-blocking siblings and fol
 `#1165` closed, `#1166`/`#1169`/`#1170`/`#1175` still open). That is now three consecutive cohorts
 that grew, which is a trend rather than an artefact, and this release's own gate 3 is a visibly
 larger contributor to it than `v0.25.0`'s was.
+
+**This citation is itself an instance of the exact defect #1122 fixes, written before that fix
+existed.** Cohort-22 did not exist yet at the moment this marker was committed -- its freeze runs
+at `v0.26.0`'s own tag, strictly after this commit -- so "42" here was a number taken before the
+freeze it claims to report, the same premature measurement `v0.25.0`'s marker made for cohort-21
+(cited 30, applied 32). #1122's fix governs the marker written for the release that follows this
+one onward; it does not rewrite this one, because doing so would misdate prose that already
+shipped as read at the time it was written. The honest correction lands where the rule now says it
+must: the next release's own marker cites cohort-22's settled count, once its freeze has actually
+run, in place of guessing its own not-yet-frozen cohort's.
 
 **The reach probe was NOT re-derived at `v0.26.0`** -- it is still `v0.21.0`'s, measured at `c565488`,
 eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of the field

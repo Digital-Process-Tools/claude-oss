@@ -88,6 +88,14 @@ misalignment and only labels it, where deferring the citation removes it, at the
 marker always naming last cycle's cohort rather than the newest one -- a trade this file takes
 because a stale-but-honest number is worse than one that is simply a cycle behind and will settle.
 
+**"Settled count" names the number the two-route check already agreed on and recorded at freeze
+time — the `froze <cohort> at N` decision (`detail.cohort_freeze`) in the state file — never a
+fresh recount taken at citation time.** A cohort only shrinks, so a recount run months later can
+read lower than the frozen figure without either number being wrong, and citing whichever one was
+run most recently would silently swap "the number this loop committed to" for "the number today
+happens to show." Look the prior freeze's own decision up and quote it verbatim; do not re-run
+`oss_state.py`'s `cohort_freeze` against the cohort a second time expecting the same answer.
+
 ### Intake: filings per merged pull request
 
 The cohort measures the drain. This measures the fill, and without it the board's growth is a

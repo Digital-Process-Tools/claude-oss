@@ -594,3 +594,8 @@ before saying the release is done.
 At the tag, label everything then-open as a frozen cohort — in the same minute, by hand. Nothing
 joins a cohort ever, so it can only shrink. This is the maintainer's act; the triager must never
 write one.
+
+This freeze runs strictly *after* the tag it labels, and the marker gate above is written *before*
+that same tag exists — so the cohort this step is about to create is never the one the marker gate
+cites. See `skills/manager/phases/accounting.md`'s cohort-citation rule (#1122) for which cohort the
+marker may name.

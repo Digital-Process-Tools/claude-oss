@@ -383,7 +383,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # the two numbers (30 cited, 32 applied) disagreed. Nothing already
         # in the file argued that point, so nothing was cut to make room;
         # ceiling moved to 23000 B, ~10% headroom over the new size.
-        20894,
+        # Re-baselined in the same lane's self-review round: 20894 B became
+        # 21569 B after a reviewer spawn found the new rule left "settled
+        # count" ambiguous between the recorded freeze decision and a fresh
+        # recount -- fixed by naming the recorded `froze <cohort> at N`
+        # decision as the one to quote. Comfortably under the 23000 B
+        # ceiling; ceiling unchanged.
+        21569,
         23000,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
