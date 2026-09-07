@@ -287,7 +287,7 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 40,699 B | 44,100 B |
+| `agents/developer.md` | 41,206 B | 44,100 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,082 B | 16,600 B |
@@ -414,7 +414,7 @@ only the lane can report.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer/review.md` | 10,576 B | 11,600 B |
+| `agents/developer/review.md` | 11,486 B | 11,600 B |
 | `agents/developer/review-return.md` | 12,465 B | 13,700 B |
 | `agents/developer/report.md` | 17,401 B | 19,100 B |
 
