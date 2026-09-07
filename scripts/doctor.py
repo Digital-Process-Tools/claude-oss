@@ -2820,6 +2820,13 @@ from doctor_check_branch_protection import (
     check_branch_protection,
 )
 
+# #1181: same convention, same reason -- see
+# scripts/doctor_check_lane_other_label.py.
+from doctor_check_lane_other_label import (
+    lane_other_label_state,
+    check_lane_other_label,
+)
+
 # #760: same convention, same reason -- see
 # scripts/doctor_check_security_alerts.py.
 from doctor_check_security_alerts import (
@@ -9145,6 +9152,10 @@ def main(argv=None):
     # /oss:setup ran must be visible before a tick spends a whole board read pretending
     # it is picking issues, not only after somebody notices the order never moves.
     check_filed_by_loop(project_dir, config)
+    # #1181: same local gating as check_label_vocabulary/check_filed_by_loop
+    # (gh on PATH, repo/origin resolvable) -- does the declared
+    # labels.lane_other spelling actually exist as a label on the forge?
+    check_lane_other_label(project_dir, config)
     # #759: "merge on green" is only a real guarantee if the default branch
     # actually requires green checks. Same local gating as check_label_vocabulary
     # (gh on PATH, repo/origin resolvable), report-only -- see check_branch_

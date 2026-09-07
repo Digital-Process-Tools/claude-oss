@@ -51,12 +51,18 @@ def test_a_cache_missing_a_count_is_unknown_for_that_count_alone():
 
 
 def test_gh_unlabelled_issue_counts_reads_declared_spellings(monkeypatch):
-    """Two axes, counted independently off the same page of open issues (#1079)."""
+    """Two axes, counted independently off the same page of open issues (#1079).
+
+    Wire format updated for #1226: one JSON array of label names per line
+    (`tojson`, server-side), not the earlier `"L:" + join(",")` scheme -- see
+    tests/test_statusline_gh_unlabelled_issue_counts_1226.py for the comma-name
+    defect that format change closes.
+    """
     calls = []
 
     def fake_run(command, timeout=5):
         calls.append(command)
-        return "L:priority-high,lane-doctor\nL:\nL:lane-prose"
+        return '["priority-high","lane-doctor"]\n[]\n["lane-prose"]'
 
     monkeypatch.setattr(statusline, "_run", fake_run)
     counts = statusline._gh_unlabelled_issue_counts(
@@ -75,7 +81,7 @@ def test_gh_unlabelled_issue_counts_never_sums_the_two_axes(monkeypatch):
     """The issue's own instruction, asserted directly: an issue missing both a
     priority and a lane label must show up in both counts, not be double-counted
     into one -- there is no shared 'unlabelled' number to add them into."""
-    monkeypatch.setattr(statusline, "_run", lambda command, timeout=5: "L:")
+    monkeypatch.setattr(statusline, "_run", lambda command, timeout=5: "[]")
     counts = statusline._gh_unlabelled_issue_counts(
         "owner/repo", 1, ["priority-high"], ["lane-doctor"]
     )
@@ -83,14 +89,15 @@ def test_gh_unlabelled_issue_counts_never_sums_the_two_axes(monkeypatch):
 
 
 def test_gh_unlabelled_issue_counts_survives_a_trailing_unlabelled_issue(monkeypatch):
-    """The must-fire control for the `L:` prefix itself. `_run` strips trailing
-    whitespace off the whole blob, so a naive bare-comma-list line for the LAST
-    open issue in the page being genuinely label-less would vanish along with the
-    trailing newline, undercounting `lines` against `total` and folding a page
-    that was read completely into `None`. Prefixing every line makes none of them
-    empty, so the trailing one survives the strip."""
+    """The must-fire control for `[]` never being an empty line the way the old
+    bare comma-joined format could be. `_run` strips trailing whitespace off the
+    whole blob, so a naive bare-comma-list line for the LAST open issue in the
+    page being genuinely label-less would vanish along with the trailing
+    newline, undercounting `lines` against `total` and folding a page that was
+    read completely into `None`. `tojson` never produces an empty line for zero
+    labels (`[]` is four bytes), so the trailing one survives the strip."""
     monkeypatch.setattr(
-        statusline, "_run", lambda command, timeout=5: "L:priority-high\nL:"
+        statusline, "_run", lambda command, timeout=5: '["priority-high"]\n[]'
     )
     counts = statusline._gh_unlabelled_issue_counts(
         "owner/repo", 2, ["priority-high"], []
@@ -102,7 +109,7 @@ def test_gh_unlabelled_issue_counts_is_none_when_the_page_disagrees_with_the_tot
     monkeypatch,
 ):
     monkeypatch.setattr(
-        statusline, "_run", lambda command, timeout=5: "L:priority-high"
+        statusline, "_run", lambda command, timeout=5: '["priority-high"]'
     )
     counts = statusline._gh_unlabelled_issue_counts(
         "owner/repo", 5, ["priority-high"], ["lane-doctor"]
@@ -127,7 +134,7 @@ def test_gh_unlabelled_issue_counts_leaves_an_undeclared_axis_none(monkeypatch):
     """A repo with only priority spellings declared cannot answer the lane half --
     that half is `None`, not `0`, because nothing was measured for it."""
     monkeypatch.setattr(
-        statusline, "_run", lambda command, timeout=5: "L:priority-high"
+        statusline, "_run", lambda command, timeout=5: '["priority-high"]'
     )
     counts = statusline._gh_unlabelled_issue_counts(
         "owner/repo", 1, ["priority-high"], []

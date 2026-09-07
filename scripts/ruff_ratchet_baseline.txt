@@ -7,6 +7,7 @@ scripts/doctor.py	F401	`doctor_check_clone_head.clone_head_state` imported but u
 scripts/doctor.py	F401	`doctor_check_codeql_scan.codeql_scan_state` imported but unused
 scripts/doctor.py	F401	`doctor_check_fragments_readme.COMPATIBILITY_BULLET` imported but unused
 scripts/doctor.py	F401	`doctor_check_fragments_readme._fragments_directory` imported but unused
+scripts/doctor.py	F401	`doctor_check_lane_other_label.lane_other_label_state` imported but unused
 scripts/doctor.py	F401	`doctor_check_mcp_channel_registration._MCP_ARGS_RE` imported but unused
 scripts/doctor.py	F401	`doctor_check_mcp_channel_registration.channel_consumer_census_state` imported but unused
 scripts/doctor.py	F401	`doctor_check_mcp_channel_registration.channel_consumer_names` imported but unused

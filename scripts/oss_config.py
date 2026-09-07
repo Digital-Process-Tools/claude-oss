@@ -1466,6 +1466,48 @@ def classify_labels(labels):
     return classified
 
 
+def effective_lane_labels(config):
+    """The full set of label spellings a "this issue has a completed triage
+    decision about which lane owns it" reader should treat as a lane --
+    `labels.lanes` plus `labels.lane_other` when declared (#1181).
+
+    `labels.lane_other` is deliberately its own key rather than a sixth entry
+    in `labels.lanes` (#1130): it carries no file pattern of its own, and
+    `select_issues.py`'s dispatch logic special-cases it (dispatched solo,
+    never bundled) precisely because it is not an ordinary lane. But "is this
+    issue triaged into a lane" is a different question from "does this lane
+    have files", and #1181 found four readers answering that different
+    question four different ways -- `classify_labels` above matches a
+    `lane-other`-shaped name as a lane unconditionally via its prefix regex,
+    `select_issues.py`'s own fleet already folds a declared `lane_other` in
+    beside the declared lanes (see its module docstring's "## Fleet"
+    section), and `scripts/statusline.py` used to test only exact membership
+    in `labels.lanes`, excluding a declared `lane_other` and reporting every
+    correctly-triaged `lane-other` issue as untriaged. This is the one place
+    a caller holding a loaded config derives the answer, so it never has to
+    be re-decided per reader. `scripts/statusline.py` is vendored standalone
+    and cannot import this module (#653's own precedent), so it mirrors this
+    same result locally instead -- see its own docstring for that copy.
+
+    Order: `labels.lanes` first, as declared, then `labels.lane_other`
+    appended once if it is a non-blank string not already in that list.
+    `null`/absent/blank `lane_other` contributes nothing, matching its own
+    opt-in, null-is-fine validation.
+    """
+    labels = config.get("labels") if isinstance(config, dict) else None
+    labels = labels if isinstance(labels, dict) else {}
+    raw_lanes = labels.get("lanes")
+    lanes = (
+        [l for l in raw_lanes if isinstance(l, str)]
+        if isinstance(raw_lanes, list)
+        else []
+    )
+    lane_other = labels.get("lane_other")
+    if isinstance(lane_other, str) and lane_other.strip() and lane_other not in lanes:
+        lanes.append(lane_other)
+    return lanes
+
+
 def _toml_section_version(text, section):
     """True when ``[section]`` in a TOML document carries a version-shaped value.
 
