@@ -365,6 +365,7 @@ def test_a_file_that_does_not_parse_is_reported_as_unscannable_not_as_clean(tmp_
 # --- the sweep itself ----------------------------------------------------------------
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked test files; same on every OS/interpreter
 def test_the_sweep_reached_this_suite_at_all():
     """The positive control for the two assertions below: an analyzer that matched
     nothing would pass both of them while measuring nothing. The floor is set well
