@@ -858,6 +858,7 @@ def test_a_stale_exception_is_detected():
 # --------------------------------------------------------------------------
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked files; same on every OS/interpreter
 def test_every_exception_is_still_needed():
     """An exception list that has drifted is a licence rather than a decision."""
     tracked = _tracked_files()
@@ -890,6 +891,7 @@ def test_the_survey_actually_looked_at_something():
     )
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked files; same on every OS/interpreter
 def test_nothing_in_the_surveyed_directories_is_referenced_by_nothing():
     tracked = _tracked_files()
     unwired, unsearchable, absent = survey_unwired(REPO_ROOT, tracked)
@@ -933,6 +935,7 @@ def test_nothing_in_the_surveyed_directories_is_referenced_by_nothing():
     )
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked files; same on every OS/interpreter
 def test_unsearchable_files_are_surfaced_rather_than_silent():
     """The third state gets a voice without a false red.
 
@@ -953,6 +956,7 @@ def test_unsearchable_files_are_surfaced_rather_than_silent():
         )
 
 
+@pytest.mark.invariant  # #1176: reads this repo's own tracked files; same on every OS/interpreter
 def test_absent_files_are_surfaced_rather_than_silent():
     """#396's third state gets a voice of its own, on the ordinary green run.
 
