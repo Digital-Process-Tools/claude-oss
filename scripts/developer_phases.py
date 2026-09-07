@@ -71,7 +71,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # row routes to trap.d/ instead) landed everywhere else this diff
         # touches. Too small an overage to trim something else to absorb,
         # so the ceiling moved with ~10% headroom over the new size.
-        10576,
+        # Re-baselined for #1248: 10576 B became 11486 B. Added an instruction
+        # against opening a self-review finding by quoting/negating the
+        # NO FINDINGS sentinel as a rhetorical denial, since review_return.py
+        # classifies that combination could-not-classify. Ceiling unchanged.
+        11486,
         11600,
         "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
     ),

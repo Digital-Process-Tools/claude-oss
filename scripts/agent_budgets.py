@@ -56,7 +56,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # in the same diff so this class of drift is caught going forward rather
     # than re-discovered by hand again. Budgets (the ceilings) are unchanged;
     # every file measured here was already comfortably under its own.
-    "agents/developer.md": (40699, 44100),
+    # Re-baselined for #1247/#1248: 40699 B became 41206 B. Widened the
+    # changelog-assembler location guidance from two canonical to two common
+    # locations plus a resolves-in-tree fallback, and added an instruction
+    # against opening a self-review finding by quoting/negating the
+    # NO FINDINGS sentinel. Ceiling unchanged; comfortably under it.
+    "agents/developer.md": (41206, 44100),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each

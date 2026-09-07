@@ -90,6 +90,17 @@ full** — or opens with `NO FINDINGS` and names what was checked. **Do not coun
 counting by eye is the step that fails silently. `FINDINGS: 2` followed by one stated finding is not
 a review with one finding, it is a review that lost one.
 
+**Tell both spawns not to open with the sentinel string used as a denial, even rhetorically.** A
+message opening a line "NO FINDINGS would not be accurate here" before a later, genuine
+`FINDINGS: 3` header carries both strings at line start, and `scripts/review_return.py`'s own
+regexes anchor there -- so the classifier cannot tell a rhetorical negation from a real claim and
+reports `could-not-classify` rather than guess which one governs (#1248, observed in another
+managed repo's own self-review). The two regexes only match a line whose leading characters are
+plain, `>`, `*`, `_` or `#` -- a backtick at the line's start is none of those, so quoting the
+sentinel in backticks changes what the classifier reads and is not a safe way to reference it
+either. State the real verdict header — `FINDINGS: <n>` or `NO FINDINGS` — as the message's first
+line, plain, and argue anything else only after it.
+
 **Say plainly what this is: this fix is a request to the spawn, not a boundary on it.** Nothing this
 repository ships sits between a sub-agent's final message and your context. A tool grant is what
 binds and a sentence in a brief is not, so the header is a convention the reviewer may simply not

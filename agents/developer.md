@@ -292,26 +292,32 @@ it a second way — grep the new content back — before saying it.
    you commit, and paste what it said.** `test_command` is `pytest`; the thing that judges a
    fragment is `assemble_changelog.py`, a CI leg pytest never touches. An entry naming its issue only
    in the **filename** (`274.fixed.md`, body silent) passes a green suite and is refused on the
-   `fragment` leg. Locate the assembler the same two places, in the same order, this repo's own
-   `oss_rules.assembler_path()` checks: `.oss/assemble_changelog.py`, else
+   `fragment` leg. Locate the assembler by checking, in order, this repo's own
+   `oss_rules.assembler_path()`'s two candidates: `.oss/assemble_changelog.py`, else
    `scripts/assemble_changelog.py`. Found at either: run `python3 <that path> --check` from inside
    your worktree. It is a plain read: it derives its own root by walking up for `.git` and needs
    neither `--dir` nor `--changelog` in this mode, unlike the fold, which refuses without both
    (`CLAUDE.md`'s `assemble_changelog.py` trap). A refusal names the fragment and the line; fix it
    and re-run rather than guessing.
 
-   **Neither candidate existing is not the same claim as "this repo has no fragment checker."**
-   `assembler_path()` only ever looks at those two canonical locations, so its `None` means "not at
-   either one," not "not wired anywhere" (#784). So when neither candidate exists, before you report
-   "no assembler here": grep `.github/workflows/` for an invocation of `assemble_changelog.py`.
-   Nothing there either — that is the genuine no-assembler state, and skipping is correct. A workflow
-   invokes it but you cannot find the script in the tree — that is **could-not-resolve**, not
-   no-assembler: say so in your report, name the workflow and what you searched, and never let it
-   render as the clean skip above. **A clean grep is not proof either** — a composite action or a
-   called/reusable workflow can invoke the script from outside `.github/workflows/`, where this grep
-   cannot see it. If a workflow references a composite action or a reusable workflow you did not
-   open, say could-not-resolve rather than no-assembler; only report no-assembler once you have
-   actually looked at what every such reference calls.
+   **Those two are the common locations, not an exhaustive set — a managed repo may wire the
+   assembler somewhere `assembler_path()` never looks.** One managed repo's checker was observed
+   living at `.github/scripts/assemble_changelog.py`, discoverable only by reading the workflow
+   that invokes it (#1247). Neither candidate existing is therefore not the same claim as "this repo
+   has no fragment checker" — `assembler_path()`'s `None` means "not at either of those two," not
+   "not wired anywhere" (#784). So when neither candidate exists, before
+   you report "no assembler here": grep `.github/workflows/` for an invocation of
+   `assemble_changelog.py`. Nothing there either — that is the genuine no-assembler state, and
+   skipping is correct. The invocation names a path that exists in the tree — run the assembler
+   there; that is the real checker, just wired somewhere the two fixed candidates do not cover, and
+   your report should say so rather than record a false no-assembler. The invocation names a path
+   you cannot find in the tree — that is **could-not-resolve**, not no-assembler: say so in your
+   report, name the workflow and what you searched, and never let it render as the clean skip above.
+   **A clean grep is not proof either** — a composite action or a called/reusable workflow can
+   invoke the script from outside `.github/workflows/`, where this grep cannot see it. If a workflow
+   references a composite action or a reusable workflow you did not open, say could-not-resolve
+   rather than no-assembler; only report no-assembler once you have actually looked at what every
+   such reference calls.
 
    This is not the only requirement here whose checker `test_command` cannot reach — the report
    itself has one, `report_schema.py`, named explicitly in `agents/developer/report.md` — but it is
