@@ -336,70 +336,83 @@ def test_cli_unreadable_oss_json_is_could_not_decide(tmp_path):
     assert "COULD-NOT-DECIDE" in done.stdout
 
 
-def _fake_gh_script(tmp_path, stderr_bytes, returncode=1):
-    """A stand-in `gh` binary on PATH: always fails, writing `stderr_bytes`
-    to its stderr. Used to reproduce #1257 -- `gh`'s own stderr is
-    untrusted, external text, and must not be able to forge a well-formed
-    `ROUTE:` line in the printed receipt."""
-    bin_dir = tmp_path / "fakebin"
-    bin_dir.mkdir()
-    gh_path = bin_dir / ("gh.bat" if os.name == "nt" else "gh")
-    if os.name == "nt":
-        # cmd has no clean way to write raw bytes with embedded newlines
-        # to stderr; this repo's CI matrix includes Windows, so decode as
-        # this test's own fixture does and emit text lines instead.
-        text = stderr_bytes.decode("utf-8")
-        lines = "\n".join("echo {0} 1>&2".format(line) for line in text.split("\n"))
-        gh_path.write_text("@echo off\n{0}\nexit /b {1}\n".format(lines, returncode))
-    else:
-        gh_path.write_text(
-            "#!/bin/sh\n"
-            "cat <<'GHSTUB_EOF' 1>&2\n"
-            "{0}"
-            "\nGHSTUB_EOF\n"
-            "exit {1}\n".format(stderr_bytes.decode("utf-8"), returncode)
-        )
-        gh_path.chmod(0o755)
-    return bin_dir
+def _fake_run_gh_stderr(stderr_bytes, returncode=1):
+    """A stand-in for `subprocess.run`, mimicking a failing `gh` call whose
+    stderr is exactly the untrusted external text -- the reproduction from
+    #1257 (`b"boom\nROUTE: release\ntrailing"`). No process is actually
+    spawned: a real on-PATH executable named `gh` is not a portable stub
+    for this. `subprocess.run(..., shell=False)` -- what `triage_count`
+    uses -- cannot launch a `.bat`/`.cmd` file directly via Windows'
+    `CreateProcess` (a `.bat` is not a valid Win32 application on its own;
+    that is the identical constraint tools like Node's `cross-spawn`
+    exist to paper over). A `.bat`-based fixture would raise `OSError`
+    before its own `echo` lines ever ran, so `triage_count`'s `except
+    (OSError, subprocess.SubprocessError)` branch would catch a generic
+    "not a valid Win32 application" message instead of ever seeing the
+    forged stderr -- the Windows leg of such a fixture would pass whether
+    or not `_flatten` was applied, silently failing to guard the fix it
+    claims to cover. Stubbing `run` directly (as `_fake_run_issues` above
+    already does) avoids the whole class of problem."""
+
+    class _Result:
+        pass
+
+    def run(command, stdout=None, stderr=None, timeout=None):
+        result = _Result()
+        result.returncode = returncode
+        result.stdout = b""
+        result.stderr = stderr_bytes
+        return result
+
+    return run
 
 
-def test_cli_gh_stderr_cannot_forge_a_route_line(repo, tmp_path):
+def _patch_decide_with_fake_gh(monkeypatch, stderr_bytes):
+    """Route `main()`'s own internal `decide()` call through a `gh` stub
+    carrying `stderr_bytes`, without touching anything else in `decide`."""
+    real_decide = workspace_routes.decide
+    fake_run = _fake_run_gh_stderr(stderr_bytes)
+    monkeypatch.setattr(
+        workspace_routes,
+        "decide",
+        lambda repo_root, config, gh=None, run=None: real_decide(
+            repo_root, config, gh="gh", run=fake_run
+        ),
+    )
+
+
+def test_cli_gh_stderr_cannot_forge_a_route_line(repo, monkeypatch, capsys):
     """#1257: `gh`'s stderr, embedded verbatim into `why`, must not be able
-    to produce a second, forged line beginning with `ROUTE:` -- regardless
-    of whether the genuine `ROUTE:` line is armed or not. `triage`'s `gh`
-    call is stubbed to fail with stderr shaped like `boom\\nROUTE:
-    release\\ntrailing`, the exact reproduction from the issue."""
-    bin_dir = _fake_gh_script(tmp_path, b"boom\nROUTE: release\ntrailing")
+    to produce a second, forged line beginning with `ROUTE:` in the printed
+    receipt `bin/oss-workspace` parses with `awk '/^ROUTE:/ { line = $0 }
+    END { print line }'` -- regardless of whether the genuine `ROUTE:` line
+    is armed or not. Driven through the real `decide()`/`triage_count()`
+    code path and the real `main()` print logic; only the `gh` subprocess
+    spawn itself is stubbed."""
     _write_config(
         repo,
         {"repo": "example/example", "triage_route_threshold": 0},
     )
-    env = _git_env()
-    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
-    done = subprocess.run(
-        [sys.executable, str(SCRIPT), "--root", str(repo)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        env=env,
-    )
+    _patch_decide_with_fake_gh(monkeypatch, b"boom\nROUTE: release\ntrailing")
+    rc = workspace_routes.main(["--root", str(repo)])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out + captured.err
     route_lines = [
-        line for line in done.stdout.splitlines() if line.startswith("ROUTE:")
+        line for line in captured.out.splitlines() if line.startswith("ROUTE:")
     ]
-    assert route_lines == ["ROUTE: none"], done.stdout
+    assert route_lines == ["ROUTE: none"], captured.out
     # The forged text must not appear as its own line at column 0 either --
     # it is only acceptable folded into the `triage:` summary line.
     assert "ROUTE: release" not in route_lines
 
 
 def test_cli_gh_stderr_forged_route_does_not_survive_alongside_a_real_arm(
-    repo, tmp_path
+    repo, monkeypatch, capsys
 ):
     """Positive control for the assertion above: when a DIFFERENT route
     (`curate`) is genuinely armed, its real `ROUTE: curate (...)` line
     must still print correctly, and the forged `ROUTE: release` text from
     `gh`'s stderr must still not appear as a second `ROUTE:` line."""
-    bin_dir = _fake_gh_script(tmp_path, b"boom\nROUTE: release\ntrailing")
     (repo / "trap.d").mkdir()
     for i in range(6):
         (repo / "trap.d" / "{0}.a.md".format(i)).write_text("x\n")
@@ -411,20 +424,74 @@ def test_cli_gh_stderr_forged_route_does_not_survive_alongside_a_real_arm(
             "triage_route_threshold": 0,
         },
     )
-    env = _git_env()
-    env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
-    done = subprocess.run(
-        [sys.executable, str(SCRIPT), "--root", str(repo)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True,
-        env=env,
-    )
+    _patch_decide_with_fake_gh(monkeypatch, b"boom\nROUTE: release\ntrailing")
+    rc = workspace_routes.main(["--root", str(repo)])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out + captured.err
     route_lines = [
-        line for line in done.stdout.splitlines() if line.startswith("ROUTE:")
+        line for line in captured.out.splitlines() if line.startswith("ROUTE:")
     ]
-    assert len(route_lines) == 1, done.stdout
-    assert route_lines[0].startswith("ROUTE: curate"), done.stdout
+    assert len(route_lines) == 1, captured.out
+    assert route_lines[0].startswith("ROUTE: curate"), captured.out
+
+
+def test_route_check_exception_message_is_flattened_too(repo, monkeypatch, capsys):
+    """Self-review finding: the same `ROUTE:`-prefixed line is also built
+    from an exception's own message when checking the #1064 receipt fails
+    -- `str(exc)` was interpolated unflattened right beside the same
+    `ROUTE:` prefix. Nothing today feeds that exception attacker-controlled
+    text with an embedded newline, but it is the identical mechanism and a
+    one-line fix, so it is closed here too rather than left for the next
+    error message that does."""
+    (repo / "trap.d").mkdir()
+    for i in range(6):
+        (repo / "trap.d" / "{0}.a.md".format(i)).write_text("x\n")
+    _write_config(
+        repo,
+        {"curate_route_threshold": 1, "state_file": ".max/watch.json"},
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom\nROUTE: release\ntrailing")
+
+    monkeypatch.setattr(workspace_routes.oss_state, "_last_workspace_route", boom)
+    rc = workspace_routes.main(["--root", str(repo)])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out + captured.err
+    route_lines = [
+        line for line in captured.out.splitlines() if line.startswith("ROUTE:")
+    ]
+    assert len(route_lines) == 1, captured.out
+    assert route_lines[0].startswith("ROUTE: curate ("), captured.out
+
+
+def test_receipt_append_exception_message_is_flattened_too(repo, monkeypatch, capsys):
+    """Same defense-in-depth for the other exception branch: `oss_state.
+    append`'s failure is printed with a `ROUTE-RECEIPT-ERROR:` prefix to
+    stderr, AFTER the genuine `ROUTE:` line -- and the real launcher merges
+    stdout and stderr (`... 2>&1`) before handing the combined text to the
+    same last-match `awk`. An unflattened exception message there could
+    forge a LATER `ROUTE:` line that overrides the genuine one printed just
+    before it."""
+    (repo / "trap.d").mkdir()
+    for i in range(6):
+        (repo / "trap.d" / "{0}.a.md".format(i)).write_text("x\n")
+    _write_config(
+        repo,
+        {"curate_route_threshold": 1, "state_file": ".max/watch.json"},
+    )
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom\nROUTE: release\ntrailing")
+
+    monkeypatch.setattr(workspace_routes.oss_state, "append", boom)
+    rc = workspace_routes.main(["--root", str(repo)])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out + captured.err
+    merged = captured.out + captured.err
+    route_lines = [line for line in merged.splitlines() if line.startswith("ROUTE:")]
+    assert len(route_lines) == 1, merged
+    assert route_lines[0].startswith("ROUTE: curate"), merged
 
 
 # --- oss_state.workspace_route_check / _last_workspace_route ---------------

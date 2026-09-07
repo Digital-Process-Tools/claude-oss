@@ -349,7 +349,7 @@ def main(argv=None):
         print(
             "ROUTE: {0} (whether this exact state already fired could not "
             "be told: {1}: {2}; routing as though it has not)".format(
-                armed_route, type(exc).__name__, exc
+                armed_route, type(exc).__name__, _flatten(exc)
             )
         )
         return 0
@@ -376,7 +376,7 @@ def main(argv=None):
         print(
             "ROUTE-RECEIPT-ERROR: the receipt could not be recorded ({0}: "
             "{1}), so the next launch will not see this one.".format(
-                type(exc).__name__, exc
+                type(exc).__name__, _flatten(exc)
             ),
             file=sys.stderr,
         )
