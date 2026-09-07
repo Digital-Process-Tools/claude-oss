@@ -131,5 +131,13 @@ Gates, each a call and not a feeling:
    surfaces the release actually reached, in those words — "tagged, not yet in the catalogue" rather
    than "shipped".
 
-A quiet `git push origin <tag>` can die inside a wrapper and read exactly like a push that worked.
-Verify with `git ls-remote --tags origin <tag>`, or create the ref through the API.
+**A seventh check, unnumbered because it is not about the delta: the release commit's own CI, before
+the tag exists (#1266).** Gates 1-6 verify the default branch is green *before* the commit is
+written -- nothing verifies the commit itself, and `v0.27.0` shipped without this and turned out RED.
+Wait for it; stop on anything but green (green is the only one of the four outcomes that proceeds).
+Mechanics -- the exact call, the exit codes, what resumes where -- live in `commands/release.md`'s
+own numbered section, this gate's single source.
+
+Only once that wait clears does the tag get created and pushed. A quiet `git push origin <tag>`
+can die inside a wrapper and read exactly like a push that worked. Verify with `git ls-remote --tags
+origin <tag>`, or create the ref through the API.

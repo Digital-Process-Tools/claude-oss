@@ -80,8 +80,15 @@ CITATION_COULD_NOT_CHECK = "could-not-check"
 
 EXIT_OK = 0
 EXIT_FINDING = 1
-EXIT_DECLINED = 2
 EXIT_COULD_NOT_CHECK = 3
+# Not 2 -- argparse.ArgumentParser.error() always exits 2, and every sibling
+# state script in this family (`select_issues_preflight.py`,
+# `gate3_disposition.py`, `transcript_refusals.py`) reserves that number for
+# a usage error only, or skips it entirely. A `declined` verdict is a real,
+# substantive answer, not a usage mistake, so it must not share 2 with one
+# (#1267) -- a caller branching on exit code alone could not otherwise tell
+# an honest decline from a bad invocation.
+EXIT_DECLINED = 4
 
 # The live marker's own shape (CLAUDE.md, "What is not proven yet"):
 #   **Cohort freeze: cohort-22 at 42 open issues, against cohort-21's 29.**
@@ -99,8 +106,33 @@ _MARKER_RE = re.compile(r"Cohort freeze:\s*cohort-(\d+)\s+at\s+(\d+)")
 _DECLINE_TEXT = "Cohort freeze: cannot be cleanly cited this release"
 
 
+# The section a real release marker lives in (`CLAUDE.md`'s own heading,
+# see the module docstring). #1269: this repository's own prose narrates
+# *past* releases' cohort counts routinely, in whole-file-searchable text
+# well before this heading -- so the search is scoped to this section, not
+# the whole file, and a stale historical citation elsewhere can never be
+# matched at all. Text with no such heading (a synthetic fixture, or a repo
+# whose CLAUDE.md predates the section) falls back to a whole-text search
+# rather than finding nothing.
+_MARKER_SECTION_HEADING = "## What is not proven yet"
+
+
+def _marker_section(text):
+    """The text of the current marker's own section, or ``text`` unchanged
+    if the heading is not present at all (#1269's fallback case)."""
+    start = text.find(_MARKER_SECTION_HEADING)
+    if start == -1:
+        return text
+    return text[start:]
+
+
 def extract_cited_cohort(text):
-    """The newest cohort the marker cites.
+    """The newest cohort the *current* marker cites.
+
+    Searches only inside the "## What is not proven yet" section (#1269) --
+    never the whole file -- so a stale numeric citation this repository's own
+    prose narrates about a past release cannot be matched ahead of, or
+    instead of, the current marker's own citation or decline.
 
     Three distinguishable returns:
 
@@ -113,12 +145,12 @@ def extract_cited_cohort(text):
       shape. A caller must treat this as "nothing to check", never as a clean
       pass and never as a stated decline.
     """
-    text = text or ""
-    match = _MARKER_RE.search(text)
+    section = _marker_section(text or "")
+    match = _MARKER_RE.search(section)
     if match:
         number, count = match.groups()
         return {"cohort": "cohort-{}".format(number), "count": int(count)}
-    if _DECLINE_TEXT in text:
+    if _DECLINE_TEXT in section:
         return {"cohort": None, "count": None, "declined": True}
     return None
 
