@@ -2819,3 +2819,22 @@ def test_the_owned_file_count_in_the_doc_matches_scaffold_owned():
             match.group(1), len(scaffold.OWNED)
         )
     )
+
+
+def test_owned_readme_describes_statusline_fields_that_still_exist():
+    """#1101: the owned README template used to describe `statusline.py` as
+    reporting "when the next tick is due" -- a field #1079 removed in favour of
+    the unlabelled-issue counts and the `trap.d/` backlog count. A description
+    of a removed field is worse than no description: it tells a reader to look
+    for something that is not there. Pin the template against the fields the
+    module actually renders today (`_unlabelled_field`, `_trap_field`) rather
+    than against a guess.
+    """
+    doc = scaffold.OWNED_README
+    assert "next tick" not in doc, (
+        "OWNED_README still describes the next-tick field #1079 removed"
+    )
+    assert "trap.d" in doc, (
+        "OWNED_README should describe the trap.d/ backlog count statusline.py "
+        "reports today (#1079)"
+    )

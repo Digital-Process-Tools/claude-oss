@@ -101,7 +101,7 @@ _ALLOWED = {
         "Not examined for this issue -- #1172/#1173 are scoped to "
         "`scripts/doctor.py`. Named here as scope for a follow-up.",
     ),
-    ("scripts/scaffold.py", 2930): (
+    ("scripts/scaffold.py", 2931): (
         "shutil.which",
         "Not examined for this issue -- #1172/#1173 are scoped to "
         "`scripts/doctor.py`. Named here as scope for a follow-up "
