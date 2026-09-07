@@ -73,6 +73,19 @@ import oss_state  # noqa: E402
 import release_version  # noqa: E402
 import trap_curate  # noqa: E402
 
+
+def _flatten(text):
+    """#1257: `why` can carry text this loop did not generate itself --
+    `gh`'s own stderr, read verbatim in `triage_count` -- collapsed onto
+    one line before `main` prints it into a line-structured receipt
+    `bin/oss-workspace` parses with `awk '/^ROUTE:/ { line = $0 } END {
+    print line }'`. Unflattened, an embedded newline puts forge-supplied
+    text at column 0 of the next printed line, where a line shaped like
+    `ROUTE: <something>` reads as a second, unrelated `ROUTE:` line --
+    the identical mechanism `pr_green._flatten` was written for (#1113)."""
+    return " ".join(str(text).split())
+
+
 OVER = "over"
 UNDER = "under"
 COULD_NOT_COUNT = "could-not-count"
@@ -306,7 +319,7 @@ def main(argv=None):
                 result["state"],
                 result["count"],
                 result["threshold"],
-                result["why"],
+                _flatten(result["why"]),
             )
         )
 
@@ -336,7 +349,7 @@ def main(argv=None):
         print(
             "ROUTE: {0} (whether this exact state already fired could not "
             "be told: {1}: {2}; routing as though it has not)".format(
-                armed_route, type(exc).__name__, exc
+                armed_route, type(exc).__name__, _flatten(exc)
             )
         )
         return 0
@@ -363,7 +376,7 @@ def main(argv=None):
         print(
             "ROUTE-RECEIPT-ERROR: the receipt could not be recorded ({0}: "
             "{1}), so the next launch will not see this one.".format(
-                type(exc).__name__, exc
+                type(exc).__name__, _flatten(exc)
             ),
             file=sys.stderr,
         )
