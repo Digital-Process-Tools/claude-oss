@@ -85,10 +85,11 @@ def _permission_entries(data, key):
 # py`, keyed on a SINGLE op head (`git`, both ops in that module invoke a bare
 # `git ...` command). They move here, generalised to accept a set of
 # candidate heads, because the two checks below are invoked differently: both
-# `gh-pr-merge:...` and the supertool call itself run as `supertool
-# 'op:...'` or `./supertool 'op:...'`, so the covering wildcard head to look
-# for is `supertool` or `./supertool` -- never the op name itself, which
-# never appears as a Bash command head at all. The reap module now imports
+# `gh-pr-merge:...` and the supertool call itself run as
+# `supertool 'gh-pr-merge:...'` or `./supertool 'gh-pr-merge:...'`, so the
+# covering wildcard head to look for is `supertool` or `./supertool` --
+# never the op name itself, which never appears as a Bash command head at
+# all. The reap module now imports
 # these from here instead of defining its own copy (one helper, several call
 # sites, per the issue's own suggested direction) and passes a single-element
 # set to keep its existing `git`-only behaviour unchanged.
@@ -197,9 +198,10 @@ def _bash_wildcard_deny_detail(project_dir, op_heads, home=None):
 
 
 #: The Bash command heads that actually invoke `gh-pr-merge` or the supertool
-#: call itself -- `supertool 'op:...'` or `./supertool 'op:...'`, never the op
-#: name as a command head on its own. A wildcard entry granting (or denying)
-#: one of these two heads covers every supertool op, `gh-pr-merge` included.
+#: call itself -- `supertool 'gh-pr-merge:...'` or `./supertool
+#: 'gh-pr-merge:...'`, never the op name as a command head on its own. A
+#: wildcard entry granting (or denying) one of these two heads covers every
+#: supertool op, `gh-pr-merge` included.
 SUPERTOOL_COMMAND_HEADS = frozenset({"supertool", "./supertool"})
 
 
