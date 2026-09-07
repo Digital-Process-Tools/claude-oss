@@ -17,7 +17,6 @@ The diagnostic's own `VERDICT:` line still comes from a hand-written stub
 needs the real `doctor.py`.
 """
 
-import ast
 import json
 import os
 import shutil
@@ -31,6 +30,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 
+import import_closure  # noqa: E402
 import launcher_env  # noqa: E402
 import shell_probe  # noqa: E402
 
@@ -55,45 +55,19 @@ DOCTOR_MODE = 0o644
 # `doctor_check_*.py`; it says nothing about what THOSE modules import in
 # turn, and a hand-list has no way to notice a new transitive import was
 # added. So this walks the real, on-disk import graph starting from the
-# modules the receipt logic actually names directly, and follows every local
-# `import x` / `from x import y` (top-level module names that resolve to a
-# file under `scripts/`) to a fixed point -- statically, via `ast`, without
-# executing anything. Add a new `doctor_check_*.py`, or give an existing
-# module a new local import, and this closure picks it up on the next run
-# with no edit here.
+# modules the receipt logic actually names directly (`import_closure.py`,
+# #1237 -- shared with `test_workspace_routes_launcher_1155.py`, which needs
+# the identical derivation for `workspace_routes.py`'s own imports) to a
+# fixed point -- statically, via `ast`, without executing anything. Add a
+# new `doctor_check_*.py`, or give an existing module a new local import,
+# and this closure picks it up on the next run with no edit here.
 _SEED_MODULES = ["doctor", "oss_config", "oss_state", "select_issues_rank", "gh_which"]
 
-
-def _local_import_closure(seed_names, scripts_dir):
-    """Every module under `scripts_dir` reachable from `seed_names` by
-    following top-level `import x` / `from x import y` statements whose `x`
-    resolves to another file in `scripts_dir` (never a dotted submodule of
-    one, and never a relative import -- this repo's `scripts/` modules use
-    neither). Read via `ast.parse`, so nothing here is executed."""
-    available = {p.stem: p for p in scripts_dir.glob("*.py")}
-    seen = set()
-    queue = list(seed_names)
-    while queue:
-        name = queue.pop()
-        if name in seen or name not in available:
-            continue
-        seen.add(name)
-        tree = ast.parse(available[name].read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                candidates = [alias.name.split(".")[0] for alias in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-                candidates = [node.module.split(".")[0]]
-            else:
-                continue
-            for candidate in candidates:
-                if candidate in available and candidate not in seen:
-                    queue.append(candidate)
-    return seen
-
-
 _REAL_MODULES = sorted(
-    name + ".py" for name in _local_import_closure(_SEED_MODULES, REPO_ROOT / "scripts")
+    name + ".py"
+    for name in import_closure.local_import_closure(
+        _SEED_MODULES, REPO_ROOT / "scripts"
+    )
 )
 
 
