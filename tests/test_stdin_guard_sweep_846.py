@@ -39,8 +39,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 # (script relative to REPO, argv after the script name, ordinary stdin payload)
+#
+# #1200: `select_issues.py --board` no longer reads stdin at all -- it
+# fetches its own board the same way the default mode does -- so it is no
+# longer a member of this sweep; see test_board_select_issues_1200.py for
+# its own closed-stdin/no-crash coverage instead.
 SWEPT_SCRIPTS = [
-    ("scripts/select_issues.py", ["--board"], '{"declared": {}, "issues": []}'),
     ("scripts/statusline.py", [], "{}"),
     ("scripts/batch_hint.py", [], "{}"),
     ("scripts/review_return.py", ["-"], "NO FINDINGS: nothing to check"),

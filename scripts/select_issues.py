@@ -1523,33 +1523,6 @@ def _reconfigure_streams():
             pass
 
 
-def _read_stdin_json():
-    """`(payload, error_result)`. `error_result` is `None` on success, else
-    the `could-not-select`-shaped dict to print and return for a caller that
-    reads JSON off stdin -- the same three checks every stdin-JSON entry
-    point in this plugin repeats (`select_issues_rank.py`'s former `main`,
-    `lane_setup.py --suggest-companions`, and this module's own default
-    mode): no stream at all (#846), can't decode as UTF-8, not valid JSON.
-    """
-    if sys.stdin is None:
-        return None, _could_not_select(
-            "stdin: no readable stdin -- the process was handed a closed or "
-            "unopenable standard input"
-        )
-    try:
-        sys.stdin.reconfigure(encoding="utf-8")
-    except (AttributeError, ValueError):  # pragma: no cover - not a TextIOWrapper
-        pass
-    try:
-        return json.load(sys.stdin), None
-    except UnicodeDecodeError as exc:
-        return None, _could_not_select(
-            "stdin: could not be decoded as UTF-8 ({0})".format(exc)
-        )
-    except ValueError as exc:
-        return None, _could_not_select("stdin: not valid JSON ({0})".format(exc))
-
-
 def _build_parser():
     parser = argparse.ArgumentParser(
         description="Board in, ranked claimable candidates out (#970)."
@@ -1567,7 +1540,8 @@ def _build_parser():
         action="store_true",
         help="print the whole-board ranking receipt instead of the JSON "
         "candidates result (#1069, folded in from dispatch_rank.py's own "
-        "CLI) -- reads the same board shape on stdin.",
+        "CLI) -- fetches its own board the same way the default mode does "
+        "(#1200).",
     )
     parser.add_argument(
         "--check-lane",
@@ -1648,15 +1622,15 @@ def main(argv=None):
     pointer instead of a fleet. `--bodies N N ...` is the bounded second
     call: fetch back just the fenced bodies of the groups actually kept.
 
-    `--board` still reads its own board-shaped payload on stdin -- it is a
-    separate, older CLI mode (folded in from `dispatch_rank.py`'s own former
-    CLI, #1069) that only ever renders a receipt over an already-assembled
-    board, never selects anything, and #1145 does not touch it. #846's own
-    class is still guarded for that mode: `sys.stdin` is `None` when the
-    harness hands this process a closed or unopenable standard input, and
-    `json.load(None)` raises `AttributeError` uncaught -- past this module's
-    own `could-not-select`, which is exactly the state that exists for a
-    read that failed.
+    `--board` (#1200) fetches its own board too, via the identical
+    `_fetch_board`/`config["labels"]` reads the default mode uses -- it used
+    to read a board-shaped payload on stdin instead (folded in from
+    `dispatch_rank.py`'s own former CLI, #1069), a second input contract on
+    one entry point that `docs/pick-the-work.md` already documented as not
+    existing (#1200's own finding). It still only ever renders a receipt
+    over the board, never selects anything, and a failed fetch answers
+    `could-not-select` rather than an empty receipt -- the same rule #1145
+    already holds for the default mode.
 
     `--board`, `--check-lane` and `--preflight` (#1069) are the whole-board
     ranking receipt, the dispatched-lane-size check and the pre-flight code
@@ -1716,16 +1690,6 @@ def main(argv=None):
             else 0
         )
 
-    if args.board:
-        payload, error_result = _read_stdin_json()
-        if error_result is not None:
-            print(json.dumps(error_result, indent=2, sort_keys=True))
-            return 2
-        declared = payload.get("declared") or {}
-        issues = payload.get("issues") or []
-        print(select_issues_rank.render_board_receipt(issues, declared))
-        return 0
-
     # #970 review round: the sibling idiom used by select_issues_rank.py,
     # lane_setup.py, select_issues_claim_read.py and others (#794, #834) -- a
     # candidate's `why` can carry an issue's own label or title text (via
@@ -1738,6 +1702,9 @@ def main(argv=None):
     # #1145: the default mode no longer reads a payload off stdin at all --
     # it fetches the board and the held set itself, via `select_fleet`. There
     # is no `--fetch` mode and no stdin alternative left to fall back to.
+    # #1200: `--board` shares that same read now -- it used to read its own
+    # board-shaped payload on stdin, a second input contract this entry
+    # point never needed to carry.
     config, problems = oss_config.load(Path(args.repo) / oss_config.CONFIG_NAME)
     if config is None:
         error_result = _could_not_select(
@@ -1749,6 +1716,32 @@ def main(argv=None):
         )
         print(json.dumps(error_result, indent=2, sort_keys=True))
         return 2
+
+    if args.board:
+        board = _fetch_board(config.get("repo"))
+        if board["state"] != "ok":
+            error_result = _could_not_select("board: {0}".format(board["detail"]))
+            print(json.dumps(error_result, indent=2, sort_keys=True))
+            return 2
+        declared = config.get("labels") or {}
+        # #1013/#993: `_fetch_board` hands back GitHub's own raw
+        # `author_association` vocabulary, never `rank()`'s translated
+        # "external"/"maintainer" axis -- the same translation `select()`
+        # already applies to every issue it ranks (see
+        # `_translate_author_association`'s own module-level comment). An
+        # untranslated value here would rank every non-loop issue
+        # unrankable on this receipt while the default mode ranks it fine.
+        translated_issues = [
+            dict(
+                item,
+                author_association=_translate_author_association(
+                    item.get("author_association")
+                ),
+            )
+            for item in board["issues"]
+        ]
+        print(select_issues_rank.render_board_receipt(translated_issues, declared))
+        return 0
 
     result = select_fleet(config, repo_root=args.repo, include_bodies=False)
     print(json.dumps(result, indent=2, sort_keys=True))

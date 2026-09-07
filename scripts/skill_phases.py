@@ -248,7 +248,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # stdin-parse error; verified against the running script it can
         # instead exit 0 with a silently degraded receipt, or crash with an
         # unrelated traceback, and the sentence now says so.
-        53485,
+        # Re-baselined for #1200: 53485 B became 53209 B -- the
+        # stdin-contract sentence is gone; `--board` fetches its own board
+        # now, the same route the default mode uses, so there is no
+        # exception left to describe. Budget unchanged.
+        53209,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -395,7 +399,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined again in the same lane's own self-review round:
         # 33334 B became 33532 B -- the same wrong-shaped-payload
         # correction dispatch.md's own re-baseline note describes.
-        33532,
+        # Re-baselined for #1200: 33532 B became 33371 B -- the identical
+        # stdin-contract removal dispatch.md's own re-baseline note
+        # describes. Budget unchanged.
+        # Re-baselined again in the same lane's own self-review round:
+        # 33371 B became 33396 B -- a reviewer found "the two shared no
+        # input contract" read as the opposite of what #1178 found (the
+        # two modes did NOT share one); reworded for clarity. Budget
+        # unchanged.
+        33396,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
