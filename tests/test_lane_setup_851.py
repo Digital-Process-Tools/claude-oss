@@ -138,6 +138,61 @@ def test_1045_three_candidates_each_cite_their_own_distinct_file_not_one_shared_
     assert result["candidates"] == [{"number": 300, "files": ["scripts/lane_setup.py"]}]
 
 
+def test_1045_real_open_issue_bodies_cite_their_own_distinct_file():
+    """#1045's own 2026-09-05 investigation stopped short of this: its
+    synthetic three-candidate repro confirmed the pipeline against made-up
+    bodies, but explicitly flagged that "the original tick's own board (real
+    GitHub issue bodies, not synthetic ones) may hit a shape this test does
+    not." This fixture closes that specific gap with verbatim excerpts from
+    two real, unrelated open issues on this repository's own tracker (#1229
+    and #1137, fetched live during this investigation, 2026-09-07) -- not
+    hand-written to be well-behaved. Each names a different file in
+    backticks; the false-positive shape reported against #1045 would have
+    both candidates cited with the SAME file regardless of which lane is
+    claimed."""
+    board = _board(
+        [
+            {
+                "number": 1229,
+                "title": "doctor: nothing checks lane_patterns coverage or "
+                "overlap, so a false disjointness claim is silent in a "
+                "managed repo",
+                "body": (
+                    "`oss_config.py` validates the shape.\n"
+                    "`scripts/doctor.py` and all 21 `doctor_check_*.py` -- "
+                    "nothing.\n"
+                    "`tests/test_lane_pattern_coverage_1201.py` was added "
+                    "by #1227.\n"
+                ),
+            },
+            {
+                "number": 1137,
+                "title": "Auto-mode classifier intermittently denies then "
+                "accepts a byte-identical oss_state.py write",
+                "body": (
+                    "The Claude Code auto-mode permission classifier "
+                    "intermittently denies an `oss_state.py` /\n"
+                    "`agent_role.py` call and then accepts the "
+                    "byte-identical call on an unmodified retry.\n"
+                ),
+            },
+        ]
+    )
+    doctor_result = lane_setup.suggest_companions(
+        REPO_ROOT, 9999, ["scripts/doctor.py"], board
+    )
+    assert doctor_result["state"] == "candidates"
+    assert doctor_result["candidates"] == [
+        {"number": 1229, "files": ["scripts/doctor.py"]}
+    ]
+
+    state_result = lane_setup.suggest_companions(
+        REPO_ROOT, 9999, ["oss_state.py"], board
+    )
+    assert state_result["state"] == "candidates"
+    assert state_result["candidates"] == [{"number": 1137, "files": ["oss_state.py"]}]
+
+
 def test_own_issue_is_excluded_from_the_sweep():
     board = _board(
         [{"number": 851, "title": "self", "body": "`scripts/lane_setup.py`"}]
