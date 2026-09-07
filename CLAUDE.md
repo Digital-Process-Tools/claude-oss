@@ -717,8 +717,17 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.27.0`, and it was written inside the v0.27.0 release commit** --
-following the same exception `v0.25.0`'s own marker was the first to honour.
+**The marker below names `v0.27.1`, and it was written inside the v0.27.1 release commit at
+`e0f440c`.** `v0.27.1` is a one-commit patch release, cut only to fix `tests/test_cohort_citation_
+order_1220.py` (#1264, PR #1265) after `v0.27.0`'s own tagged commit shipped with that guard red --
+the tag was pushed before that commit's own CI run had concluded, and `main` is unconditionally
+green at `v0.27.1`'s own release commit, verified before the tag moved this time (#1266). Nothing
+below this paragraph was re-derived against `v0.27.1`'s own delta: the range `v0.27.0..v0.27.1` is
+the single fix commit, already audited (gate 3, two rounds, three non-blocking `misreports`
+findings -- #1267, #1268, #1269 -- carried forward rather than blocking) and it changes no fact this
+section states about `v0.27.0`'s own delta, cohort freeze, reach probe or field readings. Those
+stay `v0.27.0`'s own readings, cited as such, until the next release re-derives this whole section
+properly rather than patching a marker in place a second time in a row.
 
 **The delta count and gate 3's audit rounds WERE re-derived for `v0.27.0`. The cohort freeze
 citation below could not be independently re-confirmed. The reach probe and the field readings
