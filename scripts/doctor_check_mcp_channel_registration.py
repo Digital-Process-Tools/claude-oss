@@ -339,10 +339,63 @@ _PLUGIN_REGISTRY_PATH = os.path.join(
 )
 
 
-def _plugin_install_paths(registry_path=None):
+def _entry_in_scope(entry, project_dir):
+    """Is this ONE registry row actually loadable into a session opened over
+    `project_dir`? Self-review finding on #1241's first version (an Explore
+    reviewer spawn, against this machine's own real registry): the original
+    `_plugin_install_paths` walked EVERY row under every plugin key with no
+    scope filtering at all, and this machine's own registry demonstrates the
+    shape that breaks -- the same plugin key carries many `"scope":
+    "project"` rows, each pinned to a DIFFERENT `projectPath` (one per repo
+    it was ever installed into), plus `"scope": "local"` rows and exactly one
+    `"scope": "user"` row loaded everywhere. A row scoped to a project that
+    is not this one can never be loaded into THIS session, so counting it
+    toward this census is exactly the "population walked too broadly"
+    mistake #886/#895's own wildcard-scoping already reasons about avoiding
+    for a different check in this diff -- flagging an unrelated grant "would
+    turn a genuine absent into a false" collision, and the same argument
+    applies to an unrelated project's plugin install here.
+
+    `scope == "user"` (or a missing/unrecognised scope -- conservatively
+    in-scope, matching the "never silently narrow past what a shape nobody
+    has seen yet might mean" caution the rest of this module already takes)
+    is loaded regardless of which project a session opens over. `"project"`
+    and `"local"` are loaded only for the ONE `projectPath` they name, so
+    those are in scope only when it resolves to the same directory as
+    `project_dir` -- compared as `os.path.normpath(os.path.abspath(...))`
+    on both sides so `.`/a trailing slash/a relative spelling do not
+    produce a false negative. When `project_dir` itself is not given (a
+    caller with no directory to compare against), no filtering is applied
+    at all -- every row is in scope, the pre-fix behaviour -- because
+    excluding project-scoped rows with nothing to compare them to would
+    silently narrow the population past what could actually be established,
+    the same "unreadable neighbour must not send you to the wrong absence"
+    principle this file's other helpers already state.
+    """
+    if project_dir is None:
+        return True
+    scope = entry.get("scope")
+    if scope not in ("project", "local"):
+        return True
+    project_path = entry.get("projectPath")
+    if not isinstance(project_path, str) or not project_path:
+        # A project/local-scoped row with no recorded projectPath cannot be
+        # compared -- conservatively in scope rather than silently dropped.
+        return True
+    try:
+        return os.path.normpath(os.path.abspath(project_path)) == os.path.normpath(
+            os.path.abspath(str(project_dir))
+        )
+    except (OSError, ValueError):
+        return True
+
+
+def _plugin_install_paths(registry_path=None, project_dir=None):
     """``(pairs, None)`` or ``(None, reason)`` -- every ``(plugin_key,
-    installPath)`` the harness's own plugin registry records, across ALL
-    installed plugins, not only supertool.
+    installPath)`` the harness's own plugin registry records that is
+    actually LOADABLE into a session opened over `project_dir` (see
+    `_entry_in_scope` above), across ALL installed plugins, not only
+    supertool.
 
     #1241: the harness loads a plugin's own `.mcp.json` servers directly --
     they are injected into the session under `plugin:<name>:<server>` and run
@@ -397,26 +450,28 @@ def _plugin_install_paths(registry_path=None):
                         registry_path, key
                     ),
                 )
+            if not _entry_in_scope(entry, project_dir):
+                continue
             install_path = entry.get("installPath")
             if isinstance(install_path, str) and install_path:
                 pairs.append((key, install_path))
     return pairs, None
 
 
-def _plugin_channel_consumer_names(plugin_registry_path=None):
+def _plugin_channel_consumer_names(plugin_registry_path=None, project_dir=None):
     """``(names, None)`` or ``(None, reason)`` -- one label per installed
-    plugin whose OWN `.mcp.json` declares an MCP server resolving to the
-    claude-channel consumer script (#1241). Best-effort per install: a
-    plugin whose `.mcp.json` is simply absent contributes nothing (most
-    plugins ship none); a plugin whose `.mcp.json` EXISTS but cannot be read
-    or parsed is a real gap, and turns the whole result into
-    ``(None, reason)`` rather than silently omitting just that one plugin --
-    a partial read of this population is exactly the shape #911 already
-    named for the project-scope case, and the same caution applies here: an
-    unreadable neighbour must not make the others look like the whole
-    population.
+    plugin, IN SCOPE for `project_dir` (see `_entry_in_scope`), whose OWN
+    `.mcp.json` declares an MCP server resolving to the claude-channel
+    consumer script (#1241). Best-effort per install: a plugin whose
+    `.mcp.json` is simply absent contributes nothing (most plugins ship
+    none); a plugin whose `.mcp.json` EXISTS but cannot be read or parsed is
+    a real gap, and turns the whole result into ``(None, reason)`` rather
+    than silently omitting just that one plugin -- a partial read of this
+    population is exactly the shape #911 already named for the
+    project-scope case, and the same caution applies here: an unreadable
+    neighbour must not make the others look like the whole population.
     """
-    pairs, reason = _plugin_install_paths(plugin_registry_path)
+    pairs, reason = _plugin_install_paths(plugin_registry_path, project_dir=project_dir)
     if pairs is None:
         return None, reason
     # #1241 self-review finding (dogfooded against this machine's own real
@@ -549,7 +604,7 @@ def _mcp_list_consumer_names(run=None, which=None, env=None):
 
 
 def channel_consumer_census_state(
-    run=None, which=None, env=None, plugin_registry_path=None
+    run=None, which=None, env=None, plugin_registry_path=None, project_dir=None
 ):
     """How many MCP servers resolve to the claude-channel consumer script,
     across the TWO populations that can carry one -- never assumed from
@@ -587,6 +642,14 @@ def channel_consumer_census_state(
     generalised to every installed plugin. `plugin_registry_path` threads
     through to it for the same reason `run`/`which`/`env` are injected here
     -- every branch assertable without touching the real filesystem.
+    `project_dir`, when given, additionally scopes the plugin population to
+    rows actually loadable into a session opened over it (`_entry_in_scope`)
+    -- self-review finding: this machine's own real registry carries many
+    `"scope": "project"` rows for the SAME plugin, each pinned to a
+    different, unrelated project, and counting all of them toward this
+    repository's own census would be exactly the "population walked too
+    broadly" mistake this diff's own #886/#895 wildcard-scoping already
+    reasons about avoiding for a different check.
 
     `bin/oss-workspace` already runs the `claude mcp list` half of this
     census, via `_mcp_list_consumer_names` above -- so a launcher-opened
@@ -604,7 +667,9 @@ def channel_consumer_census_state(
     mcp_names, mcp_reason = _mcp_list_consumer_names(run=run, which=which, env=env)
     if mcp_names is None:
         return "could-not-ask", mcp_reason
-    plugin_names, plugin_reason = _plugin_channel_consumer_names(plugin_registry_path)
+    plugin_names, plugin_reason = _plugin_channel_consumer_names(
+        plugin_registry_path, project_dir=project_dir
+    )
     if plugin_names is None:
         return "could-not-ask", (
             "the claude mcp list population resolved ({} found), but the "
@@ -621,7 +686,7 @@ def channel_consumer_census_state(
 
 
 def check_channel_consumer_census(
-    run=None, which=None, env=None, plugin_registry_path=None
+    run=None, which=None, env=None, plugin_registry_path=None, project_dir=None
 ):
     """One line: is any OTHER server racing `oss-channel` for the same socket?
 
@@ -634,10 +699,16 @@ def check_channel_consumer_census(
     same shape `check_mcp_channel_registration`'s own `precomputed` parameter
     takes, so a caller can stub the relay independently of the real environment.
     `plugin_registry_path` threads through the same way for #1241's
-    plugin-population half.
+    plugin-population half, and `project_dir` for that half's own project-scope
+    filtering (`_entry_in_scope`) -- `doctor.py`'s own call site passes its
+    `project_dir` here for exactly that reason.
     """
     state, detail = channel_consumer_census_state(
-        run=run, which=which, env=env, plugin_registry_path=plugin_registry_path
+        run=run,
+        which=which,
+        env=env,
+        plugin_registry_path=plugin_registry_path,
+        project_dir=project_dir,
     )
     if state == "could-not-ask":
         doctor.report(

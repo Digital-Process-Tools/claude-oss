@@ -358,3 +358,263 @@ def test_two_distinct_plugins_shipping_a_consumer_are_both_counted(tmp_path):
         "plugin:plugin-a@marketplace:claude-channel",
         "plugin:plugin-b@marketplace:claude-channel",
     }
+
+
+# --------------------------------------------------------- project-scope filtering (self-review)
+
+
+def test_a_project_scoped_row_for_a_different_project_is_excluded(tmp_path):
+    """Self-review finding (Explore reviewer spawn, against this machine's own
+    real registry): a `"scope": "project"` row pinned to a DIFFERENT project
+    than the one doctor is running over must never be counted -- it can
+    never actually be loaded into THIS session."""
+    install_dir = tmp_path / "supertool"
+    _mcp_json(
+        install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    this_project = tmp_path / "this-repo"
+    other_project = tmp_path / "some-other-repo"
+    this_project.mkdir()
+    other_project.mkdir()
+    registry = _registry(
+        tmp_path,
+        {
+            "supertool@dpt-plugins": [
+                {
+                    "scope": "project",
+                    "projectPath": str(other_project),
+                    "installPath": str(install_dir),
+                }
+            ]
+        },
+    )
+    names, reason = mod._plugin_channel_consumer_names(
+        registry, project_dir=str(this_project)
+    )
+    assert reason is None
+    assert names == []
+
+
+def test_a_project_scoped_row_for_this_project_is_included(tmp_path):
+    """Must-fire positive control paired with the exclusion test above: the
+    SAME shape, but `projectPath` matches `project_dir` -- must still be
+    counted."""
+    install_dir = tmp_path / "supertool"
+    _mcp_json(
+        install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    this_project = tmp_path / "this-repo"
+    this_project.mkdir()
+    registry = _registry(
+        tmp_path,
+        {
+            "supertool@dpt-plugins": [
+                {
+                    "scope": "project",
+                    "projectPath": str(this_project),
+                    "installPath": str(install_dir),
+                }
+            ]
+        },
+    )
+    names, reason = mod._plugin_channel_consumer_names(
+        registry, project_dir=str(this_project)
+    )
+    assert reason is None
+    assert names == ["plugin:supertool@dpt-plugins:claude-channel"]
+
+
+def test_a_local_scoped_row_for_a_different_project_is_excluded(tmp_path):
+    """`"scope": "local"` is the same per-project shape as `"project"` and
+    must be filtered identically."""
+    install_dir = tmp_path / "supertool"
+    _mcp_json(
+        install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    this_project = tmp_path / "this-repo"
+    other_project = tmp_path / "some-other-repo"
+    this_project.mkdir()
+    other_project.mkdir()
+    registry = _registry(
+        tmp_path,
+        {
+            "supertool@dpt-plugins": [
+                {
+                    "scope": "local",
+                    "projectPath": str(other_project),
+                    "installPath": str(install_dir),
+                }
+            ]
+        },
+    )
+    names, reason = mod._plugin_channel_consumer_names(
+        registry, project_dir=str(this_project)
+    )
+    assert reason is None
+    assert names == []
+
+
+def test_a_user_scoped_row_is_always_included_regardless_of_project(tmp_path):
+    """Must-fire positive control: `"scope": "user"` is loaded into every
+    session regardless of which project it opens over, and must never be
+    filtered out by a project_dir comparison."""
+    install_dir = tmp_path / "supertool"
+    _mcp_json(
+        install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    this_project = tmp_path / "this-repo"
+    this_project.mkdir()
+    registry = _registry(
+        tmp_path,
+        {
+            "supertool@dpt-plugins": [
+                {
+                    "scope": "user",
+                    "installPath": str(install_dir),
+                }
+            ]
+        },
+    )
+    names, reason = mod._plugin_channel_consumer_names(
+        registry, project_dir=str(this_project)
+    )
+    assert reason is None
+    assert names == ["plugin:supertool@dpt-plugins:claude-channel"]
+
+
+def test_no_project_dir_given_applies_no_scope_filtering_at_all(tmp_path):
+    """When the caller has no directory to compare against, every row stays
+    in scope -- the pre-fix behaviour -- rather than silently narrowing the
+    population past what could actually be established."""
+    install_dir = tmp_path / "supertool"
+    _mcp_json(
+        install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    registry = _registry(
+        tmp_path,
+        {
+            "supertool@dpt-plugins": [
+                {
+                    "scope": "project",
+                    "projectPath": str(tmp_path / "unrelated-project"),
+                    "installPath": str(install_dir),
+                }
+            ]
+        },
+    )
+    names, reason = mod._plugin_channel_consumer_names(registry, project_dir=None)
+    assert reason is None
+    assert names == ["plugin:supertool@dpt-plugins:claude-channel"]
+
+
+def test_a_project_scoped_row_with_no_recorded_project_path_stays_in_scope(tmp_path):
+    """A project/local-scoped row that carries no `projectPath` at all cannot
+    be compared -- conservatively kept in scope rather than silently
+    dropped, the same "unreadable neighbour must not send you to the wrong
+    absence" caution this module's other helpers already take."""
+    install_dir = tmp_path / "supertool"
+    _mcp_json(
+        install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    this_project = tmp_path / "this-repo"
+    this_project.mkdir()
+    registry = _registry(
+        tmp_path,
+        {
+            "supertool@dpt-plugins": [
+                {"scope": "project", "installPath": str(install_dir)}
+            ]
+        },
+    )
+    names, reason = mod._plugin_channel_consumer_names(
+        registry, project_dir=str(this_project)
+    )
+    assert reason is None
+    assert names == ["plugin:supertool@dpt-plugins:claude-channel"]
+
+
+def test_this_machines_own_multi_project_shape_no_longer_overcounts(tmp_path):
+    """The exact shape found dogfooding this fix against this machine's own
+    real `~/.claude/plugins/installed_plugins.json`: one plugin key with
+    MANY rows -- one `user` scope, several `project`/`local` scope rows each
+    pinned to a different, unrelated project. Only the user-scope row (and
+    any row genuinely pinned to `project_dir`) may count; the doctor.py
+    census run over THIS project must not see the other five projects'
+    installs at all."""
+    install_dir = tmp_path / "supertool" / "0.57.0"
+    old_install_dir = tmp_path / "supertool" / "0.40.0"
+    _mcp_json(
+        install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    _mcp_json(
+        old_install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(old_install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    this_project = tmp_path / "claude-oss"
+    this_project.mkdir()
+    other_projects = [tmp_path / name for name in ("dvsi", "claude-remember")]
+    for p in other_projects:
+        p.mkdir()
+    rows = [{"scope": "user", "installPath": str(install_dir)}]
+    rows.append(
+        {
+            "scope": "project",
+            "projectPath": str(this_project),
+            "installPath": str(install_dir),
+        }
+    )
+    for p in other_projects:
+        rows.append(
+            {
+                "scope": "project",
+                "projectPath": str(p),
+                "installPath": str(old_install_dir),
+            }
+        )
+    registry = _registry(tmp_path, {"supertool@dpt-plugins": rows})
+    names, reason = mod._plugin_channel_consumer_names(
+        registry, project_dir=str(this_project)
+    )
+    assert reason is None
+    # Deduped to one label: the user-scope row and the this-project row both
+    # resolve to the identical install (0.57.0) and the identical label.
+    assert names == ["plugin:supertool@dpt-plugins:claude-channel"]

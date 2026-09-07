@@ -9258,7 +9258,12 @@ def main(argv=None):
     # runs the identical census before arming the channel flag, and this mirrors
     # it so /oss:doctor reports the same collision without opening a session.
     # Needs no config: `claude mcp list` reads claude's own configuration.
-    check_channel_consumer_census()
+    # #1241: `project_dir` is passed so the plugin-population half of the
+    # census (an installed plugin's own `.mcp.json`) is scoped to installs
+    # actually loadable into a session opened over THIS repo, never an
+    # unrelated project's own `"scope": "project"` install of the same
+    # plugin -- see `_entry_in_scope`'s own docstring.
+    check_channel_consumer_census(project_dir=project_dir)
     # #860: the census above and supertool's own `channel:health` answer the
     # SAME question and disagreed for three release cycles with nothing
     # comparing them. Placed right after it for the same reason #810 placed

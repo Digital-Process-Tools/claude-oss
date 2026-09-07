@@ -267,7 +267,11 @@ def check_channel_health_agreement(
     if allow_probe is None:
         allow_probe = bool(env.get(CHANNEL_HEALTH_PROBE_ENV))
     census_state, census_detail = channel_consumer_census_state(
-        run=run, which=which, env=env, plugin_registry_path=plugin_registry_path
+        run=run,
+        which=which,
+        env=env,
+        plugin_registry_path=plugin_registry_path,
+        project_dir=project_dir,
     )
     health_raw_state, health_source, health_age = resolve_channel_health_reading(
         project_dir, allow_probe=allow_probe, probe=probe, now=now
