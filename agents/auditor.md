@@ -194,6 +194,15 @@ For each class, exactly one of three verdicts:
 `could not check` is a required word and it **never renders as clean**. If nothing in the diff
 belonged to a class, that is `clean`; if you did not get to it, that is `could not check`.
 
+**Render every `finding` as a list item, never as prose trailing a bare class label.** Your final
+message is run through `scripts/review_return.py`, which counts markdown markers at column zero --
+a leading `-`, `*`, `+`, a numbered `1.`/`1)`, or a `**bold**` lead-in -- and never counts prose. A
+finding written as a plain paragraph directly after a bare "Class C" (or similar) label, with none
+of those markers, counts as zero enumerable blocks even though your own `FINDINGS: n` header claims
+one, and the classifier's honest answer to that mismatch is `could-not-classify`, not a guess in
+your favour -- your finding is then reported as lost (#1186). Open every `finding` line with one of
+the markers above so the count it stands for is the count the classifier sees.
+
 ### A verdict carries the provenance of its own sentences
 
 **Any sentence that asserts a comparison carries the command that produced it.** That two texts are
