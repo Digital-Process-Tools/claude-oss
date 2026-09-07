@@ -152,7 +152,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # wait; and it did not name what to do when that call times out still
     # pending. All three fixed in place. Ceiling unchanged; 740 B of
     # headroom remains.
-    "agents/sub-manager.md": (16060, 16800),
+    # Re-baselined for #1179: 16060 B became 16630 B. The select_issues.py
+    # dispatch-selection call sits past skills/manager/phases/tick-order.md's
+    # ~292-line default read window, so a sub-manager reading only the first
+    # window never saw it and went hunting by ls/find. The literal command
+    # now lives directly in this file, never truncated. Ceiling unchanged;
+    # 170 B of headroom remains.
+    "agents/sub-manager.md": (16630, 16800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

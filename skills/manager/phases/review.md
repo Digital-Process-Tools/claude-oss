@@ -38,6 +38,12 @@ finding needs arguing down.
   derivation it already consumes does — one of those has to be true, and which one is a question for
   the author, not a finding against them.
 - **Re-run the new suite against the default branch with the fix absent.**
+- **A fix-for-a-finding commit crossing `scripts/fix_commit_scope.py`'s threshold with nothing
+  in `review.findings` about the fix itself.** Run `python3
+  "${CLAUDE_PLUGIN_ROOT}/scripts/fix_commit_scope.py" --repo <clone> --base <pre-fix> --head <fix>`
+  yourself when the report is silent on it; `needs-second-pass` with no second round recorded is
+  the exact gap #1047 names -- read the fix commit yourself rather than merging on the strength of
+  the first round alone.
 
 **That one run is a handful of tests, targeted, and CI structurally cannot perform it** — CI only
 ever runs the branch as proposed, with the fix present. It stays on the list. What it is not is
