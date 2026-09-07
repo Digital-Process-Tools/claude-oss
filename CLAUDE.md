@@ -188,15 +188,17 @@ separately rather than one list.
   made and a document that grows by accretion stops being read, which no budget can measure. Three
   exceptions, each drawn as narrowly as the sentence naming it: the release session updating `What
   is not proven yet`'s marker inside the release commit; a change whose subject *is* this file; and
-  a lane whose own diff pushes a budgeted file (`agents/*.md`, `skills/manager/**`,
-  `commands/tick.md`) past the ceiling this file declares for it (#1134). The third case MAY touch
-  only that file's own table row -- the measured size and, if the ceiling moved, the new ceiling --
-  plus the explanatory paragraph this convention already asks for beside a raised ceiling; nothing
-  else in `CLAUDE.md` moves for that reason alone, and a lane open here for one of these three
-  reasons still may not fold in an unrelated edit while it is here. In particular, a re-baseline
-  lane is not obliged to reconcile a prose sum-total sentence elsewhere in this file against the row
-  it just changed -- those drift between fixes and are corrected as their own change (#1057), not as
-  a silent rider on somebody else's re-baseline.
+  a lane whose own diff changes a budgeted file (`agents/*.md`, `skills/manager/**`,
+  `commands/tick.md`) such that this file's declared row for it no longer matches disk (#1134) --
+  whether by pushing the measured size past its ceiling, or by shrinking it, since
+  `tests/test_baseline_matches_disk_1014.py` fires on either direction of drift, not only overage.
+  The third case MAY touch only that file's own table row -- the measured size and, if the ceiling
+  moved, the new ceiling -- plus the explanatory paragraph this convention already asks for beside a
+  raised ceiling; nothing else in `CLAUDE.md` moves for that reason alone, and a lane open here for
+  one of these three reasons still may not fold in an unrelated edit while it is here. In
+  particular, a re-baseline lane is not obliged to reconcile a prose sum-total sentence elsewhere in
+  this file against the row it just changed -- those drift between fixes and are corrected as their
+  own change (#1057), not as a silent rider on somebody else's re-baseline.
   **Nothing enforces any of the three**; they are followed because a session read them, which is the
   weakest kind of guard this repository has and is named as such.
 

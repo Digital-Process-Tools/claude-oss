@@ -58,6 +58,19 @@ def test_the_bullet_names_a_third_exception_for_a_forced_budget_rebaseline():
         "the bullet's third exception must actually describe the budgeted-file re-baseline case, "
         "not just count to three"
     )
+    assert re.search(r"only that file.s own table row", bullet, re.IGNORECASE), (
+        "the bullet's third exception must actually scope the licence to the affected table row -- "
+        "counting to three and citing #1134 is not the same as narrowing what a lane may touch, "
+        "and a cosmetic edit that dropped the scoping clause while keeping the count and citation "
+        "would otherwise still satisfy this test"
+    )
+    assert re.search(
+        r"nothing\s+else\s+in\s+`?CLAUDE\.md`?\s+moves", bullet, re.IGNORECASE
+    ), (
+        "the bullet must say explicitly that nothing else in this file moves for the third "
+        "exception's reason alone -- without this clause the exception has no stated ceiling of "
+        "its own and could licence an unrelated rider"
+    )
 
 
 def test_the_must_fire_control_fires_on_the_pre_1134_text():
