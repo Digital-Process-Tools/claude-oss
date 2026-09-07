@@ -210,6 +210,38 @@ def _parse_timestamp(value):
     return parsed.astimezone(_dt.timezone.utc)
 
 
+def _validate_comparison_at(cited, comparison_at):
+    """The `--at` contract, extracted so every early-return path can run it.
+
+    Returns a `could-not-check` record if ``comparison_at`` is missing or
+    unparseable, or ``None`` if it is fine. #1268 self-review: a first cut of
+    this fix inlined the check only inside `check_citation_order`, so
+    `check_repo`'s *own* early returns -- the declined short-circuit, and
+    separately the corrupt-state-file `except` branch -- could each still
+    reach a return statement without this ever running. Both callers below
+    now go through this one function first, so there is one place a third
+    early-return path would have to skip on purpose rather than by omission.
+    """
+    if not comparison_at or not str(comparison_at).strip():
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cited.get("cohort") if isinstance(cited, dict) else None,
+            "reason": "no comparison timestamp was given",
+        }
+    if _parse_timestamp(comparison_at) is None:
+        return {
+            "state": CITATION_COULD_NOT_CHECK,
+            "cohort": cited.get("cohort") if isinstance(cited, dict) else None,
+            "reason": (
+                "the comparison timestamp {!r} could not be parsed as a "
+                "timezone-aware ISO 8601 timestamp -- a bare value with no `Z` "
+                "suffix and no explicit UTC offset is refused rather than "
+                "assumed to be UTC".format(comparison_at)
+            ),
+        }
+    return None
+
+
 def check_citation_order(cited, entries, comparison_at):
     """The ordering rule itself, against a list of state-file entries.
 
@@ -223,35 +255,21 @@ def check_citation_order(cited, entries, comparison_at):
     (they come from different sources and are never guaranteed to match byte for
     byte) cannot flip the verdict.
 
-    #1268: ``comparison_at`` is validated on *every* path, declined included,
-    before any branch on ``cited`` runs. `--at` is a required argument on
-    every invocation of this module, not a value some callers happen to pass
-    and others don't -- so a caller that hands this function a malformed
-    timestamp has made a real invocation mistake regardless of which shape
-    the marker turns out to be, and a declined marker (which never uses the
-    timestamp for a comparison) is not a reason to skip telling them. The
-    earlier version validated ``comparison_at`` only on the path that goes
-    on to actually compare it, so a declined marker paired with a garbled
-    `--at` silently reported `declined` with the bad input never even read.
+    #1268: ``comparison_at`` is validated (via ``_validate_comparison_at``) on
+    *every* path, declined included, before any branch on ``cited`` runs.
+    `--at` is a required argument on every invocation of this module, not a
+    value some callers happen to pass and others don't -- so a caller that
+    hands this function a malformed timestamp has made a real invocation
+    mistake regardless of which shape the marker turns out to be, and a
+    declined marker (which never uses the timestamp for a comparison) is not
+    a reason to skip telling them. The earlier version validated
+    ``comparison_at`` only on the path that goes on to actually compare it, so
+    a declined marker paired with a garbled `--at` silently reported
+    `declined` with the bad input never even read.
     """
-    if not comparison_at or not str(comparison_at).strip():
-        return {
-            "state": CITATION_COULD_NOT_CHECK,
-            "cohort": cited.get("cohort") if isinstance(cited, dict) else None,
-            "reason": "no comparison timestamp was given",
-        }
-    comparison_dt = _parse_timestamp(comparison_at)
-    if comparison_dt is None:
-        return {
-            "state": CITATION_COULD_NOT_CHECK,
-            "cohort": cited.get("cohort") if isinstance(cited, dict) else None,
-            "reason": (
-                "the comparison timestamp {!r} could not be parsed as a "
-                "timezone-aware ISO 8601 timestamp -- a bare value with no `Z` "
-                "suffix and no explicit UTC offset is refused rather than "
-                "assumed to be UTC".format(comparison_at)
-            ),
-        }
+    timestamp_error = _validate_comparison_at(cited, comparison_at)
+    if timestamp_error is not None:
+        return timestamp_error
     if isinstance(cited, dict) and cited.get("declined"):
         return {
             "state": CITATION_DECLINED,
@@ -269,6 +287,7 @@ def check_citation_order(cited, entries, comparison_at):
             "cohort": None,
             "reason": ("no cohort citation found in the marker -- nothing to check"),
         }
+    comparison_dt = _parse_timestamp(comparison_at)
     cohort = cited["cohort"]
     freeze_ats = _measured_freeze_ats(entries, cohort)
     if not freeze_ats:
@@ -335,6 +354,18 @@ def check_repo(claude_md_path, state_path, at):
         }
     text = claude_md_path.read_text(encoding="utf-8", errors="replace")
     cited = extract_cited_cohort(text)
+
+    # #1268 self-review: `check_repo` has two early-return paths of its own
+    # (below) that never reach `check_citation_order`'s branch on `cited` at
+    # all -- the declined short-circuit, and the corrupt-state-file `except`
+    # -- and a first cut of this fix only validated `--at` on the path that
+    # goes through `check_citation_order`. Both of `check_repo`'s own early
+    # returns go through `_validate_comparison_at` first now, so a malformed
+    # `--at` is caught before either one can hand back an unrelated reason
+    # with the bad timestamp never even read.
+    timestamp_error = _validate_comparison_at(cited, at)
+    if timestamp_error is not None:
+        return timestamp_error
 
     # A declined citation has nothing to verify against a state file at all
     # (#1264) -- checked before the state file is even opened, so a state

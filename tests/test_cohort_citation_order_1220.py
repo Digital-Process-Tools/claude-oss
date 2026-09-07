@@ -234,6 +234,21 @@ def test_could_not_check_when_no_cohort_was_cited():
     assert record["state"] == cco.CITATION_COULD_NOT_CHECK
 
 
+def test_no_citation_with_a_malformed_timestamp_reports_the_timestamp_reason():
+    """Self-review (#1268): validating `--at` before branching on `cited`
+    means a malformed `--at` now wins the diagnostic over "no citation found"
+    when both are true at once -- an intentional consequence of validating
+    the timestamp unconditionally, not an accident of the reorder. The final
+    `state` is unaffected (still `could-not-check` either way); only which
+    `reason` is reported changes, and this pins that choice down with a test
+    rather than leaving it as an unasserted side effect."""
+    record = cco.check_citation_order(
+        cited=None, entries=[], comparison_at="not-a-timestamp"
+    )
+    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+    assert "not-a-timestamp" in record["reason"]
+
+
 def test_declined_citation_is_its_own_state_not_could_not_check_not_ok():
     """#1264: a marker that explicitly declined to cite a cohort must render
     as its own state -- not folded into `could-not-check` (which already means
@@ -451,6 +466,33 @@ def test_check_repo_declined_with_a_malformed_at_is_could_not_check(tmp_path):
     )
     assert record["state"] == cco.CITATION_COULD_NOT_CHECK
     assert record["state"] != cco.CITATION_DECLINED
+
+
+def test_check_repo_corrupt_state_still_validates_a_malformed_at(tmp_path):
+    """#1268 self-review finding: `check_repo`'s own `except StateError` early
+    return (a corrupt or unreadable state file) is a *second* short-circuit
+    that bypasses `check_citation_order` entirely, exactly like the declined
+    one #1268's first fix addressed -- and it skipped `--at` validation too.
+    A real, non-declined citation paired with a corrupt state file and a
+    malformed `--at` must report `could-not-check` because of the malformed
+    timestamp being read, not silently ignore it and report the state-file
+    reason instead with the bad `--at` never even parsed."""
+    claude_md = tmp_path / "CLAUDE.md"
+    claude_md.write_text(
+        "## What is not proven yet\n"
+        "**Cohort freeze: cohort-21 at 32 open issues, against cohort-20's "
+        "29.**\n",
+        encoding="utf-8",
+    )
+    corrupt_state = tmp_path / "watch.json"
+    corrupt_state.write_text("{not valid json", encoding="utf-8")
+    record = cco.check_repo(
+        claude_md_path=claude_md,
+        state_path=corrupt_state,
+        at="not-a-timestamp",
+    )
+    assert record["state"] == cco.CITATION_COULD_NOT_CHECK
+    assert "not-a-timestamp" in record["reason"]
 
 
 def test_this_repos_own_current_state_is_could_not_check_or_declined():
