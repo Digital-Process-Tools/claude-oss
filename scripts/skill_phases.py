@@ -374,8 +374,17 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # loop's own initiative) rather than on which call site typed the
         # issue up, so a co-decided issue is never tagged even when the loop
         # files it. Budget unchanged; comfortably under it.
-        18549,
-        19500,
+        # Raised for #1122: 18549 B became 20894 B, past the 19500 B ceiling
+        # by 1394 B. The new paragraph states which cohort's count the
+        # release-commit marker may cite -- the previous release's, already
+        # fully frozen, never the current release's own not-yet-frozen one --
+        # closing the gap where v0.25.0's marker cited cohort-21's count
+        # inside the commit written before cohort-21's own freeze ran, and
+        # the two numbers (30 cited, 32 applied) disagreed. Nothing already
+        # in the file argued that point, so nothing was cut to make room;
+        # ceiling moved to 23000 B, ~10% headroom over the new size.
+        20894,
+        23000,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
     # New for #1037: `commands/tick.md` used to inject its own numbered steps 1-6

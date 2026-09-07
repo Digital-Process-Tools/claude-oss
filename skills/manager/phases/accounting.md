@@ -62,6 +62,32 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
 Passing route counts that disagree records `unknown`, not a freeze at either number. Re-counting
 rather than writing either one down is the correct response to that state.
 
+**The release commit and the freeze are not the same moment, and a citation must never pretend
+they are (#1122).** `CLAUDE.md`'s own "What is not proven yet" marker, where a repo carries one, is
+rewritten and staged as part of the release commit -- before the tag exists. The freeze above runs
+strictly *after* the tag, keyed to the tag's own `tagger.date` rather than to `now` for exactly the
+reason stated in `cohort_freeze.py`'s own docstring (#917): so the count is reproducible regardless
+of when someone gets around to running it. Put those two facts together and the current release's
+own cohort has no count yet at the moment the marker is written -- the loop routinely files issues
+in the window between the commit and the tag, and each one lands inside or outside the frozen set
+depending on whether it beat the tag, not the commit. `v0.25.0`'s marker cited cohort-21's count
+inside the commit that preceded cohort-21's own freeze; two issues were filed in that window, and
+the number actually applied at the tag (32) disagreed with the number the commit had guessed (30).
+
+So the marker cites **only cohorts that have already finished freezing** — the previous release's,
+whose freeze ran at that release's own tag and cannot move again, since a cohort only ever shrinks
+and this one has had a full cycle to settle. It never states a number for the cohort this release
+is about to spawn; that number is unmeasured until the tag exists, and guessing it is exactly the
+premature measurement this file's own "third state" doctrine exists to name rather than paper over.
+Report a new cohort's own count for the first time in the *next* release's marker, once its freeze
+has actually run and the two-route check above has agreed on it — so the marker always reads
+"cohort-(N-1) at M, against cohort-(N-2)'s settled count", one cycle behind the tag that created the
+newest cohort, never "cohort-N at a number taken before N's own freeze ran." A range or a
+"counted before the freeze, may undercount" hedge was considered and rejected: it keeps the
+misalignment and only labels it, where deferring the citation removes it, at the cost of the
+marker always naming last cycle's cohort rather than the newest one -- a trade this file takes
+because a stale-but-honest number is worse than one that is simply a cycle behind and will settle.
+
 ### Intake: filings per merged pull request
 
 The cohort measures the drain. This measures the fill, and without it the board's growth is a

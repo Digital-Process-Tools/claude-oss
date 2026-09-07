@@ -409,7 +409,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/SKILL.md` | 41,601 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 53,209 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
-| `skills/manager/phases/accounting.md` | 18,549 B | 19,500 B |
+| `skills/manager/phases/accounting.md` | 20,894 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 33,396 B | 36,000 B |
 | `skills/manager/phases/release.md` | 9,425 B | 9,800 B |
 | `skills/manager/phases/review.md` | 10,353 B | 11,400 B |
@@ -471,6 +471,16 @@ change than a fresh phase file plus its own spine directive block would be. `rev
 moved by the same #762: one paragraph, naming where the filing-time label attach happens, pushed
 10,348 B to 11,637 B and past its old 11,400 B ceiling by 237 B -- too small an overage to be worth
 trimming something else in the same file to absorb, so it was raised too.
+
+**`accounting.md`'s budget was raised again for #1122**, past the same growth-by-accretion pattern
+this table calls out for #675 and #1029: 18,549 B became 20,894 B, past the 19,500 B ceiling by
+1,394 B. The new paragraph states which cohort's count the release-commit marker may cite -- only
+the previous release's, already fully frozen, never the current release's own not-yet-frozen one --
+closing a structural gap where `v0.25.0`'s marker cited cohort-21's count inside the commit written
+*before* cohort-21's own freeze ran (the freeze runs after the tag; the marker is written before
+it), and the two numbers (30 cited, 32 actually applied) disagreed. Nothing already in the file
+argued that point, so nothing was cut to make room; ceiling moved to 23,000 B, ~10% headroom over
+the new size.
 
 **`merge.md`'s budget was raised for #1007**, which closes the race a tick's own cleanup
 guard was overridden through: 10,012 B measured became 13,198 B. The new bullet states two

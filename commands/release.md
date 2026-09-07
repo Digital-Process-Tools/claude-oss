@@ -323,6 +323,11 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    1. Re-derive whatever the section claims to have re-derived — the delta count, the audit rounds,
       anything else the section states as measured — against the tree you are about to tag, and
       rewrite the marker paragraph to name this release and the commit it was written at.
+      **A cohort freeze is the one figure this step must never re-derive for the release being
+      cut** (#1122): the freeze below runs after the tag, and the commit carrying this marker is
+      written before it, so this release's own cohort count does not exist yet at this step. Cite
+      only a cohort that already finished freezing — see `skills/manager/phases/accounting.md`'s
+      cohort-citation rule for what that means in practice.
    2. After folding the changelog and before the release commit, run the repo's own
       `tests/test_claude_md_currency.py` (`python3 -m pytest`, not a plugin script under
       `${CLAUDE_PLUGIN_ROOT}`, so it stays a prose instruction rather than a fenced command line).
