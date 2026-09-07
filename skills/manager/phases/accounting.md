@@ -88,6 +88,18 @@ misalignment and only labels it, where deferring the citation removes it, at the
 marker always naming last cycle's cohort rather than the newest one -- a trade this file takes
 because a stale-but-honest number is worse than one that is simply a cycle behind and will settle.
 
+**#1220 mechanises the ordering check above rather than leaving it to a release session's own
+reading.**
+`"${CLAUDE_PLUGIN_ROOT}/scripts/cohort_citation_order.py" --state <state file> --at <now>`
+compares the marker's cited cohort against that cohort's own recorded `detail.cohort_freeze`
+entry and reports `ok` /
+`finding` / `could-not-check` -- `could-not-check` on a checkout with no state file, which is the
+ordinary case, so an absent check never reads as a clean one. `--at` takes `now` rather than "the
+release commit's own timestamp" because this runs *before* that commit exists (there is nothing
+else to pass); both sides of the comparison are parsed as real instants, not compared as strings,
+so an explicit UTC offset or fractional seconds on either side cannot flip the verdict. Run it as
+part of the marker-rewrite gate below, before committing.
+
 **"Settled count" names the number the two-route check already agreed on and recorded at freeze
 time — the `froze <cohort> at N` decision (`detail.cohort_freeze`) in the state file — never a
 fresh recount taken at citation time.** A cohort only shrinks, so a recount run months later can

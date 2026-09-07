@@ -401,7 +401,18 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # recount -- fixed by naming the recorded `froze <cohort> at N`
         # decision as the one to quote. Comfortably under the 23000 B
         # ceiling; ceiling unchanged.
-        21569,
+        # Re-baselined for #1220: 21569 B became 22430 B, across four CI-driven
+        # rounds -- 22110 B, +296 B fixing a wording inconsistency between this
+        # file and commands/release.md over what `--at` takes, +22 B prefixing
+        # the bare scripts/cohort_citation_order.py path with
+        # ${CLAUDE_PLUGIN_ROOT}/ (test_script_path_resolution_647.py, 12/18
+        # legs red), +2 B quoting that same reference
+        # ("${CLAUDE_PLUGIN_ROOT}/...") so a plugin root containing a space
+        # does not word-split (test_phase_files_plugin_root_quoting_751.py) --
+        # a pointer to the new mechanical ordering check,
+        # scripts/cohort_citation_order.py. Comfortably under the 23000 B
+        # ceiling; ceiling unchanged.
+        22430,
         23000,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
