@@ -124,8 +124,28 @@ def test_cache_restore_step_caches_the_version_directory_not_x64():
         "find() still reports as a miss (the marker file sits beside it, not "
         "inside it) -- cache the VERSION directory instead, got path: {!r}".format(path)
     )
+    # A bare "not endswith x64" check alone is satisfied by something as broad as
+    # runner.tool_cache itself -- caching the whole hosted tool cache, every
+    # language on the runner, not just this one interpreter's VERSION directory.
+    # Anchor on the interpreter patch pin instead: the path must resolve to
+    # <tool_cache>/Python/<the same patch the workflow pins>, which is specific
+    # enough that neither "cache everything" nor "cache x64/" can satisfy it.
+    assert "Python" in path, (
+        "the cached path must be the Python tool's own tree under runner.tool_cache, "
+        "got {!r}".format(path)
+    )
+    assert "WIN_PY39_PATCH" in path, (
+        "the cached path must be keyed on the same env.WIN_PY39_PATCH pin the "
+        "workflow uses elsewhere, not a hand-typed literal that can drift from it, "
+        "got {!r}".format(path)
+    )
     key = with_block.get("key", "")
     assert key, "the cache step needs an explicit key"
+    assert "WIN_PY39_PATCH" in key, (
+        "the cache key must include the same env.WIN_PY39_PATCH pin, or a runner "
+        "image update silently invalidates nothing and the cache goes stale, got "
+        "key: {!r}".format(key)
+    )
 
 
 @needs_yaml
