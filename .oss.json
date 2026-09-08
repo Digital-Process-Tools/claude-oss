@@ -15,6 +15,8 @@
   "docs_targets": [
     "README.md"
   ],
+  "_curate_route_threshold_note": "#1303: judgment call, not a measured constant. 49 fragments sat undrained in trap.d/ when this was picked, with no threshold at all -- the config gap the issue exists to close, since scripts/workspace_routes.py (#1155) already built and tested the /oss:curate threshold route but nothing here had ever set the key. 15 is chosen deliberately low relative to that 49: /oss:curate works one fragment at a time, so a backlog is cheaper to drain in several smaller passes than in one pass over dozens, and 15 is roughly what a handful of ticks between triage/release cycles would produce -- large enough that a handful of fresh traps from one tick does not fire the route on every single launch, small enough that the backlog cannot silently grow to 49+ again before something notices. Re-measure and re-justify rather than trust this number as it ages.",
+  "curate_route_threshold": 15,
   "labels": {
     "priority": ["priority-high", "priority-medium", "priority-low"],
     "lanes": ["lane-dispatch", "lane-doctor", "lane-prose", "lane-release", "lane-scaffold"],

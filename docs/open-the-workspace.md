@@ -157,8 +157,10 @@ each:
 - **A threshold is a per-repo fact**, so it goes in `.oss.json` (`triage_route_threshold`,
   `curate_route_threshold`, `release_route_threshold`) and never in shared code. An absent key means
   the repo does not want the route -- `decide()` skips a route entirely rather than defaulting a
-  number, and none of this repository's own three keys is set today, on purpose: shipping the
-  mechanism and choosing this repo's own numbers are two different decisions.
+  number. This repository sets one of its own three: `curate_route_threshold` (#1303), justified in
+  `.oss.json`'s own `_curate_route_threshold_note`. `triage_route_threshold` and
+  `release_route_threshold` remain unset, on purpose -- shipping the mechanism and choosing this
+  repo's own numbers for every route are separate decisions.
 - **Every count needs a third state.** `11 waiting` and `could not read the directory` must not both
   render as under threshold. `over` / `under` / `could-not-count`, and the third neither routes nor
   goes silent -- `_count_state` never returns `under` for a `None` count, and an invalid threshold
