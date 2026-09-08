@@ -275,8 +275,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # #1103: on UNVALIDATABLE, compare the report's optional plugin_root
         # against the sub-manager's own current ${CLAUDE_PLUGIN_ROOT} and
         # attribute a difference to a mid-tick plugin update. 16347 became
-        # 17116. Ceiling unchanged.
-        17116,
+        # 17116, then 17249 after self-review softened "a difference means"
+        # to "a real difference is evidence" and named trivial spelling
+        # differences (case, trailing separator, slash vs backslash) to
+        # ignore first. Ceiling unchanged.
+        17249,
         18000,
         "a lane reported back: reading the report, pushing, opening the pull request",
     ),

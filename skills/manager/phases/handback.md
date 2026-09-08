@@ -132,11 +132,13 @@ invisible to the running loop until a tag is cut and installed. So:
   **Attribute it before relaying it as a bare mismatch (#1103).** Open the report by eye — the
   fallback this same verdict already tells you to use — and read `plugin_root`, if the lane recorded
   one: the literal `${CLAUDE_PLUGIN_ROOT}` it resolved when it wrote and self-validated its own
-  report. Compare that string to your own `${CLAUDE_PLUGIN_ROOT}` right now. A difference means the
-  plugin auto-updated mid-tick, between that lane's spawn and this validation — say so in the
-  handback, naming both paths, rather than reporting an isolated schema mismatch with no visible
-  cause. No `plugin_root` at all (an older schema, or a lane that could not resolve the variable)
-  just means this particular attribution is unavailable, not that nothing moved.
+  report. Compare that string to your own `${CLAUDE_PLUGIN_ROOT}` right now, treating a trivial
+  spelling difference (case, a trailing separator, a slash vs. a backslash) as no difference at all.
+  A real difference is evidence the plugin auto-updated mid-tick, between that lane's spawn and this
+  validation — say so in the handback, naming both paths, rather than reporting an isolated schema
+  mismatch with no visible cause. No `plugin_root` at all (an older schema, or a lane that could not
+  resolve the variable) just means this particular attribution is unavailable, not that nothing
+  moved.
 
 When the two disagree, **the clone is the authority** — it is the tree the work was done in and the
 tree the release will ship. Nothing distinguishes the two copies by name; both manifests read `oss`,

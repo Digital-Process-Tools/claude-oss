@@ -468,7 +468,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 41,738 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 54,117 B | 57,400 B |
-| `skills/manager/phases/handback.md` | 17,116 B | 18,000 B |
+| `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,700 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
@@ -484,7 +484,10 @@ on the same replace-don't-append terms as the agent budgets above.
 became 17,116 B, still under the 18,000 B budget. The new paragraph tells a sub-manager, on seeing
 `UNVALIDATABLE`, to read the report's optional `plugin_root` field and compare it to its own current
 `${CLAUDE_PLUGIN_ROOT}` -- a difference attributes the answer to a mid-tick plugin update rather than
-leaving it as a bare, uncaused schema mismatch.
+leaving it as a bare, uncaused schema mismatch. A self-review auditor spawn found the comparison as
+first worded ("a difference means...") could misread a trivially-respelled but identical path (case,
+a trailing separator, slash vs. backslash) as a version change; 17,116 B became 17,249 B naming those
+to ignore first and softening the verdict to "a real difference is evidence".
 
 **#1275 raised `skills/manager/phases/findings.md`'s ceiling from 10,300 B to 12,400 B**: 9,326 B
 became 11,222 B, past the old ceiling by 922 B. The new "Routing a finding" section states where a
