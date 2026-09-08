@@ -257,3 +257,98 @@ def test_default_split_at_matches_pr_454s_merge_timestamp():
     """Pin against drift: this is #454's own merged_at, read from the forge
     when this scan was built, not a guess."""
     assert gp.DEFAULT_SPLIT_AT == "2026-08-22T11:05:29Z"
+
+
+# ---------------------------------------------------------------------------
+# Self-review (#455): a bare string compare of a whole-second split against
+# a millisecond-precision real timestamp misclassifies anything inside the
+# split second, because "." sorts below "Z" in ASCII -- ".500Z" (500ms
+# *after* the second) compares less than the bare "Z" (the second itself).
+# Real transcripts carry milliseconds; DEFAULT_SPLIT_AT does not.
+# ---------------------------------------------------------------------------
+
+
+def test_timestamp_key_orders_a_fractional_second_after_its_bare_second():
+    """Must-fire: this is exactly the bug a naive string compare has."""
+    bare = gp._timestamp_key("2026-08-22T11:05:29Z")
+    frac = gp._timestamp_key("2026-08-22T11:05:29.500Z")
+    assert frac > bare
+    # Control, same pair: a plain string compare gets this backwards.
+    assert "2026-08-22T11:05:29.500Z" < "2026-08-22T11:05:29Z"
+
+
+def test_timestamp_key_still_orders_distinct_whole_seconds_correctly():
+    """Must-not-fire control: differing whole seconds order correctly either
+    way, so the fix must not have broken the ordinary case."""
+    earlier = gp._timestamp_key("2026-08-22T11:05:28.999Z")
+    later = gp._timestamp_key("2026-08-22T11:05:29.001Z")
+    assert earlier < later
+
+
+def test_run_places_a_millisecond_timestamp_in_the_split_second_after_split(
+    tmp_path,
+):
+    """The scenario found by review: a real-shaped lane timestamped 500ms
+    into the split second must land on the after side, not before."""
+    root = tmp_path / "root"
+    _write_jsonl(root / "before-1.jsonl", _lane(1000, 3000, 3, "2026-08-01T00:00:00Z"))
+    _write_jsonl(
+        root / "boundary.jsonl",
+        _lane(1000, 2000, 3, "2026-08-22T11:05:29.500Z"),
+    )
+    report = gp.run(roots=[root], split_at=SPLIT_AT)
+    assert report["after"]["growth_samples"] == 1
+    assert report["before"]["growth_samples"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Self-review (#455): a present-but-empty usage dict silently contributes a
+# context of 0, indistinguishable from a turn whose context genuinely was 0.
+# ---------------------------------------------------------------------------
+
+
+def test_analyze_growth_counts_turns_with_no_usable_usage_field(tmp_path):
+    """Must-fire: a usage dict present but carrying none of the three
+    context fields is flagged, not silently folded into a real zero."""
+    path = tmp_path / "agent-unusable.jsonl"
+    _write_jsonl(
+        path,
+        [
+            _assistant({"some_other_field": 1}, "2026-08-01T00:00:00Z"),
+            _assistant(_usage(cache_read=500), "2026-08-01T00:00:01Z"),
+        ],
+    )
+    result = gp.analyze_growth(path)
+    assert result["ok"] is True
+    assert result["turns_with_unusable_usage"] == 1
+
+
+def test_analyze_growth_reports_zero_unusable_usage_on_a_clean_transcript(
+    tmp_path,
+):
+    """Must-not-fire control, same test shape: an ordinary transcript with
+    real usage fields on every turn reports zero."""
+    path = tmp_path / "agent-clean.jsonl"
+    _write_jsonl(path, _lane(1000, 3000, 3, "2026-08-01T00:00:00Z"))
+    result = gp.analyze_growth(path)
+    assert result["ok"] is True
+    assert result["turns_with_unusable_usage"] == 0
+
+
+def test_no_post_fix_state_is_legible_even_when_the_before_side_has_no_growth_samples(
+    tmp_path,
+):
+    """The degenerate case review flagged: every pre-split transcript is a
+    single turn, so `before.growth_samples` is 0 too -- the state must still
+    be no-post-fix-transcripts (not measured, not could-not-read), and the
+    caller can tell from `growth_samples` that neither side has a reading."""
+    root = tmp_path / "root"
+    _write_jsonl(
+        root / "before-single-turn.jsonl",
+        [_assistant(_usage(cache_read=500), "2026-08-01T00:00:00Z")],
+    )
+    report = gp.run(roots=[root], split_at=SPLIT_AT)
+    assert report["state"] == gp.STATE_NO_POST_FIX
+    assert report["before"]["transcript_count"] == 1
+    assert report["before"]["growth_samples"] == 0
+    assert report["after"]["growth_samples"] == 0

@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Growth-per-turn scan, developer agents only, before/after PR #454 -- #455.
 
-#314 measured *what* an agent's per-turn context growth is (roughly half tool
-results, half the agent's own emitted text between tool calls) and #454 acted
-on it: `agents/developer.md` gained an instruction that prose belongs in the
+#314 measured *what* an agent's per-turn context growth is: its own body
+found tool results accounting for roughly half of it, with the remainder
+being the agent's own emitted text between tool calls -- a real, cited
+measurement, not this module's own claim, and **not** a claim about how much
+of that remainder is narration specifically versus tool-call payload; #454's
+own "Not claimed" clause is explicit that it does not attempt that split
+(self-review finding, #455). #454 acted on the narration half anyway:
+`agents/developer.md` gained an instruction that prose belongs in the
 report, not between tool calls. Neither issue ran the measurement that would
 say whether that instruction actually changed anything -- #454's own lane
 correctly declined it, because at the time it merged no post-fix developer
@@ -39,8 +44,13 @@ finished under the new one -- attributing by its own conclusion is the
 closer reading of "was this lane run under the new instruction". A lane that
 straddles the boundary is a real edge case this reading does not resolve
 perfectly, and is named as a judgement call rather than hidden as a fact.
-Z-suffixed ISO8601 timestamps sort lexicographically, so a plain string
-comparison is enough -- no datetime parsing, no timezone arithmetic.
+Comparison is via `_timestamp_key`, not a bare string compare: two
+Z-suffixed ISO8601 timestamps of the *same* fractional-second precision do
+sort lexicographically, but `DEFAULT_SPLIT_AT` carries none while a real
+transcript timestamp carries milliseconds, and a naive compare gets that
+pair backwards (self-review finding, #455 -- see `_timestamp_key`'s own
+docstring for the mechanism). No datetime parsing, no timezone arithmetic;
+just a precision-safe key.
 
 **Population**: `--agent oss:developer` by default, matching the literal
 `attributionAgent` value `transcript_refusals.py` already established for
@@ -56,8 +66,11 @@ kept available for comparison, never the default.
   transcripts with a computable growth reading. **This must never render as
   "no improvement"**: it means the input to the comparison does not exist
   yet, not that a comparison was made and found nothing. The before side is
-  still reported in full, because it is a real reading even when there is
-  nothing yet to compare it against.
+  still reported in full alongside it -- but "in full" is not a promise that
+  it has a growth reading either: `before.growth_samples` can itself be 0 in
+  the degenerate case where every matched pre-split transcript was a single
+  turn (self-review finding, #455). Read `growth_samples`, on either side,
+  rather than assuming a non-empty `transcript_count` means one.
 - `could-not-read` -- nothing could be measured at all: no transcript files
   found under the given root(s), every file that was found failed to parse,
   or the agent filter matched zero transcripts. Distinct from
@@ -141,6 +154,34 @@ def _context_size(usage):
     return total
 
 
+def _usage_is_unusable(usage):
+    """True when a *present* usage dict carries none of the three context
+    fields as a number. `_context_size` folds this case into a plain `0`,
+    which renders identically to a turn whose context genuinely was zero --
+    so this is tracked separately (self-review finding, #455) rather than
+    left silent."""
+    return not any(
+        isinstance(usage.get(key), (int, float)) for key in _CONTEXT_USAGE_KEYS
+    )
+
+
+def _timestamp_key(ts):
+    """A comparison key for a Z-suffixed ISO8601 UTC timestamp that stays
+    correct across differing fractional-second precision. A bare string
+    compare is not safe once precision differs: `'.'` (0x2E) sorts below
+    `'Z'` (0x5A) in ASCII, so `"...29.500Z"` (500ms *after* the second)
+    compares *less than* `"...29Z"` (the bare second, no fraction) --
+    `DEFAULT_SPLIT_AT` has no fractional component while every real
+    transcript timestamp does (self-review finding, #455). Splits the
+    whole-second prefix (fixed width, so plain string comparison is safe
+    there) from the fractional part, and right-pads a missing or shorter
+    fraction with zeros so every key compares at the same precision."""
+    if ts.endswith("Z"):
+        ts = ts[:-1]
+    whole, _, frac = ts.partition(".")
+    return whole, frac.ljust(9, "0")
+
+
 def analyze_growth(path):
     """One transcript's growth-per-turn reading. Never raises -- an
     unreadable or unparsable file comes back as `{"ok": False, ...}`,
@@ -159,6 +200,7 @@ def analyze_growth(path):
     agent = None
     last_timestamp = None
     turns = 0
+    turns_with_unusable_usage = 0
     first_context = None
     last_context = None
     parsed_records = 0
@@ -195,6 +237,8 @@ def analyze_growth(path):
         if not isinstance(usage, dict):
             continue
         turns += 1
+        if _usage_is_unusable(usage):
+            turns_with_unusable_usage += 1
         context = _context_size(usage)
         if first_context is None:
             first_context = context
@@ -222,6 +266,7 @@ def analyze_growth(path):
         "agent": agent or "unknown",
         "last_timestamp": last_timestamp,
         "turns": turns,
+        "turns_with_unusable_usage": turns_with_unusable_usage,
         "turn1_context": first_context,
         "final_context": last_context,
         "growth_per_turn": growth_per_turn,
@@ -252,6 +297,9 @@ def _summarize_side(analyses):
         "growth_samples": len(growth),
         "median_growth_per_turn": _median(growth),
         "median_turns": _median(turns),
+        "turns_with_unusable_usage": sum(
+            a.get("turns_with_unusable_usage", 0) for a in analyses
+        ),
         "window": {
             "first_timestamp": min(timestamps) if timestamps else None,
             "last_timestamp": max(timestamps) if timestamps else None,
@@ -313,15 +361,18 @@ def run(roots, agent_filter=DEFAULT_AGENT_FILTER, split_at=DEFAULT_SPLIT_AT):
             "split_at": split_at,
         }
 
+    split_key = _timestamp_key(split_at)
     before = [
         a
         for a in matched
-        if a["last_timestamp"] is not None and a["last_timestamp"] < split_at
+        if a["last_timestamp"] is not None
+        and _timestamp_key(a["last_timestamp"]) < split_key
     ]
     after = [
         a
         for a in matched
-        if a["last_timestamp"] is not None and a["last_timestamp"] >= split_at
+        if a["last_timestamp"] is not None
+        and _timestamp_key(a["last_timestamp"]) >= split_key
     ]
     no_timestamp = [a for a in matched if a["last_timestamp"] is None]
 
