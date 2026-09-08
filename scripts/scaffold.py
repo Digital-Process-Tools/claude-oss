@@ -967,8 +967,9 @@ nothing back; a separate pass is what turns a fragment into a rule a session act
 This repository also ships a matching rule under `.claude/jit-context/paths/`, but that rule
 is reinforcement, not the delivery mechanism -- it cannot fire before the first touch that
 would trigger it, and it fires at most once per session even across several agents in the
-same one. This file, injected on every turn of every agent that reads it, is the one thing
-here guaranteed to say so.
+same one. Nothing injects this file into a session either; the standing invitation to log a
+trap has to live in whatever carries an agent's instructions on every turn, not in a file on
+disk that is read only when something chooses to open it.
 """
 
 

@@ -127,14 +127,14 @@ that already sets `statusLine`, or whose settings file cannot be read, gets no p
 there is nothing pending to show. `--apply`'s own receipt names it the same way, `extended` beside
 `created` and `ours`.
 
-`.oss/statusline.py` is the one owned file **not** gated on the changelog-gate detection. That gate
-answers one question — does a changelog gate already run here under another name — and it is not an
-answer about a status line.
+`.oss/statusline.py` and `trap.d/README.md` are the two owned files **not** gated on the
+changelog-gate detection. That gate answers one question — does a changelog gate already run here
+under another name — and it is not an answer about a status line or about `trap.d/`.
 
 The first eleven are created once when absent and are yours afterwards. The last five are ours and
 are rewritten on every `--apply`, which is why `--show` prints them as `replace` even in a repo that
-already has everything. `trap.d/README.md` is the odd one out among the five: it is the one file the
-plugin owns *outside* `.oss/`, because `.oss/` is a directory this plugin owns outright and `trap.d/`
+already has everything. Two of the five live *outside* `.oss/`: the workflow (below) and
+`trap.d/README.md` (#1302), because `.oss/` is a directory this plugin owns outright and `trap.d/`
 is not — the directory itself is created once, like the first eleven, and every fragment written
 into it is the repo's own, never touched.
 
@@ -169,15 +169,17 @@ and set it in the payload.
 | --- | --- | --- |
 | **Yours** | everywhere else | never read, never written |
 | **Defaults** | `SECURITY.md`, `CLAUDE.md`, `.github/ISSUE_TEMPLATE/`, `changelog.d/README.md`, … | created once when absent, then yours forever |
-| **Ours** | `.oss/`, plus `.github/workflows/oss-changelog.yml` | replaced every run, so fixes reach the repo |
+| **Ours** | `.oss/`, plus `.github/workflows/oss-changelog.yml` and `trap.d/README.md` | replaced every run, so fixes reach the repo |
 
 `.oss/README.md` states that table inside the repo, which is where somebody about to
 edit a generated file is actually looking. Every owned file repeats it in its own header
 and names the way out: copy it somewhere outside `.oss/` and point at your copy.
 
-The workflow is the one owned file that cannot live in `.oss/` — a forge reads workflows
-only from `.github/workflows/` itself, subdirectories are unsupported and a symlink there
-fails outright. Hence the `oss-` prefix, so it is still obvious in a directory listing.
+The workflow cannot live in `.oss/` either — a forge reads workflows only from
+`.github/workflows/` itself, subdirectories are unsupported and a symlink there fails outright.
+Hence the `oss-` prefix, so it is still obvious in a directory listing. `trap.d/README.md` is
+outside `.oss/` for a different reason, given above: it documents a directory `.oss/` does not
+contain.
 
 `.oss/assemble_changelog.py` ships into the repo rather than being called from the
 plugin because CI checks out the repo and nothing else: a workflow calling a plugin path
