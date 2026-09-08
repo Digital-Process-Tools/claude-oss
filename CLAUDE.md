@@ -469,7 +469,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/SKILL.md` | 41,738 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 54,117 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
-| `skills/manager/phases/accounting.md` | 22,700 B | 23,000 B |
+| `skills/manager/phases/accounting.md` | 22,987 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
@@ -592,6 +592,11 @@ the new size. Re-baselined again in the same lane's own self-review round: 20,89
 decision and a fresh recount taken later, once a cohort has shrunk further -- fixed by naming the
 recorded `froze <cohort> at N` decision as the one to quote rather than a re-run of the check.
 Ceiling unchanged; comfortably under it.
+
+**`accounting.md`'s own measurement moved again for #1303**: the table's declared 22,700 B became
+22,987 B. The new sentence in Cadence names the #1155 threshold route now activated via
+`curate_route_threshold` -- the config change closing #1303, not a prose expansion of its own.
+Ceiling unchanged; still under it.
 
 **`merge.md`'s budget was raised for #1007**, which closes the race a tick's own cleanup
 guard was overridden through: 10,012 B measured became 13,198 B. The new bullet states two

@@ -244,20 +244,63 @@ def _is_known_placeholder_home_path(matched_text):
     )
 
 
-def _scan_for_hardcoded_paths(documents, ignore_known_placeholders=False):
+# #1305: home paths are one instance of a wider class -- a fact about the
+# machine that wrote a fragment rather than the finding it records. The
+# `#1255`/`#1261` guard is the "mechanism [that] largely exists" the issue
+# points at, so this widens `_scan_for_hardcoded_paths` to take an arbitrary
+# `patterns` list rather than duplicating its loop, and adds a second list
+# scanned the same way: fixed-format credential shapes, not a generic
+# "password=" or "token:" heuristic. That distinction is deliberate --
+# this repo's own prose (CLAUDE.md, this very file, changelog entries)
+# discusses tokens, API keys and credentials.json by name constantly, and a
+# heuristic keyed on those words would be red on legitimate prose forever
+# (the same false-positive shape #1262 already hit widening the home-path
+# scan to code directories). A fixed-format match -- an AWS access key ID's
+# `AKIA` prefix, a GitHub token's `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_` prefix,
+# a Slack token's `xox[baprs]-` prefix, a PEM private-key header -- is a
+# real secret shape mentioning the concept in English can never
+# accidentally produce; a repo-wide scan confirmed zero matches against
+# this pattern set at HEAD (`test_no_credential_leaks_in_shipped_mid_lane_
+# dirs` below), the same clean-baseline check #1255's own patterns were
+# never given before shipping.
+CREDENTIAL_LEAK_PATTERNS = [
+    (r"AKIA[0-9A-Z]{16}", "an AWS access key ID"),
+    (r"gh[pousr]_[A-Za-z0-9]{36,}", "a GitHub token"),
+    (r"xox[baprs]-[0-9A-Za-z-]{10,}", "a Slack token"),
+    (
+        r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----",
+        "a PEM private key header",
+    ),
+]
+
+
+def _scan_for_hardcoded_paths(
+    documents, ignore_known_placeholders=False, patterns=None
+):
     """documents: iterable of (label, text). Returns offender strings.
 
     ignore_known_placeholders drops a match whose username is one of this
     repo's established fixture placeholders (see HOME_PATH_PLACEHOLDER_USERNAMES)
     -- only meaningful for code documents, never passed for prose ones, where
     any match is presumed to be first-person prose about a real machine.
+    Only ever applied to HARDCODED_HOME_PATH matches (see below) -- a
+    credential has no equivalent placeholder convention, so it is never
+    dropped by this filter regardless of the flag.
+
+    patterns defaults to HARDCODED_HOME_PATH (#1305 widened this function
+    to also take CREDENTIAL_LEAK_PATTERNS, scanned the identical way, rather
+    than duplicating the loop for a second pattern list).
     """
+    if patterns is None:
+        patterns = HARDCODED_HOME_PATH
     offenders = []
     for label, text in documents:
-        for pattern, what in HARDCODED_HOME_PATH:
+        for pattern, what in patterns:
             for match in re.finditer(pattern, text):
-                if ignore_known_placeholders and _is_known_placeholder_home_path(
-                    match.group(0)
+                if (
+                    ignore_known_placeholders
+                    and patterns is HARDCODED_HOME_PATH
+                    and _is_known_placeholder_home_path(match.group(0))
                 ):
                     continue
                 line = text[: match.start()].count("\n") + 1
@@ -462,6 +505,110 @@ def test_every_shipped_mid_lane_dir_has_documents():
         "test_no_absolute_home_paths_in_shipped_mid_lane_dirs is not actually "
         "scanning them -- a directory that yields nothing renders identically "
         "to one that was scanned and found clean: {}".format(missing)
+    )
+
+
+def test_no_credential_leaks_in_shipped_mid_lane_dirs():
+    """#1305: nothing scanned fragment content for anything but a home path.
+
+    trap.d/ (and the rest of SHIPPED_MID_LANE_DIRS) is written by an agent,
+    mid-lane, unattended, and ships in the installed plugin artifact -- the
+    same shape #1255 already demonstrated for a home path. A credential is
+    the same defect class: a fact about the machine that wrote the fragment
+    rather than the finding it records. Reuses `_scan_for_hardcoded_paths`
+    (generalized to take a `patterns` argument) and the same
+    `_shipped_mid_lane_documents` partition -- no second directory walk.
+    """
+    prose_documents, code_documents = _shipped_mid_lane_documents()
+    offenders = _scan_for_hardcoded_paths(
+        prose_documents, patterns=CREDENTIAL_LEAK_PATTERNS
+    )
+    offenders += _scan_for_hardcoded_paths(
+        code_documents, patterns=CREDENTIAL_LEAK_PATTERNS
+    )
+    assert not offenders, (
+        "a shipped, mid-lane-written directory carries what looks like a "
+        "real credential -- redact it, this is not fixture data:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
+def test_credential_pattern_catches_a_planted_fixture():
+    """Positive control, one fixture per CREDENTIAL_LEAK_PATTERNS entry: a
+    fragment carrying a credential-shaped string, in the exact position a
+    mid-lane trap.d write would leave one (an error message, a command line
+    quoted verbatim), must be caught. Without this, a pattern matching
+    nothing would let the real check above pass vacuously the same way a
+    scope gap already let #1255 ship.
+    """
+    fixtures = [
+        (
+            # Built by concatenation, not one literal (mirrors
+            # `fixture_home_path` above): a contiguous AWS-key-shaped
+            # literal in this source file trips the repo's own gitleaks
+            # validator on write -- the exact false-positive-avoidance
+            # problem this fixture demonstrates a *real* detector for,
+            # one layer up.
+            "the AWS call failed with key " + "AKIA" + "ABCDEFGHIJKLMNOP" + " rejected",
+            "AWS access key ID",
+        ),
+        (
+            "committed a token: ghp_" + "a" * 36 + " by mistake",
+            "GitHub token",
+        ),
+        (
+            # Split the same way as the AWS fixture above: a contiguous
+            # Slack-token-shaped literal in tests/ would trip the very
+            # check below (tests/ is a SHIPPED_MID_LANE_DIRS code
+            # directory), since credentials have no placeholder-username
+            # escape hatch the way home paths do.
+            "the bot posted using "
+            + "xoxb-"
+            + "111111111111-"
+            + "aaaaaaaaaaaaaaaaaaaaaaaa",
+            "Slack token",
+        ),
+        (
+            "-----BEGIN "
+            + "RSA PRIVATE KEY-----\nMIIEow==\n-----END RSA PRIVATE KEY-----",
+            "PEM private key header",
+        ),
+    ]
+    for fixture_text, what in fixtures:
+        offenders = _scan_for_hardcoded_paths(
+            [("trap.d/9999.fixture-not-a-real-file.md", fixture_text)],
+            patterns=CREDENTIAL_LEAK_PATTERNS,
+        )
+        assert offenders, (
+            "the credential pattern failed to catch a planted {} fixture -- "
+            "the guard would not have caught a real leak of this shape "
+            "either".format(what)
+        )
+
+
+def test_credential_scan_does_not_fire_on_prose_about_credentials():
+    """Paired negative control (must-not-fire) for the must-fire test above:
+    a fragment that talks *about* credentials -- naming a file, an env var,
+    a concept -- without ever carrying an actual secret value must not be
+    flagged. Without this, the pattern set could be so broad it flags every
+    fragment that so much as mentions "token" or "credentials.json", which
+    would make the check noise nobody trusts rather than a real signal
+    (the same failure mode #1262's own self-review found for an unfiltered
+    home-path scan over code directories).
+    """
+    fixture_text = (
+        "Do not commit files that likely contain secrets (.env, "
+        "credentials.json, etc). Rotate the GH_TOKEN and the API key before "
+        "the next release; check the Bearer token in the request header.\n"
+    )
+    offenders = _scan_for_hardcoded_paths(
+        [("trap.d/9999.fixture-not-a-real-file.md", fixture_text)],
+        patterns=CREDENTIAL_LEAK_PATTERNS,
+    )
+    assert not offenders, (
+        "prose that merely discusses credentials, with no actual secret "
+        "value present, must not be flagged -- the guard is only for a real "
+        "leak: {!r}".format(offenders)
     )
 
 

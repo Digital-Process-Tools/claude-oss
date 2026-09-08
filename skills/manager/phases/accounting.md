@@ -282,6 +282,10 @@ the same fact, the same distinction every other reader in that file draws. Repor
 open board carries no priority label at all -- so "the board is triaged" is a measurement rather than
 a memory -- is still unbuilt.
 
+**Curation has an owner and a trigger now (#1303).** #1155's threshold routes already open
+`bin/oss-workspace` with `/oss:curate` once `trap.d/` crosses `curate_route_threshold` -- the key
+was never set here, so the route sat inert. `15` is a judgment call; see `.oss.json`'s own note.
+
 
 ---
 

@@ -464,7 +464,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # so this paragraph does not go stale the moment a release marker
         # legitimately declines to cite a cohort. Comfortably under the
         # 23000 B ceiling; ceiling unchanged.
-        22700,
+        # Re-baselined for #1303: 22700 B became 22987 B -- one sentence in
+        # Cadence naming the #1155 threshold route now activated for
+        # curate_route_threshold. Comfortably under the 23000 B ceiling;
+        # ceiling unchanged.
+        22987,
         23000,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
