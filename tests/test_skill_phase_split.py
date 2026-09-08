@@ -73,8 +73,20 @@ def _isolated_root(tmp_path):
     )
     real_phases = real_root / "skills" / "manager" / "phases"
     for candidate in real_phases.iterdir():
-        if candidate.is_file() and candidate.suffix.lower() == ".md":
+        if not (candidate.is_file() and candidate.suffix.lower() == ".md"):
+            continue
+        try:
             shutil.copy2(candidate, fake_phases / candidate.name)
+        except FileNotFoundError:
+            # Listed a moment ago, gone now -- the identical TOCTOU
+            # `scripts/skill_phases.py::_undeclared_rows()` was hardened
+            # against for #1293, reachable here too since this helper
+            # lists the very same real, shared directory before copying
+            # from it. Nothing else in this diff's own test suite writes
+            # there any more, so this window is dormant rather than live
+            # today, but a copy loop over a directory scanned by other
+            # processes should not assume it stays that way.
+            continue
     return fake_root
 
 

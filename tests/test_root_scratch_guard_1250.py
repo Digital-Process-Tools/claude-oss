@@ -9,13 +9,14 @@ follow-up. The one concrete instance of that harder case named there is
 site 3 -- `skills/manager/phases/`, a shared TRACKED SOURCE directory, not a
 scratch/root path -- and it is not hypothetical: `tests/test_skill_phase_
 split.py`'s own `test_unreferenced_is_reported_rather_than_assumed` and
-`test_a_phase_file_on_disk_that_nobody_budgeted_is_reported` each plant and
-remove a transient control file directly inside that real, live directory
-(`unreferenced-control.md`, `undeclared-control.md`), which is exactly what
-`scripts/manager_docs.py`'s `documents()`/`text()` glob over concurrently
-from every other worker. `trap.d/1228.site3-race-recurred-on-release-
-commit-dd2353e.md` records this actually reddening a release commit's own
-CI run with the FileNotFoundError signature #1228's thread predicted.
+`test_a_phase_file_on_disk_that_nobody_budgeted_is_reported` USED TO plant
+and remove a transient control file directly inside that real, live
+directory (`unreferenced-control.md`, `undeclared-control.md`), which is
+exactly what `scripts/manager_docs.py`'s `documents()`/`text()` glob over
+concurrently from every other worker. `trap.d/1228.site3-race-recurred-on-
+release-commit-dd2353e.md` records this actually reddening a release
+commit's own CI run with the FileNotFoundError signature #1228's thread
+predicted.
 
 This module extends the same read-only, controller-only watcher mechanism
 to that one concrete tracked path, with its own small allowlist for the two
@@ -24,7 +25,14 @@ known self-test control filenames above -- mirroring the root watcher's own
 It does not attempt the general "any shared path" invariant (still out of
 scope, per the issue's own text), and it does not change `manager_docs.py`
 itself: this is the detector `root_scratch_guard.py`'s own docstring
-promised as the follow-up, not a fix to the underlying race.
+promised as the follow-up, not a fix to the underlying race. #1293 later
+closed that underlying race directly (a real TOCTOU in `manager_docs.py`'s
+own list-then-read shape) and moved the two tests above off this real
+directory entirely, so the allowlist this module still exercises (below)
+now guards a trigger that is dormant rather than live -- kept for the same
+reason #1293's own fix to `tests/root_scratch_guard.py` states beside it:
+it costs nothing to leave, and stays correct if either test, or anything
+else, ever legitimately writes these two names here again.
 
 Same harness shape as `test_root_scratch_guard_1228.py`: `pytester` drives a
 real, separate pytest subprocess over a throwaway tree containing the real,
@@ -150,15 +158,18 @@ def test_an_ordinary_run_touching_nothing_under_phases_does_not_fail(pytester):
 
 def test_the_two_known_self_test_control_files_do_not_fail_the_session(pytester):
     """Must-not-fire control, paired with the two must-fire cases above:
-    `test_skill_phase_split.py`'s own two legitimate, self-cleaning control
-    files (`unreferenced-control.md`, `undeclared-control.md`) must never
-    be reported as an unexpected site-3 entry -- the guard's whole point is
+    `test_skill_phase_split.py`'s own two legitimate control filenames
+    (`unreferenced-control.md`, `undeclared-control.md`) must never be
+    reported as an unexpected site-3 entry -- the guard's whole point is
     catching something ELSE happening in that directory, not this
-    repository's own already-understood self-test fixtures. Without this
-    allowlist entry, every ordinary run of the real suite would flag its
-    own ordinary test twice, deterministically -- the exact false-positive
-    shape #1228's own `_watcher_selftest_*` allowlist entry was written to
-    avoid at site 1."""
+    repository's own already-understood self-test fixtures. #1293 moved
+    the real writers of these two names off this real directory entirely
+    (onto a tempdir copy), so an ordinary run of the real suite no longer
+    exercises this allowlist at all -- this synthetic harness is what
+    still proves the two names stay excused, the same false-positive
+    shape #1228's own `_watcher_selftest_*` allowlist entry was written
+    to avoid at site 1, in case either test (or anything else) ever
+    writes these two names here again."""
     tests_dir = _make_guarded_tree(
         pytester,
         "import time\n"
