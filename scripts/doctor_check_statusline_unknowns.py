@@ -42,8 +42,8 @@ before ``_default_branch_marker`` ever sees it -- so this module reconstructs
 those three causes directly from the cache, in the same order ``gather()``'s
 own two conditions test them:
 
-* ``"not-asked"`` -- ``cache["fetched_at"]`` is missing or non-numeric: no
-  board reading has ever been cached for this repo.
+* ``"not-asked"`` -- no cache document exists at all: no board reading has
+  ever been cached for this repo.
 * ``"stale"`` -- ``board_is_due`` is true: the cached board (including the
   default-branch reading, which shares its clock, #856) is older than its
   own refresh interval, or was marked stale by this session's own merge or
@@ -57,18 +57,50 @@ own two conditions test them:
   but is not one of the four ``_gh_default_branch_state`` can ever produce
   -- a hand-edited or otherwise corrupted cache file.
 
+**A fifth cause, shared by both fields and checked before either one: the
+cache file EXISTS and could not be read or parsed (self-review finding,
+#1311).** ``statusline.read_cache`` folds "no such file" (``FileNotFoundError``)
+and "the file is there and broken" (any other ``OSError``, or a ``ValueError``
+from malformed JSON) into the identical ``None`` -- correct for
+``statusline.py``'s own render, which treats both as "nothing to show", but
+wrong for this module: "nobody has asked yet" and "something is wrong with
+the cache" call for different remedies, and this module's own docstring
+already draws exactly that line for `.supertool.json`'s
+``declaration-unreadable`` state. So this module reads the cache file itself,
+distinguishing the three outcomes `Path.read_text`/`json.loads` can actually
+produce, rather than reusing `statusline.read_cache`'s collapsed contract --
+`cache-unreadable` reports before either field's own not-asked/stale
+derivation runs, for both fields at once, since a broken cache file makes
+both readers equally unable to answer.
+
 Neither field's ``NOTICE``-vs-``WARN`` split reaches for #764's structurally-
-permanent state wholesale: only ``channel``'s own ``"not-attributable"``
-reason can be a genuine, permanent, correct answer (this machine legitimately
-shares a socket with another project's fleet), so that one reason alone
-renders ``NOTICE`` when nothing in ``.oss.json``/``.supertool.json`` looks
-fixable, and ``WARN`` -- with the same fixable remedy -- otherwise. Every
-other reason here is transient or configuration-fixable and stays ``WARN``.
+permanent state as a default: only ``channel``'s own ``"not-attributable"``
+reason CAN be a genuine, permanent, correct answer (this machine legitimately
+shares a socket with another project's fleet) -- but this module cannot
+establish from this repository's own files alone whether that is actually
+true here, or whether `.supertool.json` simply has not declared a
+`watch_name` yet (the fixable case the remedy text itself names). Per the
+contract's own first test ("no manual op, no scaffold run" is the bar for
+NOTICE, not "might already be correct"), a cause that is not structurally
+impossible to clear stays `WARN`, unconditionally, even for `not-attributable`
+-- the remedy still names the possibility that nothing further is needed. An
+earlier draft downgraded this reason to `NOTICE` unconditionally, which is
+exactly backwards: it demoted a class of findings that frequently DOES have a
+manual-op fix to the one state the maintainer loop treats as never
+actionable (self-review finding, #1311). `could-not-determine` (the
+`statusline` module itself failed to import) IS structurally unclearable by
+any manual op or scaffold run on THIS repository -- it is an install-time
+fact about the plugin, not about the repo being diagnosed -- so it routes
+through `doctor.unmeasured` instead of a WARN with no remedy to name
+(self-review finding, #1311), the same convention this module's own
+top-level ``config is None`` branch already follows.
 
 Python 3.9 compatible.
 """
 
+import json
 import time
+from pathlib import Path
 
 import doctor
 
@@ -83,12 +115,19 @@ def _refresh_command(project_dir):
     a real refresh rather than wait out the interval. ``None`` only when
     ``scaffold`` itself could not be imported, mirroring every other remedy
     builder in this convention (``doctor_check_statusline.py``'s own
-    ``NO_SCAFFOLD``)."""
+    ``NO_SCAFFOLD``).
+
+    Built with ``Path`` throughout (self-review finding, #1311) -- the first
+    draft joined ``project_dir`` and ``OWNED_DIR`` with a literal ``"/"`` in a
+    format string, and ``project_dir`` arrives from ``doctor.main()`` as a
+    ``Path``, so on Windows that produced backslash-separated segments with a
+    literal forward slash spliced between them. ``Path`` normalises the whole
+    join to this platform's own separator.
+    """
     if doctor.scaffold is None:
         return None
-    return 'python3 "{}/{}/statusline.py" --refresh --root "{}"'.format(
-        project_dir, doctor.scaffold.OWNED_DIR, project_dir
-    )
+    script = Path(project_dir) / doctor.scaffold.OWNED_DIR / "statusline.py"
+    return 'python3 "{}" --refresh --root "{}"'.format(script, project_dir)
 
 
 def channel_cause(config, cache, now):
@@ -153,6 +192,34 @@ def default_branch_cause(config, cache, now):
     return {"applicable": True, "reason": "unrecognized", "value": raw_state}
 
 
+def _read_cache_or_unreadable(path):
+    """``(cache, unreadable)`` -- distinguishes "no cache file at all" from
+    "a cache file is there and broken" (self-review finding, #1311).
+
+    ``statusline.read_cache`` folds both into the same ``None``, which is
+    correct for its own caller (nothing to show either way) and wrong for
+    this module: the two causes call for different remedies (run a refresh,
+    versus fix or delete a broken file), and this module's own docstring
+    already draws exactly that line for ``.supertool.json``. Mirrors
+    ``statusline.read_cache``'s own two exception classes -- ``OSError``,
+    ``ValueError`` -- rather than inventing a third reading of the same
+    bytes.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, False
+    except OSError:
+        return None, True
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return None, True
+    if not isinstance(document, dict):
+        return None, True
+    return document, False
+
+
 #: reason -> (doctor state, message template taking `remedy`). Every WARN
 #: template names an executable remedy per the doctor-check-contract's own
 #: second test; `refresh` is the shared force-a-fresh-read command, built once
@@ -188,25 +255,14 @@ _CHANNEL_EXPLAIN = {
         "WARN",
         "statusline channel: the cached channel reading does not attribute "
         "to this repository -- neither derived from `.oss.json` nor declared "
-        "in `.supertool.json` -- renders `ch?`. If this machine genuinely "
-        "shares a socket with another project's fleet, this is a correct, "
-        "permanent `?` and nothing further is needed; if this repo should "
-        "own the channel, declare it explicitly under `ops.<name>.watch_name` "
-        "in `.supertool.json`, matching the exported `SUPERTOOL_WATCH_NAME`, "
-        "then: {}",
-    ),
-    "could-not-determine": (
-        "WARN",
-        "statusline channel: the `statusline` module could not be imported, "
-        "so the cause of `ch?` could not be re-derived here.",
+        "in `.supertool.json` -- renders `ch?`. This MAY already be correct "
+        "and permanent (this machine could legitimately share a socket with "
+        "another project's fleet, in which case no further action is "
+        "needed); if this repo should own the channel instead, declare it "
+        "explicitly under `ops.<name>.watch_name` in `.supertool.json`, "
+        "matching the exported `SUPERTOOL_WATCH_NAME`, then: {}",
     ),
 }
-
-#: The one reason above that CAN be a permanent, correct answer -- downgraded
-#: to NOTICE only when nothing in the two declared config files looks fixable
-#: (mirrors #764's own pattern, applied by `doctor_check_channel_health_
-#: agreement.py`'s `_preset_disabled` one check over).
-_CHANNEL_NOTICE_REASON = "not-attributable"
 
 _BRANCH_EXPLAIN = {
     "not-asked": (
@@ -239,12 +295,6 @@ _BRANCH_EXPLAIN = {
         "cache file (see `scripts/statusline.py`'s own `cache_path`) and "
         "then: {}",
     ),
-    "could-not-determine": (
-        "WARN",
-        "statusline default-branch marker: the `statusline` module could "
-        "not be imported, so the cause of `unk` could not be re-derived "
-        "here.",
-    ),
 }
 
 
@@ -256,8 +306,15 @@ def _report_channel(result, remedy):
             "deliberate absence, statusline renders nothing for it.",
         )
         return
-    state = result.get("state")
     reason = result.get("reason")
+    if reason == "could-not-determine":
+        doctor.unmeasured(
+            "statusline channel",
+            "the `statusline` module could not be imported, so the cause of "
+            "`ch?` could not be re-derived here.",
+        )
+        return
+    state = result.get("state")
     if state and state != "cannot_determine" and reason is None:
         doctor.report(
             "OK",
@@ -269,10 +326,7 @@ def _report_channel(result, remedy):
     level, template = _CHANNEL_EXPLAIN.get(
         reason, ("WARN", "statusline channel: could not be determined -- {}")
     )
-    if reason == _CHANNEL_NOTICE_REASON:
-        level = "NOTICE"
-    message = template.format(remedy) if "{}" in template else template
-    doctor.report(level, message)
+    doctor.report(level, template.format(remedy))
 
 
 def _report_default_branch(result, remedy):
@@ -285,6 +339,13 @@ def _report_default_branch(result, remedy):
         )
         return
     reason = result.get("reason")
+    if reason == "could-not-determine":
+        doctor.unmeasured(
+            "statusline default-branch marker",
+            "the `statusline` module could not be imported, so the cause of "
+            "`unk` could not be re-derived here.",
+        )
+        return
     if reason is None:
         doctor.report(
             "OK",
@@ -296,8 +357,7 @@ def _report_default_branch(result, remedy):
         reason,
         ("WARN", "statusline default-branch marker: could not be determined -- {}"),
     )
-    message = template.format(remedy) if "{}" in template else template
-    doctor.report(level, message)
+    doctor.report(level, template.format(remedy))
 
 
 def check_statusline_unknowns(project_dir, config, now=None):
@@ -310,12 +370,22 @@ def check_statusline_unknowns(project_dir, config, now=None):
         return
     now = time.time() if now is None else now
     repo = config.get("repo") if isinstance(config, dict) else None
-    cache = None
-    if statusline is not None and repo:
-        cache = statusline.read_cache(statusline.cache_path(repo))
     remedy = _refresh_command(project_dir) or (
         "run `python3 <path-to>/statusline.py --refresh --root {}` "
         "(scaffold.py could not be imported to name the exact path)".format(project_dir)
     )
+    if statusline is None or not repo:
+        cache = None
+    else:
+        cache, unreadable = _read_cache_or_unreadable(statusline.cache_path(repo))
+        if unreadable:
+            message = (
+                "statusline: the cached board/channel state exists on disk "
+                "and could not be read or parsed, so neither field's cause "
+                "could be established -- fix or delete the cache file (see "
+                "`scripts/statusline.py`'s own `cache_path`), then: {}".format(remedy)
+            )
+            doctor.report("WARN", message)
+            return
     _report_channel(channel_cause(config, cache, now), remedy)
     _report_default_branch(default_branch_cause(config, cache, now), remedy)

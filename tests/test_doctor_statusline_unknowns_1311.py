@@ -147,7 +147,7 @@ def test_config_none_is_unmeasured_not_silence():
 
 
 def test_off_and_unconfigured_are_both_ok(monkeypatch, tmp_path):
-    monkeypatch.setattr(statusline, "read_cache", lambda path: {})
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: ({}, False))
     mod.check_statusline_unknowns(
         str(tmp_path), {"watch_channel": False, "repo": "a/b"}, now=NOW
     )
@@ -160,7 +160,7 @@ def test_every_channel_warn_names_a_runnable_command(monkeypatch, tmp_path):
         "channel": {"raw_state": None, "attribution": "not-attributable"},
         "channel_fetched_at": None,
     }
-    monkeypatch.setattr(statusline, "read_cache", lambda path: cache)
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
     mod.check_statusline_unknowns(str(tmp_path), {"repo": "a/b"}, now=NOW)
     channel_findings = [
         (state, msg)
@@ -177,14 +177,20 @@ def test_every_channel_warn_names_a_runnable_command(monkeypatch, tmp_path):
     assert "statusline.py" in msg and "--refresh --root" in msg
 
 
-def test_channel_not_attributable_gets_notice_not_permanent_warn(monkeypatch, tmp_path):
-    """#764's own contract: a cause that CAN be a genuine, permanent,
-    correct answer must not render as an unclearable WARN forever."""
+def test_channel_not_attributable_stays_warn_with_a_fixable_remedy(
+    monkeypatch, tmp_path
+):
+    """#764's own contract cuts the other way here than a first draft assumed:
+    `not-attributable` is not structurally unclearable (declaring `watch_name`
+    in `.supertool.json` can fix it), so it must stay WARN, never NOTICE --
+    downgrading it would misreport a class of findings that often does have a
+    manual-op remedy as permanently non-actionable. The remedy text still
+    names the legitimate-permanent possibility, without demoting the state."""
     cache = {
         "channel": {"raw_state": "forwarding", "attribution": "not-attributable"},
         "channel_fetched_at": NOW - 5,
     }
-    monkeypatch.setattr(statusline, "read_cache", lambda path: cache)
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
     mod.check_statusline_unknowns(str(tmp_path), {"repo": "a/b"}, now=NOW)
     channel_findings = [
         (state, msg)
@@ -192,8 +198,42 @@ def test_channel_not_attributable_gets_notice_not_permanent_warn(monkeypatch, tm
         if msg.startswith("statusline channel")
     ]
     state, msg = channel_findings[0]
-    assert state == "NOTICE", msg
+    assert state == "WARN", msg
     assert "declare it explicitly" in msg
+    assert "MAY already be correct and permanent" in msg
+
+
+def test_cache_file_unreadable_is_distinct_from_never_asked(monkeypatch, tmp_path):
+    """Self-review finding: an existing-but-broken cache file must not read
+    identically to a repo nobody has ever probed -- the remedies differ (fix
+    or delete the file, versus just run a refresh)."""
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (None, True))
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+    assert len(doctor.FINDINGS) == 1
+    state, msg = doctor.FINDINGS[0]
+    assert state == "WARN"
+    assert "could not be read or parsed" in msg
+    assert "statusline.py" in msg and "--refresh --root" in msg
+
+
+def test_statusline_import_failure_is_unmeasured_not_an_unclearable_warn(
+    monkeypatch, tmp_path
+):
+    """Self-review finding: nothing on this repository can clear a broken
+    `statusline` import -- it is an install-time fact, not a repo finding --
+    so it must route through `doctor.unmeasured`, the same convention the
+    top-level `config is None` branch already uses, never a bare WARN with
+    no remedy to name."""
+    monkeypatch.setattr(mod, "statusline", None)
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+    assert doctor.FINDINGS
+    assert all(state == "WARN" for state, _ in doctor.FINDINGS)
+    joined = " ".join(msg for _, msg in doctor.FINDINGS)
+    assert "could not be imported" in joined
 
 
 def test_all_five_channel_reasons_are_distinguishable(monkeypatch, tmp_path):
@@ -222,7 +262,9 @@ def test_all_five_channel_reasons_are_distinguishable(monkeypatch, tmp_path):
     messages = {}
     for reason, cache in reasons_and_caches.items():
         doctor.FINDINGS.clear()
-        monkeypatch.setattr(statusline, "read_cache", lambda path, c=cache: c)
+        monkeypatch.setattr(
+            mod, "_read_cache_or_unreadable", lambda path, c=cache: (c, False)
+        )
         mod.check_statusline_unknowns(str(tmp_path), {"repo": "a/b"}, now=NOW)
         channel_findings = [
             msg
@@ -246,7 +288,9 @@ def test_all_default_branch_reasons_are_distinguishable(monkeypatch, tmp_path):
     messages = {}
     for reason, cache in reasons_and_caches.items():
         doctor.FINDINGS.clear()
-        monkeypatch.setattr(statusline, "read_cache", lambda path, c=cache: c)
+        monkeypatch.setattr(
+            mod, "_read_cache_or_unreadable", lambda path, c=cache: (c, False)
+        )
         mod.check_statusline_unknowns(
             str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
         )
@@ -270,7 +314,7 @@ def test_real_readings_are_ok_and_never_confused_with_a_finding(monkeypatch, tmp
         "fetched_at": NOW - 5,
         "default_branch_state": "green",
     }
-    monkeypatch.setattr(statusline, "read_cache", lambda path: cache)
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
     mod.check_statusline_unknowns(
         str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
     )
