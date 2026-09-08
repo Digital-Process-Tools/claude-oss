@@ -119,6 +119,40 @@ def test_uncovered_count_problem_reports_could_not_count_not_flat_ok(
     assert "boom" in message
 
 
+def test_warn_branch_also_surfaces_a_failed_walk_not_only_the_ok_branch(
+    tmp_path, monkeypatch
+):
+    """Self-review finding (#1252, both spawned reviewers independently):
+    the fix above only taught the OK branch to distinguish a failed walk
+    from a clean one -- the WARN branch (a dead pattern, a refused
+    pattern, or an overlap) built its message purely from those four
+    lists and dropped `uncovered_count_problem` on the floor, exactly the
+    collapse this issue was filed to close, one branch over. A walk
+    failure occurring alongside a real finding must not render as if the
+    walk had simply succeeded."""
+    _touch(tmp_path, "scripts/covered.py")
+    config = {
+        "labels": {
+            "lane_patterns": {
+                "lane-a": ["scripts/covered.py"],
+                "lane-b": ["scripts/gone_*.py"],
+            }
+        }
+    }
+
+    import lane_pattern_coverage
+
+    def _boom(repo):
+        return [], "PermissionError: [Errno 13] boom"
+
+    monkeypatch.setattr(lane_pattern_coverage, "_walk_all_files", _boom)
+    dclp.check_lane_patterns(tmp_path, config)
+    assert _states() == ["WARN"]
+    message = doctor.FINDINGS[0][1]
+    assert "could not" in message.lower()
+    assert "boom" in message
+
+
 def test_non_dict_lane_patterns_is_warn_not_a_crash(tmp_path):
     config = {"labels": {"lane_patterns": ["not", "a", "dict"]}}
     dclp.check_lane_patterns(tmp_path, config)

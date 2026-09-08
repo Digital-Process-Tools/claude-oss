@@ -108,4 +108,14 @@ def check_lane_patterns(project_dir, config):
             "job. Split it, or remove it from every lane's pattern in "
             ".oss.json but one.".format(path, " and ".join(lanes))
         )
+    # #1252 self-review finding (both spawned reviewers, independently): the
+    # OK branch above learned to distinguish a failed walk from a clean one,
+    # but this WARN branch built its message purely from the four lists
+    # above and dropped `uncovered_count_problem` on the floor -- the exact
+    # absence-vs-absence collision this module exists to close, one branch
+    # over. A walk failure occurring alongside a real finding must not
+    # render as though the walk had simply succeeded.
+    problem = result["uncovered_count_problem"]
+    if problem is not None:
+        parts.append("coverage could not be counted ({}).".format(problem))
     doctor.report("WARN", "lane patterns: " + " | ".join(parts))

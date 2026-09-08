@@ -59,6 +59,16 @@ resolved to a single file, so no scope could be established at all -- that
 is a different state from "scope established, nothing left uncovered in
 it", and the two must not collapse to the same number.
 
+`uncovered_count` alone cannot carry a THIRD state, though: a failed
+filesystem walk (`_walk_all_files` returning a `problem`) also has nowhere
+to establish scope, so it too returns `uncovered_count is None` -- the
+exact absence-vs-absence collision this whole module is named after,
+recurring one field down (#1252). `uncovered_count_problem` is the
+sibling field that resolves it: `None` on a clean read (whichever of the
+two `None`-producing `uncovered_count` cases applies), or a string naming
+what the walk failed with. A caller must read both fields together, in
+`ok` and in `finding` alike, never `uncovered_count` on its own.
+
 Python 3.9 compatible.
 """
 
