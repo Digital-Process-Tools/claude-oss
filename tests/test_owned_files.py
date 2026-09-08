@@ -228,10 +228,16 @@ def test_zero_fragments_reach_a_verdict_without_the_parser(tmp_path):
 
 def test_owned_files_live_in_one_directory():
     """Ownership by location, not by whether someone noticed a comment. One folder,
-    one rule, and a reader can see the boundary without opening anything.
+    one rule, and a reader can see the boundary without opening anything -- with two
+    named exceptions. `.github/workflows/oss-changelog.yml` cannot live in `.oss/`
+    because a forge reads workflows only from `.github/workflows/` itself; `trap.d/
+    README.md` (#1302) cannot either, because `.oss/` is a directory this plugin owns
+    outright and `trap.d/` is not -- it is a DEFAULT whose one owned file this marks.
     """
-    outside = [p for p in scaffold.OWNED if not p.startswith(scaffold.OWNED_DIR + "/")]
-    assert outside == [".github/workflows/oss-changelog.yml"], outside
+    outside = {p for p in scaffold.OWNED if not p.startswith(scaffold.OWNED_DIR + "/")}
+    assert outside == {".github/workflows/oss-changelog.yml", "trap.d/README.md"}, (
+        outside
+    )
 
 
 def test_the_owned_directory_explains_itself():
