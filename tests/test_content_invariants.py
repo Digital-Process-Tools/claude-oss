@@ -121,26 +121,161 @@ def test_no_repo_specific_spellings_in_prose():
 # matches the `~/...` spelling -- a trap.d fragment recorded during a live lane
 # writes the literal `/Users/<name>/...` (or `/home/<name>/...`) form a Bash
 # call actually saw, which none of those patterns catch. So this is a sibling
-# guard scoped to trap.d/ with its own pattern, not a widening of the list above.
+# guard with its own pattern, not a widening of the list above.
+#
+# #1262: the guard used to scope to trap.d/ alone, but trap.d/ is not the only
+# directory that ships in the installed plugin artifact and is written mid-lane
+# under the same conditions that produced #1255's leak -- changelog.d/ fragments
+# are written by every lane the same way trap.d/ entries are, and docs/, tests/,
+# bin/, hooks/ and schemas/ all ship too (this is a git-based plugin install with
+# no separate packaging manifest -- everything tracked and not gitignored ships,
+# confirmed against .gitignore and .claude-plugin/plugin.json, which declares no
+# file list of its own). Each entry below is (directory, glob, is_code) rather
+# than one glob for everything: the shipped file types differ per directory
+# (`.md` fragments, `.py` tests, an extensionless `bin/oss-workspace`, `.sh` /
+# `.json` hooks, `.json` schemas), a single `*` glob would also try to read
+# binary assets docs/ ships (`.png`) as text, and -- the reason for the third
+# field -- prose and code are not the same content class for this check.
+#
+# trap.d/, changelog.d/ and docs/ are free-text incident logs and documentation:
+# a real `/Users/<name>` appearing there is first-person prose about an actual
+# machine, exactly the shape #1255 shipped, and a repo-wide grep confirmed all
+# three are clean today. tests/ is not that: a plain grep of the *existing*
+# `HARDCODED_HOME_PATH` patterns (before this diff added the Windows ones)
+# across tests/*.py at HEAD hit 14 files, nearly all of them intentional
+# fixture data -- `/Users/x`, `/Users/exampleuser`, `/Users/runneradmin` -- the
+# repo's own established convention for an anonymized path in test fixtures,
+# not leaked real ones. A brief for this issue asserted a plain repo-wide grep
+# was clean except for the one instance fixed below; it was not, and scanning
+# tests/ (bin/, hooks/, schemas/ are clean today but are code for the same
+# reason) with the unfiltered prose heuristic would make this check permanently
+# red on legitimate fixtures rather than catching a real leak. See
+# `HOME_PATH_PLACEHOLDER_USERNAMES` below for how code directories are scanned
+# instead.
+SHIPPED_MID_LANE_DIRS = [
+    ("trap.d", "*.md", False),
+    ("changelog.d", "*.md", False),
+    ("docs", "*.md", False),
+    ("tests", "*.py", True),
+    ("bin", "*", True),
+    ("hooks", "*", True),
+    ("schemas", "*.json", True),
+]
+
 TRAP_D = sorted((REPO_ROOT / "trap.d").glob("*.md"))
 
 HARDCODED_HOME_PATH = [
     (r"/Users/[A-Za-z0-9_.-]+", "an absolute macOS home path"),
     (r"/home/[A-Za-z0-9_.-]+", "an absolute Linux home path"),
+    # #1261: a trap.d fragment (or any other shipped file) logged mid-lane on a
+    # Windows checkout carries a Windows-spelled path instead -- neither POSIX
+    # pattern above matches it, so a Windows-authored leak sailed through this
+    # guard the same way #1255's macOS one did before the guard existed at all.
+    # str(Path.home()) on Windows renders as C:\Users\<name> (backslash
+    # separators, drive letter); a path typed or logged with forward slashes
+    # (C:/Users/<name>) is just as real a spelling depending on how the
+    # string that carried it was built, so both slash directions are covered.
+    (
+        r"[A-Za-z]:\\Users\\[A-Za-z0-9_. -]+",
+        "an absolute Windows home path (backslash)",
+    ),
+    (
+        r"[A-Za-z]:/Users/[A-Za-z0-9_. -]+",
+        "an absolute Windows home path (forward slash)",
+    ),
 ]
 
 
-def _scan_for_hardcoded_paths(documents):
-    """documents: iterable of (label, text). Returns offender strings."""
+# #1262: tests/, bin/, hooks/ and schemas/ are code, and code legitimately
+# carries example absolute paths as fixture data -- this repo's own established
+# convention for one (confirmed by grep: 14 files under tests/ alone, at HEAD,
+# before this diff). Filtering by directory alone (see SHIPPED_MID_LANE_DIRS'
+# `is_code` field) is not enough on its own: it has to also tell a real leak
+# apart from a fixture *within* a code file, or the widened scan is red on
+# every one of those 14 files forever. The distinguishing signal actually
+# available here is narrow and known in advance rather than inferred: this
+# repo's fixtures draw from a small, fixed set of placeholder usernames, and a
+# real leak (the #1262 concrete instance was the maintainer's own real name)
+# will not be one of them. So `is_code` documents are scanned the same way,
+# then any match whose username segment is in this set is dropped before it
+# can fail the check. This is a denylist inverted into an allowlist, and it
+# inherits a denylist's usual weakness: a future fixture using a new made-up
+# name that isn't listed here will trip the check even though it is not a real
+# leak. That is an acceptable, visible failure mode (the fix is to add the name
+# here, or reuse one already in the set) -- the alternative, scanning code
+# unfiltered, fails loudly on every run instead of only on a genuinely new
+# spelling.
+HOME_PATH_PLACEHOLDER_USERNAMES = {
+    "x",
+    "bob",
+    "dev",
+    "name",
+    "flor",
+    "example",
+    "exampleuser",
+    "runneradmin",
+    "...",
+}
+
+
+def _is_known_placeholder_home_path(matched_text):
+    """matched_text is a whole HARDCODED_HOME_PATH match, e.g. "/Users/exampleuser"
+    or "C:\\Users\\bob" -- the username is whatever follows the last path
+    separator, and only its first whitespace-delimited word is compared (a
+    fixture proving the guard tolerates a space in the path, e.g. "flor ian",
+    is still keyed on "flor")."""
+    tail = re.split(r"[\\\\/]", matched_text)[-1]
+    words = tail.split()
+    first_word = (words[0] if words else tail).lower()
+    if first_word in HOME_PATH_PLACEHOLDER_USERNAMES:
+        return True
+    # Tolerate exactly one trailing sentence-ending period ("name.") without
+    # mangling a placeholder that is itself all periods ("...", stripped of
+    # every trailing "." by `.rstrip(".")`, would otherwise become "").
+    return (
+        first_word.endswith(".") and first_word[:-1] in HOME_PATH_PLACEHOLDER_USERNAMES
+    )
+
+
+def _scan_for_hardcoded_paths(documents, ignore_known_placeholders=False):
+    """documents: iterable of (label, text). Returns offender strings.
+
+    ignore_known_placeholders drops a match whose username is one of this
+    repo's established fixture placeholders (see HOME_PATH_PLACEHOLDER_USERNAMES)
+    -- only meaningful for code documents, never passed for prose ones, where
+    any match is presumed to be first-person prose about a real machine.
+    """
     offenders = []
     for label, text in documents:
         for pattern, what in HARDCODED_HOME_PATH:
             for match in re.finditer(pattern, text):
+                if ignore_known_placeholders and _is_known_placeholder_home_path(
+                    match.group(0)
+                ):
+                    continue
                 line = text[: match.start()].count("\n") + 1
                 offenders.append(
                     "{}:{}: {} ({!r})".format(label, line, what, match.group(0))
                 )
     return offenders
+
+
+def _shipped_mid_lane_documents(dirs=SHIPPED_MID_LANE_DIRS, root=REPO_ROOT):
+    """Returns (prose_documents, code_documents), partitioned by each entry's
+    `is_code` field -- the two are scanned differently, see
+    `test_no_absolute_home_paths_in_shipped_mid_lane_dirs`."""
+    prose_documents = []
+    code_documents = []
+    for dirname, pattern, is_code in dirs:
+        directory = root / dirname
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob(pattern)):
+            if not path.is_file():
+                continue
+            document = (path.relative_to(root), path.read_text(encoding="utf-8"))
+            (code_documents if is_code else prose_documents).append(document)
+    return prose_documents, code_documents
 
 
 def test_trap_d_has_documents():
@@ -149,22 +284,26 @@ def test_trap_d_has_documents():
     assert TRAP_D, "no trap.d/*.md found -- the check below would vacuously pass"
 
 
-def test_no_absolute_home_paths_in_trap_d():
+def test_no_absolute_home_paths_in_shipped_mid_lane_dirs():
     """#1255: trap.d/ ships in the installed plugin artifact, so a fragment logged
     mid-lane with the maintainer's own absolute home path bakes a machine-specific
     fact into every install -- the same defect class CLAUDE.md's governing rule
     forbids for skills and agents, landed through a directory that rule's own guard
-    does not scope to.
+    does not scope to. #1262 widened the scope beyond trap.d/ alone: every
+    directory in SHIPPED_MID_LANE_DIRS ships in the installed plugin artifact and
+    is written the same mid-lane way -- prose directories are scanned exactly as
+    trap.d/ always was, code directories are scanned with the placeholder
+    allowlist above (see its docstring for why).
     """
-    documents = [
-        (path.relative_to(REPO_ROOT), path.read_text(encoding="utf-8"))
-        for path in TRAP_D
-    ]
-    offenders = _scan_for_hardcoded_paths(documents)
+    prose_documents, code_documents = _shipped_mid_lane_documents()
+    offenders = _scan_for_hardcoded_paths(prose_documents)
+    offenders += _scan_for_hardcoded_paths(
+        code_documents, ignore_known_placeholders=True
+    )
     assert not offenders, (
-        "trap.d/ ships in the installed plugin artifact, so an absolute home path "
-        "logged mid-lane bakes a machine-specific fact into every install. Redact "
-        "or generalize it (a relative form or a placeholder):\n  "
+        "a shipped, mid-lane-written directory carries an absolute home path that "
+        "bakes a machine-specific fact into every install. Redact or generalize it "
+        "(a relative form or a placeholder from HOME_PATH_PLACEHOLDER_USERNAMES):\n  "
         + "\n  ".join(offenders)
     )
 
@@ -187,6 +326,78 @@ def test_absolute_home_path_pattern_catches_a_planted_fixture():
         "the absolute-home-path pattern failed to catch a fixture fragment planted "
         "with the exact shape #1255 reported -- the guard would not have caught the "
         "real incident either"
+    )
+
+
+def test_absolute_home_path_pattern_catches_a_windows_spelled_fixture():
+    """#1261 positive control: the macOS/Linux fixture above proves the guard
+    fires on a POSIX-spelled path, but says nothing about a trap.d fragment
+    logged mid-lane on a Windows checkout, which carries a drive letter and
+    backslash separators instead -- str(Path.home())'s own rendering on that
+    platform. Both slash spellings a Windows-authored path can actually arrive
+    in are covered, one fixture each.
+    """
+    fixture_text_backslash = (
+        "While implementing #9999 in worktree "
+        r"`C:\Users\exampleuser\Documents\claude-oss-wt\9999`, a write landed in "
+        r"`C:\Users\exampleuser\Documents\claude-oss` instead." + "\n"
+    )
+    offenders_backslash = _scan_for_hardcoded_paths(
+        [("trap.d/9999.fixture-not-a-real-file.md", fixture_text_backslash)]
+    )
+    assert offenders_backslash, (
+        "the absolute-home-path pattern failed to catch a Windows backslash-spelled "
+        "fixture -- a trap.d fragment logged mid-lane on a Windows checkout would "
+        "sail through the same way #1255's macOS path did before the guard existed"
+    )
+
+    fixture_text_forward_slash = (
+        "While implementing #9999 in worktree "
+        "`C:/Users/exampleuser/Documents/claude-oss-wt/9999`, a write landed in "
+        "`C:/Users/exampleuser/Documents/claude-oss` instead.\n"
+    )
+    offenders_forward_slash = _scan_for_hardcoded_paths(
+        [("trap.d/9999.fixture-not-a-real-file.md", fixture_text_forward_slash)]
+    )
+    assert offenders_forward_slash, (
+        "the absolute-home-path pattern failed to catch a Windows forward-slash-"
+        "spelled fixture -- the same path typed with forward slashes instead of "
+        "backslashes must be caught too"
+    )
+
+
+def test_shipped_mid_lane_scan_reaches_directories_beyond_trap_d(tmp_path):
+    """#1262 positive control: trap.d/ alone being clean proves nothing about
+    whether the widened scope actually reaches the other shipped, mid-lane-
+    written directories -- changelog.d/, docs/, tests/, bin/, hooks/, schemas/.
+    Plants a violation in a fake `tests/` directory under an isolated root and
+    proves `_shipped_mid_lane_documents` finds it and routes it through the
+    code path (`ignore_known_placeholders=True`), the same must-fire discipline
+    as the fixture above, but exercising the real directory-walk this time
+    rather than calling `_scan_for_hardcoded_paths` directly on a hand-built
+    document list. The planted username is deliberately not one of
+    HOME_PATH_PLACEHOLDER_USERNAMES -- a placeholder like "exampleuser" would be
+    dropped by the very filter this test means to exercise, proving nothing.
+    """
+    (tmp_path / "tests").mkdir()
+    # Built by concatenation rather than spelled out as one literal: a
+    # contiguous "/Users/<name>" substring living in THIS file (tests/) would
+    # be caught by the very production check this test exercises, on this
+    # file itself, the moment tests/ joined SHIPPED_MID_LANE_DIRS.
+    fixture_home_path = "/" + "Users" + "/" + "notaplaceholder"
+    (tmp_path / "tests" / "test_fixture_not_real.py").write_text(
+        "# planted for #1262: {!r}\n".format(fixture_home_path),
+        encoding="utf-8",
+    )
+    prose_documents, code_documents = _shipped_mid_lane_documents(root=tmp_path)
+    assert not prose_documents, "no prose directories exist under this isolated root"
+    offenders = _scan_for_hardcoded_paths(
+        code_documents, ignore_known_placeholders=True
+    )
+    assert offenders, (
+        "the widened scope failed to catch a violation planted in tests/ -- a "
+        "directory named in SHIPPED_MID_LANE_DIRS but never actually reached by "
+        "the scan is indistinguishable from one that is clean"
     )
 
 

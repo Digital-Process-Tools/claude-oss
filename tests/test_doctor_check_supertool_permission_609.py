@@ -72,9 +72,15 @@ def test_supertool_permission_state_present_for_relative_spelling(tmp_path):
 
 
 def test_supertool_permission_state_present_for_absolute_path_spelling(tmp_path):
+    """#1262: this used to carry the maintainer's own real absolute home path --
+    a leak of the same class #1255 shipped in trap.d/, caught once the guard's
+    scope widened to include tests/ (see test_content_invariants.py's
+    SHIPPED_MID_LANE_DIRS). A placeholder proves the same thing without baking
+    a machine-specific fact into every install.
+    """
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(/Users/floriandavid/Documents/claude-oss/supertool:*)"],
+        allow=["Bash(/Users/exampleuser/Documents/claude-oss/supertool:*)"],
     )
     state, _detail = doctor.supertool_permission_state(
         tmp_path, home=_isolated_home(tmp_path)
