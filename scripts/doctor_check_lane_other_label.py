@@ -43,8 +43,14 @@ def lane_other_label_state(project_dir, config=None, run=None):
       declared-and-present  the declared spelling exists on the forge.
       declared-and-absent   a spelling is declared, but no such label exists.
       not-declared          `labels.lane_other` is absent or `null` -- a
-                             legitimate choice, same posture as
-                             `filed_by_loop`'s own `not-declared`.
+                             distinct state from `declared-and-absent`, the
+                             same posture `filed_by_loop`'s own `not-declared`
+                             takes at THIS layer. #1310: unlike
+                             `filed_by_loop`, it is not legitimate FOREVER --
+                             `check_lane_other_label` below renders this state
+                             as WARN, not OK, because a repo can never reach
+                             0nl without it. The four-way split stays; only
+                             the render below moved.
       could-not-tell        the value is not a usable label name, or the
                              forge could not be read. Must never render the
                              same as `declared-and-absent` -- an unreadable

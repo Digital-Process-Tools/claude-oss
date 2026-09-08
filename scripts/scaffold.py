@@ -3835,7 +3835,7 @@ def _print_findings(repo_root, config, force_owned=False):
     ``force_owned`` reaches the changelog finding only, and only so it stops denying a
     write the same run just made.
 
-    **Every detail is flattened as it is printed** (#204). Each of these four rows is
+    **Every detail is flattened as it is printed** (#204). Each of these five rows is
     built partly out of values from the repository being inspected -- a workflow
     filename, a `.supertool.json` key, whatever `git` or `gh` said when it declined --
     and a newline in any of them ends the row and starts the rest at column 0, where it
@@ -3844,7 +3844,7 @@ def _print_findings(repo_root, config, force_owned=False):
     renders `check_test_ci`'s finding from its own row). This is the second guard, and
     it is here rather than only there because #204 was exactly a builder that forgot:
     the flattener and the bypass shipped in the same delta, four hundred lines apart. A
-    fifth row added later cannot forget this one.
+    sixth row added later cannot forget this one -- the fifth (`lane`, #1310) did not.
     """
     for finding in check_radar(repo_root):
         _print_row("radar", finding)
@@ -3867,8 +3867,8 @@ def _print_row(label, finding):
     """One row of the receipt: the label, then the detail on a single line.
 
     The alignment is preserved rather than recomputed -- `changelog` is one character
-    wider than the four-space gap the other three use, and that is what the receipt has
-    always printed.
+    wider than the four-space gap the other four (`radar`, `tests`, `label`, `lane`)
+    use, and that is what the receipt has always printed.
     """
     gap = " " if len(label) >= len("changelog") else " " * (9 - len(label))
     print("{}{}{}".format(label, gap, _one_line(finding["detail"])))
