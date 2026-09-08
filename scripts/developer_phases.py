@@ -178,11 +178,20 @@ def _undeclared_rows(root, spine):
         rel = path.relative_to(root).as_posix()
         if rel in DOCUMENTS:
             continue
+        try:
+            size = len(path.read_bytes())
+        except FileNotFoundError:
+            # Listed a moment ago, gone now -- the same TOCTOU
+            # `skill_phases._undeclared_rows()` closed for #1293, applied
+            # here too since this function is a verbatim copy of that one
+            # scanning a different directory. Nothing left to say about a
+            # file that is already gone; the next call answers correctly.
+            continue
         rows.append(
             {
                 "path": rel,
                 "state": "undeclared",
-                "size": len(path.read_bytes()),
+                "size": size,
                 "budget": None,
                 "baseline": None,
                 "governs": None,

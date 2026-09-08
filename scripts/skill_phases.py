@@ -636,12 +636,28 @@ def _undeclared_rows(root):
         rel = path.relative_to(root).as_posix()
         if rel in DOCUMENTS:
             continue
+        try:
+            size = len(path.read_bytes())
+        except FileNotFoundError:
+            # Listed a moment ago, gone now: a sibling process's own
+            # transient control file (#1250) or anything else that vanished
+            # in the window between the `iterdir()` above and this read --
+            # `test_skill_phase_split.py`'s own real-root create-then-delete
+            # control files raced exactly this window against a concurrent
+            # xdist worker's `check()` call and reddened CI with this same
+            # `FileNotFoundError` (#1293). Reporting on a file that is
+            # already gone is neither `undeclared` (this scan cannot show it
+            # exists) nor `missing` (nothing declared it, so nothing is
+            # unmet) -- there is nothing left to say about it this pass, and
+            # the very next call answers correctly for whatever is actually
+            # still on disk.
+            continue
         spine = _spine_text(root)
         rows.append(
             {
                 "path": rel,
                 "state": "undeclared",
-                "size": len(path.read_bytes()),
+                "size": size,
                 "budget": None,
                 "baseline": None,
                 "governs": None,

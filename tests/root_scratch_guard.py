@@ -29,15 +29,23 @@ general "any shared path" invariant is still that harder, declined case;
 
 `skills/manager/phases/` is a shared TRACKED SOURCE directory, not a
 scratch/root path -- `scripts/manager_docs.py`'s `documents()`/`text()`
-glob over it from every worker, and `tests/test_skill_phase_split.py`'s
-own `test_unreferenced_is_reported_rather_than_assumed` and `test_a_
-phase_file_on_disk_that_nobody_budgeted_is_reported` each plant and
-remove a transient control file directly inside it
-(`unreferenced-control.md`, `undeclared-control.md`). That is not
-hypothetical: `trap.d/1228.site3-race-recurred-on-release-commit-
-dd2353e.md` records it actually reddening a release commit's own CI run
-with the exact FileNotFoundError signature this issue's thread predicted.
-`_TrackedPathWatcher` below is the same read-only, controller-only
+glob over it from every worker. `tests/test_skill_phase_split.py`'s own
+`test_unreferenced_is_reported_rather_than_assumed` and `test_a_
+phase_file_on_disk_that_nobody_budgeted_is_reported` USED to plant and
+remove a transient control file directly inside it (`unreferenced-
+control.md`, `undeclared-control.md`) -- that was not hypothetical:
+`trap.d/1228.site3-race-recurred-on-release-commit-dd2353e.md` records it
+actually reddening a release commit's own CI run with the exact
+FileNotFoundError signature this issue's thread predicted. #1293 traced
+that failure to its actual mechanism -- a TOCTOU in `manager_docs.py`'s
+own list-then-read shape, not merely a stray write -- and isolated both
+tests onto a tempdir copy of the real tree, so neither writes into this
+real, shared directory any more. `_ALLOWLIST_PHASE_CONTROL_EXACT` below
+is kept as a still-correct exact-name allowance rather than removed: it
+costs nothing to leave, and it stays right if either test (or anything
+else) ever legitimately writes those two names here again -- but its
+own trigger, as of #1293, is dormant rather than live. `_TrackedPathWatcher`
+below is the same read-only, controller-only
 mechanism as `_SessionRootWatcher`, pointed at that one directory, with
 its own small allowlist for the two known self-test control filenames --
 mirroring `_watcher_selftest_*`'s own precedent at site 1 exactly, for
@@ -153,9 +161,15 @@ def _is_allowed(name):
 
 # #1250's own site-3 allowlist. Deliberately a small, NAMED set rather than
 # a glob -- both entries are `tests/test_skill_phase_split.py`'s own two
-# literal filenames, planted and removed as that file's own self-tests, so
-# there is no need for the wildcard-shaped allowance the root watcher's
-# `pytest-cache-files-*`/`.coverage.*` entries need for a variable suffix.
+# literal filenames, which that file's own self-tests used to plant and
+# remove directly in this real, shared directory (there is no need for
+# the wildcard-shaped allowance the root watcher's
+# `pytest-cache-files-*`/`.coverage.*` entries need for a variable
+# suffix). #1293 moved that file's own writes off this real directory
+# entirely, onto a tempdir copy, so this allowlist's own trigger is
+# dormant now rather than live -- left in place rather than removed,
+# since it costs nothing and stays correct if either test (or anything
+# else) legitimately writes these two names here again.
 _ALLOWLIST_PHASE_CONTROL_EXACT = frozenset(
     {"unreferenced-control.md", "undeclared-control.md"}
 )

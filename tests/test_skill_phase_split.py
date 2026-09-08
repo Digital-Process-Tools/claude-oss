@@ -28,6 +28,7 @@ in a session, not filed first. The budgets it records are measured, and
 `scripts/skill_phases.py` is the one place they are declared.
 """
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -35,8 +36,58 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import skill_phases  # noqa: E402
+
+
+def _isolated_root(tmp_path):
+    """A tempdir standing in for `skill_phases.repo_root()`, carrying a
+    COPY (never a symlink -- a Windows CI runner may lack the privilege to
+    create one) of the real `skills/manager/SKILL.md` and every real phase
+    file, so `DOCUMENTS`' real, unmodified relative paths resolve to real
+    content without ever writing into the real, shared `skills/manager/
+    phases/` directory a sibling xdist worker scans concurrently.
+
+    #1250 already detects a write landing there uninvited; #1293 is that
+    detector's own follow-up, closing the race at its source rather than
+    only catching it: `test_unreferenced_is_reported_rather_than_assumed`
+    and `test_a_phase_file_on_disk_that_nobody_budgeted_is_reported` used
+    to plant and remove a control file directly in the real, shared
+    directory, and a sibling worker's own concurrent `skill_phases.check()`
+    -- listing that directory, then reading each entry it just listed --
+    could read after this test's own `finally` had already deleted the
+    file, raising `FileNotFoundError` (confirmed directly against
+    `skill_phases._undeclared_rows()`, not just inferred from the CI
+    signature). Isolating the write here removes the trigger; `scripts/
+    skill_phases.py`'s own `_undeclared_rows()` was separately hardened to
+    tolerate that exact vanish-mid-scan race regardless of its source.
+    """
+    real_root = skill_phases.repo_root()
+    fake_root = tmp_path / "repo-root"
+    fake_phases = fake_root / "skills" / "manager" / "phases"
+    fake_phases.mkdir(parents=True)
+    shutil.copy2(
+        real_root / "skills" / "manager" / "SKILL.md",
+        fake_root / "skills" / "manager" / "SKILL.md",
+    )
+    real_phases = real_root / "skills" / "manager" / "phases"
+    for candidate in real_phases.iterdir():
+        if not (candidate.is_file() and candidate.suffix.lower() == ".md"):
+            continue
+        try:
+            shutil.copy2(candidate, fake_phases / candidate.name)
+        except FileNotFoundError:
+            # Listed a moment ago, gone now -- the identical TOCTOU
+            # `scripts/skill_phases.py::_undeclared_rows()` was hardened
+            # against for #1293, reachable here too since this helper
+            # lists the very same real, shared directory before copying
+            # from it. Nothing else in this diff's own test suite writes
+            # there any more, so this window is dormant rather than live
+            # today, but a copy loop over a directory scanned by other
+            # processes should not assume it stays that way.
+            continue
+    return fake_root
 
 
 def test_every_declared_document_is_present():
@@ -85,11 +136,16 @@ def test_the_spine_names_every_phase_file_it_defers_to():
     )
 
 
-def test_unreferenced_is_reported_rather_than_assumed():
+def test_unreferenced_is_reported_rather_than_assumed(tmp_path, monkeypatch):
     """Positive control for the check above. Without this, the assertion
-    passes just as happily when `referenced` is never computed at all."""
-    fake = ROOT / "skills" / "manager" / "phases" / "unreferenced-control.md"
-    fake.parent.mkdir(parents=True, exist_ok=True)
+    passes just as happily when `referenced` is never computed at all.
+
+    Runs against `_isolated_root()`'s tempdir copy rather than the real,
+    shared `skills/manager/phases/` directory -- see that helper's own
+    docstring for why (#1250, #1293)."""
+    fake_root = _isolated_root(tmp_path)
+    monkeypatch.setattr(skill_phases, "repo_root", lambda: fake_root)
+    fake = fake_root / "skills" / "manager" / "phases" / "unreferenced-control.md"
     fake.write_text("nothing points here\n", encoding="utf-8")
     orig = skill_phases.DOCUMENTS
     skill_phases.DOCUMENTS = {
@@ -103,26 +159,26 @@ def test_unreferenced_is_reported_rather_than_assumed():
         rows = skill_phases.check()
     finally:
         skill_phases.DOCUMENTS = orig
-        fake.unlink()
     assert rows[0]["state"] == "ok", rows
     assert rows[0]["referenced"] is False, rows
 
 
-def test_a_phase_file_on_disk_that_nobody_budgeted_is_reported():
+def test_a_phase_file_on_disk_that_nobody_budgeted_is_reported(tmp_path, monkeypatch):
     """`undeclared` is the mirror of `missing`. A phase file that exists,
     is loaded by the loop, and appears in no budget is how the measurement
     quietly stops covering its own subject -- the same absence one level up
     from the phase files themselves. Reporting only the declared paths would
     answer "every file I know about is fine", which is true of an empty
     declaration too.
+
+    Isolated the same way as the positive control above (#1250, #1293): a
+    tempdir copy of the real tree, not the real, shared directory.
     """
-    fake = ROOT / "skills" / "manager" / "phases" / "undeclared-control.md"
-    fake.parent.mkdir(parents=True, exist_ok=True)
+    fake_root = _isolated_root(tmp_path)
+    monkeypatch.setattr(skill_phases, "repo_root", lambda: fake_root)
+    fake = fake_root / "skills" / "manager" / "phases" / "undeclared-control.md"
     fake.write_text("nobody budgeted this\n", encoding="utf-8")
-    try:
-        rows = {r["path"]: r for r in skill_phases.check()}
-    finally:
-        fake.unlink()
+    rows = {r["path"]: r for r in skill_phases.check()}
     row = rows.get("skills/manager/phases/undeclared-control.md")
     assert row is not None, sorted(rows)
     assert row["state"] == "undeclared", row
@@ -216,3 +272,74 @@ def test_positive_control_for_the_governs_check():
     fires on text that lacks the line."""
     with pytest.raises(AssertionError):
         assert "Read this when" in "a phase file that never says", "control"
+
+
+def test_the_two_isolated_control_tests_never_touch_the_real_tracked_directory(
+    tmp_path_factory,
+):
+    """Must-not-fire pair for #1293: the two rewritten tests above must
+    leave `skills/manager/phases/` -- the real, shared directory #1250's
+    own `_TrackedPathWatcher` exists to police -- completely untouched.
+    Reuses that watcher directly rather than a hand-rolled poll, so this is
+    a proof against the same detector CI runs, not a second, looser copy
+    of it.
+
+    Paired must-fire half: `test_unreferenced_is_reported_rather_than_
+    assumed` and `test_a_phase_file_on_disk_that_nobody_budgeted_is_
+    reported` above still assert the original detection (an unreferenced
+    or an undeclared phase file gets reported) -- a fix that silently
+    stopped detecting either state to "solve" the race would still fail
+    those two tests, so this module-not-touched control cannot pass by
+    virtue of a silently gutted detector elsewhere in this same file.
+    """
+    import root_scratch_guard
+
+    watcher = root_scratch_guard._TrackedPathWatcher(
+        root_scratch_guard._TRACKED_PHASES_DIR
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        tmp_path_1 = tmp_path_factory.mktemp("isolated-unreferenced")
+        test_unreferenced_is_reported_rather_than_assumed(tmp_path_1, mp)
+    with pytest.MonkeyPatch.context() as mp:
+        tmp_path_2 = tmp_path_factory.mktemp("isolated-undeclared")
+        test_a_phase_file_on_disk_that_nobody_budgeted_is_reported(tmp_path_2, mp)
+    watcher._poll_once_for_test()
+    assert not watcher.could_not_watch(), (
+        "the watcher could never read skills/manager/phases/ at all -- "
+        "this control establishes nothing, rather than confirming a clean "
+        "run"
+    )
+    assert watcher.offenders() == [], (
+        "the isolated tests still touched the real, shared "
+        "skills/manager/phases/ directory: " + ", ".join(watcher.offenders())
+    )
+
+
+def test_undeclared_rows_tolerates_a_file_vanishing_mid_scan(tmp_path, monkeypatch):
+    """Pins #1293's production fix directly: `_undeclared_rows()` lists the
+    phases directory, then reads each entry it just listed -- a file that
+    vanishes in that window (a sibling process's own transient control
+    file, or anything else) must not crash the whole scan. Forced
+    deterministically via monkeypatch rather than depending on real xdist
+    timing, and confirmed red against the pre-fix function directly --
+    `skill_phases._undeclared_rows()`, not a hand-rolled repro -- before
+    the `except FileNotFoundError` below was added.
+    """
+    root = tmp_path / "repo"
+    phases = root / "skills" / "manager" / "phases"
+    phases.mkdir(parents=True)
+    (root / "skills" / "manager" / "SKILL.md").write_text("the spine", encoding="utf-8")
+    vanishing = phases / "vanishing.md"
+    vanishing.write_text("here now, gone by the time this is read\n", encoding="utf-8")
+
+    real_documents = skill_phases.documents
+
+    def _list_then_delete(r):
+        paths, unreadable = real_documents(r)
+        vanishing.unlink()  # simulate a sibling deleting it after the list
+        return paths, unreadable
+
+    monkeypatch.setattr(skill_phases, "documents", _list_then_delete)
+
+    rows = skill_phases._undeclared_rows(root)  # must not raise
+    assert not any(r["path"].endswith("vanishing.md") for r in rows), rows

@@ -58,6 +58,37 @@ def test_no_phase_file_on_disk_is_undeclared():
     )
 
 
+def test_undeclared_rows_tolerates_a_file_vanishing_mid_scan(tmp_path, monkeypatch):
+    """Pins the #1293 fix's twin: `developer_phases.py::_undeclared_rows()`
+    is a verbatim copy of `skill_phases.py::_undeclared_rows()` and carried
+    the identical TOCTOU (list a directory, then read each entry listed, in
+    two separate calls) before that same `except FileNotFoundError` guard
+    was added here too. Forced deterministically via monkeypatch, the same
+    way `tests/test_skill_phase_split.py`'s own regression test for the
+    `skill_phases.py` half pins that one, and confirmed red against the
+    pre-fix function before the guard below was added.
+    """
+    root = tmp_path / "repo"
+    phases = root / "agents" / "developer"
+    phases.mkdir(parents=True)
+    (root / "agents" / "developer.md").write_text("the spine", encoding="utf-8")
+    vanishing = phases / "vanishing.md"
+    vanishing.write_text("here now, gone by the time this is read\n", encoding="utf-8")
+
+    real_documents = developer_phases.documents
+
+    def _list_then_delete(r):
+        paths, unreadable = real_documents(r)
+        vanishing.unlink()  # simulate a sibling deleting it after the list
+        return paths, unreadable
+
+    monkeypatch.setattr(developer_phases, "documents", _list_then_delete)
+
+    spine_text = developer_phases._spine_text(root)
+    rows = developer_phases._undeclared_rows(root, spine_text)  # must not raise
+    assert not any(r["path"].endswith("vanishing.md") for r in rows), rows
+
+
 def test_check_reports_over_when_a_budget_is_crossed():
     # Positive control: the check must fire, not merely refrain from firing.
     orig = developer_phases.DOCUMENTS
