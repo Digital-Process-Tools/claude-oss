@@ -475,6 +475,11 @@ def _facts(**overrides):
         # marker onto `repo_name`. Same reason as `channel` above -- absent here
         # and the hostile-leaf walk below never reaches it.
         "default_branch_state": "green",
+        # #1314: `render()` reads `facts.get("doctor_state")` for the `dr` field.
+        # Same reason as `channel`/`default_branch_state` above -- absent here and
+        # `test_facts_fixture_carries_every_top_level_key_render_reads` fails, and
+        # the hostile-leaf walk below never reaches it.
+        "doctor_state": "ok",
     }
     facts.update(overrides)
     return facts
