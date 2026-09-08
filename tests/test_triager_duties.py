@@ -525,3 +525,34 @@ def test_these_command_doc_guards_are_not_vacuous():
         "{} appear in commands/doctor.md, which does not describe the Clusters row -- "
         "so they are ambient phrasing and the guards above cannot fail".format(ambient)
     )
+
+
+LANE_OTHER_ANCHORS = [
+    "lane_other",
+    "fall back",
+    "every open issue",
+]
+
+
+def test_triager_carries_the_lane_other_duty():
+    """#1310: without this, a repo can never reach 0nl -- a genuine one-off had
+    nowhere declared to go, so the triager left it unlabelled forever.
+    """
+    assert not _unmet(TRIAGER.read_text(encoding="utf-8"), LANE_OTHER_ANCHORS)
+
+
+def test_the_lane_other_check_fires_on_the_prior_lane_paragraph():
+    """The document as it stood before #1310: it names the lane duty but tells the
+    triager to leave a one-off unlabelled rather than falling back to lane_other.
+    """
+    prior_lane_paragraph = (
+        "**Lane**, by which files the work owns, because the expensive thing is "
+        "context, not the fix. Read the lane labels off the repo; assign the one "
+        "whose files the issue actually touches, and leave a genuine one-off "
+        "unlabelled rather than forcing it. A repo with no lane labels gets no lane."
+    )
+    missing = _unmet(prior_lane_paragraph, LANE_OTHER_ANCHORS)
+    assert missing, (
+        "the lane_other check passes against the document's prior lane paragraph, "
+        "which never mentions it: {}".format(missing)
+    )

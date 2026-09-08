@@ -732,6 +732,50 @@ def test_the_unknown_state_carries_the_reason_it_could_not_look():
     assert "gh is not on PATH" in findings[0]["detail"]
 
 
+# ---------------------------------------------------------------- lane_other declared
+
+
+def test_lane_other_missing_is_reported():
+    """#1310: a fresh .oss.json declares no fallback lane, so an issue matching no
+    declared lane has nowhere to go and 0nl is structurally unreachable.
+    """
+    findings = scaffold.check_lane_other_declared(_config())
+    assert findings and findings[0]["state"] == "missing"
+    assert "lane_other" in findings[0]["detail"]
+    assert "gh label create" in findings[0]["detail"]
+
+
+def test_lane_other_declared_is_clean():
+    config = _config(labels={"priority": [], "lanes": [], "lane_other": "lane-other"})
+    assert scaffold.check_lane_other_declared(config) == []
+
+
+def test_lane_other_declared_null_is_still_missing():
+    """`null` is the same "not declared" state #1181 already gives the consumption
+    side -- an explicit null must not read as a real declaration.
+    """
+    config = _config(labels={"priority": [], "lanes": [], "lane_other": None})
+    findings = scaffold.check_lane_other_declared(config)
+    assert findings and findings[0]["state"] == "missing"
+
+
+def test_lane_other_declared_blank_is_still_missing():
+    config = _config(labels={"priority": [], "lanes": [], "lane_other": "   "})
+    findings = scaffold.check_lane_other_declared(config)
+    assert findings and findings[0]["state"] == "missing"
+
+
+def test_the_lane_other_row_reaches_the_printed_receipt(tmp_path):
+    """A finding nothing prints is a finding nobody reads (#205's own lesson,
+    applied to this new row)."""
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        scaffold._print_findings(tmp_path, _config(repo=""))
+    rows = [line for line in buffer.getvalue().splitlines() if line.startswith("lane ")]
+    assert len(rows) == 1, buffer.getvalue()
+    assert "lane_other" in rows[0]
+
+
 # ------------------------------------------------- the escape hatch, through the CLI
 #
 # The three arms above are the function's. These are the call site's, which is where
@@ -787,7 +831,10 @@ def test_the_cli_says_nothing_about_a_label_the_forge_reports_present(
     -- fails here rather than passing on the silence.
     """
     out = _cli_findings(
-        tmp_path, monkeypatch, lambda root, config: (["bug", "no-changelog"], "")
+        tmp_path,
+        monkeypatch,
+        lambda root, config: (["bug", "no-changelog"], ""),
+        labels={"priority": ["priority-high"], "lanes": [], "lane_other": "lane-other"},
     )
     assert "runs it" in out, (
         "findings did not print at all -- the silence is the harness"
@@ -1401,7 +1448,7 @@ def test_a_workflow_filename_with_a_newline_cannot_forge_a_row_of_the_receipt(tm
     # Must not fire.
     for line in output.splitlines():
         assert not line.startswith(_FORGED_ROW), output
-    labels = {"radar", "tests", "label", "changelog"}
+    labels = {"radar", "tests", "label", "lane", "changelog"}
     for line in output.splitlines():
         assert line.split(" ", 1)[0] in labels, output
 
@@ -1451,6 +1498,7 @@ _PLAN_LABELS = {
     "layer",
     "tests",
     "label",
+    "lane",
     "radar",
     "changelog",
     "PLAN:",
@@ -1466,6 +1514,7 @@ _APPLY_LABELS = {
     "layer",
     "tests",
     "label",
+    "lane",
     "radar",
     "changelog",
     "WROTE:",

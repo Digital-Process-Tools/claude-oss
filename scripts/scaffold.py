@@ -2920,6 +2920,55 @@ _LABEL_COMMANDS = "Check with `gh label list`; create it with " + _LABEL_CREATE_
 _LABEL_PAGE = 500
 
 
+# #1310: the fallback lane label -- `select_issues.py` and `statusline.py` already
+# consume `labels.lane_other` (#1181), but nothing ever declared it, so a fresh
+# `.oss.json` has no value to consume and 0nl is structurally unreachable no matter
+# how many triage passes run. Not written here, same as CHANGELOG_ESCAPE_LABEL above:
+# `.oss.json` is the project half, reviewed like any other repo fact, and a label is a
+# forge write this tool never makes on its own. Only measured and named.
+LANE_OTHER_LABEL = "lane-other"
+
+_LANE_OTHER_CREATE_COMMAND = (
+    "`gh label create "
+    + LANE_OTHER_LABEL
+    + ' --description "No declared lane fits this issue"`.'
+)
+
+
+def check_lane_other_declared(config):
+    """Is `labels.lane_other` declared in `.oss.json` at all?
+
+    Mirrors `check_changelog_label`'s shape: read-only, reported rather than written,
+    because the fix is two things a filesystem tool cannot do on its own -- edit a
+    project file meant to be reviewed, and create a label on somebody's forge. Named,
+    with both commands, and the decision stays theirs.
+
+    `null`/absent/blank all read as "not declared" here, the same posture
+    `lane_other_label_state` in `scripts/doctor_check_lane_other_label.py` already
+    gives the value on the read side (#1181) -- an explicit `null` is not a real
+    declaration and must not be treated as clean.
+    """
+    labels = config.get("labels") if isinstance(config, dict) else None
+    labels = labels if isinstance(labels, dict) else {}
+    lane_other = labels.get("lane_other")
+    if isinstance(lane_other, str) and lane_other.strip():
+        return []
+    return [
+        {
+            "state": "missing",
+            "detail": (
+                "labels.lane_other is not declared in .oss.json, so an issue that "
+                "matches none of the declared lanes has nowhere to go -- 0nl on the "
+                "statusline is structurally unreachable no matter how many triage "
+                "passes run (#1310). Add 'lane_other': '{}' under labels in "
+                ".oss.json, and create the label with {}".format(
+                    LANE_OTHER_LABEL, _LANE_OTHER_CREATE_COMMAND
+                )
+            ),
+        }
+    ]
+
+
 # A remote URL's userinfo is a credential often enough that it is treated as one every
 # time: `https://x-access-token:TOKEN@host/o/r` is what a CI checkout leaves behind, and
 # `https://TOKEN@host/o/r` -- the token standing alone as the username, with no password
@@ -3786,7 +3835,7 @@ def _print_findings(repo_root, config, force_owned=False):
     ``force_owned`` reaches the changelog finding only, and only so it stops denying a
     write the same run just made.
 
-    **Every detail is flattened as it is printed** (#204). Each of these four rows is
+    **Every detail is flattened as it is printed** (#204). Each of these five rows is
     built partly out of values from the repository being inspected -- a workflow
     filename, a `.supertool.json` key, whatever `git` or `gh` said when it declined --
     and a newline in any of them ends the row and starts the rest at column 0, where it
@@ -3795,7 +3844,7 @@ def _print_findings(repo_root, config, force_owned=False):
     renders `check_test_ci`'s finding from its own row). This is the second guard, and
     it is here rather than only there because #204 was exactly a builder that forgot:
     the flattener and the bypass shipped in the same delta, four hundred lines apart. A
-    fifth row added later cannot forget this one.
+    sixth row added later cannot forget this one -- the fifth (`lane`, #1310) did not.
     """
     for finding in check_radar(repo_root):
         _print_row("radar", finding)
@@ -3808,6 +3857,8 @@ def _print_findings(repo_root, config, force_owned=False):
     names, reason = _forge_label_names(repo_root, config)
     for finding in check_changelog_label(names, reason=reason):
         _print_row("label", finding)
+    for finding in check_lane_other_declared(config):
+        _print_row("lane", finding)
     for finding in check_changelog_gate(repo_root, config, force_owned=force_owned):
         _print_row("changelog", finding)
 
@@ -3816,8 +3867,8 @@ def _print_row(label, finding):
     """One row of the receipt: the label, then the detail on a single line.
 
     The alignment is preserved rather than recomputed -- `changelog` is one character
-    wider than the four-space gap the other three use, and that is what the receipt has
-    always printed.
+    wider than the four-space gap the other four (`radar`, `tests`, `label`, `lane`)
+    use, and that is what the receipt has always printed.
     """
     gap = " " if len(label) >= len("changelog") else " " * (9 - len(label))
     print("{}{}{}".format(label, gap, _one_line(finding["detail"])))

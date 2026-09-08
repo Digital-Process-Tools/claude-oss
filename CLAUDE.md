@@ -290,7 +290,7 @@ from being invisible.
 | `agents/developer.md` | 41,206 B | 44,100 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
-| `agents/triager.md` | 15,082 B | 16,600 B |
+| `agents/triager.md` | 15,467 B | 16,600 B |
 | `agents/sub-manager.md` | 17,104 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 
