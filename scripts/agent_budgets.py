@@ -87,7 +87,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # shared 8-grams between the two files) from being crossed again by the
     # restoration: 13992 B became 14424 B. Ceiling unchanged.
     "agents/release-auditor.md": (14636, 16400),
-    "agents/triager.md": (15082, 16600),
+    "agents/triager.md": (15467, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):

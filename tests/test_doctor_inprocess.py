@@ -1031,6 +1031,17 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_stale_branches",
         lambda *a, **kw: doctor.report("OK", "stale merged branches"),
     )
+    # #1310: `check_lane_other_label` now WARNs on `not-declared`, and this
+    # fixture's config never declares `labels.lane_other`. Verifying the
+    # declared-and-present path itself would need a real `gh label list` call
+    # against `owner/name`, which does not exist on GitHub -- exactly the same
+    # reason `check_branch_protection` and every #759-#1046 check above are
+    # stubbed rather than measured here.
+    monkeypatch.setattr(
+        doctor,
+        "check_lane_other_label",
+        lambda *a, **kw: doctor.report("OK", "labels.lane_other"),
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether the Windows gap below is real is a question about

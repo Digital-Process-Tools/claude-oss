@@ -45,8 +45,12 @@ instead of labelling from memory: an issue triaged against a taxonomy you could 
 triaged issue, and it is indistinguishable from one that was.
 
 **Lane**, by which files the work owns, because the expensive thing is context, not the fix. Read the
-lane labels off the repo; assign the one whose files the issue actually touches, and leave a genuine
-one-off unlabelled rather than forcing it. A repo with no lane labels gets no lane.
+lane labels off the repo; assign the one whose files the issue actually touches. **When `.oss.json`
+declares `labels.lane_other`, set a lane on every open issue** -- fall back to it for a genuine one-off
+that fits none of the declared lanes, rather than leaving the issue unlabelled: that fallback is the
+only route to `0nl` on the statusline, and forever leaving it unset is not a neutral choice (#1310). A
+repo with no lane labels gets no lane, and a repo that declares no `lane_other` still leaves a genuine
+one-off unlabelled -- there is nowhere declared to put it.
 
 **Milestone** — this release if it is a blocker, the next if it is not. **"Next" is a decision, not a
 default**, so say why in one line.

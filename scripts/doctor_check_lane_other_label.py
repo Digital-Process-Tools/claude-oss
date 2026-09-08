@@ -146,11 +146,13 @@ def check_lane_other_label(project_dir, config=None, run=None):
         )
     elif state == "not-declared":
         doctor.report(
-            "OK",
-            "labels.lane_other: not-declared -- a legitimate choice; issues "
-            "the triager decides no lane owns are simply left with no lane "
-            "label. Set labels.lane_other in .oss.json to give that decision "
-            "its own recorded state (#1130).",
+            "WARN",
+            "labels.lane_other: not-declared -- a repo can never reach 0nl on "
+            "the statusline without it: an issue that fits none of the "
+            "declared lanes has nowhere to go, no matter how many triage "
+            "passes run (#1310). Add 'lane_other': 'lane-other' under "
+            "labels in .oss.json, and create the label with `gh label create "
+            'lane-other --description "No declared lane fits this issue"`.',
         )
     else:
         doctor.report("WARN", "labels.lane_other: could not tell -- {}".format(payload))

@@ -40,25 +40,33 @@ def _config(labels):
     return config
 
 
-def test_not_declared_is_a_legitimate_ok_not_a_gap():
+def test_not_declared_warns_with_an_executable_remedy():
+    """#1310: `not-declared` used to be reported as a legitimate `OK`, the same
+    posture as `filed_by_loop`'s own optional key -- but a repo can never reach
+    `0nl` without a fallback lane, so leaving it unset forever is not neutral.
+    The remedy has to be runnable, not only clickable (doctor-check-contract).
+    """
     doctor.FINDINGS.clear()
     doctor.check_lane_other_label(
         "/tmp", _config({"lanes": ["lane-a"]}), run=_fake_run()
     )
     state, message = doctor.FINDINGS[-1]
-    assert state == "OK"
+    assert state == "WARN"
     assert "not-declared" in message
+    assert "gh label create" in message
+    assert "lane_other" in message
     doctor.FINDINGS.clear()
 
 
-def test_null_value_is_also_not_declared():
+def test_null_value_is_also_not_declared_and_also_warns():
     doctor.FINDINGS.clear()
     doctor.check_lane_other_label(
         "/tmp", _config({"lanes": ["lane-a"], "lane_other": None}), run=_fake_run()
     )
     state, message = doctor.FINDINGS[-1]
-    assert state == "OK"
+    assert state == "WARN"
     assert "not-declared" in message
+    assert "gh label create" in message
     doctor.FINDINGS.clear()
 
 
@@ -120,7 +128,8 @@ def test_malformed_value_is_could_not_tell():
 def test_lane_other_label_state_four_states_directly():
     assert doctor.lane_other_label_state(
         "/tmp", config=_config({"lanes": []}), run=_fake_run()
-    ) == ("not-declared", None)
+    ) == ("not-declared", None)  # the STATE itself is unchanged by #1310 -- only
+    # `check_lane_other_label`'s rendering of it moved from OK to WARN
 
     rows = '[{"name": "lane-other"}]'
     state, payload = doctor.lane_other_label_state(
