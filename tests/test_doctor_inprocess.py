@@ -913,6 +913,18 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_channel_health_agreement",
         lambda *a, **kw: doctor.report("OK", "channel census vs channel:health"),
     )
+    # #1311: `check_statusline_unknowns` reads THIS machine's real statusline
+    # cache (keyed by this fixture's own `repo`, which the real cache
+    # directory has never heard of) -- neither the cache read nor the
+    # `board_is_due`/`channel_status` derivation over it is a fact about this
+    # fixture's tree, exactly the same reason the two channel checks above
+    # are stubbed rather than measured here. Left unstubbed, the fixture's
+    # never-cached repo reads as `not-asked` for both fields and WARNs twice.
+    monkeypatch.setattr(
+        doctor,
+        "check_statusline_unknowns",
+        lambda *a, **kw: doctor.report("OK", "statusline unknowns"),
+    )
     # #582: a real `supertool ops:roster` subprocess. Its answer is a fact about
     # the supertool installed on THIS machine AND about the `.supertool.json`
     # presets resolving from the fixture directory -- which carries none, so the
