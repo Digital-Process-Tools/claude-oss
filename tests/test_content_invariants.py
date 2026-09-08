@@ -165,7 +165,14 @@ SHIPPED_MID_LANE_DIRS = [
 TRAP_D = sorted((REPO_ROOT / "trap.d").glob("*.md"))
 
 HARDCODED_HOME_PATH = [
-    (r"/Users/[A-Za-z0-9_.-]+", "an absolute macOS home path"),
+    # Self-review finding (#1262): the macOS pattern is unanchored, so it also
+    # matches as a substring inside a Windows forward-slash path
+    # (`C:/Users/<name>`) -- both entries fired on the same span, one correctly
+    # labeled "Windows (forward slash)" and one mislabeled "macOS" for the
+    # same path. `(?<!:)` refuses a match immediately preceded by a colon (the
+    # drive-letter separator), which a real macOS path never has right before
+    # `/Users`.
+    (r"(?<!:)/Users/[A-Za-z0-9_.-]+", "an absolute macOS home path"),
     (r"/home/[A-Za-z0-9_.-]+", "an absolute Linux home path"),
     # #1261: a trap.d fragment (or any other shipped file) logged mid-lane on a
     # Windows checkout carries a Windows-spelled path instead -- neither POSIX
@@ -366,6 +373,27 @@ def test_absolute_home_path_pattern_catches_a_windows_spelled_fixture():
     )
 
 
+def test_windows_forward_slash_path_is_not_also_flagged_as_macos():
+    """Self-review finding (#1262): the macOS pattern used to be unanchored, so a
+    Windows forward-slash path (`C:/Users/<name>`) tripped BOTH the macOS entry
+    and the Windows forward-slash entry -- the same real leak reported twice
+    under two labels, one of them wrong. Exactly one offender, correctly
+    labeled, must come back for a Windows forward-slash fixture.
+    """
+    fixture_text = "a path C:/Users/exampleuser/Documents\n"
+    offenders = _scan_for_hardcoded_paths(
+        [("trap.d/9999.fixture-not-a-real-file.md", fixture_text)]
+    )
+    assert len(offenders) == 1, (
+        "a Windows forward-slash path must be reported exactly once, not once per "
+        "pattern that happens to match a substring of it: {!r}".format(offenders)
+    )
+    assert "Windows" in offenders[0] and "macOS" not in offenders[0], (
+        "a Windows forward-slash path must not be mislabeled as a macOS one: "
+        "{!r}".format(offenders)
+    )
+
+
 def test_shipped_mid_lane_scan_reaches_directories_beyond_trap_d(tmp_path):
     """#1262 positive control: trap.d/ alone being clean proves nothing about
     whether the widened scope actually reaches the other shipped, mid-lane-
@@ -398,6 +426,42 @@ def test_shipped_mid_lane_scan_reaches_directories_beyond_trap_d(tmp_path):
         "the widened scope failed to catch a violation planted in tests/ -- a "
         "directory named in SHIPPED_MID_LANE_DIRS but never actually reached by "
         "the scan is indistinguishable from one that is clean"
+    )
+
+
+def test_every_shipped_mid_lane_dir_has_documents():
+    """Review findings (#1262): `test_trap_d_has_documents` above proves trap.d/
+    is non-empty specifically so the guard can't pass vacuously if trap.d/ ever
+    had zero fragments -- but that check only ever covered trap.d/. The other
+    five directories SHIPPED_MID_LANE_DIRS widened the scan to have no such
+    guard: `_shipped_mid_lane_documents` silently skips a missing directory,
+    and an empty glob silently contributes zero documents either way, so a
+    directory that stops existing (or is transiently emptied -- changelog.d/
+    is drained into CHANGELOG.md at release time) renders identically to one
+    that was scanned and found clean. Every directory named in
+    SHIPPED_MID_LANE_DIRS must actually exist and actually yield at least one
+    document at HEAD, or this check is testing nothing for that directory.
+    """
+    prose_documents, code_documents = _shipped_mid_lane_documents()
+    documents_by_label = {}
+    for label, _text in prose_documents + code_documents:
+        # `label` is a Path (from `path.relative_to(root)`) -- read its first
+        # component via `.parts`, not a "/" string split, which would return
+        # the whole relative path unsplit on a Windows checkout where
+        # `str(label)` uses backslash separators.
+        directory = label.parts[0]
+        documents_by_label.setdefault(directory, 0)
+        documents_by_label[directory] += 1
+    missing = [
+        dirname
+        for dirname, _pattern, _is_code in SHIPPED_MID_LANE_DIRS
+        if documents_by_label.get(dirname, 0) == 0
+    ]
+    assert not missing, (
+        "these SHIPPED_MID_LANE_DIRS entries yielded zero documents, so "
+        "test_no_absolute_home_paths_in_shipped_mid_lane_dirs is not actually "
+        "scanning them -- a directory that yields nothing renders identically "
+        "to one that was scanned and found clean: {}".format(missing)
     )
 
 
