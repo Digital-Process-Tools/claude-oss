@@ -130,6 +130,29 @@ def test_uncovered_count_is_none_when_no_lane_resolves_any_file(tmp_path):
     lane_patterns = {"lane-a": ["scripts/gone_*.py"]}
     result = lane_pattern_coverage.lane_pattern_report(tmp_path, lane_patterns)
     assert result["uncovered_count"] is None
+    # A genuinely clean walk (scope established, nothing wrong) must report
+    # no problem -- the "must fire" sibling for the failed-walk case below
+    # lives at test_uncovered_count_problem_is_surfaced_when_the_walk_fails.
+    assert result["uncovered_count_problem"] is None
+
+
+def test_uncovered_count_problem_is_surfaced_when_the_walk_fails(tmp_path, monkeypatch):
+    """#1252: a failed filesystem walk (`_walk_all_files` returning a
+    `problem`) must not collapse to the same `None` a clean "no scope
+    established" read already uses for `uncovered_count` -- the exact
+    absence-vs-absence collision this repo's own defect class names.
+    `_uncovered_count` must surface the walk's own problem string so a
+    caller can tell "nothing to count" from "could not count"."""
+    _touch(tmp_path, "scripts/covered.py")
+    lane_patterns = {"lane-a": ["scripts/covered.py"]}
+
+    def _boom(repo):
+        return [], "PermissionError: [Errno 13] boom"
+
+    monkeypatch.setattr(lane_pattern_coverage, "_walk_all_files", _boom)
+    result = lane_pattern_coverage.lane_pattern_report(tmp_path, lane_patterns)
+    assert result["uncovered_count"] is None
+    assert result["uncovered_count_problem"] == "PermissionError: [Errno 13] boom"
 
 
 def test_non_dict_lane_patterns_is_a_finding_not_ok(tmp_path):

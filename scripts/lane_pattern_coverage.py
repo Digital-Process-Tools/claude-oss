@@ -59,6 +59,16 @@ resolved to a single file, so no scope could be established at all -- that
 is a different state from "scope established, nothing left uncovered in
 it", and the two must not collapse to the same number.
 
+`uncovered_count` alone cannot carry a THIRD state, though: a failed
+filesystem walk (`_walk_all_files` returning a `problem`) also has nowhere
+to establish scope, so it too returns `uncovered_count is None` -- the
+exact absence-vs-absence collision this whole module is named after,
+recurring one field down (#1252). `uncovered_count_problem` is the
+sibling field that resolves it: `None` on a clean read (whichever of the
+two `None`-producing `uncovered_count` cases applies), or a string naming
+what the walk failed with. A caller must read both fields together, in
+`ok` and in `finding` alike, never `uncovered_count` on its own.
+
 Python 3.9 compatible.
 """
 
@@ -138,9 +148,14 @@ def _overlaps(lane_files):
 
 
 def _uncovered_count(repo, lane_files):
-    """``None`` when no lane resolved a single file (no scope established);
-    otherwise the count of files under a top-level directory some lane
-    already touches, that no lane covers.
+    """``(count, problem)`` -- mirrors `_walk_all_files`'s own shape so a
+    failed walk is never a bare `None` a caller could mistake for "no scope
+    established" (the same absence-vs-absence collision this repo's own
+    defect class is named after -- #1252). `count` is `None` when no lane
+    resolved a single file (no scope established) OR the walk itself failed;
+    `problem` is `None` on a clean read and a string naming what went wrong
+    otherwise -- the two `None`/`None` and `None`/`<reason>` shapes are how a
+    caller tells "nothing to count" from "could not count" apart.
     """
     covered = set()
     scopes = set()
@@ -149,12 +164,12 @@ def _uncovered_count(repo, lane_files):
             covered.add(f)
             scopes.add(f.split("/", 1)[0])
     if not scopes:
-        return None
+        return None, None
     all_files, problem = _walk_all_files(repo)
     if problem is not None:
-        return None
+        return None, problem
     in_scope = (f for f in all_files if f.split("/", 1)[0] in scopes)
-    return sum(1 for f in in_scope if f not in covered)
+    return sum(1 for f in in_scope if f not in covered), None
 
 
 def lane_pattern_report(repo, lane_patterns):
@@ -170,6 +185,7 @@ def lane_pattern_report(repo, lane_patterns):
             "refused": [],
             "malformed": [],
             "uncovered_count": None,
+            "uncovered_count_problem": None,
         }
     # `oss_config.py`'s own shape validation already FAILs a `lane_patterns`
     # that is not an object, or a per-lane value that is not a list -- but
@@ -201,6 +217,7 @@ def lane_pattern_report(repo, lane_patterns):
                 )
             ],
             "uncovered_count": None,
+            "uncovered_count_problem": None,
         }
     lane_files = {}
     dead_patterns = []
@@ -226,7 +243,7 @@ def lane_pattern_report(repo, lane_patterns):
         dead_patterns.extend(_dead_patterns(lane, resolved))
         refused.extend(_refused_patterns(lane, resolved))
     overlaps = _overlaps(lane_files)
-    uncovered_count = _uncovered_count(repo, lane_files)
+    uncovered_count, uncovered_count_problem = _uncovered_count(repo, lane_files)
     state = "finding" if (overlaps or dead_patterns or refused or malformed) else "ok"
     return {
         "state": state,
@@ -235,4 +252,5 @@ def lane_pattern_report(repo, lane_patterns):
         "refused": refused,
         "malformed": malformed,
         "uncovered_count": uncovered_count,
+        "uncovered_count_problem": uncovered_count_problem,
     }
