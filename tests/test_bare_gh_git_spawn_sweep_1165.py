@@ -40,7 +40,19 @@ the real hits.
 `statusline._run`, each accepting a bare `["git", ...]` list and resolving
 (or not) internally before its own `subprocess.run` call -- used to be
 invisible to this sweep, because case 2 only recognised a DIRECT
-`subprocess.*` call. `_WrapperFinder` now does one pre-pass per file: a
+`subprocess.*` call. A third wrapper of the identical shape,
+`scaffold._run`, is not converted by this issue and is not flagged by the
+detection below either -- not because it resolves safely (it does not: its
+own `command` parameter is handed straight to `subprocess.run` with no
+internal resolution), but because every live call site already passes it a
+pre-resolved `git_bin`/`gh_bin` variable rather than a literal `["git",
+...]`/`["gh", ...]` argv, so there is nothing for a literal-argv scan to
+catch there today. A future call site handing it a bare literal would still
+be invisible to this heuristic (`_mentions_a_resolver` looks at the
+*wrapper's own* body, not its callers' arguments) -- named here rather than
+silently left for the next audit to rediscover.
+
+`_WrapperFinder` now does one pre-pass per file: a
 module-level function is a "candidate wrapper" if its body calls
 `subprocess.<spawn>(PARAM, ...)` where `PARAM` is one of that function's
 own parameters (the exact shape `oss_config._run`/`statusline._run` both
