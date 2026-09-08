@@ -19,9 +19,34 @@ file race (`.coverage`, #1228's own "site 4") this issue's comments
 document. Site 4 has a direct fix instead --
 `tests/test_durations_recorded_881.py`'s own nested pytest invocation now
 passes `--no-cov`, so it never touches the shared `.coverage` file at all
-(see that file's own new tests). Site 3, and the general "any shared path"
-case, are a harder design problem than one lane should decide under time
-pressure -- see this issue's own report for the follow-up filed for it.
+(see that file's own new tests). Site 3, at the time of this issue, was a
+harder design problem than one lane should decide under time pressure --
+see this issue's own report for the follow-up filed for it (#1250). The
+general "any shared path" invariant is still that harder, declined case;
+#1250 covers only the one concrete tracked path this issue named.
+
+## #1250: site 3, covered narrowly rather than generalised
+
+`skills/manager/phases/` is a shared TRACKED SOURCE directory, not a
+scratch/root path -- `scripts/manager_docs.py`'s `documents()`/`text()`
+glob over it from every worker, and `tests/test_skill_phase_split.py`'s
+own `test_unreferenced_is_reported_rather_than_assumed` and `test_a_
+phase_file_on_disk_that_nobody_budgeted_is_reported` each plant and
+remove a transient control file directly inside it
+(`unreferenced-control.md`, `undeclared-control.md`). That is not
+hypothetical: `trap.d/1228.site3-race-recurred-on-release-commit-
+dd2353e.md` records it actually reddening a release commit's own CI run
+with the exact FileNotFoundError signature this issue's thread predicted.
+`_TrackedPathWatcher` below is the same read-only, controller-only
+mechanism as `_SessionRootWatcher`, pointed at that one directory, with
+its own small allowlist for the two known self-test control filenames --
+mirroring `_watcher_selftest_*`'s own precedent at site 1 exactly, for
+the same reason: a whole-run guard with no entry for a pre-existing,
+legitimate self-test would flag that self-test on every ordinary run.
+This still does not fix the underlying race in `manager_docs.py` itself
+(a concurrent read racing a sibling worker's legitimate delete) -- it is
+the detector this module's own docstring already promised as a follow-up,
+not a change to what gets read.
 
 ## Two design decisions this module states rather than leaves to be
 ## re-derived by whoever reads it next
@@ -126,18 +151,37 @@ def _is_allowed(name):
     return any(fnmatch.fnmatch(name, pattern) for pattern in _ALLOWLIST_GLOBS)
 
 
-class _SessionRootWatcher(object):
-    """Background, read-only poller over `root`'s own direct children.
+# #1250's own site-3 allowlist. Deliberately a small, NAMED set rather than
+# a glob -- both entries are `tests/test_skill_phase_split.py`'s own two
+# literal filenames, planted and removed as that file's own self-tests, so
+# there is no need for the wildcard-shaped allowance the root watcher's
+# `pytest-cache-files-*`/`.coverage.*` entries need for a variable suffix.
+_ALLOWLIST_PHASE_CONTROL_EXACT = frozenset(
+    {"unreferenced-control.md", "undeclared-control.md"}
+)
+
+
+def _is_allowed_phase_control(name):
+    return name in _ALLOWLIST_PHASE_CONTROL_EXACT
+
+
+class _DirectoryWatcher(object):
+    """Background, read-only poller over `root`'s own direct children,
+    filtered through `is_allowed`.
 
     Same mechanism as `tests/test_root_scratch_isolation_1214.py`'s own
     `_RootWatcher` (continuous polling, not a before/after snapshot, so a
     name that appears and vanishes between polls is still seen) --
     generalised to run for a whole pytest session's lifetime rather than
-    around one known call, and filtered through the allowlist above.
+    around one known call. Shared base for `_SessionRootWatcher` (site 1,
+    the repository root) and `_TrackedPathWatcher` (#1250's site 3,
+    `skills/manager/phases/`) -- same mechanism, different directory and
+    allowlist, rather than two independent copies of the same polling loop.
     """
 
-    def __init__(self, root):
+    def __init__(self, root, is_allowed):
         self.root = root
+        self._is_allowed = is_allowed
         # Tracked separately from `_seen_new` so a root that is unreadable
         # for the WHOLE run can be told apart from one that was genuinely
         # clean -- an auditor finding on this same round: `except OSError:
@@ -194,7 +238,7 @@ class _SessionRootWatcher(object):
     def offenders(self):
         """Every name seen new during the run that the allowlist does not
         excuse -- sorted, for a deterministic report."""
-        return sorted(name for name in self._seen_new if not _is_allowed(name))
+        return sorted(name for name in self._seen_new if not self._is_allowed(name))
 
     def could_not_watch(self):
         """True only if EVERY read of the root -- construction and every
@@ -204,7 +248,33 @@ class _SessionRootWatcher(object):
         return not self._ever_read_root
 
 
+class _SessionRootWatcher(_DirectoryWatcher):
+    """Site 1: the repository root's direct children, filtered through
+    `_is_allowed` above. Kept as its own name (rather than calling
+    `_DirectoryWatcher(REPO_ROOT, _is_allowed)` at every call site) because
+    both this class and `_poll_once_for_test` are named directly by
+    existing tests (`tests/test_root_scratch_guard_1228.py`)."""
+
+    def __init__(self, root):
+        super(_SessionRootWatcher, self).__init__(root, _is_allowed)
+
+
+class _TrackedPathWatcher(_DirectoryWatcher):
+    """#1250's site 3: one shared TRACKED SOURCE directory
+    (`skills/manager/phases/`), filtered through `_is_allowed_phase_control`
+    above. Same mechanism and the same two design decisions as the root
+    watcher -- read-only, controller-only -- pointed at a different
+    directory with its own, much smaller allowlist."""
+
+    def __init__(self, root):
+        super(_TrackedPathWatcher, self).__init__(root, _is_allowed_phase_control)
+
+
 _watcher = None
+_phase_watcher = None
+
+#: `skills/manager/phases/`, relative to `REPO_ROOT` -- #1250's site 3.
+_TRACKED_PHASES_DIR = REPO_ROOT / "skills" / "manager" / "phases"
 
 
 def _is_xdist_worker(session):
@@ -214,11 +284,24 @@ def _is_xdist_worker(session):
 
 
 def pytest_sessionstart(session):
-    global _watcher
+    global _watcher, _phase_watcher
     if _is_xdist_worker(session):
         return
     _watcher = _SessionRootWatcher(REPO_ROOT)
     _watcher.start()
+    # `.is_dir()` here, not inside the watcher: a tracked path that simply
+    # does not exist under this run's own rootdir (every harness that
+    # exercises this module against a throwaway tree smaller than the real
+    # repository, plus any repository that has not adopted this directory
+    # convention at all) is NOT the same fact as one that exists but could
+    # not be read -- conflating them would make `could_not_watch()` fire,
+    # and report a session as red, for a directory that was never supposed
+    # to be watched in the first place. `manager_docs.documents()` draws
+    # the identical line for the same reason (`FileNotFoundError` --
+    # "not there" -- vs `OSError` -- "unreadable").
+    if _TRACKED_PHASES_DIR.is_dir():
+        _phase_watcher = _TrackedPathWatcher(_TRACKED_PHASES_DIR)
+        _phase_watcher.start()
 
 
 def _report(session, message):
@@ -230,38 +313,11 @@ def _report(session, message):
     session.exitstatus = 1
 
 
-def pytest_sessionfinish(session, exitstatus):
-    global _watcher
-    if _watcher is None:
-        return
-    _watcher.stop()
-    # Checked before `offenders()`, and reported as its own, distinct
-    # state: a root that could never be read for the whole run must never
-    # render as "watched and found nothing" -- the two are opposite claims
-    # that would otherwise print identically as a quiet green pass.
-    if _watcher.could_not_watch():
-        _watcher = None
-        _report(
-            session,
-            "root_scratch_guard: could not watch the repository root at "
-            "all during this run -- every read of it raised OSError, so "
-            "this session's own claim of no unexpected root-level entries "
-            "is not established, not confirmed clean (#1228)",
-        )
-        return
-    offenders = _watcher.offenders()
-    _watcher = None
-    if not offenders:
-        return
-    message = (
-        "root_scratch_guard: {} unexpected entr{} appeared directly under "
-        "the repository root during this run: {} -- a third #1214 site, "
-        "the class #1228 exists to catch before it reddens CI as an "
-        "unrelated, misattributed failure".format(
-            len(offenders),
-            "y" if len(offenders) == 1 else "ies",
-            ", ".join(offenders),
-        )
+def _report_offenders(session, offenders, message_template):
+    message = message_template.format(
+        len(offenders),
+        "y" if len(offenders) == 1 else "ies",
+        ", ".join(offenders),
     )
     reporter = session.config.pluginmanager.get_plugin("terminalreporter")
     if reporter is not None:
@@ -271,3 +327,56 @@ def pytest_sessionfinish(session, exitstatus):
     else:
         sys.stderr.write(message + "\n" + "\n".join(offenders) + "\n")
     session.exitstatus = 1
+
+
+def _finish_one_watcher(session, watcher, could_not_watch_message, offenders_message):
+    """Stop `watcher` and report it, in the same three states every check
+    in this module uses: nothing to report (clean, or nothing running),
+    could-not-watch (checked first and reported as its own distinct state,
+    below), or a named list of offenders. Shared by both watchers so
+    `pytest_sessionfinish` states each site's own message once rather than
+    duplicating this whole block per site."""
+    if watcher is None:
+        return
+    watcher.stop()
+    # Checked before `offenders()`, and reported as its own, distinct
+    # state: a directory that could never be read for the whole run must
+    # never render as "watched and found nothing" -- the two are opposite
+    # claims that would otherwise print identically as a quiet green pass.
+    if watcher.could_not_watch():
+        _report(session, could_not_watch_message)
+        return
+    offenders = watcher.offenders()
+    if not offenders:
+        return
+    _report_offenders(session, offenders, offenders_message)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    global _watcher, _phase_watcher
+    root_watcher, _watcher = _watcher, None
+    phase_watcher, _phase_watcher = _phase_watcher, None
+    _finish_one_watcher(
+        session,
+        root_watcher,
+        "root_scratch_guard: could not watch the repository root at "
+        "all during this run -- every read of it raised OSError, so "
+        "this session's own claim of no unexpected root-level entries "
+        "is not established, not confirmed clean (#1228)",
+        "root_scratch_guard: {} unexpected entr{} appeared directly under "
+        "the repository root during this run: {} -- a third #1214 site, "
+        "the class #1228 exists to catch before it reddens CI as an "
+        "unrelated, misattributed failure",
+    )
+    _finish_one_watcher(
+        session,
+        phase_watcher,
+        "root_scratch_guard: could not watch skills/manager/phases/ at all "
+        "during this run -- every read of it raised OSError, so this "
+        "session's own claim of no unexpected tracked-source entries there "
+        "is not established, not confirmed clean (#1250)",
+        "root_scratch_guard: {} unexpected entr{} appeared directly under "
+        "skills/manager/phases/ during this run: {} -- #1228's own site 3, "
+        "the class #1250 exists to catch before it reddens CI as an "
+        "unrelated, misattributed failure",
+    )
