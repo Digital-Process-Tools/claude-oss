@@ -1312,34 +1312,32 @@ elif state == "could-not-ask":
 PLUGIN_CHANNEL_PRECHECK
 ) && plugin_channel_status=0 || plugin_channel_status=$?
     if [ "$plugin_channel_status" -eq 0 ]; then
-        # Parsed with a plain read loop rather than head/tail/sed: the number
-        # of lines is state-dependent (one for could-not-ask's reason, two
-        # for single's label+target, N for plural's names), and a fixed-line
-        # extractor would need one call per field anyway. `|| [ -n ... ]`
-        # on the loop condition: the LAST line of a command substitution
-        # (which already stripped its own trailing newline) would otherwise
-        # be silently dropped by `read` on a stream with no final newline.
-        plugin_channel_line_n=0
-        while IFS= read -r plugin_channel_line || [ -n "$plugin_channel_line" ]; do
-            plugin_channel_line_n=$((plugin_channel_line_n + 1))
-            if [ "$plugin_channel_line_n" -eq 1 ]; then
-                plugin_channel_state=$plugin_channel_line
-            elif [ "$plugin_channel_state" = "single" ] && [ "$plugin_channel_line_n" -eq 2 ]; then
-                plugin_channel_label=$plugin_channel_line
-            elif [ "$plugin_channel_state" = "single" ] && [ "$plugin_channel_line_n" -eq 3 ]; then
-                plugin_channel_target=$plugin_channel_line
-            elif [ "$plugin_channel_state" = "plural" ]; then
-                if [ -z "$plugin_channel_names" ]; then
-                    plugin_channel_names=$plugin_channel_line
-                else
-                    plugin_channel_names="$plugin_channel_names, $plugin_channel_line"
-                fi
-            elif [ "$plugin_channel_state" = "could-not-ask" ] && [ "$plugin_channel_line_n" -eq 2 ]; then
-                plugin_channel_reason=$plugin_channel_line
-            fi
-        done <<PLUGIN_CHANNEL_LINES
-$plugin_channel_out
-PLUGIN_CHANNEL_LINES
+        # Parsed with the SAME printf | sed idiom the pre-existing #810
+        # CHANNEL_CENSUS block below already uses (census_state/census_rest),
+        # rather than a `while read` loop over an unquoted heredoc -- self-
+        # review finding, reasoned rather than reproduced (no Windows
+        # machine to hand): a `while IFS= read -r` loop reading an unquoted
+        # `<<HEREDOC` body built from a command-substitution variable is a
+        # parsing path nothing else in this file uses, while `printf '%s\n'
+        # "$var" | sed -n 'Np'` is the exact idiom already proven, on
+        # every CI platform including Windows, by CHANNEL_CENSUS's own
+        # identical two-state extraction a few hundred lines below. Matching
+        # it removes whatever novel platform-specific risk the read-loop
+        # carried, without needing to first pin down what it was.
+        plugin_channel_state=$(printf '%s\n' "$plugin_channel_out" | sed -n '1p')
+        plugin_channel_rest=$(printf '%s\n' "$plugin_channel_out" | tail -n +2)
+        case $plugin_channel_state in
+            single)
+                plugin_channel_label=$(printf '%s\n' "$plugin_channel_rest" | sed -n '1p')
+                plugin_channel_target=$(printf '%s\n' "$plugin_channel_rest" | sed -n '2p')
+                ;;
+            plural)
+                plugin_channel_names=$(printf '%s\n' "$plugin_channel_rest" | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+                ;;
+            could-not-ask)
+                plugin_channel_reason=$(printf '%s\n' "$plugin_channel_rest" | sed -n '1p')
+                ;;
+        esac
         # The check RAN (exit 0) but could not establish the plugin
         # population itself -- an unreadable or malformed
         # installed_plugins.json, or one installed plugin's own unreadable
