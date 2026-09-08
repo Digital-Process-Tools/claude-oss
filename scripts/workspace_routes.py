@@ -82,7 +82,12 @@ def _flatten(text):
     print line }'`. Unflattened, an embedded newline puts forge-supplied
     text at column 0 of the next printed line, where a line shaped like
     `ROUTE: <something>` reads as a second, unrelated `ROUTE:` line --
-    the identical mechanism `pr_green._flatten` was written for (#1113)."""
+    the identical mechanism `pr_green._flatten` was written for (#1113).
+    #1263 widened the same guard to every other value `main` interpolates
+    into a printed line, regardless of provenance -- `result["threshold"]`
+    (a repository-supplied `.oss.json` value, not `gh` output) and the
+    `.oss.json` load-error `problems` list, neither of which is `gh`
+    stderr, but both reach the same `awk`-parsed print."""
     return " ".join(str(text).split())
 
 
@@ -301,7 +306,7 @@ def main(argv=None):
     if config is None:
         print(
             "COULD-NOT-DECIDE: .oss.json could not be read ({0})".format(
-                "; ".join(problems) if problems else "unknown reason"
+                _flatten("; ".join(problems)) if problems else "unknown reason"
             )
         )
         return 3
@@ -318,7 +323,7 @@ def main(argv=None):
                 name,
                 result["state"],
                 result["count"],
-                result["threshold"],
+                _flatten(result["threshold"]),
                 _flatten(result["why"]),
             )
         )
