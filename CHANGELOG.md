@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-08
+
+### Added
+
+- A `growth per turn` before/after scan for developer-agent transcripts, split on PR #454's
+  merge (#455). Run on this machine's own transcripts: median growth per turn fell from
+  ~1,046 tokens/turn (204 pre-fix lanes) to ~747 tokens/turn (292 post-fix lanes), about a 29%
+  drop -- read against #314's own caveat that a lower number is not on its own evidence the
+  underlying work stayed as good, since it is not what this scan measures.
+
+### Fixed
+
+- The agent report schema (contract 10, `schemas/agent-report.schema.json`) gains a
+  new optional `plugin_root` field: the literal `${CLAUDE_PLUGIN_ROOT}` a developer
+  lane resolved when it wrote and self-validated its own report. A plugin that
+  auto-updates mid-tick can leave a sub-manager's own copy of
+  `scripts/report_schema.py` answering `UNVALIDATABLE` on a report written against an
+  older contract, correctly but with no visible cause; `plugin_root` lets a
+  sub-manager string-compare the lane's resolved root against its own current one and
+  attribute the answer to the mid-tick update rather than reporting an isolated schema
+  mismatch. `agents/developer/report.md` and `skills/manager/phases/handback.md` both
+  carry the new instruction. Additive bump: an older report with no `plugin_root` is
+  still valid. Closes #1103.
+
+- Six more bare `gh`/`git` subprocess spawns -- `scripts/agent_role.py`, `scripts/doctor_check_clone_head.py`, `scripts/release_trigger.py`, `scripts/scaffold.py`, `scripts/shell_sources.py`, `scripts/tree_snapshot.py` -- now route through `gh_which.safe_which` instead of a literal, unresolved `"gh"`/`"git"` argv or a bare `shutil.which` gate, closing the Windows curdir-execution gap `gh_which`'s own docstring describes for each in turn. Found as an out-of-scope item while #1174 closed every such site in `scripts/doctor.py` and added the repo-wide AST sweep (`tests/test_bare_gh_git_spawn_sweep_1165.py`) that named these six as scope for a follow-up (#1175).
+
+- Extended #1228's root-scratch guard to a shared TRACKED SOURCE path
+  (`skills/manager/phases/`, #1228's own "site 3") -- a background,
+  read-only, controller-only watcher, mirroring the repository-root
+  watcher's own design, that flags an unexpected write/create/remove
+  under that directory during a test run, while allowlisting the two
+  known self-test control files `test_skill_phase_split.py` legitimately
+  plants and removes there (`unreferenced-control.md`,
+  `undeclared-control.md`). Closes #1250. The general "any shared path"
+  invariant named in #1228's own comment thread is still out of scope.
+
+- Fixed `lane_pattern_coverage.py`'s `_uncovered_count` discarding the reason
+  when a filesystem walk fails, returning the same `None` it returns for a
+  genuinely clean "no lane resolved any file" read. `doctor_check_lane_
+  patterns.py` now reports "coverage could not be counted" plus the reason
+  when the walk fails, instead of silently printing the flat OK line with no
+  coverage clause at all -- and the same clause is now surfaced on the WARN
+  branch too (a dead pattern, a refused pattern, or an overlap occurring
+  alongside a failed walk), which the first pass of this fix left silent.
+  Closes #1252.
+
+- The home-path leak guard in `tests/test_content_invariants.py` (added by #1255) only
+  matched macOS/Linux spellings (`/Users/<name>`, `/home/<name>`) and only scanned
+  `trap.d/`. Two gaps closed together: a Windows-spelled path (`C:\Users\<name>` or
+  `C:/Users/<name>`, both slash directions, matching what `str(Path.home())` renders on
+  that platform) is now caught too (#1261), and the scan now covers every shipped,
+  mid-lane-written directory -- `changelog.d/`, `docs/`, `tests/`, `bin/`, `hooks/`,
+  `schemas/` -- not trap.d/ alone (#1262). Code directories (tests/, bin/, hooks/,
+  schemas/) are scanned with an allowlist of this repo's own established fixture
+  placeholder usernames (`HOME_PATH_PLACEHOLDER_USERNAMES`) rather than unfiltered,
+  because a plain grep at HEAD found the unfiltered pattern already matching 14 files'
+  worth of legitimate test fixtures using this repo's established placeholder usernames
+  -- scanning code the same way prose is scanned would make the check permanently red
+  on real fixtures instead of catching a real leak. One concrete leak the widened scan
+  catches was fixed as part of this: `tests/test_doctor_check_supertool_permission_609.py`
+  carried the maintainer's own real absolute home path in a fixture, now a placeholder.
+
+- `scripts/workspace_routes.py`'s per-route summary line (`{name}: {state}
+  (count=..., threshold=...) -- {why}`) flattened the `why` slot against
+  forged `ROUTE:` lines (#1257) but left `threshold` unflattened (#1263) --
+  three characters over. `threshold` is repository-supplied `.oss.json` config
+  rather than `gh` stderr, but an invalid value of the wrong type reaches
+  this print raw, and the same last-match-wins `awk '/^ROUTE:/ { line = $0
+  } END { print line }'` in `bin/oss-workspace` reads it. Now wrapped in the
+  same `_flatten` helper as `why`, so the print site is uniformly safe
+  rather than safe only by the ordering argument that every other slot in
+  the same call already relies on. Self-review found one sibling gap in
+  the same file: the `COULD-NOT-DECIDE: .oss.json could not be read
+  ({0})` print (exit code 3, still inside `bin/oss-workspace`'s scanned
+  range) also interpolated its `problems` text raw. Flattened too (#1263),
+  and `_flatten`'s own docstring now names both non-`gh` call sites it
+  covers rather than only the original `why`/`gh`-stderr one.
+
+- Fixed a real TOCTOU race in `scripts/skill_phases.py` (and the identical
+  pattern in `scripts/developer_phases.py`): `_undeclared_rows()` lists a
+  tracked-source directory, then reads each entry it just listed, and a file
+  that vanishes in that window -- a sibling xdist worker's own transient
+  control file, or anything else -- raised an uncaught `FileNotFoundError`
+  instead of being treated as "nothing left to report about a file that is
+  already gone." This is #1250's own "site 3" race recurring, this time
+  traced to its actual production-code mechanism rather than only detected:
+  `tests/test_skill_phase_split.py`'s two real-root-writing control-file
+  tests (`unreferenced-control.md`, `undeclared-control.md`) are also
+  isolated onto a per-test tempdir copy of the real `skills/manager/` tree
+  now, so they never write into the real, shared `skills/manager/phases/`
+  directory a sibling worker scans concurrently, removing the trigger as
+  well as hardening the read. Closes #1293.
+
+- The seven bare `gh`/`git` subprocess spawns the v0.29.0 release gate 3 audit found in `scripts/oss_config.py` (`_enclosing_clone`, `_ignore_rule`, `_git_lines`, `_gh_json`) and `scripts/statusline.py` (`git_release_progress`, `repo_version`, `branch_name`, plus every `gh api`/`gh pr list` call routed through the same `_run` wrapper) now resolve `git`/`gh` through `gh_which.safe_which` -- or, in `statusline.py`'s case, a self-contained inlined `_safe_which` copy, since that file is vendored standalone into `.oss/statusline.py` and cannot `import gh_which` -- before ever handing the executable to `subprocess.run`, closing the same Windows curdir-execution gap `gh_which`'s own docstring describes. `tests/test_bare_gh_git_spawn_sweep_1165.py`'s own scanner was widened alongside the fix: it previously only recognised a literal `["git"/"gh", ...]` argv handed directly to a qualified `subprocess.*` call, and could not see either of the two shapes these seven sites actually used -- a local `_run(command, ...)` wrapper called with a literal argv (both files), or a literal argv first bound to a variable a few lines before the spawn (`oss_config._ignore_rule`). Both shapes are now caught the same way a direct literal call is, with must-fire/must-not-fire controls for each (#1295).
+
 ## [0.28.0] - 2026-09-08
 
 ### Added
@@ -9923,7 +10018,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.29.0
 [0.28.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.28.0
 [0.27.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.27.1
 [0.27.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.27.0
