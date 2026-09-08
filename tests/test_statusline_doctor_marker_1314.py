@@ -9,6 +9,7 @@ proving the marker DOES change when the verdict changes, and a stale/absent cont
 proving the `?` fallback fires, exercised together rather than either alone.
 """
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -271,4 +272,83 @@ def test_refresh_carries_a_fresh_reading_forward_under_its_own_stamp(
     document = statusline.refresh(str(tmp_path), now=now)
     assert document["doctor_verdict"] == "ok"
     assert document["doctor_fetched_at"] == now - 5
+    assert calls == []
+
+
+# ------------------------------------------------------------- _doctor_script_path
+
+
+def test_script_path_prefers_the_sibling_file_when_it_exists(tmp_path, monkeypatch):
+    sibling = tmp_path / "doctor.py"
+    sibling.write_text("# stand-in", encoding="utf-8")
+    monkeypatch.setattr(statusline, "_statusline_sibling_doctor_path", lambda: sibling)
+    assert statusline._doctor_script_path(".") == sibling
+
+
+def test_script_path_falls_back_to_the_installed_plugin_when_no_sibling_exists(
+    tmp_path, monkeypatch
+):
+    """Self-review finding (reviewer spawn, #1314): `scaffold.py`'s `OWNED` table
+    never copies `doctor.py` alongside the vendored `.oss/statusline.py` it
+    writes, so the sibling candidate does not exist in ANY managed repository --
+    only in this plugin's own dev checkout. This is the candidate that must
+    actually work there: the plugin's own installed copy, resolved off
+    `installed_plugins.json` the same way `installed_plugins()` above already
+    resolves for THIS project."""
+    missing_sibling = tmp_path / "nowhere" / "doctor.py"
+    monkeypatch.setattr(
+        statusline, "_statusline_sibling_doctor_path", lambda: missing_sibling
+    )
+    plugins_root = tmp_path / "plugins"
+    install_dir = tmp_path / "installed-oss"
+    (install_dir / "scripts").mkdir(parents=True)
+    doctor_stub = install_dir / "scripts" / "doctor.py"
+    doctor_stub.write_text("# stand-in", encoding="utf-8")
+    plugins_root.mkdir()
+    (plugins_root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "oss@owner/repo": [
+                        {"scope": "user", "installPath": str(install_dir)}
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(statusline, "plugins_root_default", lambda: plugins_root)
+    assert statusline._doctor_script_path(str(tmp_path)) == doctor_stub
+
+
+def test_script_path_is_none_when_neither_candidate_exists(tmp_path, monkeypatch):
+    missing_sibling = tmp_path / "nowhere" / "doctor.py"
+    monkeypatch.setattr(
+        statusline, "_statusline_sibling_doctor_path", lambda: missing_sibling
+    )
+    empty_plugins_root = tmp_path / "empty-plugins"
+    empty_plugins_root.mkdir()
+    monkeypatch.setattr(statusline, "plugins_root_default", lambda: empty_plugins_root)
+    assert statusline._doctor_script_path(str(tmp_path)) is None
+
+
+def test_doctor_reading_never_spawns_a_subprocess_when_no_script_is_found(
+    tmp_path, monkeypatch
+):
+    """The positive control for the fix: when `_doctor_script_path` cannot find
+    `doctor.py` anywhere, `_doctor_reading` returns `None` without even trying to
+    run one -- never a spawn error silently swallowed."""
+    calls = []
+    monkeypatch.setattr(statusline, "_doctor_script_path", lambda root: None)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *a, **k: (
+            calls.append(1)
+            or (_ for _ in ()).throw(
+                AssertionError("subprocess.run should not have been called")
+            )
+        ),
+    )
+    assert statusline._doctor_reading(str(tmp_path)) is None
     assert calls == []

@@ -119,11 +119,14 @@ CHANNEL_REFRESH_AFTER = 300
 #: `/oss:doctor`'s own verdict. The issue that asked for this field measured
 #: `channel:health` alone -- one check inside the diagnostic -- past 20 seconds in
 #: its worst case, and the full diagnostic runs many more checks besides. That rules
-#: out the board's 60s clock outright, and the diagnostic's own subject (whether this
-#: install and this repo's setup are sound) moves on the order of `LATEST_REFRESH_AFTER`'s
-#: weeks, not `CHANNEL_REFRESH_AFTER`'s minutes -- a dead consumer can appear between
-#: one render and the next, a new doctor WARN generally cannot. Sharing
-#: `LATEST_REFRESH_AFTER`'s own interval rather than inventing a fifth number.
+#: out the board's 60s clock outright, and it is also nowhere near as volatile as
+#: `CHANNEL_REFRESH_AFTER`'s own subject -- a dead consumer can appear between one
+#: render and the next; a new doctor WARN generally does not. `LATEST_REFRESH_AFTER`'s
+#: own docstring quotes "the order of weeks" for ITS subject (a published version) and
+#: is itself set to one hour, not weeks -- read as a starting interval already judged
+#: acceptable for a similarly slow-moving, comparatively expensive-to-check fact,
+#: never as a claim that doctor's own findings change on a weekly cadence. Sharing
+#: that number rather than inventing a fifth one unmeasured in either direction.
 DOCTOR_REFRESH_AFTER = LATEST_REFRESH_AFTER
 
 #: How long the detached refresh may wait on `doctor.py` before giving up on that one
@@ -2246,6 +2249,80 @@ def _channel_reading(root, config):
     return parse_channel_report(_run_channel_health()), attribution
 
 
+def _statusline_sibling_doctor_path():
+    """`doctor.py` beside this file on disk. Real only when this file IS the
+    plugin's own tracked `scripts/statusline.py`, run directly out of a checkout
+    -- this repository's own dev loop, and every existing test in this suite --
+    never the vendored copy `scaffold.py` writes to a managed repo's
+    `.oss/statusline.py` (#1314's own self-review finding: `_owned_statusline`
+    copies exactly one file at write time, and `doctor.py` is not it -- see
+    `OWNED` in `scaffold.py`). Split out from `_doctor_script_path` below so that
+    fallback is testable without patching `__file__` itself.
+    """
+    return Path(__file__).with_name("doctor.py")
+
+
+def _installed_plugin_root(project_root, name, plugins_root=None):
+    """The `installPath` of the installed plugin named `name`, for THIS project --
+    the same `installed_plugins.json` resolution `installed_plugins()` above
+    already performs, but returning the install directory itself rather than
+    the version/repository facts that function derives from it (#1314).
+
+    `None` when `installed_plugins.json` cannot be read/parsed, no entry's name
+    matches (`key.split("@", 1)[0]`, the same split `installed_plugins()` uses),
+    or no matching entry applies to this project (`_entry_applies`) -- never a
+    guess at where a plugin "usually" lives.
+    """
+    root = Path(plugins_root) if plugins_root is not None else plugins_root_default()
+    try:
+        doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    project = _normalized_path(project_root) if project_root is not None else None
+    for key, entries in (doc.get("plugins") or {}).items():
+        if key.split("@", 1)[0] != name:
+            continue
+        for entry in entries or []:
+            if not _entry_applies(entry, project):
+                continue
+            install_path = entry.get("installPath")
+            if install_path:
+                return install_path
+    return None
+
+
+def _doctor_script_path(root):
+    """Where `_doctor_reading` should find `doctor.py`, in the two shapes this
+    statusline file is actually run from (#1314's own self-review finding).
+
+    1. Beside this file (`_statusline_sibling_doctor_path`) -- this repository's
+       own dev checkout, where `scripts/statusline.py` and `scripts/doctor.py`
+       are genuine siblings.
+    2. Failing that, the `oss` plugin's own installed copy
+       (`_installed_plugin_root`, `OSS_STATUSLINE_PLUGIN` env, default `"oss"` --
+       the same name `plugin_facts` below already reads this repo's own entry
+       under) -- `<install path>/scripts/doctor.py`. This is the candidate that
+       actually answers in a managed repository: `scaffold.py` never ships
+       `doctor.py` alongside the vendored `.oss/statusline.py` it writes, so
+       candidate 1 does not exist there by construction, and the plugin
+       installed under `~/.claude/plugins` is where the real diagnostic lives.
+
+    Returns the first candidate that exists on disk, or `None` when neither
+    does -- `_doctor_reading` folds that to the same absent-reading `None`
+    every other unreachable-subprocess case there already produces.
+    """
+    beside = _statusline_sibling_doctor_path()
+    if beside.is_file():
+        return beside
+    loop_name = os.environ.get("OSS_STATUSLINE_PLUGIN", "oss")
+    install_path = _installed_plugin_root(root, loop_name)
+    if install_path:
+        candidate = Path(install_path) / "scripts" / "doctor.py"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def _doctor_verdict_state(verdict):
     """Fold `doctor.py`'s own free-text `VERDICT:` line into one of the three states
     `_doctor_field` renders (#1314): `"ok"`, `"gaps"` (`usable with gaps -- ...`),
@@ -2273,10 +2350,11 @@ def _doctor_verdict_state(verdict):
 
 def _doctor_reading(root):
     """Run `doctor.py --root <root>` and read back its own last `VERDICT:` line
-    (#1314). Returns the raw text after `"VERDICT:"`, or `None` when the subprocess
-    could not be started, timed out, or exited non-zero -- which, by doctor's own
-    "exit 0 always" contract (see its module docstring), should never happen, but is
-    treated here as a real absence rather than trusted blindly.
+    (#1314). Returns the raw text after `"VERDICT:"`, or `None` when no `doctor.py`
+    could be located (`_doctor_script_path`), the subprocess could not be started,
+    timed out, or exited non-zero -- which, by doctor's own "exit 0 always" contract
+    (see its module docstring), should never happen, but is treated here as a real
+    absence rather than trusted blindly.
 
     Not routed through `_run()`: that helper resolves `command[0]` on `PATH` via
     `_safe_which` (#1295), which defends against a same-named `git.exe`/`gh.cmd`
@@ -2290,7 +2368,9 @@ def _doctor_reading(root):
     path; `DOCTOR_TIMEOUT` bounds the wait so one hung doctor run cannot freeze the
     rest of that refresh's fields along with it.
     """
-    script = Path(__file__).with_name("doctor.py")
+    script = _doctor_script_path(root)
+    if script is None:
+        return None
     try:
         result = subprocess.run(
             [sys.executable, str(script), "--root", str(root)],
