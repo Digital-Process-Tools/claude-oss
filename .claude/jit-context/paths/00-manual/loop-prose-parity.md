@@ -20,3 +20,16 @@ match: (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$
   a file is re-read on every turn of every lane that runs it. **Replace, don't append** — pay for a
   new paragraph by cutting one, or raise the number in the same diff with a sentence saying what was
   weighed.
+
+- **A content guard can go red on layout, not on content, and the correct fix is to re-wrap.**
+  `tests/test_command_references.py` matches **per line**, not across the document. A deletion pass
+  that reflows a paragraph can split an asserted phrase across a newline without changing a word:
+  `only line that asks the forge` in `commands/setup.md` and `deferring to the next tick is not a
+  decision` in `SKILL.md`, twice in one pass, in different files, found by different agents (#1136).
+  This inverts the usual reading -- normally a red content guard means you deleted something
+  load-bearing. **Check whether the asserted phrase spans a line break before concluding you cut too
+  much.**
+- **Add `--no-cov` when running a small subset.** `pyproject.toml`'s `addopts` carries
+  `--cov-fail-under=85`, so a perfectly green 3-file run prints `FAIL Required test coverage of 85%
+  not reached. Total coverage: 3.62%` -- a line that names no test and no file and reads as a failure
+  when nothing failed.

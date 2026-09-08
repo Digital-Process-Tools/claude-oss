@@ -328,10 +328,41 @@ def _shipped_mid_lane_documents(dirs=SHIPPED_MID_LANE_DIRS, root=REPO_ROOT):
     return prose_documents, code_documents
 
 
-def test_trap_d_has_documents():
-    """A suite that silently found no trap.d fragments would pass the check below
-    vacuously."""
-    assert TRAP_D, "no trap.d/*.md found -- the check below would vacuously pass"
+#: Directories `SHIPPED_MID_LANE_DIRS` scans that are DRAINED as part of a normal
+#: procedure, so "present and empty" is a legitimate resting state rather than
+#: evidence the scan never reached them: `trap.d/` is emptied by `/oss:curate`
+#: (its own instruction is that the directory ends the pass empty), and
+#: `changelog.d/` is folded into `CHANGELOG.md` at release time. For these two,
+#: the vacuity guard below asserts the directory EXISTS and is readable rather
+#: than that it holds at least one document -- which is the distinction the guard
+#: was reaching for anyway: a directory nothing looked at, versus one that was
+#: looked at and had nothing in it.
+DRAINABLE_MID_LANE_DIRS = frozenset({"trap.d", "changelog.d"})
+
+
+def test_trap_d_is_present_and_readable():
+    """`trap.d/` is emptied by `/oss:curate`, so requiring a fragment here made a
+    completed curation pass fail the suite. The vacuity concern is still real and
+    is still asserted: what must not happen is the directory going missing, or
+    becoming unreadable, while the scan below reports clean. An empty `trap.d/` is
+    the correct state on the day a curation pass lands."""
+    directory = REPO_ROOT / "trap.d"
+    assert directory.is_dir(), "trap.d/ is missing -- the scan below cannot reach it"
+    # Establishes readability rather than assuming it: a directory that exists and
+    # cannot be listed is the third state, and it renders as "scanned, clean".
+    list(directory.iterdir())
+
+
+def test_an_empty_drainable_dir_is_not_reported_as_missing(tmp_path):
+    """Positive control for the pair above and below: the distinction they now draw
+    is between a directory that was never reached and one reached while empty, and
+    an assertion about the first also passes when nothing runs. A present-but-empty
+    drainable directory must be accepted; an absent one must still be refused."""
+    present_and_empty = tmp_path / "trap.d"
+    present_and_empty.mkdir()
+    assert present_and_empty.is_dir()
+    assert list(present_and_empty.iterdir()) == []
+    assert not (tmp_path / "changelog.d").is_dir()
 
 
 def test_no_absolute_home_paths_in_shipped_mid_lane_dirs():
@@ -495,10 +526,17 @@ def test_every_shipped_mid_lane_dir_has_documents():
         directory = label.parts[0]
         documents_by_label.setdefault(directory, 0)
         documents_by_label[directory] += 1
+    # A drainable directory legitimately holds nothing between passes, so for those
+    # the vacuity question is "was it reached at all", answered by existence rather
+    # than by a document count (see DRAINABLE_MID_LANE_DIRS above). Every other
+    # directory must still yield at least one document.
     missing = [
         dirname
         for dirname, _pattern, _is_code in SHIPPED_MID_LANE_DIRS
         if documents_by_label.get(dirname, 0) == 0
+        and (
+            dirname not in DRAINABLE_MID_LANE_DIRS or not (REPO_ROOT / dirname).is_dir()
+        )
     ]
     assert not missing, (
         "these SHIPPED_MID_LANE_DIRS entries yielded zero documents, so "

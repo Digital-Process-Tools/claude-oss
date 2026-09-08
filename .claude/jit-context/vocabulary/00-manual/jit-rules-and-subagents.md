@@ -36,3 +36,18 @@ output and a probe that was never understood by the thing it is probing look ide
 those two apart is the first thing this repository says about itself. That control was in the batch
 by luck, not design, and it is the only reason the false reading cost two minutes instead of an
 afternoon spent editing a correct rule until it "worked".
+
+**And a `mode: remind` rule fires once per session, so it is a greeting rather than a guard against
+a habit (#1146).** Measured in a five-hour session: `md-is-a-manual-not-a-rationale.md` was written
+at ~10:50 and fired at ~11:00, the 15th and last entry in that session's shown set. At 12:34 the
+same session rewrote two phase files and put rationale straight back in -- five clauses of it --
+with no reminder, because the rule had been shown ninety minutes earlier. The maintainer caught it
+by eye; the hook did not.
+
+Every hook line in between reads `(none) [shown:4]`. **That string means suppressed, not
+unmatched** -- the rule matched every one of those edits and was withheld each time.
+
+This bites hardest here specifically: the rules most worth firing in this repository are the ones
+about a **habit** -- how to write prose, how to shape a payload, what a third state is for -- and a
+habit is exactly what a single reminder does not fix. The rules that survive one showing are the
+ones about a fact you either know or do not.

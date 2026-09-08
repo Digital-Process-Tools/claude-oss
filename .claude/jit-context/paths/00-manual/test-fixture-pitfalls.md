@@ -70,3 +70,15 @@ sentence naming what went untested.
 
 **A negative assertion needs a positive control**: pair every must-not-fire with a must-fire in the
 same fixture, or an assertion that nothing happened also passes when nothing ran.
+
+**Assert the weakest property that actually matters, not the strongest one that happens to hold
+locally.** A test asserting cross-implementation agreement on a platform this suite does not run on
+locally cannot be red/green verified before it reaches CI. #1295's own
+`test_statusline_safe_which_agrees_with_gh_which_on_a_real_directory` asserted byte-exact string
+equality and went red on exactly the windows-latest/3.12 leg with `...git.exe` against `...git.EXE`
+-- both resolving the identical on-disk file, from two walks that read the same PATHEXT and are
+logically identical. Windows execution does not care about extension case at all, so the property
+that mattered was "do the two walks land on the same file", not "do they spell the extension
+identically"; the fix was `os.path.normcase`, which `safe_which`'s own dedup already uses. The
+strongest property is the one likeliest to be an artifact of the single platform actually testing
+it. (Root cause of the case difference itself: still unexplained.)
