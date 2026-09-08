@@ -115,6 +115,24 @@ LATEST_REFRESH_AFTER = 3600
 #: constant to "measured" later without adding that record.
 CHANNEL_REFRESH_AFTER = 300
 
+#: A fourth clock (#1314), for the one field slower than all three above it:
+#: `/oss:doctor`'s own verdict. The issue that asked for this field measured
+#: `channel:health` alone -- one check inside the diagnostic -- past 20 seconds in
+#: its worst case, and the full diagnostic runs many more checks besides. That rules
+#: out the board's 60s clock outright, and the diagnostic's own subject (whether this
+#: install and this repo's setup are sound) moves on the order of `LATEST_REFRESH_AFTER`'s
+#: weeks, not `CHANNEL_REFRESH_AFTER`'s minutes -- a dead consumer can appear between
+#: one render and the next, a new doctor WARN generally cannot. Sharing
+#: `LATEST_REFRESH_AFTER`'s own interval rather than inventing a fifth number.
+DOCTOR_REFRESH_AFTER = LATEST_REFRESH_AFTER
+
+#: How long the detached refresh may wait on `doctor.py` before giving up on that one
+#: reading and moving on. Comfortably above the >20s worst case named above, and
+#: comfortably below `LOCK_STALE_AFTER` -- a hung doctor run must still release the
+#: refresh lock in time for the next refresh to retry, rather than freezing every
+#: other field on this line along with it.
+DOCTOR_TIMEOUT = 60
+
 #: How long a refresh may hold its lock before another render is allowed to retry. A
 #: lock that outlives a killed refresher would otherwise freeze the counts forever.
 LOCK_STALE_AFTER = 180
@@ -1147,6 +1165,43 @@ def _channel_field(channel, symbols, color=False):
     return shade + text + RESET
 
 
+def _doctor_field(state, symbols, color=False):
+    """`dr` + one glyph for `/oss:doctor`'s own last verdict (#1314) -- the same width
+    discipline `_channel_field` (#613) argues for, folded onto three of the same states
+    a check on this line already uses: a pass, a real finding, and "cannot currently
+    say". `state` is already the outcome `refresh()`/`gather()` computed (see
+    `DOCTOR_REFRESH_AFTER`'s own docstring) -- this function takes no root and makes no
+    call of its own, matching every other render-layer function on this line.
+
+    `"ok"` -> `symbols["ok"]`, doctor's own clean `VERDICT: ok`. `"gaps"` ->
+    `symbols["own"]`, doctor's `usable with gaps` -- reusing the glyph `_channel_field`
+    uses for its own "a real finding that is neither pass nor fail" state, because that
+    is exactly what a WARN is here too. `"bad"` -> `symbols["bad"]`, `not usable`.
+    Anything else -- `None`, because the reading is absent or stale (folded by
+    `gather()` before this function ever sees it), or a verdict shape doctor has never
+    printed -- renders `symbols["unk"]`, never a guess.
+
+    **Named risk, not fixed here (the issue's own "Edge case" section, #1314): a
+    single persistent false-positive WARN pins this marker at the `gaps` glyph
+    permanently.** `.claude/jit-context/paths/00-manual/doctor-check-contract.md`
+    already treats a WARN nothing can clear as a defect in the CHECK, not in the repo
+    it is raised against -- this field does not change that. It makes the standing
+    alert visible on every render instead of only on a run nobody happened to make,
+    which is progress and also new, continuous pressure on that already-named defect.
+    """
+    if state == "ok":
+        text, shade = "dr" + symbols["ok"], GREEN
+    elif state == "gaps":
+        text, shade = "dr" + symbols["own"], YELLOW
+    elif state == "bad":
+        text, shade = "dr" + symbols["bad"], RED
+    else:
+        text, shade = "dr" + symbols["unk"], DIM
+    if not color:
+        return text
+    return shade + text + RESET
+
+
 #: `gh-branch`'s own four states, folded onto `_symbols`' four render glyphs (#856).
 #: `"bad"` gets its own glyph -- a leg has actually failed, the one state that is a
 #: finding rather than "not settled yet". `"running"` and `"no-run"` share `run` on
@@ -1273,6 +1328,11 @@ def render(facts, ascii_only=False, color=False):
     channel_block = _channel_field(facts.get("channel"), symbols, color)
     if channel_block is not None:
         blocks.append(channel_block)
+    # Always shown, unlike `ch` above -- there is no deliberate off switch for
+    # `/oss:doctor` the way `watch_channel: false` turns the channel field off
+    # (#613's own convention), so an absent or stale reading renders `dr?` rather
+    # than disappearing from the line (#1314).
+    blocks.append(_doctor_field(facts.get("doctor_state"), symbols, color))
     return symbols["sep"].join(blocks)
 
 
@@ -2186,6 +2246,70 @@ def _channel_reading(root, config):
     return parse_channel_report(_run_channel_health()), attribution
 
 
+def _doctor_verdict_state(verdict):
+    """Fold `doctor.py`'s own free-text `VERDICT:` line into one of the three states
+    `_doctor_field` renders (#1314): `"ok"`, `"gaps"` (`usable with gaps -- ...`),
+    `"bad"` (`not usable -- ...`). `verdict` is the text AFTER the `VERDICT: ` prefix,
+    or `None`.
+
+    Anything else -- `None` itself, or a verdict shape doctor's own `main()` has never
+    printed (a future third state, a truncated read) -- folds to `None` here too,
+    rendered as `?` by the caller: never guessed at from a shape this function does not
+    recognise. Matched with `startswith`, not equality, because both real WARN/FAIL
+    lines carry a count after the leading words (`"usable with gaps -- 2 warning(s)"`)
+    that this function does not need and must not have to keep in exact sync with
+    `doctor.py`'s own count formatting.
+    """
+    if verdict is None:
+        return None
+    if verdict == "ok":
+        return "ok"
+    if verdict.startswith("usable with gaps"):
+        return "gaps"
+    if verdict.startswith("not usable"):
+        return "bad"
+    return None
+
+
+def _doctor_reading(root):
+    """Run `doctor.py --root <root>` and read back its own last `VERDICT:` line
+    (#1314). Returns the raw text after `"VERDICT:"`, or `None` when the subprocess
+    could not be started, timed out, or exited non-zero -- which, by doctor's own
+    "exit 0 always" contract (see its module docstring), should never happen, but is
+    treated here as a real absence rather than trusted blindly.
+
+    Not routed through `_run()`: that helper resolves `command[0]` on `PATH` via
+    `_safe_which` (#1295), which defends against a same-named `git.exe`/`gh.cmd`
+    planted in the repository this statusline reports on winning over a real `PATH`
+    entry. `sys.executable` is not a bare name subject to that shadowing -- it is
+    already the absolute path of the interpreter running this process, the identical
+    value `_fork_refresh` above already spawns itself with -- so resolving it through
+    a PATH walk would only fail to find it.
+
+    Called from `refresh()` only, which already runs detached, never on the render
+    path; `DOCTOR_TIMEOUT` bounds the wait so one hung doctor run cannot freeze the
+    rest of that refresh's fields along with it.
+    """
+    script = Path(__file__).with_name("doctor.py")
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--root", str(root)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=DOCTOR_TIMEOUT,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    text = result.stdout.decode("utf-8", "replace")
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if line.startswith("VERDICT:"):
+            return line[len("VERDICT:") :].strip()
+    return None
+
+
 def refresh(root, now=None):
     """Fill the cache for one managed repository. Runs detached, never on the render path.
 
@@ -2331,6 +2455,19 @@ def refresh(root, now=None):
             # old reading indistinguishable from a fresh one at the render.
             document["channel"] = previous.get("channel")
             document["channel_fetched_at"] = previous_channel_stamp
+    previous_doctor_stamp = previous.get("doctor_fetched_at")
+    doctor_due = not isinstance(previous_doctor_stamp, (int, float)) or (
+        now - previous_doctor_stamp >= DOCTOR_REFRESH_AFTER
+    )
+    if doctor_due:
+        document["doctor_verdict"] = _doctor_reading(root)
+        document["doctor_fetched_at"] = now
+    else:
+        # Carried forward under its OWN old stamp, same shape as `channel`/`latest`
+        # above and for the same reason: re-stamping `now` would make an old reading
+        # indistinguishable from a fresh one at the render.
+        document["doctor_verdict"] = previous.get("doctor_verdict")
+        document["doctor_fetched_at"] = previous_doctor_stamp
     path = cache_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -2575,6 +2712,19 @@ def gather(payload, root, now=None):
             now,
         )
 
+    # Its own clock (`DOCTOR_REFRESH_AFTER`), independent of the board clock above --
+    # `default_branch_state` folds on `board_stale` because a fresh commit falsifies it
+    # within seconds; a doctor reading has no such falsifying event and is only ever
+    # too old on its own much longer interval. A reading absent or older than that
+    # interval folds to `None` here, rendered `?` by `_doctor_field`, never a guess.
+    raw_doctor_stamp = (cache or {}).get("doctor_fetched_at")
+    if isinstance(raw_doctor_stamp, (int, float)) and (
+        now - raw_doctor_stamp < DOCTOR_REFRESH_AFTER
+    ):
+        doctor_state = _doctor_verdict_state((cache or {}).get("doctor_verdict"))
+    else:
+        doctor_state = None
+
     return {
         "model": ((payload.get("model") or {}).get("display_name") or "").split(" ")[0]
         or None,
@@ -2592,6 +2742,7 @@ def gather(payload, root, now=None):
         ),
         "channel": channel,
         "default_branch_state": default_branch_state,
+        "doctor_state": doctor_state,
     }
 
 
