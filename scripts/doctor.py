@@ -3589,6 +3589,12 @@ from doctor_check_channel_health_agreement import (
     resolve_channel_health_reading,
 )
 
+# check_statusline_unknowns lives in
+# scripts/doctor_check_statusline_unknowns.py (#1311) -- a new check, so it
+# never goes inline in doctor.py at all; see the per-check module convention
+# at the top of this file.
+from doctor_check_statusline_unknowns import check_statusline_unknowns
+
 
 def _plugin_root_from_path(path):
     """Walk up from PATH for a directory carrying ``.claude-plugin/plugin.json``.
@@ -9296,6 +9302,15 @@ def main(argv=None):
     # comparing them. Placed right after it for the same reason #810 placed
     # its own check beside the registration checks above.
     check_channel_health_agreement(project_dir)
+    # #1311: neither check above (nor `check_watch_channel`) explains WHY the
+    # statusline renders `ch?` or `unk` for the channel and default-branch
+    # fields -- both fold several distinct causes into one glyph, discarding
+    # the reason `channel_status` and `gather()` already computed. See
+    # doctor_check_statusline_unknowns.py for the five (plus four) causes and
+    # their remedies. Placed after the channel checks above for the same
+    # reason #810 and #860 placed theirs beside the registration checks --
+    # this reads the identical cache those checks already touch.
+    check_statusline_unknowns(project_dir, config)
     # Needs no config either: the hook lives under .git/hooks and the budget
     # lives in supertool's file. Structural only -- it never runs the hook.
     check_git_push_budget(project_dir)
