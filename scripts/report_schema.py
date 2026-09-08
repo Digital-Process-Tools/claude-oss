@@ -72,6 +72,8 @@ _KEYWORDS = {
     "type",
     "const",
     "enum",
+    "pattern",
+    "maxLength",
     "required",
     "properties",
     "additionalProperties",
@@ -249,6 +251,18 @@ CONTRACT_FINGERPRINTS = {
     # which cause produced the UNVALIDATABLE answer, rather than reporting an
     # isolated schema skew with no visible cause.
     10: "870164043e5cf3538a92a48244662a10fbd891a1b2540dbdb112d44b435bd25a",
+    # 11 (#1298): plugin_root gains a `pattern` (printable ASCII, no newline or
+    # control character) and a `maxLength` (4096). BREAKING, unlike #1103's own
+    # bump at 10: the field is not new, so there is no way to scope the tightening
+    # to something only a new document could spell -- a version-10 report whose
+    # plugin_root happened to carry a newline or ran past the length bound was
+    # valid under 10 and is refused under 11. The field is relayed verbatim into a
+    # handback receipt (skills/manager/phases/handback.md) another reader is told
+    # to paste into prose without re-checking its shape -- the same forging risk
+    # `workspace_routes._flatten` guards elsewhere (#1257, widened by #1263).
+    # Bounding it here, at the schema, means every consumer inherits the guard
+    # rather than each one having to remember it.
+    11: "505afd08f484bf37fd9e520783c9cbf2a7424fae7b032328dd07794069beb15a",
 }
 
 _TYPES = {
@@ -631,6 +645,34 @@ def _walk(value, sub, root, path, errors, rules):
         errors.append(
             "{}: {!r} is not one of {}".format(_label(path), value, sub["enum"])
         )
+    if isinstance(value, str):
+        # #1298: plugin_root was a bare, unbounded string, relayed verbatim into a
+        # handback receipt (skills/manager/phases/handback.md) that another reader
+        # is told to paste into prose without re-checking its shape -- the same
+        # forging risk `workspace_routes._flatten` guards elsewhere (#1257, widened
+        # by #1263), except nothing bounded this field at the source. Bounding it
+        # here means every consumer inherits the guard rather than each one having
+        # to remember it.
+        if "maxLength" in sub and len(value) > sub["maxLength"]:
+            errors.append(
+                "{}: {} characters, longer than the {} limit".format(
+                    _label(path), len(value), sub["maxLength"]
+                )
+            )
+        if "pattern" in sub and re.fullmatch(sub["pattern"], value) is None:
+            # Self-review finding (#1298): `re.search` with `^`/`$` anchors is NOT
+            # the same claim as a full match -- `$` in Python's default
+            # (non-MULTILINE) mode matches either the string's end or immediately
+            # before a SINGLE trailing newline, so `re.search("^[ -~]*$", "path\n")`
+            # matched even though the value plainly carried a newline.
+            # `re.fullmatch` requires the whole string to match the pattern with no
+            # such exception, which is the claim "no newline or control character
+            # anywhere in this value" actually needs.
+            errors.append(
+                "{}: {!r} does not match the required pattern {!r}".format(
+                    _label(path), value, sub["pattern"]
+                )
+            )
 
     if isinstance(value, dict):
         for key in sub.get("required", []):
