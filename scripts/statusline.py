@@ -1168,6 +1168,19 @@ def _default_branch_marker(state, symbols, color=False):
     anything about, including the moment right after this loop's own merge, when
     the branch has a fresh commit and no concluded run yet.
 
+    **Speaks only about the `.oss.json`-declared `default_branch` -- never about
+    the current branch or worktree this line happens to be rendered from (#1312).**
+    This function does not even take a branch argument: `state` is already the
+    outcome `_gh_default_branch_state` computed against `config.get("default_branch")`
+    (see that function's own docstring, and `refresh()`'s call site), folded through
+    `gather()`. Nothing between here and there ever consults `branch_name(root)` --
+    the function that answers the OTHER, legitimately-current-branch field a few
+    lines below this marker's call site in `render()`. Confusing the two is the
+    exact failure mode #1312 was filed to guard against: this loop runs from a
+    worktree checked out to a branch other than the default on every single lane,
+    and a marker that silently drifted to mean "is MY branch green" would be
+    actively misleading rather than merely wrong.
+
     `None` -- rendering nothing, never `?` -- when `state` is `None`: either the
     config declares no default branch to compare against (a deliberate absence of
     the question, the channel field's own convention, #613), or `gather()` has
@@ -1954,6 +1967,15 @@ def _reading_from_combined_status(repo, branch):
 def _gh_default_branch_state(repo, branch):
     """Is the default branch's head commit green? One of the four states `gh-branch`
     itself answers, read off two cheaper calls (#856, and #914 for the second one).
+
+    **`branch` is `.oss.json`'s `default_branch`, always -- the only call site
+    (`refresh()`) passes `config.get("default_branch")`, never anything derived
+    from the current checkout (#1312).** This function has no way to notice which
+    branch or worktree the statusline process is actually running from, and
+    nothing should ever change that: the marker `_default_branch_marker` renders
+    from this function's return value must keep meaning "is the declared default
+    green", identically whether this loop is standing in `main` or in one of its
+    own worktrees on `fix/NNNN`.
 
     `gh-branch` (supertool) enumerates every workflow run on the head SHA and
     collapses re-runs and multi-run workflows to answer conjunctively -- machinery
