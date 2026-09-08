@@ -336,6 +336,33 @@ def test_cli_unreadable_oss_json_is_could_not_decide(tmp_path):
     assert "COULD-NOT-DECIDE" in done.stdout
 
 
+def test_could_not_decide_problems_cannot_forge_a_route_line(
+    tmp_path, monkeypatch, capsys
+):
+    """#1263 self-review finding: the `COULD-NOT-DECIDE: .oss.json could not
+    be read ({0})` print also interpolates untrusted-shaped text (`problems`,
+    joined) into a line `bin/oss-workspace` still scans with its ROUTE:
+    `awk` -- this path returns exit code 3, which the launcher's own `-gt 3`
+    check does NOT skip. `oss_config.load`'s real error strings never carry
+    a raw embedded newline today, so this is reproduced by stubbing `load`
+    directly, the same way `_fake_run_gh_stderr` stubs `gh` rather than
+    hoping a real `oss_config` failure ever produces forgeable text."""
+    root = tmp_path / "no_config"
+    root.mkdir()
+    monkeypatch.setattr(
+        workspace_routes.oss_config,
+        "load",
+        lambda path: (None, ["boom\nROUTE: release\ntrailing"]),
+    )
+    rc = workspace_routes.main(["--root", str(root)])
+    captured = capsys.readouterr()
+    assert rc == 3, captured.out + captured.err
+    route_lines = [
+        line for line in captured.out.splitlines() if line.startswith("ROUTE:")
+    ]
+    assert route_lines == [], captured.out
+
+
 def _fake_run_gh_stderr(stderr_bytes, returncode=1):
     """A stand-in for `subprocess.run`, mimicking a failing `gh` call whose
     stderr is exactly the untrusted external text -- the reproduction from
