@@ -83,17 +83,27 @@ def test_omitting_the_allowlist_leaves_old_behaviour_untouched(tmp_path):
     assert result["acknowledged"] == []
 
 
-def test_real_repo_is_quiet_once_wired_with_its_own_declared_allowlist():
+def test_real_repo_is_quiet_once_wired_with_its_own_declared_allowlist(
+    lane_coupling_real_repo_report,
+):
     """The issue's own verification instruction: running doctor should not
     produce ~48 warnings on this repo's own tree. `.oss.json`'s own
     `labels.lane_coupling_allowlist` (populated by this same fix) must
-    acknowledge every span this repo's real suite has today."""
+    acknowledge every span this repo's real suite has today.
+
+    Routed through the shared `lane_coupling_real_repo_report` fixture
+    (#1318, `tests/conftest.py`): `test_doctor_check_lane_coupling_1244.
+    py::test_real_repo_is_quiet_the_issues_own_verification` walks this
+    same real tree with the identical arguments, so the two tests share
+    one computed answer rather than each paying for the walk."""
     import json
 
     config = json.loads((REPO_ROOT / ".oss.json").read_text(encoding="utf-8"))
     lane_patterns = config["labels"]["lane_patterns"]
     allowlist = config["labels"].get("lane_coupling_allowlist") or []
-    result = lane_coupling.lane_coupling_report(REPO_ROOT, lane_patterns, allowlist=allowlist)
+    result = lane_coupling_real_repo_report(
+        REPO_ROOT, lane_patterns, allowlist=allowlist
+    )
     assert result["spans"] == [], (
         "unacknowledged spans on this repo's own real suite: {}".format(
             [entry[0] for entry in result["spans"]]

@@ -166,50 +166,6 @@ def test_881_stub_run_disables_the_cache_plugin():
     assert "cacheprovider" not in output, output
 
 
-def test_881_stub_run_cacheprovider_check_is_not_vacuous(tmp_path):
-    """Must-fire positive control for the check above: with the disabling
-    flags left off entirely, the identical stub setup must show the
-    cacheprovider plugin actually registering -- proving the assertion above
-    would have caught a `-p no:cacheprovider` that silently stopped being
-    passed.
-
-    `COVERAGE_FILE` isolated to `tmp_path` (#1228, a full-suite `-n auto`
-    run's own finding on this round): with no disabling flag at all, this
-    nested run also inherits `pyproject.toml`'s real `--cov=scripts`, so
-    without isolation it would start its own coverage.py session against
-    the SAME shared repository `.coverage` file every other concurrent
-    xdist worker uses -- the exact site 4 race this issue exists to remove,
-    reintroduced by the one control in this file that deliberately runs
-    with no disabling flags at all. Confirmed live: a real `-n auto --dist
-    loadfile` run over the whole suite raced this control against `tests/
-    test_durations_recorded_881.py::test_stub_run_never_touches_the_
-    shared_coverage_file` in a different worker and failed it, before this
-    isolation was added."""
-    stub_dir = REPO_ROOT / "tests" / ("_durprobe_881_ctrl_" + uuid.uuid4().hex[:8])
-    stub_dir.mkdir()
-    isolated = tmp_path / "isolated.coverage"
-    try:
-        stub_path = stub_dir / "test_stub.py"
-        stub_path.write_text(m881._STUB_TEST_BODY, encoding="utf-8")
-        result = spawn_guard.run(
-            [sys.executable, "-m", "pytest", "-q", "--trace-config", str(stub_path)],
-            subject="whether pytest's cacheprovider plugin registers without any disabling flag",
-            timeout=60,
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True,
-            env=dict(os.environ, COVERAGE_FILE=str(isolated)),
-        )
-        output = result.stdout + result.stderr
-    finally:
-        shutil.rmtree(stub_dir, ignore_errors=True)
-    assert "cacheprovider" in output, (
-        "the --trace-config probe never showed cacheprovider registering even "
-        "with no disabling flag passed -- the check above cannot actually "
-        "detect the flag being dropped:\n" + output
-    )
-
-
 def test_910_stub_run_disables_the_cache_plugin(tmp_path):
     """Sibling check for the other file's own nested invocation."""
     baseline_path = tmp_path / "nope.json"
@@ -231,18 +187,30 @@ def test_881_stub_run_disables_the_root_scratch_guard(tmp_path):
     assert "root_scratch_guard" not in output, output
 
 
-def test_881_stub_run_root_scratch_guard_check_is_not_vacuous(tmp_path):
-    """Must-fire positive control, same shape as the cacheprovider one
-    above: with the disabling flag left off, the identical stub setup must
-    show `root_scratch_guard` actually registering.
+def test_881_stub_run_no_disabling_flags_check_is_not_vacuous(tmp_path):
+    """Must-fire positive control for BOTH checks above (cacheprovider and
+    root_scratch_guard), merged into one nested pytest run rather than two
+    (#1318): the two original probes were byte-identical invocations of the
+    same stub setup with every disabling flag left off, differing only in
+    which substring of the same `--trace-config` output each one grepped
+    for. Spawning the nested pytest process twice to inspect two substrings
+    of the SAME output doubled the cost for no extra coverage -- one run,
+    two independent assertions, each still able to fail on its own if that
+    specific flag silently stopped being disabled.
 
-    `COVERAGE_FILE` isolated to `tmp_path`, same reason as the sibling
-    control above: with no disabling flag, this nested run also inherits
-    real `--cov=scripts`, and this control specifically wants that -- it is
-    proving `root_scratch_guard` registers under the exact conditions this
-    issue's own fix removes it from, which is precisely the shared-`.
-    coverage`-racing shape #1228 is about."""
-    stub_dir = REPO_ROOT / "tests" / ("_durprobe_881_ctrl3_" + uuid.uuid4().hex[:8])
+    `COVERAGE_FILE` isolated to `tmp_path` (#1228, a full-suite `-n auto`
+    run's own finding on this round): with no disabling flag at all, this
+    nested run also inherits `pyproject.toml`'s real `--cov=scripts`, so
+    without isolation it would start its own coverage.py session against
+    the SAME shared repository `.coverage` file every other concurrent
+    xdist worker uses -- the exact site 4 race this issue exists to remove,
+    reintroduced by the one control in this file that deliberately runs
+    with no disabling flags at all. Confirmed live: a real `-n auto --dist
+    loadfile` run over the whole suite raced an earlier, single-purpose
+    version of this control against `tests/test_durations_recorded_881.
+    py::test_stub_run_never_touches_the_shared_coverage_file` in a
+    different worker and failed it, before this isolation was added."""
+    stub_dir = REPO_ROOT / "tests" / ("_durprobe_881_ctrl_" + uuid.uuid4().hex[:8])
     stub_dir.mkdir()
     isolated = tmp_path / "isolated.coverage"
     try:
@@ -250,7 +218,8 @@ def test_881_stub_run_root_scratch_guard_check_is_not_vacuous(tmp_path):
         stub_path.write_text(m881._STUB_TEST_BODY, encoding="utf-8")
         result = spawn_guard.run(
             [sys.executable, "-m", "pytest", "-q", "--trace-config", str(stub_path)],
-            subject="whether root_scratch_guard registers without any disabling flag",
+            subject="whether pytest's cacheprovider and root_scratch_guard plugins "
+            "register without any disabling flag",
             timeout=60,
             cwd=str(REPO_ROOT),
             capture_output=True,
@@ -260,6 +229,11 @@ def test_881_stub_run_root_scratch_guard_check_is_not_vacuous(tmp_path):
         output = result.stdout + result.stderr
     finally:
         shutil.rmtree(stub_dir, ignore_errors=True)
+    assert "cacheprovider" in output, (
+        "the --trace-config probe never showed cacheprovider registering even "
+        "with no disabling flag passed -- the check above cannot actually "
+        "detect the flag being dropped:\n" + output
+    )
     assert "root_scratch_guard" in output, (
         "the --trace-config probe never showed root_scratch_guard "
         "registering even with no disabling flag passed -- the check above "

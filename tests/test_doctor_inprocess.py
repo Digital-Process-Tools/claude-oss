@@ -289,6 +289,22 @@ def _quiet_main(monkeypatch):
 
     main() is the only place the four checks are wired together, so the pairing has to
     run it -- but not its probes.
+
+    #1318: `_quiet_main` is used by exactly one test (`test_main_labels_
+    every_config_dependent_check_unmeasured_and_still_measures_them`), and
+    that test asserts on none of the checks stubbed below -- only on the
+    five UNMEASURED_LABELS and on the "clone"/"worktree_root"/"state_file"
+    lines. Every check named here does spawn a real `git` or `gh`
+    subprocess against the fixture directory (or, for the two given no
+    fixture-config at all, against whatever this machine's own `gh`/`git`
+    happen to answer), each paying full process-creation cost for an
+    answer this test never reads -- "eleven subprocesses in a file named
+    inprocess" per the issue's own count. Stubbing them to a no-op is not
+    a positive control or a real check losing coverage: none of these are
+    the mechanism this test exists to prove, `test_doctor.py`'s own
+    subprocess-driven suite still exercises the real CLI end to end, and
+    each of these checks keeps its OWN dedicated unit test elsewhere in
+    this file exercising it for real.
     """
     monkeypatch.setattr(doctor, "check_tool", lambda *a, **k: None)
     monkeypatch.setattr(doctor, "check_memory", lambda *a, **k: None)
@@ -305,6 +321,49 @@ def _quiet_main(monkeypatch):
     # `.supertool.json` presets that resolve from the fixture's own directory --
     # neither of which is what any test using this helper is about.
     monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
+    # #1318: every one of the checks below spawns a real `git` or `gh`
+    # subprocess (`check_interpreter_environment`'s own probe, `check_loop_
+    # repository`'s `gh` lookup, `check_gitignore_hides_config`'s `git
+    # check-ignore`, `check_label_vocabulary`/`check_lane_other_label`'s
+    # shared `_origin_slug` git call, `check_dependency_diagnostics`'s own
+    # resolution, and the whole `gh api` family in `doctor_check_branch_
+    # protection.py`) and none is examined by this test's assertions.
+    # `check_plugin_copy` is deliberately NOT in this list (self-review,
+    # #1318, corrected on a second audit round: an earlier version of this
+    # comment claimed it spawns no subprocess at all, which is wrong --
+    # `plugin_provenance()` -> `_tree_identity()` -> `_git_head()` does run
+    # one `git rev-parse --short HEAD`). It stays unstubbed anyway: that
+    # one call is a single, fast, local git invocation -- not the `gh api`
+    # family this stub list exists to remove -- and `main()` already pays
+    # for the identical call moments earlier for its own "oss plugin
+    # version" banner line, so this is a small, pre-existing redundancy
+    # rather than new cost. Stubbing it would also drop the only place in
+    # this suite that exercises the wrapper's own real wiring around that
+    # helper (`tests/test_tick_plugin_copy_942.py` calls `plugin_
+    # provenance()` directly, never `check_plugin_copy` itself).
+    for name in (
+        "check_interpreter_environment",
+        "check_loop_repository",
+        "check_gitignore_hides_config",
+        "check_label_vocabulary",
+        "check_lane_other_label",
+        "check_dependency_diagnostics",
+        "check_dependency_resolution",
+        "check_supertool_entry_point",
+        "check_git_push_budget",
+        "check_publish_confirm",
+        "check_stale_branches",
+        "check_branch_protection",
+        "check_code_scanning_alerts",
+        "check_dependabot_alerts",
+        "check_secret_scanning_alerts",
+        "check_secret_scanning",
+        "check_secret_scanning_push_protection",
+        "check_vulnerability_alerts",
+        "check_automated_security_fixes",
+        "check_codeql_scan",
+    ):
+        monkeypatch.setattr(doctor, name, lambda *a, **k: None)
 
 
 def test_main_labels_every_config_dependent_check_unmeasured_and_still_measures_them(
