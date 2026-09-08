@@ -63,8 +63,16 @@ def check_lane_patterns(project_dir, config):
             "lane patterns: every declared pattern resolves, and no two "
             "lanes claim the same path."
         )
+        problem = result["uncovered_count_problem"]
         count = result["uncovered_count"]
-        if count:
+        if problem is not None:
+            # #1252: a failed filesystem walk must never render the same as
+            # a clean read that found nothing uncovered -- the exact
+            # absence-vs-absence collision this repo's own defect class is
+            # named after. Say the coverage figure could not be produced,
+            # rather than silently omitting the clause.
+            message += " coverage could not be counted ({}).".format(problem)
+        elif count:
             message += (
                 " {} tracked-like file(s) inside an already-claimed "
                 "directory are covered by no lane -- informational only "

@@ -95,6 +95,30 @@ def test_uncovered_count_is_surfaced_not_computed_and_discarded(tmp_path):
     assert "1" in doctor.FINDINGS[0][1]
 
 
+def test_uncovered_count_problem_reports_could_not_count_not_flat_ok(
+    tmp_path, monkeypatch
+):
+    """#1252: a failed walk inside `lane_pattern_coverage._uncovered_count`
+    used to be discarded and rendered identically to a clean read with
+    nothing uncovered -- the flat "every declared pattern resolves..." OK
+    line, no coverage clause at all. The must-fire case: a failed walk must
+    produce a distinguishable "could not count" clause instead."""
+    _touch(tmp_path, "scripts/covered.py")
+    config = {"labels": {"lane_patterns": {"lane-a": ["scripts/covered.py"]}}}
+
+    import lane_pattern_coverage
+
+    def _boom(repo):
+        return [], "PermissionError: [Errno 13] boom"
+
+    monkeypatch.setattr(lane_pattern_coverage, "_walk_all_files", _boom)
+    dclp.check_lane_patterns(tmp_path, config)
+    assert _states() == ["OK"]
+    message = doctor.FINDINGS[0][1]
+    assert "could not" in message.lower()
+    assert "boom" in message
+
+
 def test_non_dict_lane_patterns_is_warn_not_a_crash(tmp_path):
     config = {"labels": {"lane_patterns": ["not", "a", "dict"]}}
     dclp.check_lane_patterns(tmp_path, config)
