@@ -25,7 +25,12 @@
 #     configured server also resolves to the same consumer script (#810,
 #     below) -- two servers racing one Unix socket is worse than a session
 #     with no board, the same reasoning that already governs registration.
-#     A session with no channel is worth more than no session.
+#     A session with no channel is worth more than no session. #1307
+#     changes what "the registration held" means: when an installed
+#     plugin's own .mcp.json already declares a consumer for this repo,
+#     oss-channel is never registered at all -- registering it on top would
+#     BE the second server this same rule refuses to race. The flag is then
+#     armed against the plugin's own server name instead.
 #   * `claude` reads only its FIRST positional as the prompt, and a variadic
 #     option swallows whatever follows it. The prompt therefore goes FIRST and
 #     the flag LAST; putting the prompt after the flag ends the launch with
@@ -37,7 +42,11 @@
 # oss plugin itself is current (switching the opening prompt to /oss:doctor on
 # a genuine update) and repoints its own ~/.local/bin/oss-workspace pin if it
 # is stale, and checks whether a SECOND configured MCP server races oss-channel
-# for the same consumer script before arming the flag mentioned above.
+# for the same consumer script before arming the flag mentioned above. #1307
+# adds a THIRD check, run before oss-channel's own registration rather than
+# after it: whether an installed plugin already provides an in-scope
+# consumer, in which case oss-channel is skipped entirely rather than
+# registered and then raced.
 set -eu
 
 # A user's CDPATH can make `cd relative` land somewhere else entirely and print
@@ -1274,6 +1283,7 @@ plugin_channel_state=""
 plugin_channel_target=""
 plugin_channel_label=""
 plugin_channel_names=""
+plugin_channel_reason=""
 if [ -n "$python_bin" ]; then
     plugin_channel_out=$("$python_bin" - "$plugin_root/scripts" "$repo_root" <<'PLUGIN_CHANNEL_PRECHECK'
 import sys
@@ -1330,6 +1340,22 @@ PLUGIN_CHANNEL_PRECHECK
         done <<PLUGIN_CHANNEL_LINES
 $plugin_channel_out
 PLUGIN_CHANNEL_LINES
+        # The check RAN (exit 0) but could not establish the plugin
+        # population itself -- an unreadable or malformed
+        # installed_plugins.json, or one installed plugin's own unreadable
+        # .mcp.json (#1307 self-review finding: this state was parsed above
+        # but never reported, so it read identically to `none` on stderr --
+        # the exact absence-produced-by-the-tool this plugin is about,
+        # reproduced inside the fix for a different instance of it). Never
+        # silently treated as `none`: that would stop registering
+        # oss-channel's would-be plugin replacement when the only reason it
+        # looks absent is that the check could not look.
+        if [ "$plugin_channel_state" = "could-not-ask" ]; then
+            echo "oss-workspace: could not determine whether an installed" \
+                 "plugin already provides a claude-channel consumer for this" \
+                 "repo: $plugin_channel_reason. Registering $CHANNEL_SERVER" \
+                 "as usual; the #810 census below still decides." >&2
+        fi
     else
         plugin_channel_state=""
         echo "oss-workspace: could not determine whether an installed plugin" \
@@ -1403,6 +1429,16 @@ if [ "$plugin_channel_state" = "single" ]; then
         fi
     fi
     channel_ready=1
+    # Relayed to `scripts/doctor.py`'s own registration check, a few lines
+    # below via `doctor.sh` (#1307 self-review finding): that check asks
+    # `claude mcp get oss-channel` on its own, independent of this branch,
+    # and oss-channel really is not registered here -- correctly. With no
+    # relay, it would answer `not-registered` and print its ordinary "run
+    # bin/oss-workspace once, or claude mcp add ..." remedy, telling a
+    # maintainer to manually recreate the exact collision this branch exists
+    # to avoid. Naming the real target here lets that check render `ok`
+    # instead.
+    export OSS_WORKSPACE_CHANNEL_ARM_TARGET="$plugin_channel_target"
     echo "oss-workspace: $plugin_channel_target already provides the" \
          "claude-channel consumer for this repo (declared by an installed" \
          "plugin's own .mcp.json) -- arming the channel flag against it" \

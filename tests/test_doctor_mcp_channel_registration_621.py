@@ -97,6 +97,44 @@ def test_not_registered_is_the_ordinary_absence(tmp_path):
     assert "not registered" in message.lower(), message
 
 
+def test_not_registered_is_ok_when_a_plugin_covers_it():
+    """#1307 self-review finding: when `bin/oss-workspace` arms the flag
+    against an installed plugin's own server instead of `oss-channel`
+    (`plugin_channel_arm_decision`'s `single` state), `oss-channel` is
+    correctly, deliberately left unregistered -- and a bare re-ask by THIS
+    check, with no relay, would answer `not-registered` and print the
+    ordinary "run bin/oss-workspace once, or claude mcp add ..." remedy,
+    telling a maintainer to manually recreate the exact collision the
+    launcher just avoided. `OSS_WORKSPACE_CHANNEL_ARM_TARGET`, exported by
+    the launcher only in that branch, must turn this into `OK` naming the
+    real target instead."""
+    doctor.check_mcp_channel_registration(
+        which=lambda name: "/usr/bin/claude",
+        run=_run_answering("", returncode=1),
+        env={"OSS_WORKSPACE_CHANNEL_ARM_TARGET": "plugin:supertool:claude-channel"},
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "OK", (level, message)
+    assert "plugin:supertool:claude-channel" in message, message
+    assert "claude mcp add" not in message, message
+
+
+def test_not_registered_stays_warn_when_the_arm_target_is_oss_channel_itself():
+    """Must-not-fire control's positive twin: the relay must only suppress
+    the WARN when the arm target is a DIFFERENT server -- an arm target
+    equal to the label being checked would mean oss-channel itself is
+    "not registered but covers itself", a contradiction that must never
+    silently swallow a real gap."""
+    doctor.check_mcp_channel_registration(
+        which=lambda name: "/usr/bin/claude",
+        run=_run_answering("", returncode=1),
+        env={"OSS_WORKSPACE_CHANNEL_ARM_TARGET": "oss-channel"},
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", (level, message)
+    assert "not registered" in message.lower(), message
+
+
 def test_registered_resolvable_when_the_stored_path_exists(tmp_path):
     """`bin/oss-workspace:873-879`'s own reasoning: `claude mcp get` answers 0 for
     any CONFIGURED server whether or not the file it names still exists, so

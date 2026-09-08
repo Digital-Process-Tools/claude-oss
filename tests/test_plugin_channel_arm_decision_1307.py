@@ -70,6 +70,23 @@ def test_a_label_with_no_marketplace_qualifier_is_left_alone():
     )
 
 
+def test_an_at_sign_inside_the_server_segment_is_never_touched():
+    """Self-review finding on the auditor's own class-C check: an earlier
+    version matched the first `@...:`-shaped substring ANYWHERE in the
+    label, so a registry `key` with no `@` combined with a `<server>`
+    segment that happens to contain one stripped a chunk out of the SERVER
+    name instead of a marketplace qualifier. `<server>` is a JSON object key
+    read verbatim out of a plugin's own `.mcp.json`
+    (`_plugin_channel_consumer_names` does no shape check on it), so it is
+    attacker/plugin-shapable data crossing into a function whose docstring
+    promises it never mangles it. This is the exact adversarial shape: no
+    `@` in the key, one in the server segment."""
+    assert (
+        mod.resolvable_plugin_server_name("plugin:legacykey:weird@evil:server")
+        == "plugin:legacykey:weird@evil:server"
+    )
+
+
 # ------------------------------------------------- plugin_channel_arm_decision
 
 
