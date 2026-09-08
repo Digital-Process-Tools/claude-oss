@@ -2525,6 +2525,22 @@ def test_plugin_root_rejects_control_characters():
     assert any("plugin_root" in error for error in errors), errors
 
 
+def test_plugin_root_rejects_a_bare_trailing_newline():
+    """Self-review finding (#1298): `$` in Python's default (non-MULTILINE) mode
+    matches either the string's end or immediately before a SINGLE trailing
+    newline, so `re.search("^[ -~]*$", "path\n")` matches even though the value
+    plainly carries a newline. A pattern check built on `re.search` with `^`/`$`
+    anchors is not the same claim as `re.fullmatch` -- it must anchor with
+    backslash-A/backslash-Z or use `re.fullmatch`, or a value that is otherwise
+    clean plus one trailing newline sails through silently, contradicting the field's own stated
+    contract (printable ASCII, no newline or control character at all).
+    """
+    report = _example()
+    report["plugin_root"] = "/home/example/root\n"
+    errors = report_schema.validate(report)
+    assert any("plugin_root" in error for error in errors), errors
+
+
 def test_plugin_root_rejects_an_overlong_value():
     report = _example()
     report["plugin_root"] = "/" + ("a" * 5000)

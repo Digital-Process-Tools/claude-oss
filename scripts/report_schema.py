@@ -659,7 +659,15 @@ def _walk(value, sub, root, path, errors, rules):
                     _label(path), len(value), sub["maxLength"]
                 )
             )
-        if "pattern" in sub and re.search(sub["pattern"], value) is None:
+        if "pattern" in sub and re.fullmatch(sub["pattern"], value) is None:
+            # Self-review finding (#1298): `re.search` with `^`/`$` anchors is NOT
+            # the same claim as a full match -- `$` in Python's default
+            # (non-MULTILINE) mode matches either the string's end or immediately
+            # before a SINGLE trailing newline, so `re.search("^[ -~]*$", "path\n")`
+            # matched even though the value plainly carried a newline.
+            # `re.fullmatch` requires the whole string to match the pattern with no
+            # such exception, which is the claim "no newline or control character
+            # anywhere in this value" actually needs.
             errors.append(
                 "{}: {!r} does not match the required pattern {!r}".format(
                     _label(path), value, sub["pattern"]
