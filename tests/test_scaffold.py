@@ -852,7 +852,7 @@ def _pin_forge(monkeypatch, origin, gh):
     )
 
     def fake_run(command):
-        if command[0] == "git":
+        if command[0] == "/usr/bin/git":
             return (origin is not None), (origin or ""), "no origin remote"
         return gh
 

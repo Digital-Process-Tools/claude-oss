@@ -2935,9 +2935,12 @@ def _forge_label_names(repo_root, config):
     gh_bin = gh_which.safe_which("gh")
     if gh_bin is None:
         return None, "gh is not on PATH, so the forge could not be asked"
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
+        return None, "git is not on PATH, so the forge could not be asked"
 
     ok, origin, detail = _run(
-        ["git", "-C", str(repo_root), "remote", "get-url", "origin"]
+        [git_bin, "-C", str(repo_root), "remote", "get-url", "origin"]
     )
     if not ok:
         return None, (
