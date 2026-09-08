@@ -219,7 +219,22 @@ def check_mcp_channel_registration(
     real ask run even when a caller had stubbed one of the two checks
     specifically to avoid it (self-review finding). `main()` calls each
     check with no arguments, and each reads the registration independently.
+
+    `env` is also read directly here, not only threaded through to
+    `mcp_channel_registration_state` (#1307 self-review finding): when
+    `bin/oss-workspace` arms the channel flag against an installed plugin's
+    own server instead of `oss-channel` (#1307's own `plugin_channel_arm_
+    decision`), `oss-channel` is correctly, deliberately left unregistered --
+    and a bare re-ask of `claude mcp get oss-channel` a few lines later, in
+    THIS diagnostic, would answer `not-registered` and print the ordinary
+    "run bin/oss-workspace once, or claude mcp add ..." remedy, telling a
+    maintainer to manually recreate the exact collision the launcher just
+    avoided. `OSS_WORKSPACE_CHANNEL_ARM_TARGET`, exported by the launcher
+    only in that branch, names the server actually carrying the channel;
+    read here to render `not-registered` as `ok` with the real target named,
+    rather than as the ordinary registration gap.
     """
+    env = os.environ if env is None else env
     state, detail = (
         precomputed
         if precomputed is not None
@@ -228,6 +243,15 @@ def check_mcp_channel_registration(
         )
     )
     label = server or CHANNEL_SERVER
+    arm_target = env.get("OSS_WORKSPACE_CHANNEL_ARM_TARGET", "")
+    if state == "not-registered" and arm_target and arm_target != label:
+        doctor.report(
+            "OK",
+            "channel MCP registration: {} is not registered, but {} already "
+            "provides the claude-channel consumer for this repo (an installed "
+            "plugin's own .mcp.json) -- nothing to register.".format(label, arm_target),
+        )
+        return
     if state == "could-not-ask":
         doctor.report(
             "WARN",
@@ -525,6 +549,100 @@ def _plugin_channel_consumer_names(plugin_registry_path=None, project_dir=None):
                     seen.add(label)
                     names.append(label)
     return names, None
+
+
+def resolvable_plugin_server_name(label):
+    """`_plugin_channel_consumer_names` reports `plugin:<key>:<server>`, built
+    from the installed-plugin registry's own `<name>@<marketplace>` key --
+    which is NOT the name `claude mcp get` or
+    `--dangerously-load-development-channels server:NAME` resolve. Verified
+    live against claude 2.1.261 (#1307's own first open question): `claude
+    mcp get "plugin:supertool@dpt-plugins:claude-channel"` answers "No MCP
+    server named ...", while `claude mcp get "plugin:supertool:claude-channel"`
+    (the bare plugin name, no marketplace) resolves -- confirmed against
+    `claude mcp list`'s own rendering of the identical server on the same
+    machine.
+
+    This strips the `@<marketplace>` segment out of the KEY segment only --
+    split structurally on the label's own `plugin:<key>:<server>` shape,
+    never a bare regex over the whole string. `<server>` is a JSON object
+    key out of a plugin's own `.mcp.json` (`_plugin_channel_consumer_names`
+    reads it verbatim, no shape check), so it is attacker-shapable data from
+    a plugin that need not be well-formed -- a self-review finding: an
+    earlier version matched the first `@...:`-shaped substring ANYWHERE in
+    the label, which stripped a chunk out of `<server>` itself, not a
+    marketplace qualifier, whenever the registry `key` carried no `@` (a
+    legacy/malformed row) while `<server>` happened to contain one, e.g.
+    `plugin:legacykey:weird@evil:server` -> the wrong
+    `plugin:legacykey:weird:server`. Splitting on the label's own two
+    delimiting colons, rather than scanning past them, makes that
+    combination unreachable: only the key segment is ever touched, and the
+    server segment (whatever it contains) is carried through unchanged.
+
+    Kept separate from `_plugin_channel_consumer_names`'s own label format
+    on purpose: that format is a REPORTING label, asserted verbatim by
+    `tests/test_plugin_channel_consumer_census_1241.py` and rendered into
+    doctor.py's own WARN text, and changing it there would be a much larger,
+    unrelated blast radius for a fact only the arming decision below needs.
+    A label not shaped like `plugin:<key>:<server>` at all (should not
+    happen, since `_plugin_channel_consumer_names` always builds it this
+    way, but nothing here assumes it cannot) is returned unchanged rather
+    than guessed at.
+    """
+    prefix = "plugin:"
+    if not label.startswith(prefix):
+        return label
+    key, sep, server_name = label[len(prefix) :].partition(":")
+    if not sep:
+        return label
+    return prefix + key.split("@", 1)[0] + ":" + server_name
+
+
+def plugin_channel_arm_decision(plugin_registry_path=None, project_dir=None):
+    """What should `bin/oss-workspace` do about registering `oss-channel`,
+    given the IN-SCOPE installed-plugin population, asked BEFORE that
+    registration happens (#1307)?
+
+    Registering `oss-channel` unconditionally and only asking the
+    post-registration census afterward (`channel_consumer_census_state`,
+    below) means that census counts the launcher's own just-added
+    registration as a SECOND consumer whenever a plugin already ships one --
+    disarming the channel over the collision the launcher itself just
+    created. This is the same population `_plugin_channel_consumer_names`
+    already derives for that census's own plugin half, asked earlier, before
+    the registration decision rather than after it.
+
+    Returns ``(state, detail)``, four states:
+
+    * ``could-not-ask`` -- the plugin population could not be established
+      (an unreadable or malformed registry, or one plugin's own unreadable
+      `.mcp.json`). `detail` is the reason. Falls back to registering
+      `oss-channel` as before and letting the post-registration census
+      decide -- an unreadable registry must not silently read as "no plugin
+      consumer", which would stop registering the only one there is.
+    * ``none`` -- zero in-scope plugin consumers. Register `oss-channel` as
+      before; nothing else could ever collide with it.
+    * ``single`` -- exactly one. `detail` is ``(label, resolvable_name)`` --
+      `label` is `_plugin_channel_consumer_names`'s own reporting form,
+      `resolvable_name` is `resolvable_plugin_server_name(label)`, the name
+      to actually arm the flag against. Do NOT register `oss-channel`.
+    * ``plural`` -- two or more in-scope plugin consumers already collide
+      with each other, before `oss-channel` is even considered. `detail` is
+      their labels. Do not register `oss-channel` either -- a third racer
+      would not help -- but there is no single target to arm against, so the
+      session opens without the flag.
+    """
+    names, reason = _plugin_channel_consumer_names(
+        plugin_registry_path, project_dir=project_dir
+    )
+    if names is None:
+        return "could-not-ask", reason
+    if not names:
+        return "none", ""
+    if len(names) == 1:
+        label = names[0]
+        return "single", (label, resolvable_plugin_server_name(label))
+    return "plural", names
 
 
 def channel_consumer_names(text):
