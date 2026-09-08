@@ -53,3 +53,29 @@ do not act on it.
 
 If the agent reports that a label it needed does not exist, that is correct behaviour, not a failure.
 Creating labels is your call, not the agent's.
+
+## When the agent reports back
+
+A completed sweep can relabel issues, which is exactly the kind of event that falsifies the
+board half of the status line's cache — the same reasoning `/oss:release` already applies to the
+`latest` half the moment a Release is created (#549). Once the agent's report has arrived —
+whatever it says, including a sweep that refused every apply — run this once, from this
+orchestrating session's own repo root, never from inside the agent's own Bash grant:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.py" --mark-stale --root .
+```
+
+Run it from the same directory `.oss.json` was read from at the start of this procedure — the
+flag does not walk up looking for `.oss.json` the way a status-line render does, so a call made
+from a subdirectory silently resolves no repo and does nothing (the same limitation `--refresh`
+already has). Pass `--root <path>` explicitly if that is not the current directory.
+
+**Do not run it if the agent returned nothing or could not run at all** — that is not a sweep that
+ended, it is one that never happened, and marking the board stale for a pass that touched nothing
+is the false positive this call exists to avoid on the other side. `scripts/board_touch.py`'s own
+`PostToolUse` hook already marks the board stale on a matching `gh issue edit --add-label` call
+made *during* the sweep — but the triager's own other sanctioned label-write route, `gh api -X
+POST .../labels`, matches neither of that hook's regexes today, not just hypothetically in some
+future route. This end-of-sweep call is a second, deliberate one that covers both routes rather
+than only the one the hook already catches.

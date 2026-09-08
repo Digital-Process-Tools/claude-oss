@@ -2624,6 +2624,21 @@ def _ascii_only(stream):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    if "--mark-stale" in argv:
+        # A triage pass relabels issues, which is exactly the kind of event that
+        # falsifies the board half of the cache -- the same reasoning
+        # `/oss:release` already applies to the `latest` half via
+        # `release_publish._invalidate_cache_after_publish` (#549). This is the
+        # single call an orchestrating session makes once, at the pass's own end
+        # (#1313), rather than relying only on `board_touch.py`'s per-command
+        # `PostToolUse` hook to catch every labelling route.
+        root = "."
+        if "--root" in argv:
+            root = argv[argv.index("--root") + 1]
+        repo = repo_config(root).get("repo")
+        if repo:
+            mark_board_stale(repo)
+        return 0
     if "--refresh" in argv:
         root = "."
         if "--root" in argv:
