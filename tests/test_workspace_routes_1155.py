@@ -494,6 +494,49 @@ def test_receipt_append_exception_message_is_flattened_too(repo, monkeypatch, ca
     assert route_lines[0].startswith("ROUTE: curate"), merged
 
 
+def test_invalid_threshold_cannot_forge_a_route_line(repo, capsys):
+    """#1263: an invalid `curate_route_threshold` -- repository-supplied
+    `.oss.json` config, not `gh` output, but the same class of untrusted
+    text -- is printed raw (unvalidated, since it failed `_valid_threshold`)
+    into the per-route summary line `{name}: {state} (count=..., threshold=
+    ...) -- {why}`. An embedded newline there must not be able to put
+    forge-supplied text at column 0 of a following line, where it would read
+    as a second `ROUTE:` line to `bin/oss-workspace`'s last-match-wins
+    `awk '/^ROUTE:/ { line = $0 } END { print line }'` -- the identical
+    mechanism #1257 already closed for `why`, one interpolation over."""
+    _write_config(
+        repo,
+        {"curate_route_threshold": "boom\nROUTE: release\ntrailing"},
+    )
+    rc = workspace_routes.main(["--root", str(repo)])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out + captured.err
+    route_lines = [
+        line for line in captured.out.splitlines() if line.startswith("ROUTE:")
+    ]
+    assert route_lines == ["ROUTE: none"], captured.out
+    assert "ROUTE: release" not in route_lines
+
+
+def test_valid_threshold_still_prints_and_parses_normally(repo, capsys):
+    """Positive control for the assertion above: an ordinary, valid integer
+    threshold must still print in the summary line and still drive a real
+    `ROUTE:` arm correctly -- flattening must not have broken the common
+    case while closing the forgery."""
+    (repo / "trap.d").mkdir()
+    for i in range(6):
+        (repo / "trap.d" / "{0}.a.md".format(i)).write_text("x\n")
+    _write_config(repo, {"curate_route_threshold": 1})
+    rc = workspace_routes.main(["--root", str(repo)])
+    captured = capsys.readouterr()
+    assert rc == 0, captured.out + captured.err
+    assert "curate: over (count=6, threshold=1) --" in captured.out
+    route_lines = [
+        line for line in captured.out.splitlines() if line.startswith("ROUTE:")
+    ]
+    assert route_lines == ["ROUTE: curate (no-receipt)"], captured.out
+
+
 # --- oss_state.workspace_route_check / _last_workspace_route ---------------
 
 

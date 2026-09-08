@@ -318,7 +318,7 @@ def main(argv=None):
                 name,
                 result["state"],
                 result["count"],
-                result["threshold"],
+                _flatten(result["threshold"]),
                 _flatten(result["why"]),
             )
         )
