@@ -1456,8 +1456,9 @@ elif [ "$plugin_channel_state" = "plural" ]; then
     # oss-channel is even in the picture -- registering a third racer on
     # top would only make it worse. Left unregistered; the session opens
     # without the flag, the same "a board that cannot be verified is not a
-    # board that is armed" call the arms below already make.
-    channel_ready=0
+    # board that is armed" call the arms below already make. `channel_ready`
+    # is already 0 here -- initialised once, above, before this whole
+    # if/elif/else (see that comment for why it is not repeated here).
     echo "oss-workspace: more than one installed plugin already provides a" \
          "claude-channel consumer for this repo ($plugin_channel_names) --" \
          "$CHANNEL_SERVER was not registered on top of them. Opening" \
