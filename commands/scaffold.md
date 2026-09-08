@@ -113,6 +113,7 @@ The full list, so a plan line is never the first time you hear of a file:
 | `.oss/assemble_changelog.py` | the assembler CI calls — **replaced every run** |
 | `.oss/statusline.py` | the status line: board, unlabelled-issue counts, trap.d backlog, plugin currency — **replaced every run** |
 | `.github/workflows/oss-changelog.yml` | the workflow that calls it — **replaced every run** |
+| `trap.d/README.md` | how to log a trap, inside the directory itself — **replaced every run** (#1302) |
 
 One key is written **inside** a file that is not ours: `statusLine` in
 `.claude/settings.json` (#479). It is added when the key is absent and never touched when it is
@@ -130,9 +131,12 @@ there is nothing pending to show. `--apply`'s own receipt names it the same way,
 answers one question — does a changelog gate already run here under another name — and it is not an
 answer about a status line.
 
-The first eleven are created once when absent and are yours afterwards. The last four are ours and
+The first eleven are created once when absent and are yours afterwards. The last five are ours and
 are rewritten on every `--apply`, which is why `--show` prints them as `replace` even in a repo that
-already has everything.
+already has everything. `trap.d/README.md` is the odd one out among the five: it is the one file the
+plugin owns *outside* `.oss/`, because `.oss/` is a directory this plugin owns outright and `trap.d/`
+is not — the directory itself is created once, like the first eleven, and every fragment written
+into it is the repo's own, never touched.
 
 ## `.supertool.json` moves the ground you are standing on
 
