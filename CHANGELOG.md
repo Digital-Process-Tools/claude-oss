@@ -7,6 +7,187 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-09-08
+
+### Added
+
+- `scripts/lane_coupling.py` (#1234) is now wired into `doctor.py` as a live check
+  (`doctor_check_lane_coupling.py`), reporting when a `tests/*.py` file's static
+  references span two or more declared lanes -- the mechanized version of #1201's
+  incident. Noise reduction is an `.oss.json`-declared allowlist
+  (`labels.lane_coupling_allowlist`, per this repo's own rule that a per-repo fact
+  never lives in shared code): a test file on the allowlist is acknowledged and
+  folded into an informational `OK` count instead of one `WARN` line each, while
+  an unacknowledged span still fires loudly. Populated with the 48 whole-repo
+  guard tests this repo's own suite already, legitimately, spans today, so
+  `doctor.py` stays quiet on this tree (#1244).
+
+- `scripts/lane_coupling.py` (#1234) now resolves two more shapes of a test
+  file's own file references: a `Path(...)`/`os.path.join(...)`/`a / b` chain
+  where every leaf is a literal string constant (`Path("scripts") / "foo.py"`),
+  folded exactly as the interpreter itself would join it; and a
+  `<foldable>.glob(...)`/`.rglob(...)` call whose base and pattern are both
+  literal, run against the real repo tree at diagnostic time rather than
+  guessed at. A variable in either position -- `Path(root) / "foo.py"`,
+  `f"CLAUDE.md{suffix}"`, `Path(root).glob(...)` -- stays genuinely
+  unresolved, reporting no reference rather than a guess (#1245).
+
+### Changed
+
+- An ordinary push or pull request now runs a five-leg CI matrix (`ubuntu-latest` 3.12 and 3.9,
+  `windows-latest` 3.12, `macos-latest` 3.12, plus `shellcheck`) instead of the previous 14 jobs.
+  The full 3-OS x Python 3.9-3.12 matrix still lives in the same `.github/workflows/tests.yml`,
+  reached only through `workflow_dispatch` with `full_matrix: true` — the input a release run sets
+  when it dispatches the workflow against the commit about to be tagged, so a release gate is the
+  only place the full matrix's coverage is required to pass (#1246).
+
+- The developer brief's changelog-assembler guidance now says the two locations
+  `oss_rules.assembler_path()` checks are the common ones, not the only ones -- a managed repo may
+  wire its checker elsewhere (`.github/scripts/assemble_changelog.py` is one observed instance),
+  and if a workflow's own invocation names a path that resolves in the tree, that is the real
+  checker rather than a `could-not-resolve` (#1247).
+- Both self-review spawns' brief now tells them not to open a findings message by quoting or
+  negating the `NO FINDINGS` sentinel as a rhetorical denial -- `scripts/review_return.py` cannot
+  tell that from a genuine claim and correctly reports `could-not-classify`. State the real verdict
+  header first (#1248).
+- `docs/pick-the-work.md` no longer claims the dispatch lanes are disjoint by construction; per
+  #1229's ruling, disjointness is declared by triage and checked by
+  `scripts/doctor_check_lane_patterns.py`, and an overlap it finds is a refactoring signal about the
+  codebase, not a violated dispatch guarantee (#1233).
+
+- A finding the loop makes about itself is now routed by the `Blocks a release?` column of the
+  ranking table in `skills/manager/phases/findings.md`, rather than always becoming an issue. A row
+  answering `yes, unconditionally`, and a finding that fits none of the rows, is still filed
+  immediately; `misdirects`, `splices`, `fails-to-preserve` and `misreports` are written to
+  `trap.d/<issue>.<slug>.md` instead, for `/oss:curate` to promote, merge or decline later. Issues
+  filed by anyone outside the loop are untouched. `scripts/ranking_table.py` gained `parse_rows`,
+  `blocking_classes` and `non_blocking_classes`, which derive both sets from the table's own text so
+  no second, hand-copied list can drift from it — and `parse_rows` raises rather than silently
+  dropping a row whose class name it cannot read (#1275).
+
+### Fixed
+
+- `scripts/statusline.py`'s `_gh_unlabelled_issue_counts` used to build one
+  line per open issue as `"L:" + join(",")` over label names and split it back
+  apart in Python -- a label name containing a literal comma split into two
+  names, one of which could coincidentally match a real declared lane,
+  silently undercounting `no_lane`/`no_priority` (the opposite of this
+  function's own documented convention: never undercount). The wire format is
+  now one JSON array of label names per line (`tojson` server-side,
+  `json.loads` client-side), a delimiter no label name can contain -- ported
+  from the identical fix already reviewed and merged in
+  `Digital-Process-Tools/claude-remember#623` (#1226).
+- `labels.lane_other` (#1130) had four independent readers that disagreed on
+  whether a declared spelling counts as "this issue is triaged into a lane":
+  `oss_config.classify_labels`'s prefix regex read it as a lane, `doctor.py`
+  inherited that, `scripts/statusline.py`'s exact-membership test excluded
+  it (so a correctly `lane-other`-tagged issue rendered as untriaged in the
+  status line's `nl` count forever), and `select_issues.py` treated it as a
+  real, dispatchable sixth lane on its own. `oss_config.effective_lane_labels`
+  is now the one place a caller holding a loaded config derives the answer
+  (`labels.lanes` plus `labels.lane_other` when declared);
+  `scripts/statusline.py` (vendored standalone, so it cannot import
+  `oss_config`) mirrors the same result locally, and `select_issues.py` now
+  calls the shared helper instead of re-deriving it a fourth way. `doctor.py`
+  gains a new check (`scripts/doctor_check_lane_other_label.py`) reporting
+  whether a declared `labels.lane_other` spelling actually exists as a label
+  on the forge, in the same `declared-and-present` / `declared-and-absent` /
+  `not-declared` / `could-not-tell` shape `labels.filed_by_loop`'s own check
+  already has -- nothing checked that before, so a declared spelling with no
+  matching label made `select_issues.py` find zero `lane-other` candidates
+  forever, indistinguishable from a lane that fills correctly and simply has
+  none today (#1181).
+
+- `lane_setup.py`'s cross-cutting-guard derivation for `scripts/` never named
+  `tests/test_bare_gh_git_spawn_sweep_1165.py` -- the repo-wide sweep for a bare,
+  unrouted `gh`/`git` subprocess spawn, a defect class this repo has already paid
+  for five times over (#1157, #1163, #1168, #1172, #1173). A new or touched file
+  under `scripts/` now names this guard alongside the two it already trips (#1222).
+
+- Fixed: `tests/import_closure.py`'s (#1237) local-import closure now also follows a
+  string-literal `importlib.import_module("x")` or `__import__("x")` call, not only static
+  `import x` / `from x import y` statements (#1236) -- a pattern already used elsewhere in
+  `scripts/` (`borrowed_authority.py`), though not on any path the closure's own seeds reach
+  today.
+
+- Fixed: `tests/test_workspace_routes_launcher_1155.py`'s fake-plugin-root fixture derived its
+  `_REAL_MODULES` list from `tests/import_closure.py`'s ast-based local-import closure (#1237),
+  the same mechanism `tests/test_workspace_doctor_route_receipt_1064.py` already used, replacing
+  a hand-kept list that missed `lane_pattern_coverage.py`/`select_issues_overlap.py` and let
+  `import doctor` raise `ModuleNotFoundError` inside the launcher's own subprocess unnoticed --
+  the launcher failed open and none of the file's five tests asserted on it. The fixture's
+  `run()` helper now asserts `ModuleNotFoundError` is never in the launcher's stderr, so a
+  future regression is loud.
+
+- `doctor`'s channel MCP consumer census now also counts an installed plugin's
+  own `.mcp.json` server (e.g. supertool's `claude-channel`) -- the harness loads
+  it directly, with no `claude mcp` surface reporting it, so the census used to
+  report `single` while a second, plugin-provided consumer silently held the
+  socket (#1241). `doctor_check_merge_permission.py`'s two settings-permission
+  checks (`gh-pr-merge`, the supertool call itself) now recognise the same
+  covering-wildcard third state `doctor_check_worktree_reap_permission.py`
+  already had (#886/#895), so `Bash(supertool *)`/`Bash(./supertool *)` no
+  longer render as a false `absent` (#1242). `doctor_check_stale_branches.py`
+  now asks the tracker about each matching branch by name
+  (`gh pr list --head <branch>`) instead of listing the whole pull-request
+  history, so a repository whose PR count exceeds `gh pr list`'s own 500-row
+  page cap -- this repository included -- can resolve the check at all (#1253).
+
+- `scripts/fix_commit_scope.py`'s `files_from_git` no longer raises
+  `UnicodeDecodeError` past this module's own `(files, error)` contract when
+  `git diff --name-only` prints a path the runner's locale codec cannot
+  decode under bare `text=True` -- it now decodes with `encoding="utf-8",
+  errors="replace"`, matching the same pairing already used at
+  `tree_snapshot.py`, `ruff_ratchet.py`, `lane_setup.py` and
+  `release_delta.py` (#1251). The same call also now passes
+  `--end-of-options` before the `base..head` range, so a `base`/`head`
+  beginning with `-` (e.g. `--output=<path>`) is refused by git as a bad
+  option rather than reinterpreted as one -- confirmed to be a real,
+  reproducible write-anywhere against the unpatched code (an attacker-
+  chosen `base` such as `--output=<path>` made git write a file at that
+  path with no error), not merely a theoretical mechanism (#1254).
+
+- The release procedure now waits for the release commit's own CI to conclude before creating and
+  pushing the tag. Gates 1-6 verified the default branch was green before the release commit was
+  written, but nothing verified the commit itself -- its folded changelog, bumped version sites and
+  rewritten `CLAUDE.md` marker. `v0.27.0` shipped without this check: tagged and published the
+  moment the push completed, before its own `tests` run had even started, and that run concluded
+  RED. A new `scripts/release_ci_wait.py` (mirroring `pr_green.py`'s shape for a commit pushed
+  straight to the default branch) polls the commit's own workflow runs and answers green, red,
+  could-not-read or pending/timeout, with exit codes that never share 2 with an argparse usage
+  error; a release only proceeds to tag on green (#1266).
+
+- `scripts/cohort_citation_order.py`'s `EXIT_DECLINED` no longer collides with argparse's own
+  usage-error exit code (both were 2), so a caller reading the exit code alone can now tell an
+  honest "the marker declined to cite a cohort" from a bad invocation. Every sibling state script in
+  this family reserves exit 2 for usage only; `EXIT_DECLINED` moves to 4 and the other three states
+  (`ok`, `finding`, `could-not-check`) keep their existing exit codes (#1267).
+
+- `scripts/cohort_citation_order.py`'s declined-citation short-circuit
+  (`check_repo`, then `check_citation_order`) returned its `declined` verdict
+  before the `--at` timestamp was ever parsed, so a malformed `--at` paired
+  with an honest decline silently rendered `declined` with the bad input
+  never read. Self-review found a sibling gap in the same file: `check_repo`'s
+  own corrupt-state-file early return skipped the same validation. `--at` is
+  now validated (via one shared `_validate_comparison_at` helper) on every
+  early-return path in the module, before any branch on the cited marker or
+  the state file runs (#1268).
+
+- `scripts/cohort_citation_order.py`'s cohort-citation check now scopes its search to the current
+  "What is not proven yet" marker section rather than the whole of `CLAUDE.md`, so a stale numeric
+  cohort citation narrated elsewhere in the document (this repository's own prose routinely quotes
+  past releases' cohort counts) can no longer be matched ahead of, or instead of, the current
+  marker's own citation or honest decline (#1269).
+
+- `scripts/review_return.py`'s `_BACKREF` classifier no longer false-positives
+  on ordinary English near "already"/"above"/"earlier"/"previously" -- e.g. a
+  reviewer noting a tool "found already installed" used to be misread as a
+  back-reference to a prior finding and misclassified as `referred-not-stated`.
+  A genuine back-reference gesture ("reported above", "found already", "noted
+  previously") closes the sentence right there; the fix requires the direction
+  word not be immediately followed by another bare word or digit, which is
+  exactly what distinguishes the two (#1270).
+
 ## [0.27.1] - 2026-09-07
 
 ### Fixed
@@ -9742,7 +9923,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.27.1...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.28.0
 [0.27.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.27.1
 [0.27.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.27.0
 [0.26.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.26.0

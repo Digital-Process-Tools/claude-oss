@@ -776,88 +776,81 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.27.1`, and it was written inside the v0.27.1 release commit at
-`e0f440c`.** `v0.27.1` is a one-commit patch release, cut only to fix `tests/test_cohort_citation_
-order_1220.py` (#1264, PR #1265) after `v0.27.0`'s own tagged commit shipped with that guard red --
-the tag was pushed before that commit's own CI run had concluded, and `main` is unconditionally
-green at `v0.27.1`'s own release commit, verified before the tag moved this time (#1266). Nothing
-below this paragraph was re-derived against `v0.27.1`'s own delta: the range `v0.27.0..v0.27.1` is
-the single fix commit, already audited (gate 3, two rounds, three non-blocking `misreports`
-findings -- #1267, #1268, #1269 -- carried forward rather than blocking) and it changes no fact this
-section states about `v0.27.0`'s own delta, cohort freeze, reach probe or field readings. Those
-stay `v0.27.0`'s own readings, cited as such, until the next release re-derives this whole section
-properly rather than patching a marker in place a second time in a row.
+**The marker below names `v0.28.0`, and it was written inside the v0.28.0 release commit.** This
+release's own delta, gate 3 audit and cohort citation WERE all re-derived fresh for this tag,
+following the same protocol the last several markers describe. The reach probe and the field
+readings were not -- those stay carried forward from `v0.21.0` and `v0.17.0` respectively, as
+every marker since has disclosed, and the count of releases carrying them forward moves with this
+one.
 
-**The delta count and gate 3's audit rounds WERE re-derived for `v0.27.0`. The cohort freeze
-citation below could not be independently re-confirmed. The reach probe and the field readings
-were not.** Keeping those three states apart is the point of this paragraph.
+**Delta, taken two ways that agree.** The range is `v0.27.1..HEAD`: **12** merged pull requests,
+read from `gh pr list --state merged --search "merged:>=2026-09-07"` and filtered to
+`mergedAt >= 2026-09-07T15:01:15Z` (the `v0.27.1` tag's own commit timestamp, converted to UTC) --
+`#1271`-`#1274`, `#1276`-`#1283`. `git rev-list --count v0.27.1..HEAD` returns **14**, not 12: the
+gap is two commits this release itself made directly to `main` (outside a pull request, the same
+sanctioned exception the release commit itself uses) to route four non-blocking gate-3 findings to
+`trap.d/` per `findings.md`'s routing rule (#1275), rather than a disagreement between the two
+routes. Both numbers are reported rather than one being silently preferred.
 
-**Delta, taken two ways that agree.** The range is `v0.26.0..HEAD`: **45** merged pull requests,
-reported `[EXACT]` from the forge's own search index (`merged-at:>=2026-09-06T17:54:03Z`, the
-tag's own commit timestamp converted to UTC), and `git rev-list --count v0.26.0..HEAD`
-independently returns **45**; both routes agreed.
-
-**Gate 3, and this release is the second in a row to need a verification round beyond its own
-two-round cap to actually clear.** Two formal rounds, the hard cap, same as `v0.25.0` and
-`v0.26.0`. Round one (over `v0.26.0..2828308`, 42 commits): 4 findings, **none in a blocking
-row** -- `#1251` and `#1252` (both `misreports`), `#1253` (`unranked`, judged non-blocking: a
-doctor check that can never clear on this repo because `gh pr list` hits its own 500-PR page
-limit), `#1254` (`splices`); all four filed and carried rather than fixed, since the two-round
-protocol only forces a fix ahead of the tag for a blocking row. Round two, over the identical
-range (unchanged, because nothing from round one blocked and so nothing was fixed before it ran):
-**3 new findings, and this time all three were blocking** -- `#1255` (`ships-local-state`, a
-maintainer's absolute home path baked into a `trap.d/` fragment that ships in the installed
-artifact), `#1256` (`containment (read)`, a path-literal filter that refused an absolute path but
-not a `..` segment, letting a stat land outside the repo), `#1257` (`forges`, unflattened `gh`
-stderr that could land a forged `ROUTE:` line in a receipt an `awk` parses for one). **None of the
-three was filed-and-shipped; all three stopped the tag and were fixed, reviewed, merged and
-watched to a green `main` before the tag moved.** That is where the two-round cap ended, and a
-verification dispatch run *outside* the cap, the same shape `v0.25.0`'s third audit and
-`v0.26.0`'s fifth-fix sweep both used, checked each of the three fixes against the actual code
-(not the fix commit's own description) and found **all three verified-fixed, with no new instance
-of any blocking class introduced by any of the three fixes** -- but it also found three more
-non-blocking findings in the immediate neighbourhood of the fixes themselves (`#1261`, a guard
-added by the `#1255` fix that does not recognise a Windows-spelled home path; `#1262`, that same
-guard's narrow scope to `trap.d/` alone when several other shipped directories are written the
-same way; `#1263`, one interpolation beside the one the `#1257` fix flattened, left unflattened,
-currently unreachable but the identical mechanism). Ten findings in total across the three
-dispatches (`#1251`-`#1254`, `#1255`-`#1257`, `#1261`-`#1263`); three were blocking and all three
-are fixed and merged; seven are filed and carried. Stated the same way the last two markers
-stated it: the verification dispatch is still where the class not caught by the formal round count
-turns up, this time on both sides -- it confirmed the fixes were real fixes, and it still found
-something the fixes themselves had not covered.
+**Gate 3, two formal rounds, the hard cap, and this release did not need a verification round
+beyond it.** Round one (over `v0.27.1..4ba9846`, 12 commits): 4 findings, **none in a blocking
+row** -- two `misreports` in class A (an unbounded `gh label list --limit 200` read as absence
+past the cap in `doctor_check_lane_other_label.py`; the identical module's silent
+`UnicodeDecodeError` escape on `gh` stdout with no explicit `encoding=`), and two `misreports` in
+class B (a composition defect where #1246's reduced push/PR matrix and #1266's release-commit CI
+wait never actually dispatch the full 3x4 matrix against the commit that gets tagged; a
+`review_return.py` back-reference lookahead that can swallow a genuine referring gesture
+continuing its own clause). All four routed to `trap.d/` rather than filed, in a direct commit to
+`main` (`4ba9846`), following this repository's own precedent for that class of write (`d5317d6`).
+Round two, over the range extended by that one trap.d-only commit (`v0.27.1..4ba9846` plus the
+routing commit itself, 13 commits total): the auditor re-derived independently rather than
+inheriting round one's findings, reproduced all four of round one's findings on its own evidence,
+and found **2 new findings**, both `misreports` and both non-blocking (a `tests/import_closure.py`
+unresolved-import-call case that renders identically to no import call at all, with a live
+resolver gap onto `scripts/borrowed_authority.py`'s variable-argument `import_module`; a vendored
+copy of `effective_lane_labels` in `scripts/statusline.py` with no test comparing its output
+against the source function in `scripts/oss_config.py`). **`scripts/gate3_disposition.py --round 2
+--verdict findings --blocking no` returned `carry-forward-and-proceed`: all six findings across
+both rounds rank `misreports`, none sit in a blocking row, so nothing forced a fix ahead of the tag
+and all six are carried to the next milestone via `trap.d/` fragments** (the two new ones committed
+directly to `main` in `c8cf8ee`, the same precedent as round one's four). The auditor also
+surfaced one finding outside the audited delta entirely -- a maintainer's absolute home path
+shipped inside `tests/test_doctor_check_supertool_permission_609.py`, predating `v0.27.1` and
+therefore not a delta finding under the two-round protocol -- and it was left as a comment on the
+issue that already tracks the underlying gap (`#1262`) rather than filed again or used to block
+this tag.
 
 **Cohort freeze: cannot be cleanly cited this release, and that is stated rather than guessed
-past.** Per #1122's rule, this marker must cite a cohort that has already finished freezing --
-never this release's own not-yet-frozen one -- so the candidate is `cohort-22`, frozen at
-`v0.26.0`'s tag. `scripts/cohort_citation_order.py` against this machine's own state file
-returned `could-not-check`: no `measured` freeze record exists there for `cohort-22` (the last
-entry with a recorded, agreeing freeze is `cohort-21` at **32**, timestamped
-`2026-09-06T01:40:12Z`). The prior marker (written for `v0.26.0`) cited cohort-22 at **42**, by
-its own admission before that cohort's freeze had actually run -- the same premature-measurement
-defect #1122 was written to close. A fresh independent check run now, `gh api graphql` against
-the `cohort-22` label's own `issues.totalCount` (open and closed together, which a frozen cohort
-label should never grow past), returns **43** -- one more than the figure the prior marker
-guessed. Neither number is re-asserted here as the settled count: the discrepancy is named rather
-than silently resolved by picking one, because the honest content of this paragraph is that the
-label accounting for `cohort-22` does not currently agree with itself, not a smoothed-over
-figure. Tracked as a fact for whoever next reconciles it, not a blocking gate.
+past, for the second release running.** Per #1122's rule, this marker must cite a cohort that has
+already finished freezing -- never this release's own not-yet-frozen one -- so the candidate is
+`cohort-24`, frozen at `v0.27.1`'s tag. The state file does record a `measured` entry for
+`cohort-24` (`count: 37`), but it carries only **one** route (`cohort_freeze_py: 37`) rather than
+the two independently-agreeing routes every other `measured` entry in this file carries (compare
+`cohort-23`'s `gh-issues-board: 32` / `gh-graphql-label: 32`) -- and `trap.d/1122.cohort-freeze-
+reported-but-left-no-trace.md` already names this exact entry as reported with no corroborating
+trace. The live `cohort-24` label today shows **16** open issues against the recorded **37**, a
+gap far too large to be ordinary shrinkage from a cohort that can only shrink. Citing 37 here
+would repeat the premature-measurement pattern #1122 was written to close, just one layer further
+in (a single-route `measured` state rather than a genuinely absent one); citing 16 instead would
+be reading a live recount as if it settled the freeze question, which it does not. Neither number
+is asserted as the settled count. Tracked as a fact for whoever next reconciles `cohort-24`'s own
+freeze record, not a blocking gate for this tag.
 
-**The reach probe was NOT re-derived at `v0.27.0`** -- it is still `v0.21.0`'s, measured at
+**The reach probe was NOT re-derived at `v0.28.0`** -- it is still `v0.21.0`'s, measured at
 `c565488`, eleven repositories in the one org it can see and four carrying `.oss.json`. The rest
 of the field readings were not either: the owned-files table, the two installs and the `doctor`
-run are still `v0.17.0`'s, measured at `ad38b93` and now carried through **ten** tags (`v0.18.0`
-through `v0.27.0`). `#1127` tracks re-deriving them -- replacing `#815`, which closed at `v0.18.0`
+run are still `v0.17.0`'s, measured at `ad38b93` and now carried through **twelve** tags (`v0.18.0`
+through `v0.28.0`). `#1127` tracks re-deriving them -- replacing `#815`, which closed at `v0.18.0`
 having tracked only the marker-paragraph fix (#817), never the full pass, and had been cited here
-as the tracker for over eight releases after it stopped being one. A tenth release disclosing the
+as the tracker for over eight releases after it stopped being one. A twelfth release disclosing the
 identical, unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low
 priority against everything else this loop spends a tick on, or the disclosure is not actually
 driving anyone to close it. Both are worth naming and neither is decided here — the honest content
-of this paragraph is the count itself, ten releases running, not a conclusion drawn from it. **The
-readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
-marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release
-commit, per this section's own stated exception, so a developer lane does not have to catch the gap
-a release later.
+of this paragraph is the count itself, twelve releases running, not a conclusion drawn from it.
+**The readings themselves live in `docs/release-currency.md`**; this section holds the verdict and
+the marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the
+release commit, per this section's own stated exception, so a developer lane does not have to
+catch the gap a release later.
 
 **The reach probe, re-derived at `c565488` for `v0.21.0`.** `gh repo list Digital-Process-Tools
 --limit 100` returns eleven repositories **in that one GitHub organisation**, four of which carry
