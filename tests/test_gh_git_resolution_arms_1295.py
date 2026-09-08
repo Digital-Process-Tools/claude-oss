@@ -21,6 +21,7 @@ This pins two things the sweep cannot see:
    real answer would, when `git`/`gh` cannot be resolved at all.
 """
 
+import os
 import stat
 import sys
 from pathlib import Path
@@ -104,6 +105,21 @@ def test_statusline_safe_which_agrees_with_gh_which_on_a_real_directory(
     blocks-shared-safe-which.md for the drift risk this leaves open). This
     is the cheapest check available today that the two still agree, on a
     real (non-mocked) platform, against the same directory layout and PATH.
+
+    Compared via `os.path.normcase` rather than exact string equality
+    (#1295, PR #1297's own CI): both walks build a candidate extension from
+    the SAME real `PATHEXT` env var, in the SAME order, but a Windows
+    runner's real `PATHEXT` value and its interaction with the actual
+    filesystem's own case handling is not something this suite controls
+    tightly enough to pin an exact case -- observed on `windows-latest`,
+    `statusline._safe_which` returned `...git.exe` while `gh_which.
+    safe_which` returned `...git.EXE`, both resolving the identical real
+    file. Windows execution does not care about extension case (`CreateProcess`
+    is case-insensitive there), so `normcase` is the right equality here:
+    it is what `safe_which`'s own directory de-dup already uses to compare
+    paths, and it is the property that actually matters -- do the two
+    walks land on the same file -- rather than a byte-identical string
+    neither implementation promises.
     """
     real_dir = tmp_path / "bin"
     real_dir.mkdir()
@@ -115,11 +131,13 @@ def test_statusline_safe_which_agrees_with_gh_which_on_a_real_directory(
     statusline_answer = statusline._safe_which("git")
     gh_which_answer = gh_which.safe_which("git", path=str(real_dir))
 
-    assert statusline_answer == gh_which_answer == str(target), (
-        statusline_answer,
-        gh_which_answer,
-        str(target),
-    )
+    assert statusline_answer is not None, "statusline._safe_which resolved nothing"
+    assert gh_which_answer is not None, "gh_which.safe_which resolved nothing"
+    assert (
+        os.path.normcase(statusline_answer)
+        == os.path.normcase(gh_which_answer)
+        == os.path.normcase(str(target))
+    ), (statusline_answer, gh_which_answer, str(target))
 
 
 def test_oss_config_run_reports_not_on_path_distinctly(monkeypatch):
