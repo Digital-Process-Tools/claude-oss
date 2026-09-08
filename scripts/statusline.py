@@ -32,6 +32,58 @@ import sys
 import time
 from pathlib import Path
 
+#: #1295: this file is vendored standalone (see the module docstring above --
+#: "No third-party imports... installs nothing to run it") so it cannot
+#: `import scripts.gh_which` the way every other converted call site in this
+#: repository does. `_safe_which` below is a reduced, inlined copy of
+#: `gh_which.safe_which`'s own resolution walk -- see that module's docstring
+#: for the full mechanism this closes: a same-named `git.exe`/`gh.cmd`
+#: planted at the root of the repository this statusline is reporting on can
+#: otherwise win over a real `PATH` entry on Windows, because a bare argv[0]
+#: with no directory component lets `CreateProcess` search the *calling
+#: process's* current directory first. Being a separate copy, this can drift
+#: from `gh_which.py`'s own walk without anything here noticing -- logged as
+#: a known trade-off of the vendoring constraint, not fixed by this issue.
+_WIN_DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC"
+
+
+def _win_candidate_names(name):
+    pathext_source = os.environ.get("PATHEXT") or _WIN_DEFAULT_PATHEXT
+    pathext = [ext for ext in pathext_source.split(";") if ext]
+    lowered = name.lower()
+    if any(lowered.endswith(ext.lower()) for ext in pathext):
+        return [name]
+    return [name + ext for ext in pathext]
+
+
+def _safe_which(name):
+    """Resolve `name` on the real `PATH`, without ever letting an implicit
+    current-working-directory search take priority over a real `PATH` entry.
+    Returns an absolute path, or `None`.
+    """
+    search_path = os.environ.get("PATH", os.defpath)
+    if not search_path:
+        return None
+    is_windows = sys.platform == "win32"
+    candidate_names = _win_candidate_names(name) if is_windows else [name]
+    seen = set()
+    for directory in search_path.split(os.pathsep):
+        candidate_dir = directory if directory else os.curdir
+        normalised = os.path.normcase(os.path.abspath(candidate_dir))
+        if normalised in seen:
+            continue
+        seen.add(normalised)
+        for candidate_name in candidate_names:
+            candidate = os.path.join(candidate_dir, candidate_name)
+            if (
+                os.path.exists(candidate)
+                and os.access(candidate, os.X_OK)
+                and not os.path.isdir(candidate)
+            ):
+                return os.path.abspath(candidate)
+    return None
+
+
 #: How old a cached board reading may be before a refresh is forked, in seconds. Short,
 #: because this is the half a maintainer watches move: at 300 the line showed a merged pull
 #: request and three still-open issues that had just been closed (#515).
@@ -1250,6 +1302,16 @@ def branch_name(root):
 
 
 def _run(command, timeout=5):
+    """#1295: `command[0]` is resolved through `_safe_which` above before it is
+    ever handed to `subprocess.run` -- every caller in this module passes a
+    bare `"git"`/`"gh"` as argv[0], and a same-named `git.exe`/`gh.cmd`
+    planted at the root of the repository this statusline is reporting on
+    can otherwise win over a real `PATH` entry on Windows.
+    """
+    resolved = _safe_which(command[0])
+    if resolved is None:
+        return None
+    command = [resolved] + list(command[1:])
     try:
         result = subprocess.run(
             command,

@@ -22,6 +22,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gh_which  # noqa: E402 -- #1295: `gh_which.safe_which`, not a bare
+# `subprocess.run(["git"/"gh", ...])` with no resolution gate -- see
+# `gh_which`'s own docstring for the Windows curdir-execution mechanism
+# this closes.
+
 REQUIRED_KEYS = {
     "repo",
     "default_branch",
@@ -2690,7 +2696,10 @@ def _ignore_rule(root, name):
     used here: it folds every non-zero exit into failure, and that would render a clean
     answer as an unknown one.
     """
-    command = ["git", "-C", str(root), "check-ignore", "-v", "--", name]
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
+        return "unknown", "git is not on PATH"
+    command = [git_bin, "-C", str(root), "check-ignore", "-v", "--", name]
     try:
         # Bytes, not text: see _decode_output. The pathname git echoes back is the one
         # thing here guaranteed to be a filename, and a filename is where an undecodable
@@ -3281,7 +3290,18 @@ def resolve_worktree(root, target):
 
 
 def _run(command, cwd=None):
-    """Return ``(ok, stdout, detail)``. ``detail`` is why not, when not."""
+    """Return ``(ok, stdout, detail)``. ``detail`` is why not, when not.
+
+    #1295: ``command[0]`` is resolved through ``gh_which.safe_which`` before it is
+    ever handed to ``subprocess.run`` -- every caller in this module passes a bare
+    ``"git"``/``"gh"`` as argv[0], and a same-named ``git.exe``/``gh.cmd`` planted at
+    the root of the repository under inspection (``cwd``) can win over a real
+    ``PATH`` entry on Windows otherwise (see ``gh_which``'s own docstring).
+    """
+    resolved = gh_which.safe_which(command[0])
+    if resolved is None:
+        return False, "", "{} is not on PATH".format(command[0])
+    command = [resolved] + list(command[1:])
     try:
         done = subprocess.run(
             command,
