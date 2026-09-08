@@ -837,7 +837,7 @@ narrow to catch drift in PATHEXT ordering or curdir normalisation). Both routed 
 `carry-forward-and-proceed`: all 8 round-two findings rank non-blocking, so nothing forced a fix
 ahead of the tag and the rest carry to the next milestone.
 
-**Cohort freeze: cites the previous release's, cleanly.** Per #1122's rule, this marker must cite a
+**Cohort freeze: cohort-25 at 16.** Per #1122's rule, this marker must cite a
 cohort that has already finished freezing -- never this release's own not-yet-frozen one -- so the
 candidate is `cohort-25`, frozen at `v0.28.0`'s tag. The state file's own `2026-09-08T00:47:33Z`
 entry records `cohort-25` as `measured` at **16**, with two independently-agreeing routes
