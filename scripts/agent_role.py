@@ -117,6 +117,13 @@ import sys
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import gh_which  # noqa: E402 -- #1175: `gh_which.safe_which`, not a bare
+# `subprocess.run(["git", ...])` with no resolution gate at all -- see
+# `gh_which`'s own docstring for the Windows curdir-execution mechanism
+# this closes.
+
 #: The environment variable a caller may set to declare its own role,
 #: inline on the same command line that needs it. See the module docstring
 #: for why this alone is not relied on.
@@ -197,9 +204,12 @@ def _git_dir(root: str = ".") -> Path | None:
     #707's crash) rather than reporting the "could not determine" this
     function already has a state for.
     """
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
+        return None
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--git-dir"],
+            [git_bin, "rev-parse", "--git-dir"],
             cwd=root,
             capture_output=True,
             timeout=10,

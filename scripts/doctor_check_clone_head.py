@@ -20,21 +20,23 @@ so `doctor.check_clone_head` answers exactly as it does here, and a test's
 `monkeypatch.setattr(doctor, ...)` reaches this module's code.
 """
 
-import shutil
 import subprocess
 
 import doctor
+import gh_which  # noqa -- #1175: `gh_which.safe_which`, not a bare `shutil.which`
+# gating a spawn of the literal, unresolved `"git"` -- see `gh_which`'s own
+# docstring for the Windows curdir-execution mechanism this closes.
 
 
-def _git_run(project_dir, args, run):
-    """``git -C <project_dir> <args>``, returning ``(returncode, stdout, stderr,
-    exc)`` -- the same shape ``_gh_api`` uses, for the identical reason: a
+def _git_run(project_dir, args, run, git_bin):
+    """``<git_bin> -C <project_dir> <args>``, returning ``(returncode, stdout,
+    stderr, exc)`` -- the same shape ``_gh_api`` uses, for the identical reason: a
     process that never started (`git` uninstalled mid-call, a permission
     error) must not be confused with an ordinary non-zero exit (no upstream
     configured, a branch that does not exist)."""
     try:
         done = run(
-            ["git", "-C", str(project_dir)] + list(args),
+            [git_bin, "-C", str(project_dir)] + list(args),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=True,
@@ -74,7 +76,8 @@ def clone_head_state(project_dir, config, run=None):
     absence, so it is never collapsed into ``"gone"``.
     """
     run = subprocess.run if run is None else run
-    if shutil.which("git") is None:
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
         return "could-not-tell", "git is not on PATH"
     default_branch = config.get("default_branch") if config else None
     if default_branch is not None and not isinstance(default_branch, str):
@@ -93,7 +96,9 @@ def clone_head_state(project_dir, config, run=None):
     # with no commits required, and fails with a distinct, matchable message
     # ("HEAD is not a symbolic ref") specifically on a detached HEAD -- the one
     # case this function needs to name rather than lump in with "git failed".
-    rc, out, err, exc = _git_run(project_dir, ["symbolic-ref", "--short", "HEAD"], run)
+    rc, out, err, exc = _git_run(
+        project_dir, ["symbolic-ref", "--short", "HEAD"], run, git_bin
+    )
     if exc is not None:
         return (
             "could-not-tell",
@@ -118,6 +123,7 @@ def clone_head_state(project_dir, config, run=None):
             project_dir,
             ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
             run,
+            git_bin,
         )
         if exc_u is None and rc_u == 0 and out_u.strip():
             upstream = out_u.strip()
@@ -125,6 +131,7 @@ def clone_head_state(project_dir, config, run=None):
                 project_dir,
                 ["rev-list", "--left-right", "--count", "{}...HEAD".format(upstream)],
                 run,
+                git_bin,
             )
             if exc_c is None and rc_c == 0:
                 parts = out_c.split()
@@ -134,11 +141,14 @@ def clone_head_state(project_dir, config, run=None):
 
     remote = "unknown"
     rc_r, out_r, _err_r, exc_r = _git_run(
-        project_dir, ["remote", "get-url", "origin"], run
+        project_dir, ["remote", "get-url", "origin"], run, git_bin
     )
     if exc_r is None and rc_r == 0 and out_r.strip():
         rc_ls, out_ls, _err_ls, exc_ls = _git_run(
-            project_dir, ["ls-remote", "--exit-code", "--heads", "origin", branch], run
+            project_dir,
+            ["ls-remote", "--exit-code", "--heads", "origin", branch],
+            run,
+            git_bin,
         )
         if exc_ls is None:
             if rc_ls == 0 and out_ls.strip():

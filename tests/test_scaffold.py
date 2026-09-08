@@ -822,7 +822,9 @@ def test_the_forge_is_not_asked_about_a_repo_this_checkout_is_not(
     contributor without gh sees this fail on the PATH arm, whose reason has nothing
     to do with the property being asserted.
     """
-    monkeypatch.setattr(scaffold.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(
+        scaffold.gh_which, "safe_which", lambda name: "/usr/bin/" + name
+    )
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is None
     assert "owner/name" in reason
@@ -831,7 +833,7 @@ def test_the_forge_is_not_asked_about_a_repo_this_checkout_is_not(
 def test_the_forge_read_is_skipped_with_a_reason_when_gh_is_absent(
     tmp_path, monkeypatch
 ):
-    monkeypatch.setattr(scaffold.shutil, "which", lambda name: None)
+    monkeypatch.setattr(scaffold.gh_which, "safe_which", lambda name: None)
     names, reason = scaffold._forge_label_names(tmp_path, _config())
     assert names is None
     assert "gh" in reason and "PATH" in reason
@@ -845,7 +847,9 @@ def test_the_forge_read_is_skipped_when_no_repo_is_configured(tmp_path):
 
 def _pin_forge(monkeypatch, origin, gh):
     """Pin both subprocesses. `gh` is (ok, stdout, detail); `origin` is the remote URL."""
-    monkeypatch.setattr(scaffold.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(
+        scaffold.gh_which, "safe_which", lambda name: "/usr/bin/" + name
+    )
 
     def fake_run(command):
         if command[0] == "git":
@@ -1001,7 +1005,9 @@ def test_the_unreadable_origin_arm_does_not_echo_a_credential_from_git_stderr(
     tmp_path, monkeypatch
 ):
     """git echoes the URL in its own error text, and that text is interpolated too."""
-    monkeypatch.setattr(scaffold.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(
+        scaffold.gh_which, "safe_which", lambda name: "/usr/bin/" + name
+    )
     monkeypatch.setattr(
         scaffold,
         "_run",
@@ -1030,7 +1036,9 @@ def test_the_stderr_arm_redacts_a_userinfo_holding_a_literal_at_sign(
     so suppressing the line would cost the reader the error itself -- which makes the
     span the redaction takes the only thing standing between a token and the report.
     """
-    monkeypatch.setattr(scaffold.shutil, "which", lambda name: "/usr/bin/" + name)
+    monkeypatch.setattr(
+        scaffold.gh_which, "safe_which", lambda name: "/usr/bin/" + name
+    )
     monkeypatch.setattr(
         scaffold,
         "_run",
