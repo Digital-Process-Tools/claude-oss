@@ -371,14 +371,20 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
       honestly declined a number rather than guessing one -- #1264) are all fine; `finding` means
       this citation is about to repeat v0.25.0's own mistake.
    2. After folding the changelog and before the release commit, run the repo's own
-      `tests/test_claude_md_currency.py` (`python3 -m pytest`, not a plugin script under
-      `${CLAUDE_PLUGIN_ROOT}`, so it stays a prose instruction rather than a fenced command line).
-      Its `test_the_marker_never_lags_the_newest_cut_release_even_with_nothing_pending` compares
+      `tests/test_claude_md_currency.py` and `tests/test_cohort_citation_order_1220.py`
+      (`python3 -m pytest`, not a plugin script under `${CLAUDE_PLUGIN_ROOT}`, so it stays a prose
+      instruction rather than a fenced command line). `test_claude_md_currency.py`'s
+      `test_the_marker_never_lags_the_newest_cut_release_even_with_nothing_pending` compares
       the marker's named release against `CHANGELOG.md`'s newest heading **unconditionally** — it
       does not wait for `changelog.d` fragments, which is exactly the signal that goes quiet the
       moment a release empties that directory and is what let the `v0.22.0`-`v0.24.0` gap go
-      unnoticed for three releases. Stage the marker edit with the rest of the release commit; the
-      commit is not the release until this passes.
+      unnoticed for three releases. `test_cohort_citation_order_1220.py`'s own
+      `test_extract_cited_cohort_on_this_repos_own_claude_md_cross_checked` polices the cohort-
+      freeze paragraph's exact `Cohort freeze: cohort-N at M` shape (#1264) -- a paraphrase of the
+      same fact in different words is invisible to the currency test but fails this one, and a
+      v0.29.0 release commit shipped exactly that mismatch (#1299), reaching CI only after the tag
+      had already moved. Stage the marker edit with the rest of the release commit; the commit is
+      not the release until both pass.
 
 ## Which number the release gets
 
