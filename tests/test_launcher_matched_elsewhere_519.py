@@ -165,3 +165,45 @@ def test_same_version_segment_different_directory_is_still_just_matched(tmp_path
     )
 
     assert state == "matched", (state, detail)
+
+
+def test_matched_elsewhere_names_the_repoint_command_1306(tmp_path):
+    """#1306: `matched-elsewhere`'s WARN tells the reader to "re-point the
+    symlink" but never showed the actual command, even though `_launcher_remedy`
+    computes exactly that command (the same `ln -sf ... ~/.local/bin/oss-workspace`
+    already embedded in the sibling `not-resolvable`, `unresolved-target` and
+    `mismatched` arms via `report_with_remedy`). This state was the one arm left
+    out -- there is nothing platform-specific or undecidable about it, the fix is
+    the identical one-line command every neighbouring WARN already carries.
+    """
+    plugin_root = _plugin_root(tmp_path, content=b"same bytes\n", version="9.9.9")
+    path_dir, _target = _stale_cache_entry(tmp_path, b"same bytes\n", version="0.7.0")
+
+    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=path_dir, windows=False)
+
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", (level, message)
+    assert "ln -sf" in message, message
+    assert "~/.local/bin/oss-workspace" in message, message
+
+
+def test_matched_elsewhere_reads_coherently_on_windows_1306(tmp_path):
+    """Self-review finding on #1306's own fix: the first version closed the
+    prose with "Re-point the symlink:", presuming `remedy` is always a
+    pasteable command. On Windows `_launcher_remedy` returns a full sentence
+    saying there is NO one-line symlink route at all -- so a colon-led
+    "Re-point the symlink:" immediately followed by that sentence read as
+    self-contradictory, and nothing exercised this arm with `windows=True`
+    (the sibling test above hardcodes `windows=False`). This is the
+    positive control for that gap: the composed message must never claim a
+    symlink re-point right before a sentence saying no such route exists.
+    """
+    plugin_root = _plugin_root(tmp_path, content=b"same bytes\n", version="9.9.9")
+    path_dir, _target = _stale_cache_entry(tmp_path, b"same bytes\n", version="0.7.0")
+
+    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=path_dir, windows=True)
+
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", (level, message)
+    assert "no one-line install" in message, message
+    assert "Re-point the symlink:" not in message, message
