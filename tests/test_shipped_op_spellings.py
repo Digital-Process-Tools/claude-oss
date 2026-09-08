@@ -59,10 +59,17 @@ OP_INVENTORY = {
     "gh-issue": "github",
     "gh-issues": "github",
     "gh-labels": "github",
+    # #1331: named by two new tools rules and confirmed to resolve here --
+    # `help:gh-pr` and `help:gh-run` both answer with a signature
+    # (`gh-pr:NUMBER_OR_BRANCH[:status|:full|:diff[:PATH]|:threads]`,
+    # `gh-run:NUMBER[:attempt=K]`). Both were reachable from shipped prose before
+    # this and simply undeclared, which is what this inventory exists to catch.
+    "gh-pr": "github",
     "gh-pr-create": "github",
     "gh-pr-edit": "github",
     "gh-pr-merge": "github",
     "gh-prs": "github",
+    "gh-run": "github",
     "git-commit": "git",
     "git-diff": "git",
     "git-push": "git",
