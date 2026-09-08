@@ -61,6 +61,13 @@ import os
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+import gh_which  # noqa: E402 -- #1175: `gh_which.safe_which`, not a bare
+# `subprocess.run(["git", ...])` with no resolution gate at all -- see
+# `gh_which`'s own docstring for the Windows curdir-execution mechanism
+# this closes.
+
 #: Extensions that declare a file to be shell without anything having to read it. Kept
 #: so a sourced fragment with no shebang -- which the old glob did cover -- is not lost
 #: by replacing an extension test with a shebang test.
@@ -91,9 +98,12 @@ def _emit(stream, text):
 
 
 def _git(root, *args):
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
+        raise CannotEnumerate("git could not be run: git is not on PATH")
     try:
         done = subprocess.run(
-            ["git", "-C", str(root)] + list(args),
+            [git_bin, "-C", str(root)] + list(args),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )

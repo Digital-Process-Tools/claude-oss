@@ -430,3 +430,16 @@ def test_omitting_both_finding_flags_is_not_supplied(repo, tmp_path, capsys):
     Path(repo, "changelog.d").mkdir()
     release_trigger.main(["--repo", str(repo), "--config", str(config)])
     assert "not-supplied" in capsys.readouterr().out
+
+
+def test_git_helper_reports_not_on_path_when_unresolvable(tmp_path, monkeypatch):
+    """#1175: `_git` now resolves `git` via `gh_which.safe_which` before
+    spawning it -- this proves that resolution path is actually exercised
+    (an unresolvable `git` renders as the documented `(False, "", "git is
+    not on PATH")` verdict this function's own contract already promises),
+    not merely present in the diff."""
+    monkeypatch.setattr(release_trigger.gh_which, "safe_which", lambda name: None)
+    ok, out, detail = release_trigger._git(tmp_path, "status")
+    assert ok is False
+    assert out == ""
+    assert "git is not on PATH" in detail

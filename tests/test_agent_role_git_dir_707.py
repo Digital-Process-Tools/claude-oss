@@ -147,3 +147,14 @@ def test_positive_control_an_ordinary_git_dir_still_resolves(tmp_path):
     result = agent_role._git_dir(str(tmp_path))
     assert result is not None
     assert isinstance(result, Path)
+
+
+def test_git_dir_is_none_when_git_is_not_on_path(tmp_path, monkeypatch):
+    """#1175: `_git_dir` now resolves `git` via `gh_which.safe_which` before
+    spawning it -- this proves that resolution path is actually exercised
+    (a `git` unresolvable on PATH renders as `None`, the same "could not
+    determine" state this function already reports for every other way it
+    can fail to answer), not merely present in the diff."""
+    monkeypatch.setattr(agent_role.gh_which, "safe_which", lambda name: None)
+    result = agent_role._git_dir(str(tmp_path))
+    assert result is None

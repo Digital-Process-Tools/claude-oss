@@ -24,7 +24,6 @@ Python 3.9 compatible.
 import json
 import os
 import re
-import shutil
 import stat
 import subprocess
 import sys
@@ -33,6 +32,11 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import gh_which  # noqa: E402 -- #1175: `gh_which.safe_which`, not a bare
+
+# `shutil.which("gh")` gating a spawn of the literal, unresolved `"gh"` --
+# see `gh_which`'s own docstring for the Windows curdir-execution
+# mechanism this closes.
 import oss_config  # noqa: E402
 import oss_rules  # noqa: E402
 
@@ -2928,11 +2932,15 @@ def _forge_label_names(repo_root, config):
     repo = config.get("repo")
     if not repo:
         return None, "no repo in .oss.json, so there is nothing to ask the forge about"
-    if shutil.which("gh") is None:
+    gh_bin = gh_which.safe_which("gh")
+    if gh_bin is None:
         return None, "gh is not on PATH, so the forge could not be asked"
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
+        return None, "git is not on PATH, so the forge could not be asked"
 
     ok, origin, detail = _run(
-        ["git", "-C", str(repo_root), "remote", "get-url", "origin"]
+        [git_bin, "-C", str(repo_root), "remote", "get-url", "origin"]
     )
     if not ok:
         return None, (
@@ -2956,7 +2964,7 @@ def _forge_label_names(repo_root, config):
 
     ok, out, detail = _run(
         [
-            "gh",
+            gh_bin,
             "label",
             "list",
             "--repo",

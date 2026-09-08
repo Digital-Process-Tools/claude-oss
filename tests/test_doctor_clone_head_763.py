@@ -29,6 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
+import doctor_check_clone_head  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -74,7 +75,9 @@ def _config(default_branch="main", **overrides):
 
 
 def test_could_not_tell_when_git_is_not_on_path(tmp_path, monkeypatch):
-    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(
+        doctor_check_clone_head.gh_which, "safe_which", lambda name: None
+    )
     state, detail = doctor.clone_head_state(tmp_path, _config())
     assert state == "could-not-tell"
     assert "git is not on PATH" in detail

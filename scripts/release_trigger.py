@@ -68,6 +68,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import gh_which  # noqa: E402 -- #1175: `gh_which.safe_which`, not a bare
+
+# `subprocess.run(("git", ...))` with no resolution gate at all -- see
+# `gh_which`'s own docstring for the Windows curdir-execution mechanism
+# this closes.
 import release_delta  # noqa: E402
 
 STATE_FIRED = "fired"
@@ -93,9 +98,12 @@ def _git(repo, *args):
     """``(ok, stdout, detail)``. Never raises -- a verdict that crashes is a
     verdict nobody gets, and this module's whole contract is that it always
     answers."""
+    git_bin = gh_which.safe_which("git")
+    if git_bin is None:
+        return False, "", "git is not on PATH"
     try:
         proc = subprocess.run(
-            ("git", "-C", str(repo)) + args,
+            (git_bin, "-C", str(repo)) + args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=_TIMEOUT,

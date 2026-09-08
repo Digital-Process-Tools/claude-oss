@@ -72,20 +72,6 @@ _SPAWN_ATTRS = {"run", "Popen", "call", "check_call", "check_output"}
 #: Adding an entry here without a reason, or widening a path/line to a
 #: pattern, defeats the whole point -- see this module's own docstring.
 _ALLOWED = {
-    ("scripts/agent_role.py", 201): (
-        "argv-literal",
-        "#1165's own body names this site as scope for a follow-up, not "
-        "this issue's fix -- a bare `subprocess.run(['git', 'rev-parse', "
-        "'--git-dir'], ...)` with no `shutil.which`/`safe_which` gate at "
-        "all.",
-    ),
-    ("scripts/doctor_check_clone_head.py", 77): (
-        "shutil.which",
-        "`clone_head_state`'s own `run = subprocess.run if run is None "
-        "else run` default feeds `_git_run`'s bare `['git', ...]` argv "
-        "unresolved -- named in #1165's own body (pre-refactor line "
-        "7472) as scope for a follow-up, not this issue's fix.",
-    ),
     ("scripts/release_delta.py", 451): (
         "shutil.which",
         "An early-return pre-check ('is there any point trying') whose "
@@ -95,28 +81,6 @@ _ALLOWED = {
         "not a live bare-spawn route, but still a literal "
         "`shutil.which('git')` call this sweep's own pattern matches, so "
         "named here rather than silently exempted by a broader pattern.",
-    ),
-    ("scripts/release_trigger.py", 97): (
-        "argv-literal",
-        "Not examined for this issue -- #1172/#1173 are scoped to "
-        "`scripts/doctor.py`. Named here as scope for a follow-up.",
-    ),
-    ("scripts/scaffold.py", 2931): (
-        "shutil.which",
-        "Not examined for this issue -- #1172/#1173 are scoped to "
-        "`scripts/doctor.py`. Named here as scope for a follow-up "
-        "(#1165's own body cites this file's sibling literal-argv site, "
-        "pre-refactor line 2934, as scope too).",
-    ),
-    ("scripts/shell_sources.py", 95): (
-        "argv-literal",
-        "#1165's own body names this site (pre-refactor line 96) as "
-        "scope for a follow-up, not this issue's fix.",
-    ),
-    ("scripts/tree_snapshot.py", 101): (
-        "argv-literal",
-        "#1165's own body names this site (pre-refactor line 102) as "
-        "scope for a follow-up, not this issue's fix.",
     ),
 }
 
