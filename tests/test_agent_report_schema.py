@@ -2452,3 +2452,53 @@ def test_the_two_older_receipts_did_not_move():
     assert {"fixed", "refused", "argued-down", "report-for-filing", "open"} <= (
         _finding_dispositions()
     )
+
+
+def test_plugin_root_is_optional_and_absent_reports_still_validate():
+    """#1103: a report written before this bump carries no plugin_root at all.
+
+    Must-not-fire half of the pair below: adding an optional field must never make an
+    old report -- or a perfectly normal new one that simply omits it -- start failing.
+    """
+    report = _example()
+    del report["plugin_root"]
+    assert report_schema.validate(report) == []
+
+
+def test_plugin_root_records_the_resolved_path_the_report_was_written_against():
+    """#1103: the literal ${CLAUDE_PLUGIN_ROOT} the lane resolved when it wrote and
+    self-validated its own report -- not a version number, the actual path, since that
+    is the string a later reader compares against their own current resolution to
+    tell 'mid-tick plugin update' apart from 'isolated schema defect'.
+
+    Must-fire half: a well-formed value is accepted and round-trips as a plain string.
+    """
+    report = _example()
+    report["plugin_root"] = (
+        "/Users/example/.claude/plugins/cache/dpt-plugins/oss/0.23.0"
+    )
+    assert report_schema.validate(report) == []
+
+
+def test_plugin_root_must_be_a_string():
+    """A number or object here would defeat the one thing this field is for: a
+    verbatim path a later reader can string-compare against their own resolved root.
+    """
+    report = _example()
+    report["plugin_root"] = 23
+    errors = report_schema.validate(report)
+    assert any("plugin_root" in error for error in errors), errors
+
+
+def test_schema_version_10_declares_its_relation_to_9():
+    """#1103's own bump: plugin_root is a new optional key and nothing already
+    enforced changed shape or tightened, so this step widens 9 the same way 5, 7
+    and 8 did -- additive.
+    """
+    schema = _schema()
+    assert schema["x-schema-version"] == 10
+    assert schema["x-schema-compatibility"]["10"] == "additive"
+
+
+def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_10():
+    assert report_schema.contract_drift(_schema()) is None

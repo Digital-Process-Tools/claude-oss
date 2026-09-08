@@ -235,6 +235,20 @@ CONTRACT_FINGERPRINTS = {
     # version-8 payload whose body happened to be more escaped than formatted
     # was valid under 8 and is refused under 9.
     9: "43a3d5a0732c03a51275b95029b5755aabd771e2249b2b7d83abe3b1643b58d6",
+    # 10 (#1103): a new top-level optional key, plugin_root -- the literal
+    # ${CLAUDE_PLUGIN_ROOT} a developer lane resolved when it wrote and
+    # self-validated its own report. Nothing else moved: no enum member removed,
+    # no key newly required, no on-disk rule changed. ADDITIVE, back to the shape
+    # 5/7/8 had: an old report with no plugin_root is still valid, since the key
+    # is optional and every other required list is unchanged. The number still
+    # moved, because a version-9 copy refuses any version-10 report carrying
+    # plugin_root (an unknown key under additionalProperties: false), which is
+    # breaking in that one direction. The field exists to make a schema-version
+    # mismatch ATTRIBUTABLE: a sub-manager whose own ${CLAUDE_PLUGIN_ROOT} moved
+    # mid-tick can string-compare this value against its own current one and say
+    # which cause produced the UNVALIDATABLE answer, rather than reporting an
+    # isolated schema skew with no visible cause.
+    10: "870164043e5cf3538a92a48244662a10fbd891a1b2540dbdb112d44b435bd25a",
 }
 
 _TYPES = {

@@ -131,6 +131,17 @@ or not.
    old for — every `${CLAUDE_PLUGIN_ROOT}` invocation in this loop runs out of that same copy, the
    maintainer's state writes and release gate included, and nothing else reports the skew.
 
+   **Put the literal `${CLAUDE_PLUGIN_ROOT}` you validated against into `plugin_root` (#1103).** Not
+   a version number — the actual resolved path, typically ending in the plugin's own version
+   (`.../oss/0.23.0`). The plugin can auto-update between your report being written and a
+   sub-manager validating it later in the same tick; when that happens the sub-manager's own copy of
+   `report_schema.py` answers `UNVALIDATABLE` correctly, but with nothing to say *why* — an isolated
+   schema mismatch rather than a mid-tick version split. `plugin_root` is what turns that back into an
+   attributable fact: the sub-manager string-compares it against its own current
+   `${CLAUDE_PLUGIN_ROOT}` and reads a difference as the cause. Optional, and absence is never read
+   as a claim that nothing moved — an older schema copy that predates this field cannot spell it at
+   all.
+
 3. Reply with the absolute path and **at most two lines** — the same sentence you put in `summary`,
    plus anything that genuinely cannot wait a turn: a permission block, a refusal you expect an
    argument about.
