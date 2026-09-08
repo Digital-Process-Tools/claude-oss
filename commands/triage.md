@@ -53,3 +53,22 @@ do not act on it.
 
 If the agent reports that a label it needed does not exist, that is correct behaviour, not a failure.
 Creating labels is your call, not the agent's.
+
+## When the agent reports back
+
+A completed sweep can relabel issues, which is exactly the kind of event that falsifies the
+board half of the status line's cache — the same reasoning `/oss:release` already applies to the
+`latest` half the moment a Release is created (#549). Once the agent's report has arrived —
+whatever it says, including a sweep that refused every apply — run this once, from this
+orchestrating session, never from inside the agent's own Bash grant:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.py" --mark-stale
+```
+
+**Do not run it if the agent returned nothing or could not run at all** — that is not a sweep that
+ended, it is one that never happened, and marking the board stale for a pass that touched nothing
+is the false positive this call exists to avoid on the other side. `scripts/board_touch.py`'s own
+`PostToolUse` hook already marks the board stale on a matching `gh issue edit --add-label` call
+made *during* the sweep; this is a second, deliberate call at the sweep's own end, so the mark
+does not depend on every future labelling route matching that hook's regex.
