@@ -329,10 +329,16 @@ def _quiet_main(monkeypatch):
     # resolution, and the whole `gh api` family in `doctor_check_branch_
     # protection.py`) and none is examined by this test's assertions.
     # `check_plugin_copy` is deliberately NOT in this list (self-review,
-    # #1318): it calls `plugin_provenance()` -- a pure filesystem
-    # comparison, no subprocess anywhere in its own body -- so stubbing it
-    # would have bought no speed while dropping the only place in this
-    # suite that exercises the wrapper's own real wiring around that
+    # #1318, corrected on a second audit round: an earlier version of this
+    # comment claimed it spawns no subprocess at all, which is wrong --
+    # `plugin_provenance()` -> `_tree_identity()` -> `_git_head()` does run
+    # one `git rev-parse --short HEAD`). It stays unstubbed anyway: that
+    # one call is a single, fast, local git invocation -- not the `gh api`
+    # family this stub list exists to remove -- and `main()` already pays
+    # for the identical call moments earlier for its own "oss plugin
+    # version" banner line, so this is a small, pre-existing redundancy
+    # rather than new cost. Stubbing it would also drop the only place in
+    # this suite that exercises the wrapper's own real wiring around that
     # helper (`tests/test_tick_plugin_copy_942.py` calls `plugin_
     # provenance()` directly, never `check_plugin_copy` itself).
     for name in (
