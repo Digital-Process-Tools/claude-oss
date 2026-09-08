@@ -67,13 +67,22 @@ def test_mark_stale_flag_marks_the_board_cache_stale(tmp_path, monkeypatch):
 def test_mark_stale_flag_is_silent_and_zero_exit_when_no_repo_resolves(
     tmp_path, monkeypatch
 ):
+    """A no-repo `--root` must never reach `mark_board_stale` at all -- checking that the
+    (mocked, irrelevant) cache directory stayed empty does not discriminate this from the
+    generic stdin-driven render path `main()` falls through to when the whole `--mark-stale`
+    branch is deleted; that path never touches `cache_home` either, for unrelated reasons
+    (self-review finding: the assertion below spies on the call directly instead, #1313)."""
     cache_home = tmp_path / "cache"
     monkeypatch.setattr(statusline, "cache_dir", lambda: cache_home)
+    calls = []
+    monkeypatch.setattr(
+        statusline, "mark_board_stale", lambda *a, **k: calls.append((a, k))
+    )
     # no .oss.json under this root -- repo_config().get("repo") is falsy
     rc = statusline.main(["--mark-stale", "--root", str(tmp_path)])
 
     assert rc == 0
-    assert not cache_home.exists() or not list(cache_home.glob("*.json"))
+    assert calls == []
 
 
 # --------------------------------------------------------- must-not-fire: everything else
