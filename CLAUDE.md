@@ -416,9 +416,15 @@ only the lane can report.
 | --- | --- | --- |
 | `agents/developer/review.md` | 11,486 B | 11,600 B |
 | `agents/developer/review-return.md` | 12,465 B | 13,700 B |
-| `agents/developer/report.md` | 17,401 B | 19,100 B |
+| `agents/developer/report.md` | 18,286 B | 19,100 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
+
+**#1103 re-baselined `agents/developer/report.md` without raising its ceiling**: 17,401 B became
+18,286 B, still under the 19,100 B budget. The new paragraph tells a lane to record the literal
+`${CLAUDE_PLUGIN_ROOT}` it validated against in a new optional `plugin_root` field, so a sub-manager
+later seeing `UNVALIDATABLE` on that report can attribute it to a mid-tick plugin update rather than
+an uncaused schema mismatch.
 
 **#1275 raised `agents/developer/review.md`'s ceiling from 10,500 B to 11,600 B**: 10,132 B became
 10,576 B, past the old ceiling by 76 B. Both self-review spawns (the `Explore` reviewer and
@@ -462,7 +468,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 41,738 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 54,117 B | 57,400 B |
-| `skills/manager/phases/handback.md` | 16,347 B | 18,000 B |
+| `skills/manager/phases/handback.md` | 17,116 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,700 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
@@ -473,6 +479,12 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
+
+**#1103 re-baselined `skills/manager/phases/handback.md` without raising its ceiling**: 16,347 B
+became 17,116 B, still under the 18,000 B budget. The new paragraph tells a sub-manager, on seeing
+`UNVALIDATABLE`, to read the report's optional `plugin_root` field and compare it to its own current
+`${CLAUDE_PLUGIN_ROOT}` -- a difference attributes the answer to a mid-tick plugin update rather than
+leaving it as a bare, uncaused schema mismatch.
 
 **#1275 raised `skills/manager/phases/findings.md`'s ceiling from 10,300 B to 12,400 B**: 9,326 B
 became 11,222 B, past the old ceiling by 922 B. The new "Routing a finding" section states where a
