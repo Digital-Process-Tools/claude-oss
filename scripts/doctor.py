@@ -2460,6 +2460,16 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
         # `unresolved-target` and `mismatched` arms already embed via
         # `report_with_remedy` for the identical action -- there is nothing
         # platform-specific or undecidable left out here, only an omission.
+        #
+        # Self-review round: the first version of this fix closed the prose with
+        # "Re-point the symlink:", presupposing `remedy` is always a command
+        # fragment that completes that sentence. On Windows `remedy` is instead a
+        # full sentence explaining there is NO one-line symlink route at all --
+        # so "Re-point the symlink:" followed immediately by "There is no
+        # one-line install..." read as self-contradictory. Matching the sibling
+        # arms' own pattern (a plain period, `remedy` standing as its own
+        # sentence) makes this coherent on both platforms without presuming what
+        # shape the remedy takes.
         report_with_remedy(
             "WARN",
             "oss-workspace launcher: PINNED ELSEWHERE -- PATH resolves oss-workspace "
@@ -2468,7 +2478,7 @@ def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
             "a mismatch -- but identical today is a fact about today, not a claim "
             "about this running install: a stale pin with correct bytes behaves "
             "exactly like a current one until the next release that touches this "
-            "file, which is what cost #324 its security fix. Re-point the symlink:".format(
+            "file, which is what cost #324 its security fix.".format(
                 resolved, their_version, our_version
             ),
             remedy,
