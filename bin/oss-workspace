@@ -1439,10 +1439,18 @@ if [ "$plugin_channel_state" = "single" ]; then
     # to avoid. Naming the real target here lets that check render `ok`
     # instead.
     export OSS_WORKSPACE_CHANNEL_ARM_TARGET="$plugin_channel_target"
-    echo "oss-workspace: $plugin_channel_target already provides the" \
-         "claude-channel consumer for this repo (declared by an installed" \
-         "plugin's own .mcp.json) -- arming the channel flag against it" \
-         "instead of registering $CHANNEL_SERVER." >&2
+    # `$plugin_channel_label` is the #810/#1241 census's OWN reporting form
+    # of the same server (the installed-plugin registry's un-stripped
+    # `<name>@<marketplace>` key) -- named here too, alongside the resolved
+    # `$plugin_channel_target` this session actually arms against, so a
+    # maintainer cross-referencing this line with a `channel MCP consumer
+    # census` WARN elsewhere (which only ever prints the label form) can
+    # tell the two are the same server.
+    echo "oss-workspace: $plugin_channel_target ($plugin_channel_label in" \
+         "the #810 census) already provides the claude-channel consumer" \
+         "for this repo (declared by an installed plugin's own .mcp.json)" \
+         "-- arming the channel flag against it instead of registering" \
+         "$CHANNEL_SERVER." >&2
 elif [ "$plugin_channel_state" = "plural" ]; then
     # Two or more installed plugins already collide with each other before
     # oss-channel is even in the picture -- registering a third racer on
