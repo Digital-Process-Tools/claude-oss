@@ -791,13 +791,25 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.29.0`, and it was written inside the v0.29.0 release commit.** This
-release's own delta and gate 3 audit WERE both re-derived fresh for this tag, following the same
-protocol the last several markers describe. The cohort citation cites the *previous* release's
-already-frozen cohort per #1122's rule (this release's own freeze runs after the tag). The reach
-probe and the field readings were not re-derived -- those stay carried forward from `v0.21.0` and
-`v0.17.0` respectively, as every marker since has disclosed, and the count of releases carrying
-them forward moves with this one.
+**The marker below names `v0.29.1`, and it was written inside the v0.29.1 release commit.**
+`v0.29.1` is a one-commit patch release, cut only to fix `v0.29.0`'s own tag: that tag (842432c)
+was pushed before its own CI run had concluded, and it turned out RED on all 4 pytest legs
+(`tests/test_cohort_citation_order_1220.py`, a marker-text paraphrase that did not match
+`scripts/cohort_citation_order.py`'s exact required citation shape -- #1299). Fixed forward as
+PR #1300 (merged `a887298`); `main` verified GREEN at `a887298` before cutting this release.
+Gate 3 ran two fresh rounds over `v0.29.0..HEAD` (the single fix commit): round one, 3
+non-blocking `misreports` findings (a marker-gate `could-not-check` enumeration missing a third
+cause; a cross-check test whose independent-oracle derivation searches the whole file where the
+function it checks is deliberately scoped to one section, #1269; and confirmation that a bare fix
+commit tagged directly, without its own release commit, would ship a manifest still reading the
+prior version); round two, an independent re-derivation reproducing the same three plus naming
+none new that mattered, disposition `carry-forward-and-proceed`. All six findings across both
+rounds routed to `trap.d/` fragments rather than filed, since none sits in a blocking row.
+Nothing below this paragraph was re-derived against `v0.29.1`'s own delta: the range
+`v0.28.0..v0.29.0` is `v0.29.0`'s own delta, already audited, and it changes no fact this section
+states about that delta, cohort freeze, reach probe or field readings. Those stay `v0.29.0`'s own
+readings, cited as such, until the next release re-derives this whole section properly rather than
+patching a marker in place a second time in a row.
 
 **Delta, taken two ways that agree.** The range is `v0.28.0..HEAD`: `git rev-list --count
 v0.28.0..HEAD` returns **13**. `gh pr list --state merged --search "merged:>=2026-09-08T00:32:45Z"`

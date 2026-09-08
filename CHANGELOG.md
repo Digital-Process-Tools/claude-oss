@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-09-08
+
+### Fixed
+
+- Fixed the v0.29.0 release commit's cohort-freeze marker, which paraphrased instead of using
+  `scripts/cohort_citation_order.py`'s exact required citation shape, turning CI red on all 4
+  pytest legs after the tag had already moved. `commands/release.md`'s marker gate now also names
+  `tests/test_cohort_citation_order_1220.py` alongside `tests/test_claude_md_currency.py` (#1299).
+
 ## [0.29.0] - 2026-09-08
 
 ### Added
@@ -10018,7 +10027,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.29.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.29.1...HEAD
+[0.29.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.29.1
 [0.29.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.29.0
 [0.28.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.28.0
 [0.27.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.27.1
