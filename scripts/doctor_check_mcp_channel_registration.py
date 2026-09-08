@@ -527,6 +527,79 @@ def _plugin_channel_consumer_names(plugin_registry_path=None, project_dir=None):
     return names, None
 
 
+def resolvable_plugin_server_name(label):
+    """`_plugin_channel_consumer_names` reports `plugin:<key>:<server>`, built
+    from the installed-plugin registry's own `<name>@<marketplace>` key --
+    which is NOT the name `claude mcp get` or
+    `--dangerously-load-development-channels server:NAME` resolve. Verified
+    live against claude 2.1.261 (#1307's own first open question): `claude
+    mcp get "plugin:supertool@dpt-plugins:claude-channel"` answers "No MCP
+    server named ...", while `claude mcp get "plugin:supertool:claude-channel"`
+    (the bare plugin name, no marketplace) resolves -- confirmed against
+    `claude mcp list`'s own rendering of the identical server on the same
+    machine.
+
+    This strips the first `@<marketplace>` segment out of a label
+    `_plugin_channel_consumer_names` produced, turning it into the name the
+    harness's own MCP surface actually answers to. Kept separate from that
+    function's own label format on purpose: that format is a REPORTING
+    label, asserted verbatim by `tests/test_plugin_channel_consumer_census_
+    1241.py` and rendered into doctor.py's own WARN text, and changing it
+    there would be a much larger, unrelated blast radius for a fact only the
+    arming decision below needs. `count=1`: only the first `@...:` segment
+    (the plugin key's own marketplace separator) is ever removed, never a
+    later `@` a server name might coincidentally contain.
+    """
+    return re.sub(r"@[^:]*(?=:)", "", label, count=1)
+
+
+def plugin_channel_arm_decision(plugin_registry_path=None, project_dir=None):
+    """What should `bin/oss-workspace` do about registering `oss-channel`,
+    given the IN-SCOPE installed-plugin population, asked BEFORE that
+    registration happens (#1307)?
+
+    Registering `oss-channel` unconditionally and only asking the
+    post-registration census afterward (`channel_consumer_census_state`,
+    below) means that census counts the launcher's own just-added
+    registration as a SECOND consumer whenever a plugin already ships one --
+    disarming the channel over the collision the launcher itself just
+    created. This is the same population `_plugin_channel_consumer_names`
+    already derives for that census's own plugin half, asked earlier, before
+    the registration decision rather than after it.
+
+    Returns ``(state, detail)``, four states:
+
+    * ``could-not-ask`` -- the plugin population could not be established
+      (an unreadable or malformed registry, or one plugin's own unreadable
+      `.mcp.json`). `detail` is the reason. Falls back to registering
+      `oss-channel` as before and letting the post-registration census
+      decide -- an unreadable registry must not silently read as "no plugin
+      consumer", which would stop registering the only one there is.
+    * ``none`` -- zero in-scope plugin consumers. Register `oss-channel` as
+      before; nothing else could ever collide with it.
+    * ``single`` -- exactly one. `detail` is ``(label, resolvable_name)`` --
+      `label` is `_plugin_channel_consumer_names`'s own reporting form,
+      `resolvable_name` is `resolvable_plugin_server_name(label)`, the name
+      to actually arm the flag against. Do NOT register `oss-channel`.
+    * ``plural`` -- two or more in-scope plugin consumers already collide
+      with each other, before `oss-channel` is even considered. `detail` is
+      their labels. Do not register `oss-channel` either -- a third racer
+      would not help -- but there is no single target to arm against, so the
+      session opens without the flag.
+    """
+    names, reason = _plugin_channel_consumer_names(
+        plugin_registry_path, project_dir=project_dir
+    )
+    if names is None:
+        return "could-not-ask", reason
+    if not names:
+        return "none", ""
+    if len(names) == 1:
+        label = names[0]
+        return "single", (label, resolvable_plugin_server_name(label))
+    return "plural", names
+
+
 def channel_consumer_names(text):
     """Every MCP server name in `claude mcp list` output whose command/args end in
     the claude-channel consumer script (#810).

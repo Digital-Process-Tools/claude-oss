@@ -1257,6 +1257,88 @@ FIND_CONSUMER
 ) && find_consumer_status=0 || find_consumer_status=$?
 fi
 
+# --- pre-registration plugin-population check: does an installed plugin's --
+# own .mcp.json already provide a claude-channel consumer, in scope, BEFORE
+# oss-channel is even considered? (#1307)
+#
+# Registering oss-channel unconditionally below and asking the #810 census
+# afterward means that census counts THIS launcher's own just-added
+# registration as a second consumer whenever a plugin already ships one --
+# disarming the channel over the collision the launcher itself just created.
+# `plugin_channel_arm_decision`, in
+# scripts/doctor_check_mcp_channel_registration.py, is asked here, before
+# the registration decision, over the exact in-scope population #1241's own
+# `_plugin_channel_consumer_names` already derives for the census's plugin
+# half.
+plugin_channel_state=""
+plugin_channel_target=""
+plugin_channel_label=""
+plugin_channel_names=""
+if [ -n "$python_bin" ]; then
+    plugin_channel_out=$("$python_bin" - "$plugin_root/scripts" "$repo_root" <<'PLUGIN_CHANNEL_PRECHECK'
+import sys
+
+sys.path.insert(0, sys.argv[1])
+project_dir = sys.argv[2]
+
+# `import doctor` FIRST -- the identical circular-import note CHANNEL_CENSUS
+# gives further down: doctor_check_mcp_channel_registration's own top-level
+# does `import doctor`, which imports names BACK out of it, so importing the
+# submodule directly here first crashes before it can answer.
+import doctor
+import doctor_check_mcp_channel_registration as _channel_mod
+
+state, detail = _channel_mod.plugin_channel_arm_decision(project_dir=project_dir)
+print(state)
+if state == "single":
+    label, resolvable = detail
+    print(label)
+    print(resolvable)
+elif state == "plural":
+    for label in detail:
+        print(label)
+elif state == "could-not-ask":
+    print(str(detail).replace("\n", " "))
+PLUGIN_CHANNEL_PRECHECK
+) && plugin_channel_status=0 || plugin_channel_status=$?
+    if [ "$plugin_channel_status" -eq 0 ]; then
+        # Parsed with a plain read loop rather than head/tail/sed: the number
+        # of lines is state-dependent (one for could-not-ask's reason, two
+        # for single's label+target, N for plural's names), and a fixed-line
+        # extractor would need one call per field anyway. `|| [ -n ... ]`
+        # on the loop condition: the LAST line of a command substitution
+        # (which already stripped its own trailing newline) would otherwise
+        # be silently dropped by `read` on a stream with no final newline.
+        plugin_channel_line_n=0
+        while IFS= read -r plugin_channel_line || [ -n "$plugin_channel_line" ]; do
+            plugin_channel_line_n=$((plugin_channel_line_n + 1))
+            if [ "$plugin_channel_line_n" -eq 1 ]; then
+                plugin_channel_state=$plugin_channel_line
+            elif [ "$plugin_channel_state" = "single" ] && [ "$plugin_channel_line_n" -eq 2 ]; then
+                plugin_channel_label=$plugin_channel_line
+            elif [ "$plugin_channel_state" = "single" ] && [ "$plugin_channel_line_n" -eq 3 ]; then
+                plugin_channel_target=$plugin_channel_line
+            elif [ "$plugin_channel_state" = "plural" ]; then
+                if [ -z "$plugin_channel_names" ]; then
+                    plugin_channel_names=$plugin_channel_line
+                else
+                    plugin_channel_names="$plugin_channel_names, $plugin_channel_line"
+                fi
+            elif [ "$plugin_channel_state" = "could-not-ask" ] && [ "$plugin_channel_line_n" -eq 2 ]; then
+                plugin_channel_reason=$plugin_channel_line
+            fi
+        done <<PLUGIN_CHANNEL_LINES
+$plugin_channel_out
+PLUGIN_CHANNEL_LINES
+    else
+        plugin_channel_state=""
+        echo "oss-workspace: could not determine whether an installed plugin" \
+             "already provides a claude-channel consumer for this repo (the" \
+             "check crashed, exit status $plugin_channel_status). Registering" \
+             "$CHANNEL_SERVER as usual; the #810 census below still decides." >&2
+    fi
+fi
+
 # `claude mcp get` answers 0 for any CONFIGURED server, whether or not the file it
 # names still exists -- measured against claude 2.1.219, an entry pointing at a
 # deleted script gets exit 0 and a "Failed to connect" status. So presence is not
@@ -1278,6 +1360,68 @@ fi
 # That shape is not a contract either -- the same command prints no Command/Args at
 # all for a project-scope entry -- which is why failing to find those lines is its
 # own reported state below and not a silent pass.
+if [ "$plugin_channel_state" = "single" ]; then
+    # An installed plugin's own .mcp.json already provides the one in-scope
+    # claude-channel consumer for this repo
+    # (scripts/doctor_check_mcp_channel_registration.py's
+    # `plugin_channel_arm_decision`, asked above, before this registration
+    # decision) -- registering oss-channel on top of it is exactly #1307's
+    # own collision: the #810 census below would then count two and refuse
+    # to arm over the one this launcher just added. Arm against the
+    # plugin's own server instead; oss-channel is never registered in this
+    # branch.
+    channel_registered=0
+    if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
+        channel_registered=1
+    fi
+    if [ "$channel_registered" -eq 1 ]; then
+        # A stale oss-channel left behind by an earlier launcher version is
+        # registered at LOCAL scope only -- the one scope this launcher
+        # itself ever writes to (see the remove-and-add a few lines below,
+        # in the else branch) -- so it is this launcher's own past
+        # registration to clean up, not a maintainer's config to leave
+        # alone. Left in place, it would keep the #810 census counting two
+        # servers (itself plus the plugin consumer) on EVERY future launch,
+        # forever, with no configuration a maintainer could write to clear
+        # it -- the exact permanently-disarmed state #1307 reports,
+        # reproduced for a different reason. Reporting it instead of
+        # removing it was considered and declined: a report with no
+        # corresponding write leaves the channel disarmed on every launch
+        # from here on, which is the bug this fix exists to close, not a
+        # softer version of fixing it.
+        if claude mcp remove "$CHANNEL_SERVER" -s local >/dev/null 2>&1; then
+            echo "oss-workspace: removed the stale MCP server $CHANNEL_SERVER" \
+                 "(local scope) -- $plugin_channel_target already provides" \
+                 "the claude-channel consumer for this repo, and leaving" \
+                 "$CHANNEL_SERVER registered would keep the pre-launch" \
+                 "census counting two servers forever." >&2
+        else
+            echo "oss-workspace: $CHANNEL_SERVER is registered but could not" \
+                 "be removed, so the pre-launch census below will still see" \
+                 "two servers. Run claude mcp remove $CHANNEL_SERVER -s local" \
+                 "by hand." >&2
+        fi
+    fi
+    channel_ready=1
+    echo "oss-workspace: $plugin_channel_target already provides the" \
+         "claude-channel consumer for this repo (declared by an installed" \
+         "plugin's own .mcp.json) -- arming the channel flag against it" \
+         "instead of registering $CHANNEL_SERVER." >&2
+elif [ "$plugin_channel_state" = "plural" ]; then
+    # Two or more installed plugins already collide with each other before
+    # oss-channel is even in the picture -- registering a third racer on
+    # top would only make it worse. Left unregistered; the session opens
+    # without the flag, the same "a board that cannot be verified is not a
+    # board that is armed" call the arms below already make.
+    channel_ready=0
+    echo "oss-workspace: more than one installed plugin already provides a" \
+         "claude-channel consumer for this repo ($plugin_channel_names) --" \
+         "$CHANNEL_SERVER was not registered on top of them. Opening" \
+         "WITHOUT the channel flag; deleting or editing whichever plugin" \
+         "config declared the extra one is not this launcher's call to" \
+         "make." >&2
+else
+
 channel_registered=0
 registered_command=""
 registered_args=""
@@ -1388,6 +1532,8 @@ else
     fi
 fi
 
+fi
+
 # --- pre-launch channel-consumer census: anything ELSE racing for the socket? (#810) --
 #
 # Every arm above verifies THIS session's own oss-channel registration and stops
@@ -1419,10 +1565,11 @@ if [ "$channel_ready" -eq 1 ]; then
              "MCP server also resolves to the claude-channel consumer script" \
              "could not be checked. Opening WITHOUT the channel flag." >&2
     else
-        census_report=$("$python_bin" - "$plugin_root/scripts" <<'CHANNEL_CENSUS'
+        census_report=$("$python_bin" - "$plugin_root/scripts" "$repo_root" <<'CHANNEL_CENSUS'
 import sys
 
 sys.path.insert(0, sys.argv[1])
+project_dir = sys.argv[2]
 # `import doctor` FIRST, never `import doctor_check_mcp_channel_registration`
 # directly -- that module's own top-level does `import doctor`, which in turn
 # imports names BACK out of it (the re-export convention every moved check in
@@ -1432,7 +1579,14 @@ sys.path.insert(0, sys.argv[1])
 # and the whole call crashes before it can answer anything.
 import doctor
 
-state, detail = doctor.channel_consumer_census_state()
+# `project_dir` scopes the plugin-population half the same way
+# `plugin_channel_arm_decision` above already scopes it (#1307 self-review
+# finding): called with no project_dir at all, `_entry_in_scope` treats
+# EVERY project/local-scoped row across every repo this machine ever
+# installed a plugin into as in scope, so an unrelated project's own
+# claude-channel consumer could report a false collision here and disarm a
+# channel that has nothing racing it in THIS repo.
+state, detail = doctor.channel_consumer_census_state(project_dir=project_dir)
 print(state)
 if state == "collision":
     for name in detail:
@@ -1982,12 +2136,23 @@ unset OSS_WORKSPACE_MCP_CHECKED OSS_WORKSPACE_MCP_STATUS OSS_WORKSPACE_MCP_OUTPU
 # Same reason, same terms, for the #810 census relay (#629's shape reapplied).
 unset OSS_WORKSPACE_CENSUS_CHECKED OSS_WORKSPACE_CENSUS_REPORT
 
+# #1307: which name to arm the channel flag against. `oss-channel` unless the
+# plugin-population precheck above found exactly one in-scope plugin-provided
+# consumer and set `plugin_channel_target` to the name that actually resolves
+# ($CHANNEL_SERVER was never registered in that branch, so arming against it
+# here would refuse the launch outright with "no MCP server configured with
+# that name").
+channel_arm_server=$CHANNEL_SERVER
+if [ -n "$plugin_channel_target" ]; then
+    channel_arm_server=$plugin_channel_target
+fi
+
 if [ "$#" -eq 0 ]; then
     # The prompt goes FIRST and the variadic flag LAST. A positional after the
     # flag is read as one of its values, and claude refuses the launch rather than
     # dropping it.
     if [ "$channel_ready" -eq 1 ]; then
-        exec claude "$prompt" "$CHANNEL_FLAG" "server:$CHANNEL_SERVER"
+        exec claude "$prompt" "$CHANNEL_FLAG" "server:$channel_arm_server"
     fi
     exec claude "$prompt"
 fi
@@ -2002,6 +2167,6 @@ echo "oss-workspace: arguments were passed through, so $prompt was NOT appended 
 # The flag trails for the same reason it does above, and it terminates any
 # variadic option the caller passed, being `-`-prefixed.
 if [ "$channel_ready" -eq 1 ]; then
-    exec claude "$@" "$CHANNEL_FLAG" "server:$CHANNEL_SERVER"
+    exec claude "$@" "$CHANNEL_FLAG" "server:$channel_arm_server"
 fi
 exec claude "$@"
