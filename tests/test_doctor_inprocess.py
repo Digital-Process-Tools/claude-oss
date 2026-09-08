@@ -324,16 +324,21 @@ def _quiet_main(monkeypatch):
     # #1318: every one of the checks below spawns a real `git` or `gh`
     # subprocess (`check_interpreter_environment`'s own probe, `check_loop_
     # repository`'s `gh` lookup, `check_gitignore_hides_config`'s `git
-    # check-ignore`, `check_plugin_copy`/`check_label_vocabulary`/`check_
-    # lane_other_label`'s shared `_origin_slug` git call, `check_
-    # dependency_diagnostics`'s own resolution, and the whole `gh api`
-    # family in `doctor_check_branch_protection.py`) and none is examined
-    # by this test's assertions.
+    # check-ignore`, `check_label_vocabulary`/`check_lane_other_label`'s
+    # shared `_origin_slug` git call, `check_dependency_diagnostics`'s own
+    # resolution, and the whole `gh api` family in `doctor_check_branch_
+    # protection.py`) and none is examined by this test's assertions.
+    # `check_plugin_copy` is deliberately NOT in this list (self-review,
+    # #1318): it calls `plugin_provenance()` -- a pure filesystem
+    # comparison, no subprocess anywhere in its own body -- so stubbing it
+    # would have bought no speed while dropping the only place in this
+    # suite that exercises the wrapper's own real wiring around that
+    # helper (`tests/test_tick_plugin_copy_942.py` calls `plugin_
+    # provenance()` directly, never `check_plugin_copy` itself).
     for name in (
         "check_interpreter_environment",
         "check_loop_repository",
         "check_gitignore_hides_config",
-        "check_plugin_copy",
         "check_label_vocabulary",
         "check_lane_other_label",
         "check_dependency_diagnostics",
