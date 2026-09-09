@@ -14,6 +14,18 @@ here once and every one of them drifted, silently, while the page still read as
 current. Names do not rot the way numbers do. If you want a count, count it —
 `ls` is the source of truth and this page is not.
 
+## Why it exists as a package
+
+A maintainer loop written as prose gets copied between repos, and the
+copies drift. Fixing a triage rule then means editing it in three places
+and remembering the third, and repos that never got the copy run no loop
+at all.
+
+This packages the loop once: one skill, the agents it delegates to, a handful of
+commands. Everything that differs between repos -- default branch, label
+spellings, version sites, test command -- lives in a config file the plugin
+writes by probing the repo, not in the prose.
+
 ## Am I inside the goal?
 
 This page exists so that a question about a piece of work has an answer that is
