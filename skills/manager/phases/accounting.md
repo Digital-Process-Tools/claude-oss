@@ -274,13 +274,19 @@ needs a terminating condition* -- is the maintainer's own act, by hand, in the s
 tag; the triager must never write a `cohort-*` label. The triage sweep is a separate step that
 follows the freeze, run over the tracker's priority and lane labels, never over cohorts.
 
-**The last-triaged half is enforced, the label-coverage half is not (#855).**
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --triage-recorded AT`, run
-whenever a sweep completes, and `--last-triage`, which any tick can call to read `last triaged: <ISO>
-/ never / could-not-read` back -- `never` is a real, established absence and `could-not-read` is not
-the same fact, the same distinction every other reader in that file draws. Reporting how much of the
-open board carries no priority label at all -- so "the board is triaged" is a measurement rather than
-a memory -- is still unbuilt.
+**The last-triaged half is recorded, read, and now consumed (#855, #1386); the label-coverage half
+is still unbuilt.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file>
+--triage-recorded AT`, run whenever a sweep completes, and `--last-triage`, which any tick can call
+to read `last triaged: <ISO> / never / could-not-read` back -- `never` is a real, established absence
+and `could-not-read` is not the same fact, the same distinction every other reader in that file
+draws. A sub-manager cannot act on either reading itself -- it dies with its own context at the end
+of its tick and cannot count ticks or releases across spawns -- so the trigger built on top of it,
+`scripts/triage_trigger.py`, is read by the scheduler, at the one point that spans ticks: the
+`RELEASE: released` handback in `commands/tick.md`, not here. This file states what the two flags
+mean; that other file states when they are acted on, so there is one place to keep each in sync.
+Reporting how much of the open board carries no priority label at all -- so "the board is triaged" is
+a measurement rather than a memory -- is still unbuilt and is a separate piece of work from the
+trigger above.
 
 **Curation has an owner and a trigger now (#1303).** #1155's threshold routes already open
 `bin/oss-workspace` with `/oss:curate` once `trap.d/` crosses `curate_route_threshold` -- the key

@@ -124,8 +124,8 @@ surface.
 Cadence is config, not memory. `.oss.json` carries the thresholds the loop
 tests itself against — how many merged pull requests and how many hours of soak
 before a release is due, how full `trap.d/` has to get before a curation pass is
-routed. Read them from the file; they differ per repo and this page must not
-name their values.
+routed, whether a triage sweep is due once a release lands. Read them from the
+file; they differ per repo and this page must not name their values.
 
 A cadence step with a threshold in config is one the loop reaches by itself. A
 cadence step written only in prose is one somebody has to remember.
