@@ -172,6 +172,22 @@ by the time step 7 would run. It stays here, unmoved.
    the `TICK-ENDS:` field directly (#773) rather than parsing the paragraph for it: `work-started`
    keeps working, `blocked` and `nothing-left` both arm the wakeup below.
 
+   **`work-started` does not by itself mean "spawn a fresh sub-manager" (#1349).** A task
+   notification firing is not the same fact as this agent's turn having ended permanently — the
+   same spawn can notify more than once, and a sub-manager with more work left renders identically,
+   at the notification layer, to one that is genuinely done. "Keep working" can mean **the same
+   sub-manager continuing**, not always a new spawn: check which is true before spawning a second
+   one. `ListAgents` first — if the sub-manager spawned earlier this tick is still listed as live,
+   it is already continuing and no further action is needed here; do not spawn a second one over the
+   same board. Only when `ListAgents` shows it gone, confirm with one `SendMessage` status probe
+   carrying this tick's spawn token addressed to it and wait one turn for a refusal-to-deliver
+   before concluding it is actually finished and spawning a fresh `oss:sub-manager`. Observed
+   2026-09 (#1349): skipping this check let a `work-started` notification spawn a second
+   sub-manager while the first kept running — both ran concurrently over the same board for about
+   an hour, duplicating cost and nearly dispatching a fix for a pull request another live session
+   already owned, because the same task-id notified again ~50 minutes later with more work done in
+   between.
+
    **On `paused` (#818), this session does the waiting the sub-manager could not.** It holds the two
    things a `paused` handback names as missing — the channel connection and `ScheduleWakeup` — so wait
    on the channel event this tick's own dispatch already arms a poller for (step 2's heal), or arm a

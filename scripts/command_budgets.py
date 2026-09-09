@@ -63,7 +63,18 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Nothing already in the file argued that point, so there was nothing
     # safe to cut in its place; the ceiling moves to 20100 B, ~10% headroom
     # over the new size.
-    "commands/tick.md": (18276, 20100),
+    # Re-baselined for #1349, without raising the ceiling: 18276 B became
+    # 19645 B, still under the 20100 B budget. Step 7's `work-started`
+    # handling used to read a sub-manager's task-notification as "the tick
+    # is over" and spawned a second sub-manager on it -- but a
+    # task-notification firing is not the same fact as that agent's turn
+    # having ended permanently, since the same spawn can notify more than
+    # once. The new paragraph says "keep working" can mean the same
+    # sub-manager continuing, and gives a concrete check (ListAgents, then
+    # a SendMessage status probe carrying the spawn token) to tell that
+    # apart from a genuinely finished one before spawning a fresh
+    # oss:sub-manager.
+    "commands/tick.md": (19645, 20100),
 }
 
 

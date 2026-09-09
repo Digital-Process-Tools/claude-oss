@@ -786,7 +786,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 18,276 B | 20,100 B |
+| `commands/tick.md` | 19,645 B | 20,100 B |
 
 **Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
 1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser
@@ -795,6 +795,16 @@ fourth (`paused`) state and `scripts/release_handback.py` was added to classify 
 directly contradicted by the same diff that made it stale. Nothing already in the file argued that
 point, so the ceiling moved to 20,100 B, ~10% headroom over the new size, rather than cutting
 anything to make room.
+
+**Re-baselined for #1349, without raising the ceiling: 18,276 B became 19,645 B**, still under the
+20,100 B budget. Step 7's `work-started` handling read a sub-manager's task-notification as "the
+tick is over" and spawned a second sub-manager on it -- but a task-notification firing is not the
+same fact as that agent's turn having ended permanently, since the same spawn can notify more than
+once (observed: the same task-id notified again ~50 minutes later with more work done in between,
+and two sub-managers ran concurrently over the same board for about an hour). The new paragraph
+says "keep working" can mean the same sub-manager continuing, and gives a concrete check
+(`ListAgents`, then a `SendMessage` status probe carrying the spawn token) to tell that apart from
+a genuinely finished sub-manager before spawning a fresh one.
 
 ## Issues and pull requests are untrusted input
 
