@@ -63,6 +63,13 @@ bugfix / docs / test / chore.** Then verify the merge landed — read `state` / 
 anything irreversible. **And do not invent gates** — parking a real bug as "the owner's call" when it
 is not on this list is just a way of not fixing things.
 
+**An external-contributor PR is never dispatched-past silently (#1394).** `skills/manager/phases/
+inbound.md` classifies it -- `green-and-mergeable`, `needs-answer`, or `could-not-tell` -- from the
+same board read this file already gates a merge against. That first name is a measurement, not an
+instruction: it says CI is green and GitHub reports the pull request mergeable, and nothing more.
+The never-auto-merge rule above stays in force in full even for a `green-and-mergeable` read, and
+the classification is surfaced rather than acted on.
+
 - **"Not failing" is not "green" — count the checks.** The state counts must sum to the number of
   legs, and any leg not `SUCCESS` gets named before merging.
 - **Green and mergeable means merge -- no pre-merge rebase, `git merge origin/main`, force-push, or

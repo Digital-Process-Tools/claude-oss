@@ -142,7 +142,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # /oss:manager; it is a library loaded by commands/tick.md and
         # commands/release.md via Skill(manager), never an entry point.
         # Budget unchanged; comfortably under it.
-        41739,
+        # Re-baselined for #1394: 41739 B became 42837 B -- the new "Inbound,
+        # before anything new" directive block and its table row point a tick
+        # at skills/manager/phases/inbound.md before dispatch. Budget
+        # unchanged; comfortably under it.
+        42837,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -377,8 +381,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-baselined for #1162: 13985 B became 14230 B -- one paragraph pointing
     # the "fully green" bullet at ci-green.md's own subject rather than
     # restating it. Budget unchanged; comfortably under it.
+    # Re-baselined for #1394: 14230 B became 14621 B -- the never-auto-merge
+    # line now points an external-contributor PR at phases/inbound.md's own
+    # classification instead of leaving it as a dead-end sentence. Budget
+    # unchanged; comfortably under it.
+    # Re-baselined for #1394's own maintainer review: 14621 B became 14776 B
+    # -- the same ready-to-merge -> green-and-mergeable rename, plus one
+    # sentence stating why the old name was a verdict. Budget unchanged.
     "skills/manager/phases/merge.md": (
-        14230,
+        14776,
         15400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),
@@ -396,6 +407,21 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         2646,
         2700,
         "the pr_green.py wait, its four states, and the #1086 substring trap -- shared by a sub-manager merging and a releaser landing gate 3's own fix",
+    ),
+    # New for #1394: the loop had no owner anywhere for work that arrives from
+    # outside -- an issue nobody filed on our behalf, an external pull
+    # request, or a comment. This file classifies each into a closed set of
+    # outcomes (six refusal reasons, four PR states, answered/needs-answer)
+    # and states the boundary explicitly: it surfaces, #1395's queue acts.
+    # ~10% headroom over the measured 6262 B, same terms as every other row.
+    # Re-baselined for #1394's own maintainer review: 6262 B became 6533 B --
+    # `ready-to-merge` renamed to `green-and-mergeable` (a returned string
+    # that names the one act merge.md forbids absolutely is a verdict, not a
+    # measurement). Budget unchanged; comfortably under it.
+    "skills/manager/phases/inbound.md": (
+        6533,
+        6900,
+        "classifying what arrived from outside: refusing an issue with a stated reason, an external pull request's readiness, and an unanswered comment -- never performing the act itself (#1394)",
     ),
     # Re-baselined for #1014: 10381 B on disk against a stale 10195 declared
     # baseline. Budget unchanged; comfortably under it either way.
@@ -548,7 +574,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # oss_state.py/agent_role.py calls, and agent_role.py's own CLI now
         # names a real disk-write/unlink failure rather than folding it into
         # "not a git repository". Budget unchanged; comfortably under it.
-        34266,
+        # Re-baselined for #1394: 34266 B became 34816 B -- step 3 gained a
+        # paragraph pointing at the new phases/inbound.md file, since inbound
+        # work outranks the loop's own findings the same way an unmerged PR
+        # or a red default branch already does. Budget unchanged.
+        34816,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
