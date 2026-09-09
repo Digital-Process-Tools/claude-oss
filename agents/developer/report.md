@@ -258,4 +258,12 @@ says it did; a `pushed` of false is recorded, not verified. The schema's `x-enfo
 `x-convention` lists say exactly which is which — the honest split is written down there rather than
 implied here.
 
+**`review.mechanism` has a `minLength` (#1333).** Name what actually ran there, not just once but
+in enough words to say something: an empty or one-word `mechanism` alongside a claimed-clean
+`review.findings` is refused, because that pairing is literally no evidence a reviewer ran at all —
+the narrow half of that gap this schema can close. It is still not proof: nothing here can see
+whether `Explore` or `oss:auditor` actually spawned, and the `not-checked` state (with its required
+`reason`) is still the honest answer when the `Agent` tool is unreachable in your own session,
+never `checked` with a thin `mechanism` written to get past this floor.
+
 No preamble, no retrospective, no restating the brief — in `summary` or in the two lines.

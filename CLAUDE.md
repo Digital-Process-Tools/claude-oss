@@ -416,7 +416,7 @@ only the lane can report.
 | --- | --- | --- |
 | `agents/developer/review.md` | 11,486 B | 11,600 B |
 | `agents/developer/review-return.md` | 12,465 B | 13,700 B |
-| `agents/developer/report.md` | 18,286 B | 19,100 B |
+| `agents/developer/report.md` | 18,942 B | 19,100 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
 
@@ -425,6 +425,18 @@ only the lane can report.
 `${CLAUDE_PLUGIN_ROOT}` it validated against in a new optional `plugin_root` field, so a sub-manager
 later seeing `UNVALIDATABLE` on that report can attribute it to a mid-tick plugin update rather than
 an uncaused schema mismatch.
+
+**#1333 re-baselined `agents/developer/report.md` again, without raising its ceiling**: 18,286 B
+became 18,942 B, still under the 19,100 B budget. A lane dispatched against a different repo
+reported back that its own runtime session held no `Agent`/`Task` tool at all, so neither reviewer
+spawn `agents/developer/review.md` requires could run -- it correctly reported that gap as
+`not-checked` rather than a clean pass. Proving a spawn actually ran is not reachable from a JSON
+validator (the schema's own `x-convention` entry says so and this does not retire it), but nothing
+previously stopped `review.mechanism` -- a required field -- from being an empty string paired with
+a claimed-clean `review.findings`, which is literally no evidence at all. `schemas/agent-report.
+schema.json` gained a `minLength` (20) on `mechanism` (contract 12, breaking, the same shape as
+#1298's own bump at 11), and the new paragraph documents it beside the existing "shape, not truth"
+disclaimer. Nothing already in the file argued that point, so nothing was cut to make room.
 
 **#1275 raised `agents/developer/review.md`'s ceiling from 10,500 B to 11,600 B**: 10,132 B became
 10,576 B, past the old ceiling by 76 B. Both self-review spawns (the `Explore` reviewer and

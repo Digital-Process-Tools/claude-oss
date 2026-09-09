@@ -74,6 +74,7 @@ _KEYWORDS = {
     "enum",
     "pattern",
     "maxLength",
+    "minLength",
     "required",
     "properties",
     "additionalProperties",
@@ -263,6 +264,15 @@ CONTRACT_FINGERPRINTS = {
     # Bounding it here, at the schema, means every consumer inherits the guard
     # rather than each one having to remember it.
     11: "505afd08f484bf37fd9e520783c9cbf2a7424fae7b032328dd07794069beb15a",
+    # 12 (#1333): review.mechanism gains a `minLength` (20). BREAKING, the same
+    # shape as #1298's bump at 11: the field is not new, so there is no way to
+    # scope the tightening to something only a new document could spell -- a
+    # version-11 report whose mechanism happened to be empty or near-empty was
+    # valid under 11 and is refused under 12. This is the narrow, mechanically
+    # reachable half of #1333: nothing here can prove a reviewer spawn actually
+    # ran (x-convention still says so), but a report can no longer pair a
+    # claimed-clean review with a mechanism string that describes nothing.
+    12: "6a686c3970135d8e1bf73cd5383163b2cb58901b49ea3c6bca71ff122e40b00f",
 }
 
 _TYPES = {
@@ -657,6 +667,20 @@ def _walk(value, sub, root, path, errors, rules):
             errors.append(
                 "{}: {} characters, longer than the {} limit".format(
                     _label(path), len(value), sub["maxLength"]
+                )
+            )
+        if "minLength" in sub and len(value) < sub["minLength"]:
+            # #1333: mechanism was required but unbounded, so an empty or
+            # near-empty string satisfied "type: string" while describing
+            # nothing -- the narrow, mechanically reachable half of "no
+            # evidence a reviewer actually ran" (see the x-convention entry
+            # this does NOT retire: nothing here can see whether a spawn
+            # actually happened, only whether the field claims anything at
+            # all).
+            errors.append(
+                "{}: {} characters, shorter than the {} minimum -- too short "
+                "to describe what actually ran".format(
+                    _label(path), len(value), sub["minLength"]
                 )
             )
         if "pattern" in sub and re.fullmatch(sub["pattern"], value) is None:
