@@ -814,6 +814,111 @@ def update(
     # the manifest was read and said what it declares. The two must stay distinguishable,
     # which is why this is written even when the list is empty.
     document["dependencies_unreadable"] = dependencies_status == "unreadable"
+    # #1381: this run is what moved the installed version, so it is what falsified the
+    # cached `latest` comparison the status line renders. Clearing it here rather than
+    # shortening its clock -- a shorter clock only narrows the window, since the
+    # falsifying event can land one second after any poll, while the actor that caused
+    # it knows exactly when it happened. Recorded on the receipt in every state; never
+    # fatal to the update, which is the subject of this function.
+    record_latest_cache(document, root=root)
+    return document
+
+
+def invalidate_latest_after_update(document, root=None):
+    """Clear the cached `latest` reading when this run actually moved a version (#1381).
+
+    `scripts/statusline.py` caches the newest published Release of the loop plugin and
+    of every dependency it renders currency for, on its own hour-long clock. This
+    function moves the *installed* version. So this is the actor that falsifies the
+    comparison, and clearing it here is the same principle `/oss:release` already
+    follows by calling `invalidate_latest_cache` the moment a Release is created --
+    applied to the other half of the comparison rather than to a new one.
+
+    The cache cleared is the OSS PLUGIN'S OWN, at `statusline.cache_path(<the managed
+    repo>)` under `~/.cache/oss-statusline/`. A dependency's row inside it is a reading
+    this plugin took about a repo it chose to render; nothing here reaches into another
+    plugin's state, and nothing here may grow to.
+
+    Four states, and the last two are kept apart deliberately:
+
+    * ``invalidated`` -- something moved and the cached reading was cleared.
+    * ``not-needed`` -- nothing was updated, so the reading is still true. A decision,
+      not a skip.
+    * ``could-not-invalidate`` -- something moved and the cache could not be located or
+      cleared: no `.oss.json` under `root`, one that would not read or parse, one
+      carrying no `repo`, or an invalidation that failed. Never folded into
+      ``not-needed``: a stale reading nobody could clear and a reading deliberately left
+      alone are different facts with different remedies.
+    * ``could-not-check`` -- `statusline` itself would not import, so whether anything
+      needed clearing was never established.
+
+    Deliberately does NOT re-fetch. Clearing marks the reading due, and the next status
+    line render takes a fresh one on its own; performing a network read inside the
+    updater would put it on `bin/oss-workspace`'s pre-`exec claude` critical path,
+    against the two-minutes-to-useful clock.
+    """
+    states = [document.get("state")]
+    states.extend(entry.get("state") for entry in (document.get("dependencies") or []))
+    if "updated" not in states:
+        return {"state": "not-needed", "reason": "nothing was updated by this run"}
+
+    try:
+        import statusline
+    except (
+        Exception
+    ) as exc:  # pragma: no cover -- an import failure is not reproducible
+        return {
+            "state": "could-not-check",
+            "reason": "statusline would not import ({})".format(exc),
+        }
+
+    path = Path(root or ".") / ".oss.json"
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return {
+            "state": "could-not-invalidate",
+            "reason": "{} could not be read or parsed ({})".format(path, exc),
+        }
+    repo = config.get("repo") if isinstance(config, dict) else None
+    if not isinstance(repo, str) or not repo.strip():
+        return {
+            "state": "could-not-invalidate",
+            "reason": "{} carries no `repo`, so the cache file it would name could "
+            "not be derived".format(path),
+        }
+
+    try:
+        result = statusline.invalidate_latest_cache(repo)
+    except Exception as exc:  # pragma: no cover -- defensive; never fatal to an update
+        return {
+            "state": "could-not-invalidate",
+            "reason": "invalidate_latest_cache({}) raised ({})".format(repo, exc),
+        }
+    # `invalidate_latest_cache` has its own vocabulary (`invalidated`, and a state for a
+    # cache that was not there). Only its own `invalidated` is reported as ours; every
+    # other answer is carried through verbatim rather than translated, so a cache that
+    # did not exist never renders as one this run cleared.
+    if (result or {}).get("state") == "invalidated":
+        return {"state": "invalidated", "repo": repo, "detail": result.get("detail")}
+    return {
+        "state": "could-not-invalidate",
+        "repo": repo,
+        "reason": "invalidate_latest_cache answered {}".format(
+            (result or {}).get("state")
+        ),
+    }
+
+
+def record_latest_cache(document, root=None):
+    """Run the above and write its answer onto the receipt under `latest_cache`.
+
+    An absent key means a receipt written before this existed -- nothing looked. That
+    is a different fact from a run that looked and reported `not-needed`, and the two
+    must stay distinguishable, which is the same reasoning `dependencies_unreadable`
+    carries a few lines up.
+    """
+    document["latest_cache"] = invalidate_latest_after_update(document, root=root)
     return document
 
 
