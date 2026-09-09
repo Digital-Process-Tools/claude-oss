@@ -305,6 +305,35 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      when they agree; a disagreement between two completions of one dispatch is itself a finding
      about this gate, reported as one, and never settled by which identifier happened to match.
 
+   **Compare the checklist in effect against what `checklist_skew.py` measured (#1328).** The
+   spawn resolves its own system prompt through the harness's own plugin registration -- a
+   SEPARATE mechanism from the `--plugin-root` this gate passed `checklist_skew.py` above, and it
+   can point at an older cached copy. v0.29.0's own gate 3 ran this way: `checklist_skew.py`
+   reported `installed_version=0.27.1`, but the auditor's own "checklist in effect" line named
+   `0.26.0` -- two minors behind, one worse than the payload said, and nobody compared the two
+   until it was reasoned through by hand afterward. Pull the auditor's own "checklist in effect:
+   ..." line out of its report and run:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --compare-effect \
+     --installed-version "<the installed_version value recorded from the payload above, verbatim>" \
+     --effect-line "<the auditor's own 'checklist in effect: ...' line, verbatim>" --json
+   ```
+
+   **Substitute both values by hand, the same way `<the new version>` is substituted elsewhere in
+   this file** — a bash variable set in the fenced block above does not survive into a separate
+   Bash tool call (the same lesson #789's own fix already states for `$GATE3_ROOT`), so this is
+   not `$INSTALLED_VERSION` naming a real shell variable. Three states, quote all of them in the
+   release report: **`effect-matches`** — name the version once, nothing
+   more to do. **`effect-differs`** — name both versions; this is the class of skew #1328 names,
+   report it as a **config finding** the same way a `differs`/`definitions` row above is one, and
+   never silently accept the spawn's own claim about its vintage. **`effect-could-not-tell`** — the
+   auditor did not report the line, reported its own "could not tell", or the line named no
+   version-shaped token; quote the `reason`. This still **annotates and never blocks** — the same
+   contract as `checklist_skew.py`'s own comparison above — because a spawn genuinely may be
+   running an older copy for reasons this gate cannot fix mid-release, but a skew unreported here
+   is a skew nobody will ever see again once the round is over.
+
    **A `clean` verdict counts the classes graded `clean (read)` rather than `clean (exercised)`**,
    and carries that count on its own verdict line as `<k> of <m> classes read but not exercised`.
    Both grades are defined in `${CLAUDE_PLUGIN_ROOT}/agents/release-auditor.md`; no class is graded
