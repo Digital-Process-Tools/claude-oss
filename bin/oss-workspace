@@ -1297,8 +1297,28 @@ project_dir = sys.argv[2]
 # submodule directly here first crashes before it can answer.
 import doctor
 import doctor_check_mcp_channel_registration as _channel_mod
+import doctor_check_mcp_channel_connection as _live_mod
 
 state, detail = _channel_mod.plugin_channel_arm_decision(project_dir=project_dir)
+if state == "single":
+    # #1361: `single` means a plugin DECLARES a consumer, not that the harness
+    # starts one. When it does not -- disabled by the plugin, rejected by the
+    # harness, a cached connect failure never retried -- declining to register
+    # oss-channel here and arming against that name composes two correct
+    # decisions into zero consumers, and nothing downstream reports it: the
+    # census counts one configured server and calls it no collision. So the
+    # decline is now conditional on the declared server actually being live.
+    # `could-not-ask` deliberately keeps the old behaviour: an unread answer is
+    # not evidence the declared consumer is dead, and registering a second
+    # server on it recreates the exact collision #1307's decline exists to
+    # avoid.
+    _label, _resolvable = detail
+    _live_state, _live_detail = _live_mod.arm_target_liveness(_resolvable)
+    if _live_state == "failed":
+        print("declared-but-not-live")
+        print(_resolvable)
+        print(str(_live_state) + ": " + " ".join(str(_live_detail).splitlines()))
+        raise SystemExit(0)
 print(state)
 if state == "single":
     label, resolvable = detail
@@ -1336,6 +1356,25 @@ PLUGIN_CHANNEL_PRECHECK
                 ;;
             could-not-ask)
                 plugin_channel_reason=$(printf '%s\n' "$plugin_channel_rest" | sed -n '1p')
+                ;;
+            declared-but-not-live)
+                # #1361: exactly one installed plugin declares a claude-channel
+                # consumer, and the harness does not have it live -- so arming
+                # against it would open a session with no consumer at all,
+                # while the decline below would suppress the one registration
+                # that could still provide one. Falls through to the `else`
+                # branch, which registers $CHANNEL_SERVER as it did before
+                # #1307 -- correct here precisely because the declared server
+                # is not holding the socket.
+                plugin_channel_target=$(printf '%s\n' "$plugin_channel_rest" | sed -n '1p')
+                plugin_channel_reason=$(printf '%s\n' "$plugin_channel_rest" | sed -n '2p')
+                echo "oss-workspace: an installed plugin declares the" \
+                     "claude-channel consumer ($plugin_channel_target) but the" \
+                     "harness does not have it live ($plugin_channel_reason)," \
+                     "so arming against it would open a session with no" \
+                     "consumer. Registering $CHANNEL_SERVER instead; the #810" \
+                     "census below still decides." >&2
+                plugin_channel_target=""
                 ;;
         esac
         # The check RAN (exit 0) but could not establish the plugin
@@ -1649,6 +1688,20 @@ if [ "$channel_ready" -eq 1 ]; then
              "MCP server also resolves to the claude-channel consumer script" \
              "could not be checked. Opening WITHOUT the channel flag." >&2
     else
+        # #1361: ask `claude mcp list` ONCE, here, and relay the raw answer to
+        # every reader that needs it -- the census below (names) and doctor's
+        # own connection check (the connection status on the same rows). Each
+        # asking for itself made a launch pay for three starts of a binary
+        # measured at ~1.3s, and `test_the_launcher_relays_its_own_census_to_
+        # doctor_sh_rather_than_asking_twice` counts them. Same relay shape as
+        # OSS_WORKSPACE_MCP_CHECKED (#629) and OSS_WORKSPACE_CENSUS_CHECKED
+        # (#810); unset before `exec` alongside those, for the reason stated
+        # there. A failed or unavailable ask exports nothing, so every reader
+        # falls through to its own ask and its own could-not-ask state rather
+        # than reading an empty relay as an empty listing.
+        if mcp_list_output=$(claude mcp list 2>&1); then
+            export OSS_WORKSPACE_MCP_LIST_OUTPUT="$mcp_list_output"
+        fi
         census_report=$("$python_bin" - "$plugin_root/scripts" "$repo_root" <<'CHANNEL_CENSUS'
 import sys
 
@@ -1670,7 +1723,34 @@ import doctor
 # installed a plugin into as in scope, so an unrelated project's own
 # claude-channel consumer could report a false collision here and disarm a
 # channel that has nothing racing it in THIS repo.
-state, detail = doctor.channel_consumer_census_state(project_dir=project_dir)
+# #1361: `claude mcp list` is asked ONCE here and its output handed to both
+# readers, rather than each calling it for itself. The census below needs the
+# names; doctor's own connection check needs the connection statuses on the
+# same rows, and `test_the_launcher_relays_its_own_census_to_doctor_sh_rather_
+# than_asking_twice` counts the calls a whole launch makes. `claude` is not a
+# cheap binary to start, and this is the identical economy #629 and #810
+# already applied to the two asks either side of it.
+import os
+
+_list_text = os.environ.get("OSS_WORKSPACE_MCP_LIST_OUTPUT", "")
+_claude = "claude"
+
+
+def _replay(argv, **kwargs):
+    """The captured answer, replayed to a reader that would otherwise ask."""
+
+    class _Completed(object):
+        returncode = 0
+        stdout = _list_text
+
+    return _Completed()
+
+
+state, detail = doctor.channel_consumer_census_state(
+    project_dir=project_dir,
+    run=_replay if _list_text else None,
+    which=(lambda _n: _claude) if _list_text else None,
+)
 print(state)
 if state == "collision":
     for name in detail:
@@ -2219,6 +2299,11 @@ fi
 unset OSS_WORKSPACE_MCP_CHECKED OSS_WORKSPACE_MCP_STATUS OSS_WORKSPACE_MCP_OUTPUT
 # Same reason, same terms, for the #810 census relay (#629's shape reapplied).
 unset OSS_WORKSPACE_CENSUS_CHECKED OSS_WORKSPACE_CENSUS_REPORT
+# #1361's own relay, unset here for the same reason the two above are: a
+# session that inherited it would read a session-open reading as its own,
+# arbitrarily later, which is the stale-reading trap this repo has paid for
+# three times over.
+unset OSS_WORKSPACE_MCP_LIST_OUTPUT
 # Same reason, same terms, for #1307's own single-plugin-consumer relay
 # (#1343): left exported, `check_mcp_channel_registration`'s in-session
 # `/oss:doctor` would go on reading a launch-time arm decision as though it

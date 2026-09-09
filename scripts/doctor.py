@@ -3593,6 +3593,17 @@ from doctor_check_channel_health_agreement import (
     resolve_channel_health_reading,
 )
 
+# check_mcp_channel_connection and check_channel_delivery live in
+# scripts/doctor_check_mcp_channel_connection.py (#1361) -- new checks, so they
+# never go inline in doctor.py at all; see the per-check module convention at
+# the top of this file. Every channel check above answers a question strictly
+# upstream of delivery, and on #1361's own incident all of them were OK or WARN
+# cosmetic while nothing reached a session at all.
+from doctor_check_mcp_channel_connection import (
+    check_channel_delivery,
+    check_mcp_channel_connection,
+)
+
 # check_statusline_unknowns lives in
 # scripts/doctor_check_statusline_unknowns.py (#1311) -- a new check, so it
 # never goes inline in doctor.py at all; see the per-check module convention
@@ -9312,6 +9323,15 @@ def main(argv=None):
     # comparing them. Placed right after it for the same reason #810 placed
     # its own check beside the registration checks above.
     check_channel_health_agreement(project_dir)
+    # #1361: every check above answers a question upstream of delivery -- which
+    # name resolves, whether a registration exists, whether its file is present
+    # and current, whether two servers race one socket. None asks whether the
+    # transport is live or whether anything is subscribed, and on #1361's own
+    # incident the census reported `1 MCP server ... no socket collision to
+    # declare` about a server the harness had already rejected. A registration
+    # is not a consumer, and a consumer is not a subscriber.
+    check_mcp_channel_connection()
+    check_channel_delivery(project_dir)
     # #1311: neither check above (nor `check_watch_channel`) explains WHY the
     # statusline renders `ch?` or `unk` for the channel and default-branch
     # fields -- both fold several distinct causes into one glyph, discarding
