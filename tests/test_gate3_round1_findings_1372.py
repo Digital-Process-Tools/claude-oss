@@ -10,7 +10,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
-import doctor  # noqa: E402  -- first, per the circular-import convention
+# `doctor` is imported for its SIDE EFFECT and binds no name this file uses, so
+# ruff reads it as dead (F401) and it is not: importing
+# `doctor_check_mcp_channel_*` first, without it, raises `ImportError ... most
+# likely due to a circular import`, because doctor.py imports names back out of
+# those modules. Both codes are silenced deliberately rather than by reflex --
+# E402 for the sys.path insert above it, F401 for the unused binding.
+import doctor  # noqa: E402,F401
 import doctor_check_mcp_channel_connection as conn  # noqa: E402
 import doctor_check_mcp_channel_registration as reg  # noqa: E402
 import statusline  # noqa: E402
