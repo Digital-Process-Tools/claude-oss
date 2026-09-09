@@ -357,3 +357,62 @@ def test_an_absent_or_blank_relay_falls_through_rather_than_reading_as_empty():
         )
         assert state == "connected"
     assert len(asked) == 2
+
+
+# ------------------------------------------- a live consumer holds the socket
+
+
+def test_a_failed_row_renders_the_harness_reason_rather_than_a_literal_brace():
+    """The WARN carried `({})` verbatim on a real run: the message names a
+    substitution and no `.format` call was made, so the harness's own reason --
+    the only part of the line a reader can act on -- was never rendered."""
+    conn.check_mcp_channel_connection(
+        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _name: "/usr/bin/claude",
+        env={},
+        resolve=lambda _root: ("not_delivering", "cached", 3),
+    )
+    assert _levels() == ["WARN"]
+    assert "({})" not in _text()
+    assert "CONNECTION_CLOSED" in _text()
+
+
+def test_a_failed_row_beside_a_forwarding_consumer_is_not_a_fault():
+    """`claude mcp list` forks its OWN consumer to produce a status, and that
+    fork cannot bind a socket the live consumer already holds -- so it exits
+    CONNECTION_CLOSED and every row reads `failed` on a machine that is
+    delivering correctly. Observed on this repository at v0.31.0: both rows
+    failed here while the bound consumer was verified, subscribed, and
+    forwarded a `channel:probe` into the asking session. No manual op and no
+    `/oss:scaffold` run clears that WARN, which by #1065 makes it a bug in the
+    check."""
+    conn.check_mcp_channel_connection(
+        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _name: "/usr/bin/claude",
+        env={},
+        resolve=lambda _root: ("forwarding", "cached", 4),
+    )
+    assert _levels() == ["OK"]
+    assert "forwarding" in _text()
+
+
+def test_a_failed_row_with_no_usable_health_reading_still_warns():
+    """The positive control for the arm above: the suppression is earned by a
+    reading that positively establishes delivery, never by the absence of one.
+    A stale or missing `channel:health` answers nothing, so the failed rows
+    stand on their own and the WARN stands with them."""
+    for reading in (
+        ("not_delivering", "cached", 3),
+        (None, None, None),
+        ("forwarding", "cached-stale", 900),
+    ):
+        doctor.FINDINGS.clear()
+        conn.check_mcp_channel_connection(
+            run=lambda *a, **k: type(
+                "C", (), {"returncode": 0, "stdout": FAILED_ROW}
+            )(),
+            which=lambda _name: "/usr/bin/claude",
+            env={},
+            resolve=lambda _root, _r=reading: _r,
+        )
+        assert _levels() == ["WARN"], reading

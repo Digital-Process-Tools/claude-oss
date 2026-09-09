@@ -206,13 +206,19 @@ def _classify_listing(text):
     )
 
 
-def check_mcp_channel_connection(run=None, which=None, env=None):
+def check_mcp_channel_connection(
+    run=None, which=None, env=None, project_dir=None, resolve=None
+):
     """One line, in every state -- see `mcp_channel_connection_state`.
 
     `OK` here means the transport is live. It does not mean an event reaches
     this session: subscription is a fact about the session that took the
     reading, which supertool's own `channel:health` answers and this does not
     duplicate.
+
+    `resolve` is the cached `channel:health` reading, injected exactly as
+    `check_channel_delivery` injects it and read for one arm only: a `failed`
+    listing beside a `forwarding` consumer. See that arm for why.
     """
     state, detail = mcp_channel_connection_state(run=run, which=which, env=env)
     if state == "could-not-ask":
@@ -262,18 +268,79 @@ def check_mcp_channel_connection(run=None, which=None, env=None):
         )
         return
     if state == "failed":
+        # #1379: a `failed` listing is NOT a fault when a consumer is live and
+        # forwarding, and the reason is this check's own OK text read to its
+        # conclusion. `claude mcp list` FORKS ITS OWN consumer to produce each
+        # status; the claude-channel consumer binds an exclusive unix socket;
+        # so once a real consumer holds that socket, the fork cannot bind it,
+        # exits, and every row reads `Failed to connect -- CONNECTION_CLOSED`.
+        # On a delivering machine this instrument reports failure BY
+        # CONSTRUCTION, and it reports it for the working server too.
+        #
+        # Observed on this repository at v0.31.0: both rows failed here while
+        # the bound consumer was socket-holder verified, the session was
+        # subscribed, and a `channel:probe` emitted in that window arrived in
+        # the asking session -- the one leg no process outside a session can
+        # see. Roughly five hours went into a delivery failure that was not
+        # happening, and the remedy this line printed (`lsof` the socket, kill
+        # the holder) pointed at the live consumer: following it would have
+        # broken delivery to satisfy a report. No manual op and no
+        # `/oss:scaffold` run clears that WARN, which by #1065 makes it a bug
+        # in the check rather than work for the maintainer.
+        #
+        # The suppression is earned by a reading that positively establishes
+        # delivery, never by the absence of one: a missing or stale
+        # `channel:health` leaves the WARN exactly as it was.
+        if resolve is None and project_dir is not None:
+            from doctor_check_channel_health_agreement import (
+                resolve_channel_health_reading,
+            )
+
+            resolve = resolve_channel_health_reading
+        raw_state, source, age = (None, None, None)
+        if resolve is not None:
+            try:
+                raw_state, source, age = resolve(project_dir)
+            except (OSError, ValueError, TypeError):
+                # A reading that could not be taken suppresses nothing. The
+                # third state here is the WARN below, unchanged -- the same
+                # direction every other arm in this module takes.
+                raw_state, source, age = (None, None, None)
+        if raw_state == "forwarding" and source not in (None, "cached-stale"):
+            aged = (
+                " ({:.0f}s old)".format(age)
+                if isinstance(age, (int, float)) and age
+                else ""
+            )
+            doctor.report(
+                "OK",
+                "channel MCP connection: `claude mcp list` reports a failed "
+                "transport for every server resolving to the claude-channel "
+                "consumer ({}), and that is the EXPECTED reading here rather "
+                "than a fault: channel:health reports a live consumer "
+                "forwarding{}. `claude mcp list` forks its own consumer to "
+                "produce a status, and the consumer binds an exclusive socket, "
+                "so the fork cannot bind one a live consumer already holds and "
+                "exits -- for the working server too. What is NOT established "
+                "either way: whether a registration that never starts is "
+                "hiding behind the same reading, since both render "
+                "alike.".format(detail, aged),
+            )
+            return
         doctor.report(
             "WARN",
             "channel MCP connection: every MCP server resolving to the "
-            "claude-channel consumer reports a failed transport ({}). The "
-            "registration and the consumer file can both be fine and nothing "
-            "still be delivered -- the usual cause is another claude-channel "
-            "consumer already holding the socket this one would bind, which "
-            "makes it exit without binding. Ask supertool which: `./supertool "
-            "channel:health` names the holding pid in its `refused:` row, and "
-            "`lsof /tmp/supertool-watch.sock` names the process. A consumer "
-            "whose own session is gone is safe to kill; one belonging to "
-            "another live tool is not this diagnostic's call to make.",
+            "claude-channel consumer reports a failed transport ({}), and no "
+            "channel:health reading establishes a live consumer to explain it. "
+            "The registration and the consumer file can both be fine and "
+            "nothing still be delivered -- the usual cause is another "
+            "claude-channel consumer already holding the socket this one would "
+            "bind, which makes it exit without binding. Ask supertool which: "
+            "`./supertool channel:health` names the holding pid in its "
+            "`refused:` row, and `lsof /tmp/supertool-watch.sock` names the "
+            "process. A consumer whose own session is gone is safe to kill; "
+            "one belonging to another live tool is not this diagnostic's call "
+            "to make.".format(detail),
         )
         return
     doctor.report(
