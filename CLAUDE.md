@@ -287,10 +287,10 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 41,206 B | 44,100 B |
+| `agents/developer.md` | 41,227 B | 44,100 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
-| `agents/triager.md` | 15,467 B | 16,600 B |
+| `agents/triager.md` | 15,488 B | 16,600 B |
 | `agents/sub-manager.md` | 17,104 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 
@@ -478,7 +478,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 41,738 B | 44,800 B |
+| `skills/manager/SKILL.md` | 41,739 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 53,938 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,987 B | 23,000 B |
