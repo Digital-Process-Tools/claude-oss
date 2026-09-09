@@ -406,7 +406,20 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
 #: `claude mcp list` prints one server per line, `name:` then whitespace then its
 #: command and args -- `oss-channel:    bun /path/to/channel.ts`, padded so the
 #: colons line up, which is why this is `[ \t]+` rather than a single space.
-_MCP_LIST_LINE_RE = re.compile(r"^([^\s:][^:]*):[ \t]+(.*)$")
+#:
+#: #1364: the name group used to stop at the FIRST colon
+#: (`^([^\s:][^:]*):[ \t]+(.*)$`), so a plugin-declared server name like
+#: `plugin:supertool:claude-channel` -- which appears on `claude mcp list`
+#: on at least some harness versions, contradicting #1241's own docstring
+#: claim that the plugin population "appears on no claude mcp surface at
+#: all" -- never matched, and `channel_consumer_names` silently returned
+#: nothing for every such row. Widened to non-greedy up to the first `: `
+#: (a colon followed by whitespace): a server NAME may contain colons, its
+#: separator from the command may not. This is the identical pattern
+#: `doctor_check_mcp_channel_connection._LIST_LINE_RE` already carries,
+#: which is why that module now imports this constant instead of keeping a
+#: second copy that could drift from it.
+_MCP_LIST_LINE_RE = re.compile(r"^([^\s].*?):[ \t]+(.*)$")
 
 #: Where the harness records every currently installed plugin, keyed by
 #: `name@marketplace`, each carrying its own `installPath`. Same file
@@ -860,7 +873,12 @@ def _drop_dead_plugin_consumers(names, liveness=None):
 
 
 def channel_consumer_census_state(
-    run=None, which=None, env=None, plugin_registry_path=None, project_dir=None
+    run=None,
+    which=None,
+    env=None,
+    plugin_registry_path=None,
+    project_dir=None,
+    liveness=None,
 ):
     """How many MCP servers resolve to the claude-channel consumer script,
     across the TWO populations that can carry one -- never assumed from
@@ -919,6 +937,13 @@ def channel_consumer_census_state(
     plugin-population half is NOT relayed (the launcher's own `FIND_CONSUMER`
     heredoc only ever answers about supertool's one install, not the full
     population this function needs) and is always read fresh here.
+
+    `liveness` threads through to `_drop_dead_plugin_consumers` (default
+    `arm_target_liveness`, which shells out to `claude mcp get` on its own,
+    independent `run`/`which`) so a caller that already injected `run`/
+    `which` above for `claude mcp list` is not left with a SECOND, real
+    subprocess call it has no way to stub -- the same reason `run`/`which`/
+    `env` are injected everywhere else in this module.
     """
     mcp_names, mcp_reason = _mcp_list_consumer_names(run=run, which=which, env=env)
     if mcp_names is None:
@@ -933,7 +958,31 @@ def channel_consumer_census_state(
                 len(mcp_names), plugin_reason
             )
         )
-    names = _drop_dead_plugin_consumers(list(mcp_names) + list(plugin_names))
+    names = _drop_dead_plugin_consumers(
+        list(mcp_names) + list(plugin_names), liveness=liveness
+    )
+    # #1364: widening `_MCP_LIST_LINE_RE` means `claude mcp list`'s own
+    # population (`mcp_names`) can now report a plugin-provided server under
+    # its RESOLVABLE name (`plugin:supertool:claude-channel`), while the
+    # registry population (`plugin_names`) reports the SAME server under its
+    # registry-key spelling (`plugin:supertool@dpt-plugins:claude-channel`).
+    # Summing the two lists unconditionally would double-count one real
+    # server as a false collision -- `resolvable_plugin_server_name` is the
+    # same mapping `plugin_channel_arm_decision` already uses to connect the
+    # two spellings, so it is what dedup keys on here too, first-seen order
+    # preserved (`claude mcp list`'s own rows first, matching this
+    # function's own docstring). Deduping on the raw label instead would
+    # miss exactly the case this fix exists for: the two spellings are
+    # never byte-identical, only their RESOLVED name is.
+    seen = set()
+    deduped = []
+    for name in names:
+        canonical = resolvable_plugin_server_name(name)
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        deduped.append(name)
+    names = deduped
     if len(names) >= 2:
         return "collision", names
     if len(names) == 1:
@@ -942,7 +991,12 @@ def channel_consumer_census_state(
 
 
 def check_channel_consumer_census(
-    run=None, which=None, env=None, plugin_registry_path=None, project_dir=None
+    run=None,
+    which=None,
+    env=None,
+    plugin_registry_path=None,
+    project_dir=None,
+    liveness=None,
 ):
     """One line: is any OTHER server racing `oss-channel` for the same socket?
 
@@ -965,6 +1019,7 @@ def check_channel_consumer_census(
         env=env,
         plugin_registry_path=plugin_registry_path,
         project_dir=project_dir,
+        liveness=liveness,
     )
     if state == "could-not-ask":
         doctor.report(

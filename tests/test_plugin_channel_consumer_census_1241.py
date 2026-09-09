@@ -273,6 +273,16 @@ def test_the_issues_own_repro_is_now_a_collision_not_single(tmp_path):
         run=_run_answering(ONE_MCP_LIST_ROW),
         which=lambda x: "/usr/bin/claude",
         plugin_registry_path=registry,
+        # #1364: `_drop_dead_plugin_consumers`'s default liveness check
+        # shells out to a REAL `claude mcp get`, independent of the `run`/
+        # `which` stubbed above -- without this, whether this test passes
+        # depends on whatever `claude mcp get
+        # plugin:supertool:claude-channel` happens to answer on the
+        # machine running the suite, exactly the ambient-state dependency
+        # this file's own `_no_plugin_population`-shaped fixtures exist to
+        # avoid elsewhere. `connected` is the state that keeps a consumer
+        # counted, matching this test's own subject (a live collision).
+        liveness=lambda name: ("connected", name),
     )
     assert state == "collision"
     assert "oss-channel" in detail
@@ -334,6 +344,9 @@ def test_no_mcp_list_rows_plus_one_plugin_consumer_is_single(tmp_path):
         run=_run_answering(NO_MCP_LIST_ROWS),
         which=lambda x: "/usr/bin/claude",
         plugin_registry_path=registry,
+        # #1364: see the identical comment above -- the default liveness
+        # check shells out for real without this.
+        liveness=lambda name: ("connected", name),
     )
     assert state == "single"
     assert detail == "plugin:supertool@dpt-plugins:claude-channel"
@@ -389,6 +402,9 @@ def test_check_channel_consumer_census_reports_collision_naming_the_plugin(
         run=_run_answering(ONE_MCP_LIST_ROW),
         which=lambda x: "/usr/bin/claude",
         plugin_registry_path=registry,
+        # #1364: see the identical comment above -- the default liveness
+        # check shells out for real without this.
+        liveness=lambda name: ("connected", name),
     )
     assert len(doctor.FINDINGS) == 1
     state, message = doctor.FINDINGS[0]

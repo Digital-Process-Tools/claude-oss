@@ -15,6 +15,7 @@ states (`collision` / `single-or-none` folded as `none`/`single` / `could-not-as
 and `check_channel_consumer_census` renders each as one doctor line.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -349,4 +350,142 @@ def test_check_channel_consumer_census_threads_env_through():
     assert (
         "claude-channel" in doctor.FINDINGS[0][1]
         and "oss-channel" in doctor.FINDINGS[0][1]
+    )
+
+
+# ------------------------------------------------------------------ #1364 ---
+#
+# `_MCP_LIST_LINE_RE`'s name group stopped at the first colon
+# (`^([^\s:][^:]*):[ \t]+(.*)$`), so a plugin-declared server name like
+# `plugin:supertool:claude-channel` -- which DOES appear on `claude mcp
+# list` on at least some harness versions, contradicting #1241's own
+# docstring claim that the plugin population "appears on no claude mcp
+# surface at all" -- never matched, and `channel_consumer_names` silently
+# returned nothing for every such row. `doctor_check_mcp_channel_connection.
+# py` already carries the fix (`_LIST_LINE_RE`, non-greedy up to the first
+# `: `) with a comment saying the twin gap here was "filed separately".
+# This is that filing.
+
+PLUGIN_ROW = (
+    "plugin:supertool:claude-channel: bun /Users/x/.claude/plugins/cache/"
+    "dpt-plugins/supertool/0.53.0/notifiers/claude-channel/channel.ts\n"
+)
+
+
+def test_a_plugin_prefixed_name_with_a_colon_is_now_recognised():
+    """The must-fire case #1364 exists for: a name containing `:` must not
+    be invisible to this parser just because the separator is also `:`."""
+    assert mod.channel_consumer_names(PLUGIN_ROW) == ["plugin:supertool:claude-channel"]
+
+
+def test_banners_and_continuation_lines_still_do_not_match():
+    """Must-not-fire control paired with the widening above: a line with no
+    `: ` separator at all -- a banner, a continuation, a blank line -- must
+    stay unmatched. The regex got LESS restrictive about what a name may
+    contain, not about whether a separator has to be there."""
+    assert mod.channel_consumer_names("Checking MCP server health...\n") == []
+    assert mod.channel_consumer_names("    continued args here\n") == []
+    assert mod.channel_consumer_names("\n") == []
+
+
+def test_a_real_two_server_collision_is_still_reported_as_one_collision():
+    """Must-fire positive control: the widened regex must not, as a side
+    effect, cause a genuine two-server collision to be miscounted (e.g. by
+    matching a name/args boundary differently). Two distinct servers, no
+    colons in either name -- the ordinary case -- must still collide."""
+    state, detail = mod.channel_consumer_census_state(
+        run=_run_answering(TWO_ROWS), which=lambda x: "/usr/bin/claude"
+    )
+    assert state == "collision"
+    assert detail == ["claude-channel", "oss-channel"]
+
+
+def test_a_plugin_row_now_visible_on_claude_mcp_list_creates_a_real_collision(
+    tmp_path,
+):
+    """The regression the old regex was hiding: before #1364, a
+    plugin-declared consumer visible on `claude mcp list` under its
+    resolvable name (`plugin:supertool:claude-channel`, no colon-free
+    match) was invisible to this parser, so a session with `oss-channel`
+    AND that plugin server both live still reported `single` and armed the
+    channel flag over a real socket race. Two rows here, no registry
+    population needed -- this is `claude mcp list`'s own half."""
+    rows = PLUGIN_ROW + ONE_ROW
+    state, detail = mod.channel_consumer_census_state(
+        run=_run_answering(rows),
+        which=lambda x: "/usr/bin/claude",
+        liveness=lambda name: ("connected", name),
+    )
+    assert state == "collision"
+    assert detail == ["plugin:supertool:claude-channel", "oss-channel"]
+
+
+def test_the_same_plugin_server_under_two_spellings_dedupes_to_one(
+    tmp_path, monkeypatch
+):
+    """The hidden judgment call the issue names explicitly: widening the
+    regex means `claude mcp list`'s own population can now report a plugin
+    server under its RESOLVABLE name (`plugin:supertool:claude-channel`,
+    no `@marketplace`), while the registry-based population
+    (`_plugin_channel_consumer_names`) reports the SAME server under its
+    registry-key spelling (`plugin:supertool@dpt-plugins:claude-channel`).
+    Without deduping via `resolvable_plugin_server_name`, one real server
+    would be double-counted as a false collision, disarming the channel
+    flag over nothing."""
+    registry = tmp_path / "installed_plugins.json"
+    install_dir = tmp_path / "supertool-install"
+    install_dir.mkdir()
+    (install_dir / ".mcp.json").write_text(
+        '{"mcpServers": {"claude-channel": {"command": "bun", '
+        '"args": ["/Users/x/.claude/plugins/cache/dpt-plugins/supertool/'
+        '0.53.0/notifiers/claude-channel/channel.ts"]}}}',
+        encoding="utf-8",
+    )
+    registry.write_text(
+        '{"plugins": {"supertool@dpt-plugins": [{"installPath": %s}]}}'
+        % json.dumps(str(install_dir)),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "_PLUGIN_REGISTRY_PATH", str(registry))
+    state, detail = mod.channel_consumer_census_state(
+        run=_run_answering(PLUGIN_ROW),
+        which=lambda x: "/usr/bin/claude",
+        liveness=lambda name: ("connected", name),
+    )
+    assert state == "single", detail
+
+
+def test_two_genuinely_different_plugin_servers_still_collide(tmp_path, monkeypatch):
+    """Must-fire positive control for the dedup test above: two DIFFERENT
+    plugin-provided servers (different registry keys, different names) must
+    still be reported as a real collision -- dedup must not fold distinct
+    servers together just because both are `plugin:`-prefixed."""
+    registry = tmp_path / "installed_plugins.json"
+    install_dir = tmp_path / "other-install"
+    install_dir.mkdir()
+    (install_dir / ".mcp.json").write_text(
+        '{"mcpServers": {"claude-channel": {"command": "bun", '
+        '"args": ["/Users/x/somewhere/else/notifiers/claude-channel/'
+        'channel.ts"]}}}',
+        encoding="utf-8",
+    )
+    registry.write_text(
+        '{"plugins": {"other@dpt-plugins": [{"installPath": %s}]}}'
+        % json.dumps(str(install_dir)),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mod, "_PLUGIN_REGISTRY_PATH", str(registry))
+    state, detail = mod.channel_consumer_census_state(
+        run=_run_answering(PLUGIN_ROW),
+        which=lambda x: "/usr/bin/claude",
+        liveness=lambda name: ("connected", name),
+    )
+    assert state == "collision"
+    # `plugin:supertool:claude-channel` came off `claude mcp list` (PLUGIN_ROW)
+    # under its resolvable spelling; `plugin:other@dpt-plugins:claude-channel`
+    # was only ever seen via the registry population, which reports its own
+    # `key@marketplace` spelling verbatim -- dedup canonicalises what it
+    # COMPARES, never what it reports, so the second name keeps its raw form.
+    assert sorted(detail) == sorted(
+        ["plugin:supertool:claude-channel", "plugin:other@dpt-plugins:claude-channel"]
     )
