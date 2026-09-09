@@ -9330,7 +9330,7 @@ def main(argv=None):
     # incident the census reported `1 MCP server ... no socket collision to
     # declare` about a server the harness had already rejected. A registration
     # is not a consumer, and a consumer is not a subscriber.
-    check_mcp_channel_connection()
+    check_mcp_channel_connection(project_dir=project_dir)
     check_channel_delivery(project_dir)
     # #1311: neither check above (nor `check_watch_channel`) explains WHY the
     # statusline renders `ch?` or `unk` for the channel and default-branch
