@@ -36,21 +36,20 @@ import subprocess
 import re
 
 import doctor
-from doctor_check_mcp_channel_registration import _CHANNEL_CONSUMER_SUFFIX_RE
+from doctor_check_mcp_channel_registration import (
+    _CHANNEL_CONSUMER_SUFFIX_RE,
+    _MCP_LIST_LINE_RE as _LIST_LINE_RE,
+)
 
-#: `claude mcp list`'s own row shape, and NOT
-#: `doctor_check_mcp_channel_registration._MCP_LIST_LINE_RE`, which cannot parse
-#: a `plugin:`-prefixed name: its name group stops at the first colon, so
-#: `plugin:supertool:claude-channel: bun /path` never matches at all and every
-#: plugin-declared server is invisible to it. That is a real gap in the #810
-#: census's `claude mcp list` half -- filed separately rather than fixed here,
-#: because widening that constant changes what the census counts and how it
-#: dedups against its own plugin-registry half, which is a larger and separately
-#: reviewable change than this check.
-#:
-#: Non-greedy up to the first `: ` (a colon followed by whitespace): a server
-#: NAME may contain colons, its separator from the command may not.
-_LIST_LINE_RE = re.compile(r"^([^\s].*?):[ \t]+(.*)$")
+#: `claude mcp list`'s own row shape -- the SAME constant the #810 census's
+#: `claude mcp list` half parses with (`doctor_check_mcp_channel_registration.
+#: _MCP_LIST_LINE_RE`), imported rather than duplicated so the two can never
+#: drift apart on what counts as a row. #1364 widened that constant to
+#: non-greedy up to the first `: ` (a colon followed by whitespace) so a
+#: `plugin:`-prefixed name -- which used to stop matching at its own first
+#: colon, making every plugin-declared server invisible to both this check
+#: and that census -- is recognised: a server NAME may contain colons, its
+#: separator from the command may not.
 
 #: Substrings `claude mcp list` renders for a server that connected and one
 #: that did not. Matched as substrings rather than by glyph: the check marks

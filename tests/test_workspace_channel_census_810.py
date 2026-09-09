@@ -143,6 +143,34 @@ def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twic
     assert len(list_calls) == 1, (list_calls, done.stderr)
 
 
+def test_a_plugin_prefixed_row_is_recognised_and_disarms_the_flag_1364(tmp_path):
+    """#1364, exercised through the REAL launcher heredoc rather than the
+    doctor module directly: before the regex widened, a plugin-declared
+    consumer visible on `claude mcp list` under a `plugin:`-prefixed name
+    (e.g. `plugin:supertool:claude-channel`) was invisible to
+    `channel_consumer_names`, so a session with `oss-channel` AND that
+    plugin server both live still reported a clean census and armed the
+    flag over a real socket race. Two rows here reproduce exactly that."""
+    repo = _repo(tmp_path)
+    consumer = _consumer_path(repo)
+    two_rows = (
+        "plugin:supertool:claude-channel: bun /Users/x/.claude/plugins/cache/"
+        "dpt-plugins/supertool/0.53.0/notifiers/claude-channel/channel.ts\n"
+        + "oss-channel:    bun {}\n".format(consumer)
+    )
+    done, argv = run(
+        repo,
+        with_channel=True,
+        mcp_get=_mcp_get_output(str(consumer)),
+        mcp_list=two_rows,
+        env_extra=_NO_AUTO_UPDATE,
+    )
+    assert not any("development-channels" in a for a in argv), argv
+    assert "server:oss-channel" not in argv
+    assert "plugin:supertool:claude-channel" in done.stderr
+    assert "oss-channel" in done.stderr
+
+
 def test_a_session_that_never_arms_the_flag_omits_it_and_says_why(tmp_path):
     """No registered consumer means channel_ready is already 0 well before the
     census -- the flag stays unarmed, for the reason the earlier registration

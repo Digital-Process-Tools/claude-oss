@@ -2365,7 +2365,14 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
     return "mismatched", (resolved, their_version, our_version)
 
 
-def _launcher_remedy(plugin_root, windows=None):
+_UNSET = object()  # #1370: distinguishes "no install-resolution attempt was
+# made" (the pre-#1370 shape every direct caller of `_launcher_remedy` uses)
+# from `install_root=None` -- resolution WAS attempted and came back empty.
+
+
+def _launcher_remedy(
+    plugin_root, install_root=_UNSET, install_reason=None, windows=None
+):
     """How to make `oss-workspace` reachable, on the platform this is running on.
 
     **#330 asked the prior question first: is `bin/oss-workspace` installable on
@@ -2400,8 +2407,52 @@ def _launcher_remedy(plugin_root, windows=None):
     and `test_the_default_remedy_matches_the_platform_actually_running` asserts
     that default against `os.name` with no skip -- which is the assertion that has
     to land on a Windows leg for this to be closed rather than restated (#265).
+
+    **#1370: `install_root` names the target this remedy actually points at.**
+    Every real call site (`check_oss_workspace_launcher`, given a `project_dir`)
+    resolves the copy `plugin_update.resolved_plugin_root` recognises as
+    actually INSTALLED for the project being diagnosed, and hands it here --
+    never `plugin_root`, which every such call site defaults to `PLUGIN_ROOT`,
+    this process's OWN resolved location. Run from a maintainer's own clone or
+    a feature branch, that is the checkout's current tree, not a real install,
+    and pinning `~/.local/bin/oss-workspace` at it is precisely the bug this
+    fixes: `bin/oss-workspace`'s own repoint block already refuses to derive a
+    target this way, in as many words -- "a stale link is exactly the case
+    where the OLD launcher is the one running."
+
+    Three states, not two: the sentinel default (`_UNSET`, an object no caller
+    outside a direct unit test of this function passes) means no resolution was
+    even attempted, and falls back to `plugin_root` -- the pre-#1370 shape,
+    preserved so the windows/POSIX formatting tests below stay meaningful
+    without also having to stand up a fake plugin registry. `None` means
+    resolution WAS attempted and came back empty (no version on record, an
+    unqualified/dev install, or the plugin cache directory itself missing) --
+    naming `plugin_root` here would be the checkout-pinning bug, so this says
+    plainly that no install can be named rather than guessing at one. Anything
+    else is the resolved install root, used in place of `plugin_root`.
     """
-    target = Path(plugin_root) / "bin" / "oss-workspace"
+    if install_root is _UNSET:
+        target = Path(plugin_root) / "bin" / "oss-workspace"
+    elif install_root is None:
+        # #1370 self-review finding: `install_reason`, when given, tells the
+        # reader WHY resolution came back empty -- an environment gap
+        # (`plugin_update` unavailable, the manifest unreadable, `OSError`
+        # from the lookup itself) reads identically to "genuinely nothing is
+        # installed" without it, and the two call for different next steps.
+        # Absent (the ordinary case: resolution ran cleanly and found no
+        # recorded install), the sentence below stands alone.
+        cause = " ({})".format(install_reason) if install_reason else ""
+        return (
+            "no installed copy of this plugin is on record for this project"
+            "{} -- naming this process's own checkout would pin the launcher "
+            "to whatever that tree contains next (a maintainer's own clone, "
+            "a feature branch), which is worse than printing no remedy at "
+            "all. Run /plugin install (or /oss:setup, if the plugin is "
+            "already installed) to record a real install, then re-run this "
+            "check.".format(cause)
+        )
+    else:
+        target = Path(install_root) / "bin" / "oss-workspace"
     if windows is None:
         windows = os.name == "nt"
     if not windows:
@@ -2415,14 +2466,67 @@ def _launcher_remedy(plugin_root, windows=None):
     )
 
 
-def check_oss_workspace_launcher(plugin_root=None, path=None, windows=None):
+def check_oss_workspace_launcher(
+    plugin_root=None, path=None, windows=None, project_dir=None
+):
     """One line, in every state. The remedy line names THIS install's own path
     (`plugin_root`, which defaults to `PLUGIN_ROOT` -- this script's own resolved
     location) rather than `$PWD`, so it is correct regardless of where the reader is
     standing (#288), and is platform-appropriate rather than POSIX everywhere
-    (#330 -- see `_launcher_remedy`)."""
+    (#330 -- see `_launcher_remedy`).
+
+    **#1370: `plugin_root` alone is the wrong source for the printed remedy.**
+    It answers "which copy is running THIS diagnostic", which is exactly what
+    `oss_workspace_launcher_state` below still needs it for (matching PATH's
+    target against this process's own bytes/version). The remedy is a
+    different question -- "what should `~/.local/bin/oss-workspace` point
+    at" -- and the answer to that is the copy actually INSTALLED for
+    `project_dir`, not the checkout this process happens to be running from.
+    `project_dir`, when given, resolves that via `plugin_update.
+    resolved_plugin_root` (the same accessor #677/#1126 already use for "the
+    copy actually recorded as installed for THIS project") and hands the
+    result to `_launcher_remedy` as `install_root`; omitted, `_launcher_remedy`
+    falls back to `plugin_root` unchanged (see its own docstring for the
+    three-state shape).
+
+    #1370 self-review finding: `install_root is None` collapsed four distinct
+    causes into one identical message -- `plugin_update` missing at import
+    time, this plugin's own manifest unreadable (`plugin_name` returning
+    falsy), `resolved_plugin_root` raising `OSError`, and a clean resolution
+    that simply found no recorded install. The first three are an
+    ENVIRONMENT gap (this diagnostic could not even ask the question); the
+    fourth is the ordinary, answerable "nothing is installed here" state.
+    `install_reason` carries which of the first three applied, if any, so
+    `_launcher_remedy` can say so rather than rendering all four alike.
+    """
     plugin_root = Path(plugin_root or PLUGIN_ROOT)
-    remedy = _launcher_remedy(plugin_root, windows=windows)
+    install_root = _UNSET
+    install_reason = None
+    if project_dir is not None:
+        install_root = None
+        if plugin_update is None:
+            install_reason = "plugin_update could not be imported"
+        else:
+            name = plugin_update.plugin_name(plugin_root)
+            if not name:
+                install_reason = (
+                    "this plugin's own manifest could not be read, so its "
+                    "name is unknown"
+                )
+            else:
+                try:
+                    install_root = plugin_update.resolved_plugin_root(name, project_dir)
+                except OSError as exc:
+                    install_root = None
+                    install_reason = "the lookup itself failed ({})".format(
+                        exc.__class__.__name__
+                    )
+    remedy = _launcher_remedy(
+        plugin_root,
+        install_root=install_root,
+        install_reason=install_reason,
+        windows=windows,
+    )
     state, detail = oss_workspace_launcher_state(plugin_root=plugin_root, path=path)
     if state == "matched":
         report(
@@ -8804,7 +8908,7 @@ def run_install_audit(project_dir, plugin_root=None, record=None, run=None):
     check_dependency_resolution(record=record, project_dir=project_dir)
 
     check_supertool_entry_point(project_dir)
-    check_oss_workspace_launcher(plugin_root=plugin_root)
+    check_oss_workspace_launcher(plugin_root=plugin_root, project_dir=project_dir)
 
     check_memory(project_dir)
 
@@ -9135,7 +9239,7 @@ def main(argv=None):
     # measured. Immediately under the two PATH checks above for the same reason
     # #285 put its own check there: a reader who has just read one PATH-resolution
     # line takes the next one for the same question.
-    check_oss_workspace_launcher()
+    check_oss_workspace_launcher(project_dir=project_dir)
     # The third question about supertool, and the first two do not answer it
     # (#582): `check_tool` above says it is on PATH, `check_supertool_entry_point`
     # says `./supertool` points at the right thing, and neither asks whether the
