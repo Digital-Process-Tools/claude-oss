@@ -130,7 +130,7 @@ def _refresh_command(project_dir):
     return 'python3 "{}" --refresh --root "{}"'.format(script, project_dir)
 
 
-def channel_cause(config, cache, now):
+def channel_cause(config, cache, now, repo_missing=False):
     """``{"applicable": False}`` or ``{"applicable": True, "state": ..., "reason": ...}``
     for the watch-channel field, re-deriving exactly what ``gather()`` would
     hand ``_channel_field`` for this ``cache`` right now.
@@ -139,6 +139,14 @@ def channel_cause(config, cache, now):
     ``False`` in ``.oss.json`` -- the deliberate off switch ``_channel_field``
     itself renders as nothing at all, never ``?``, so there is no cause to
     explain.
+
+    ``repo_missing`` -- #1345 -- is ``True`` when ``.oss.json`` declares no
+    usable ``repo``, which is the caller's own signal that ``cache`` is
+    ``None`` for a reason distinct from "nobody has asked yet": there is
+    nowhere to look up a cache at all. Checked before ``cache`` is read at
+    all, because a missing ``repo`` would otherwise be indistinguishable
+    from ``"not-asked"`` and the remedy that reason names (run a refresh)
+    cannot itself resolve without ``repo`` either.
     """
     config = config if isinstance(config, dict) else {}
     if config.get("watch_channel") is False:
@@ -148,6 +156,12 @@ def channel_cause(config, cache, now):
             "applicable": True,
             "state": "cannot_determine",
             "reason": "could-not-determine",
+        }
+    if repo_missing:
+        return {
+            "applicable": True,
+            "state": "cannot_determine",
+            "reason": "repo-missing",
         }
     raw_channel = (cache or {}).get("channel") or {}
     fetched_at = (cache or {}).get("channel_fetched_at")
@@ -164,7 +178,7 @@ def channel_cause(config, cache, now):
     }
 
 
-def default_branch_cause(config, cache, now):
+def default_branch_cause(config, cache, now, repo_missing=False):
     """``{"applicable": False}`` or ``{"applicable": True, "reason": ..., ...}``
     for the default-branch marker, reconstructing the three causes ``gather()``
     itself collapses into one ``"unknown"`` (see the module docstring).
@@ -173,12 +187,18 @@ def default_branch_cause(config, cache, now):
     ``default_branch`` at all -- ``_default_branch_marker`` renders nothing
     for that repo, by the same deliberate-absence convention as the channel
     field, so there is no cause to explain.
+
+    ``repo_missing`` -- see ``channel_cause``'s own docstring, #1345 -- is the
+    identical signal for this field: no ``repo`` means no cache to look up,
+    which must not read as "nobody has asked yet".
     """
     config = config if isinstance(config, dict) else {}
     if not config.get("default_branch"):
         return {"applicable": False}
     if statusline is None:
         return {"applicable": True, "reason": "could-not-determine"}
+    if repo_missing:
+        return {"applicable": True, "reason": "repo-missing"}
     fetched_at = (cache or {}).get("fetched_at")
     if not isinstance(fetched_at, (int, float)):
         return {"applicable": True, "reason": "not-asked"}
@@ -190,6 +210,64 @@ def default_branch_cause(config, cache, now):
     if raw_state is None:
         return {"applicable": True, "reason": "no-answer"}
     return {"applicable": True, "reason": "unrecognized", "value": raw_state}
+
+
+#: `_doctor_verdict_state`'s own three recognised VERDICT shapes, matched the
+#: identical way (`==` for the bare "ok", `startswith` for the other two, since
+#: both carry a trailing count `doctor.py` formats itself). Duplicated rather
+#: than reached for through `statusline._doctor_verdict_state` -- every other
+#: cross-module call in this file goes through a PUBLIC name (`channel_status`,
+#: `board_is_due`, `cache_path`, both `_REFRESH_AFTER` constants); reaching into
+#: a leading-underscore name would be new coupling this module has avoided
+#: everywhere else. `test_doctor_classification_agrees_with_statusline_own_
+#: classifier` pins the two against each other so a drift here is caught rather
+#: than silently misreporting a real reading as `dr?`'s own unexplained state.
+def _doctor_verdict_reason(verdict):
+    if verdict == "ok":
+        return None
+    if verdict.startswith("usable with gaps") or verdict.startswith("not usable"):
+        return None
+    return "unrecognized"
+
+
+def doctor_cause(cache, now, repo_missing=False):
+    """``{"reason": ..., ...}`` for the `/oss:doctor` field (``dr``), explaining
+    the cause of a rendered ``?`` as far as the cache allows (#1345).
+
+    There is no deliberate off switch for this field the way ``watch_channel:
+    false`` turns ``channel_cause`` off -- ``/oss:doctor`` runs unconditionally
+    -- so, unlike the other two ``*_cause`` functions, this one has no
+    ``"applicable": False`` arm.
+
+    **Unlike ``channel_cause``/``default_branch_cause``, the cache does not
+    carry enough to name which of ``_doctor_reading``'s five causes produced a
+    ``None`` verdict** -- no ``doctor.py`` located, the subprocess could not be
+    started, ``DOCTOR_TIMEOUT`` expiry, a non-zero exit, and no ``VERDICT:``
+    line in the output all fold into the identical ``None`` in
+    ``statusline.py`` before it is ever written to disk. Re-running the
+    diagnostic here to tell them apart would mean this module -- itself one of
+    doctor's own checks -- spawning a second, recursive `doctor.py` subprocess
+    on every render, which is exactly the cost `_doctor_reading` already pays
+    once per refresh interval and is not this check's to pay again. So
+    ``"no-answer"`` below names the fold honestly, per the issue's own stated
+    fallback, rather than guessing at which of the five actually happened.
+    """
+    if statusline is None:
+        return {"reason": "could-not-determine"}
+    if repo_missing:
+        return {"reason": "repo-missing"}
+    fetched_at = (cache or {}).get("doctor_fetched_at")
+    if not isinstance(fetched_at, (int, float)):
+        return {"reason": "not-asked"}
+    if now - fetched_at >= statusline.DOCTOR_REFRESH_AFTER:
+        return {"reason": "stale"}
+    verdict = (cache or {}).get("doctor_verdict")
+    if verdict is None:
+        return {"reason": "no-answer"}
+    reason = _doctor_verdict_reason(verdict)
+    if reason == "unrecognized":
+        return {"reason": "unrecognized", "value": verdict}
+    return {"reason": None, "state": verdict}
 
 
 def _read_cache_or_unreadable(path):
@@ -262,6 +340,14 @@ _CHANNEL_EXPLAIN = {
         "explicitly under `ops.<name>.watch_name` in `.supertool.json`, "
         "matching the exported `SUPERTOOL_WATCH_NAME`, then: {}",
     ),
+    "repo-missing": (
+        "WARN",
+        "statusline channel: `.oss.json` declares no `repo` (or it is blank), "
+        "so there is nowhere to look up a cached channel reading -- renders "
+        "`ch?`. Add `repo` to `.oss.json` first; running a refresh before "
+        "that will not help, since it also cannot compute where to write "
+        "the cache.",
+    ),
 }
 
 _BRANCH_EXPLAIN = {
@@ -294,6 +380,55 @@ _BRANCH_EXPLAIN = {
         "hand-edited or corrupted cache file -- renders `unk`. Delete the "
         "cache file (see `scripts/statusline.py`'s own `cache_path`) and "
         "then: {}",
+    ),
+    "repo-missing": (
+        "WARN",
+        "statusline default-branch marker: `.oss.json` declares no `repo` "
+        "(or it is blank), so there is nowhere to look up a cached board "
+        "reading -- renders `unk`. Add `repo` to `.oss.json` first; running "
+        "a refresh before that will not help, since it also cannot compute "
+        "where to write the cache.",
+    ),
+}
+
+#: reason -> (doctor state, message template taking `remedy`), the `dr` field's
+#: own version of `_CHANNEL_EXPLAIN`/`_BRANCH_EXPLAIN` above. `"no-answer"` is
+#: the honest fold of the five causes `doctor_cause`'s own docstring names --
+#: this check does not guess at which one happened.
+_DOCTOR_EXPLAIN = {
+    "repo-missing": (
+        "WARN",
+        "/oss:doctor reading: `.oss.json` declares no `repo` (or it is "
+        "blank), so there is nowhere to look up a cached doctor reading -- "
+        "renders `dr?`. Add `repo` to `.oss.json` first; running a refresh "
+        "before that will not help, since it also cannot compute where to "
+        "write the cache.",
+    ),
+    "not-asked": (
+        "WARN",
+        "/oss:doctor reading: nobody has taken a doctor reading yet for "
+        "this repo (no cached `doctor_verdict`) -- renders `dr?`. {}",
+    ),
+    "stale": (
+        "WARN",
+        "/oss:doctor reading: the cached doctor reading is older than its "
+        "own refresh interval -- renders `dr?`. Self-heals on the next "
+        "statusline render, or force it now: {}",
+    ),
+    "no-answer": (
+        "WARN",
+        "/oss:doctor reading: the last background doctor run produced no "
+        "verdict this statusline can read back -- renders `dr?`. The cache "
+        "does not record which of five causes it was (no doctor.py located, "
+        "the subprocess could not start, DOCTOR_TIMEOUT expired, it exited "
+        "non-zero, or its output had no `VERDICT:` line); run `/oss:doctor` "
+        "(or the script directly) to see the real one, then: {}",
+    ),
+    "unrecognized": (
+        "WARN",
+        "/oss:doctor reading: the cached verdict text does not match any "
+        "shape doctor.py's own main() is known to print -- renders `dr?`. "
+        "Run `/oss:doctor` directly to see the raw VERDICT line, then: {}",
     ),
 }
 
@@ -360,10 +495,34 @@ def _report_default_branch(result, remedy):
     doctor.report(level, template.format(remedy))
 
 
+def _report_doctor(result, remedy):
+    reason = result.get("reason")
+    if reason == "could-not-determine":
+        doctor.unmeasured(
+            "/oss:doctor reading",
+            "the `statusline` module could not be imported, so the cause of "
+            "`dr?` could not be re-derived here.",
+        )
+        return
+    if reason is None:
+        doctor.report(
+            "OK",
+            "/oss:doctor reading: currently reporting {} -- no `?` to explain.".format(
+                result.get("state")
+            ),
+        )
+        return
+    level, template = _DOCTOR_EXPLAIN.get(
+        reason, ("WARN", "/oss:doctor reading: could not be determined -- {}")
+    )
+    doctor.report(level, template.format(remedy))
+
+
 def check_statusline_unknowns(project_dir, config, now=None):
     """Explain the cause of every `?` `statusline.py` can render for the
-    watch channel and the default-branch marker, each with a runnable
-    remedy (#1311). See the module docstring for the full derivation.
+    watch channel, the default-branch marker, and (#1345) the `/oss:doctor`
+    reading, each with a runnable remedy (#1311). See the module docstring
+    for the full derivation.
     """
     if config is None:
         doctor.unmeasured("statusline unknowns")
@@ -374,18 +533,30 @@ def check_statusline_unknowns(project_dir, config, now=None):
         "run `python3 <path-to>/statusline.py --refresh --root {}` "
         "(scaffold.py could not be imported to name the exact path)".format(project_dir)
     )
+    # #1345: a missing/blank `repo` must not collapse onto "not-asked" -- it
+    # is a different cause (nowhere to look up a cache at all) with a
+    # different remedy (add `repo`, not `--refresh`, which cannot resolve
+    # anything until `repo` is set). Computed once here and threaded through
+    # every `*_cause` call below, rather than each one re-deriving it from
+    # `config` -- `statusline is None` alone already means "cannot tell", so
+    # `repo_missing` is only ever true when `statusline` loaded and `repo`
+    # itself is genuinely absent or blank.
+    repo_missing = statusline is not None and not repo
     if statusline is None or not repo:
         cache = None
     else:
         cache, unreadable = _read_cache_or_unreadable(statusline.cache_path(repo))
         if unreadable:
             message = (
-                "statusline: the cached board/channel state exists on disk "
-                "and could not be read or parsed, so neither field's cause "
+                "statusline: the cached board/channel/doctor state exists on "
+                "disk and could not be read or parsed, so no field's cause "
                 "could be established -- fix or delete the cache file (see "
                 "`scripts/statusline.py`'s own `cache_path`), then: {}".format(remedy)
             )
             doctor.report("WARN", message)
             return
-    _report_channel(channel_cause(config, cache, now), remedy)
-    _report_default_branch(default_branch_cause(config, cache, now), remedy)
+    _report_channel(channel_cause(config, cache, now, repo_missing), remedy)
+    _report_default_branch(
+        default_branch_cause(config, cache, now, repo_missing), remedy
+    )
+    _report_doctor(doctor_cause(cache, now, repo_missing), remedy)

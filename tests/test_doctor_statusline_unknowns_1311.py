@@ -147,7 +147,11 @@ def test_config_none_is_unmeasured_not_silence():
 
 
 def test_off_and_unconfigured_are_both_ok(monkeypatch, tmp_path):
-    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: ({}, False))
+    # doctor_verdict/doctor_fetched_at present and fresh so the always-on
+    # `dr` field is also OK -- this test is about the two deliberate
+    # off-switches (watch_channel, no default_branch), not about `dr`.
+    cache = {"doctor_verdict": "ok", "doctor_fetched_at": NOW - 5}
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
     mod.check_statusline_unknowns(
         str(tmp_path), {"watch_channel": False, "repo": "a/b"}, now=NOW
     )
@@ -313,6 +317,159 @@ def test_real_readings_are_ok_and_never_confused_with_a_finding(monkeypatch, tmp
         "channel_fetched_at": NOW - 5,
         "fetched_at": NOW - 5,
         "default_branch_state": "green",
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": NOW - 5,
+    }
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+    assert doctor.FINDINGS
+    assert all(state == "OK" for state, _ in doctor.FINDINGS)
+
+
+# --------------------------------------------------------------------------
+# #1345 finding 1: `repo` missing must not collapse onto "not-asked".
+# --------------------------------------------------------------------------
+
+
+def test_channel_repo_missing_is_distinct_from_not_asked():
+    result = mod.channel_cause({}, {}, NOW, repo_missing=True)
+    assert result["applicable"] is True
+    assert result["reason"] == "repo-missing"
+
+
+def test_default_branch_repo_missing_is_distinct_from_not_asked():
+    result = mod.default_branch_cause(
+        {"default_branch": "main"}, {}, NOW, repo_missing=True
+    )
+    assert result["applicable"] is True
+    assert result["reason"] == "repo-missing"
+
+
+def test_check_statusline_unknowns_repo_missing_names_the_real_cause(tmp_path):
+    """A `.oss.json` with no `repo` key must not tell the reader to run
+    `--refresh` -- that remedy cannot resolve without `repo` either."""
+    mod.check_statusline_unknowns(str(tmp_path), {"default_branch": "main"}, now=NOW)
+    joined = " ".join(msg for _, msg in doctor.FINDINGS)
+    assert "repo" in joined
+    assert "not-asked" not in joined
+    # must not tell the reader to run --refresh as the whole remedy: that
+    # command cannot resolve anything until `repo` itself is set.
+    assert "Add `repo`" in joined or "add `repo`" in joined.lower()
+
+
+def test_check_statusline_unknowns_real_repo_is_not_repo_missing(monkeypatch, tmp_path):
+    """Positive control: a real `repo` value must not be misread as missing."""
+    cache = {
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
+        "channel_fetched_at": NOW - 5,
+        "fetched_at": NOW - 5,
+        "default_branch_state": "green",
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": NOW - 5,
+    }
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+    joined = " ".join(msg for _, msg in doctor.FINDINGS)
+    assert "repo-missing" not in joined
+    assert "declares no `repo`" not in joined
+
+
+# --------------------------------------------------------------------------
+# #1345 finding 2: the `dr` field's five collapsed causes.
+# --------------------------------------------------------------------------
+
+
+def test_doctor_not_asked_when_never_cached():
+    result = mod.doctor_cause({}, NOW)
+    assert result["reason"] == "not-asked"
+
+
+def test_doctor_stale_when_reading_older_than_interval():
+    cache = {
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": NOW - statusline.DOCTOR_REFRESH_AFTER - 10,
+    }
+    result = mod.doctor_cause(cache, NOW)
+    assert result["reason"] == "stale"
+
+
+def test_doctor_no_answer_when_verdict_is_none():
+    cache = {"doctor_verdict": None, "doctor_fetched_at": NOW - 5}
+    result = mod.doctor_cause(cache, NOW)
+    assert result["reason"] == "no-answer"
+
+
+def test_doctor_unrecognized_verdict_shape():
+    cache = {"doctor_verdict": "some future shape", "doctor_fetched_at": NOW - 5}
+    result = mod.doctor_cause(cache, NOW)
+    assert result["reason"] == "unrecognized"
+    assert result["value"] == "some future shape"
+
+
+def test_doctor_real_reading_has_no_reason():
+    """Positive control: a genuine, fresh verdict is not `dr?` at all."""
+    cache = {
+        "doctor_verdict": "usable with gaps -- 2 warning(s)",
+        "doctor_fetched_at": NOW - 5,
+    }
+    result = mod.doctor_cause(cache, NOW)
+    assert result["reason"] is None
+    assert result["state"] == "usable with gaps -- 2 warning(s)"
+
+
+def test_doctor_repo_missing_is_distinct_from_not_asked():
+    result = mod.doctor_cause({}, NOW, repo_missing=True)
+    assert result["reason"] == "repo-missing"
+
+
+def test_doctor_classification_agrees_with_statusline_own_classifier():
+    """Cross-check, #383/#124's own convention applied here: this module
+    duplicates statusline.py's three-shape VERDICT match rather than reach
+    into its private `_doctor_verdict_state` (leading underscore -- every
+    other cross-module call in this file goes through a public name). A
+    drift between the two would make this field lie about a `dr?` that is
+    actually a real, classifiable reading.
+    """
+    samples = [
+        "ok",
+        "usable with gaps -- 3 warning(s)",
+        "not usable -- 1 failure(s), 2 warning(s)",
+        "some unrecognised shape",
+    ]
+    for verdict in samples:
+        cache = {"doctor_verdict": verdict, "doctor_fetched_at": NOW - 5}
+        mine = mod.doctor_cause(cache, NOW)
+        theirs = statusline._doctor_verdict_state(verdict)
+        if theirs is None:
+            assert mine["reason"] == "unrecognized", verdict
+        else:
+            assert mine["reason"] is None and mine["state"] == verdict, verdict
+
+
+def test_check_statusline_unknowns_reports_all_three_fields(monkeypatch, tmp_path):
+    cache = {}
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+    joined = " ".join(msg for _, msg in doctor.FINDINGS)
+    assert "statusline channel" in joined
+    assert "statusline default-branch" in joined
+    assert "/oss:doctor" in joined
+
+
+def test_check_statusline_unknowns_doctor_ok_when_real_verdict(monkeypatch, tmp_path):
+    cache = {
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
+        "channel_fetched_at": NOW - 5,
+        "fetched_at": NOW - 5,
+        "default_branch_state": "green",
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": NOW - 5,
     }
     monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
     mod.check_statusline_unknowns(
