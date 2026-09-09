@@ -82,7 +82,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # outcomes (refusal, reply, unresolved) explicitly. Nothing already
     # in the file argued either point, so nothing was cut to make room;
     # the ceiling moves to 22200 B, ~10% headroom over the new size.
-    "commands/tick.md": (21227, 22200),
+    "commands/tick.md": (21917, 22200),
 }
 
 

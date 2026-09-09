@@ -820,7 +820,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 21,227 B | 22,200 B |
+| `commands/tick.md` | 21,917 B | 22,200 B |
 
 **Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
 1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser
