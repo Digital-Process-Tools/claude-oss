@@ -56,17 +56,51 @@ def test_gate1_does_not_assert_this_repos_ci_shape_as_permanent_fact():
     )
 
 
+#: Gate 1's own paragraph, isolated so the check below cannot be satisfied by
+#: the *other* place in the file (the post-push CI-wait section, #1266/#1324)
+#: that also mentions workflow_dispatch/inputs -- that text already existed
+#: verbatim before this fix and would make the check pass on the pre-fix file
+#: too, proving nothing about this diff. Anchored on "does not satisfy this
+#: gate", a phrase unique to gate 1.
+GATE1_ANCHOR = "does not satisfy this gate"
+
+
+def _gate1_paragraph(text):
+    start = text.index(GATE1_ANCHOR)
+    end = text.index("```", start)
+    return text[start:end]
+
+
+def test_gate1_anchor_is_unique_in_the_file():
+    """A guard against the anchor itself drifting or being duplicated --
+    if it stops being unique, _gate1_paragraph() could silently isolate the
+    wrong stretch of text."""
+    text = RELEASE_MD.read_text(encoding="utf-8")
+    assert text.count(GATE1_ANCHOR) == 1, (
+        "expected exactly one occurrence of {!r} in commands/release.md "
+        "(gate 1's own paragraph) -- found {}".format(
+            GATE1_ANCHOR, text.count(GATE1_ANCHOR)
+        )
+    )
+
+
 def test_gate1_still_instructs_deriving_the_shape_per_repo():
     """The fix removes the hardcoded claim, not the underlying instruction --
-    the surrounding paragraph must still tell the reader to grep the repo
-    own workflow files at release time rather than assume any shape."""
+    gate 1's own paragraph (not merely the file somewhere) must still tell the
+    reader to grep the repo's own workflow files at release time rather than
+    assume any shape."""
     text = RELEASE_MD.read_text(encoding="utf-8")
-    assert "workflow_dispatch: inputs:" in text, (
-        "the instruction to look for a wider-coverage workflow_dispatch input "
-        "in .github/workflows/*.yml seems to have been removed along with the "
-        "hardcoded claim -- the per-repo derivation is what should remain"
+    paragraph = _gate1_paragraph(text)
+    assert "workflow_dispatch: inputs:" in paragraph, (
+        "gate 1's own paragraph no longer instructs looking for a "
+        "wider-coverage workflow_dispatch input in .github/workflows/*.yml -- "
+        "the per-repo derivation is what should remain in place of the "
+        "hardcoded claim"
     )
-    assert "do not assume" in text or "rather than assume" in text, (
-        "the explicit do-not-assume-every-repo-shares-this-shape framing "
-        "seems to have been lost"
+    assert "never something to assume here" in paragraph or (
+        "do not assume" in paragraph or "rather than assume" in paragraph
+    ), (
+        "gate 1's own paragraph no longer says the shape is a per-repo fact "
+        "rather than something to assume -- that framing is what replaces "
+        "the removed hardcoded claim"
     )

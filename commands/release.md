@@ -538,8 +538,26 @@ branch, before this commit exists — the push this commit itself triggers runs 
 set that repo's own push trigger runs. So the wider dispatch must be repeated a second time, against
 this commit specifically, after the push — the same repo-specific check gate 1 already performed
 (look again at `on: workflow_dispatch: inputs:` in `.github/workflows/*.yml` at release time; do not
-assume every repo shares this shape, and skip the rest of this section entirely on a repo where the
-push trigger already runs full coverage, since there is nothing wider left to dispatch or wait for):
+assume every repo shares this shape).
+
+**On a repo where the push trigger already runs full coverage, skip only the dispatch step below and
+the `--require-event workflow_dispatch` wait that goes with it — never the CI wait itself.** The
+paragraph above this one still applies unconditionally: this commit's own content has been verified
+by nothing yet, and that risk exists whether or not a wider dispatch shape exists. Wait on the
+ordinary push-triggered run instead, with the same script and the same commit sha, but without
+`--require-event`:
+
+```bash
+COMMIT_SHA="$(git rev-parse HEAD)"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_ci_wait.py" --commit "$COMMIT_SHA" --wait
+```
+
+and read its exit code the same way the four outcomes below are read — `RED`, `COULD-NOT-READ` and
+`PENDING` mean exactly what they say there regardless of which wait produced them; `GREEN` here
+means only that the push-triggered run itself concluded and passed, not the `--require-event
+workflow_dispatch`-specific reading the exit-0 bullet below describes. On `GREEN`, skip straight to
+*Only on `GREEN` does the tag get created*, below. What follows next — the dispatch and the
+`--require-event` wait — is for a repo where gate 1 did find a wider shape:
 
 ```bash
 COMMIT_SHA="$(git rev-parse HEAD)"
