@@ -137,6 +137,14 @@ def test_no_repo_specific_spellings_in_prose():
 # binary assets docs/ ships (`.png`) as text, and -- the reason for the third
 # field -- prose and code are not the same content class for this check.
 #
+# #1329: `scripts/` and `commands/` ship in the exact same plugin artifact and
+# are edited mid-lane under the same conditions as every directory above, but
+# were never added here -- this comment's own claim to enumerate "every
+# shipped, mid-lane-written directory" was false while they were missing,
+# confirmed by a live grep finding no leak in either today (this fix closes
+# the scope gap, not a real incident). Both are `is_code=True`, the same
+# treatment `tests/`, `bin/`, `hooks/` and `schemas/` already get.
+#
 # trap.d/, changelog.d/ and docs/ are free-text incident logs and documentation:
 # a real `/Users/<name>` appearing there is first-person prose about an actual
 # machine, exactly the shape #1255 shipped, and a repo-wide grep confirmed all
@@ -160,6 +168,8 @@ SHIPPED_MID_LANE_DIRS = [
     ("bin", "*", True),
     ("hooks", "*", True),
     ("schemas", "*.json", True),
+    ("scripts", "*.py", True),
+    ("commands", "*.md", True),
 ]
 
 TRAP_D = sorted((REPO_ROOT / "trap.d").glob("*.md"))
@@ -222,6 +232,11 @@ HOME_PATH_PLACEHOLDER_USERNAMES = {
     "exampleuser",
     "runneradmin",
     "...",
+    # #1329: scripts/'s own fixture data (report_schema.py, a "does the
+    # untrusted-quoting guard fire inside an unbacktick path" example) uses
+    # this name -- added when scripts/ joined SHIPPED_MID_LANE_DIRS above,
+    # the same way every other name in this set was added for its own file.
+    "nina",
 }
 
 
