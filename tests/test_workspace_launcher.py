@@ -115,6 +115,7 @@ def _stub_claude(
     mcp_list=None,
     mcp_list_exit=0,
     plugin_marketplace_exit=0,
+    mcp_get_by_name=None,
 ):
     """A `claude` that records argv and exits 0, so exec is observable.
 
@@ -137,6 +138,17 @@ def _stub_claude(
     scripts/plugin_update.py this launcher now shells out to synchronously; a
     caller that leaves auto-update on but never names this gets the ordinary
     success path.
+
+    `mcp_get_by_name` (#1343): `mcp_get` above answers `claude mcp get <name>`
+    identically no matter which name was asked -- the pre-existing shape, kept
+    for every caller that does not care. #1343's own fix asks `claude mcp get`
+    a SECOND time in the `single` plugin-arm branch, against the plugin's own
+    server name rather than `oss-channel`, and a test proving that ask actually
+    happened (and is honoured) needs the two names to answer differently. A
+    `{name: text_or_None}` mapping, checked BEFORE the name-blind `mcp_get`
+    fallback above: `None` for a name makes that specific `get` exit 1 (not
+    registered), independent of whatever `mcp_get`/`get_file` says for every
+    other name.
     """
     mcp_log = bindir / "mcp.txt"
     get_file = bindir / "mcp_get.txt"
@@ -151,6 +163,14 @@ def _stub_claude(
             list_file.unlink()
     else:
         list_file.write_text(mcp_list, encoding="utf-8")
+    by_name_cases = ""
+    for index, (name, text) in enumerate(dict(mcp_get_by_name or {}).items()):
+        if text is None:
+            by_name_cases += '        "%s") exit 1 ;;\n' % name
+        else:
+            named_file = bindir / ("mcp_get_named_%d.txt" % index)
+            named_file.write_text(text, encoding="utf-8")
+            by_name_cases += '        "%s") cat "%s"; exit 0 ;;\n' % (name, named_file)
     return _executable(
         bindir / "claude",
         "#!/bin/sh\n"
@@ -158,6 +178,7 @@ def _stub_claude(
         '    for a in "$@"; do printf "%s\\n" "$a" >> "' + str(mcp_log) + '"; done\n'
         '    printf "%s\\n" "--" >> "' + str(mcp_log) + '"\n'
         '    if [ "${2:-}" = "get" ]; then\n'
+        '        case "${3:-}" in\n' + by_name_cases + "        esac\n"
         '        [ -f "' + str(get_file) + '" ] || exit 1\n'
         '        cat "' + str(get_file) + '"\n'
         "        exit 0\n"
@@ -173,6 +194,9 @@ def _stub_claude(
         "fi\n"
         'printf "%s" "${SUPERTOOL_WATCH_NAME-}" > "'
         + str(bindir / "watch_name.txt")
+        + '"\n'
+        'printf "%s" "${OSS_WORKSPACE_CHANNEL_ARM_TARGET-}" > "'
+        + str(bindir / "arm_target_at_exec.txt")
         + '"\n'
         'for a in "$@"; do printf "%s\\n" "$a" >> "' + str(argv_log) + '"; done\n'
         "exit 0\n",
@@ -284,6 +308,7 @@ def run(
     mcp_list=None,
     mcp_list_exit=0,
     plugin_marketplace_exit=0,
+    mcp_get_by_name=None,
 ):
     _require_shell()
     bindir = Path(cwd) / "_stubbin"
@@ -297,6 +322,7 @@ def run(
             mcp_list=mcp_list,
             mcp_list_exit=mcp_list_exit,
             plugin_marketplace_exit=plugin_marketplace_exit,
+            mcp_get_by_name=mcp_get_by_name,
         )
 
     # HOME is pinned for the same reason PATH is: the consumer is looked up under

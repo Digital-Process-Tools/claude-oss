@@ -245,11 +245,52 @@ def check_mcp_channel_registration(
     label = server or CHANNEL_SERVER
     arm_target = env.get("OSS_WORKSPACE_CHANNEL_ARM_TARGET", "")
     if state == "not-registered" and arm_target and arm_target != label:
+        # #1344: `arm_target` is untrusted relay data -- a stale export left
+        # over from an earlier session, or a value inherited from an
+        # unrelated parent shell, would otherwise convert a genuine
+        # `not-registered` finding into a clean `OK` forever, with nothing
+        # here ever having asked `claude mcp get` whether that name actually
+        # resolves. Verified the same way the primary label already was,
+        # via the injected `run`/`which` rather than a second, independent
+        # ask: three outcomes, not two -- confirmed, contradicted, or the
+        # verification itself could not be made.
+        arm_state, arm_detail = doctor.mcp_channel_registration_state(
+            server=arm_target, run=run, which=which, env=env
+        )
+        if arm_state == "registered":
+            doctor.report(
+                "OK",
+                "channel MCP registration: {} is not registered, but {} already "
+                "provides the claude-channel consumer for this repo (an installed "
+                "plugin's own .mcp.json), verified via claude mcp get -- nothing "
+                "to register.".format(label, arm_target),
+            )
+            return
+        if arm_state == "could-not-ask":
+            doctor.report(
+                "WARN",
+                "channel MCP registration: {} is not registered, and "
+                "OSS_WORKSPACE_CHANNEL_ARM_TARGET names {} as covering it, but "
+                "whether that actually resolves could not be verified ({}) -- "
+                "not answered as OK, which would trust an unverified "
+                "relay.".format(label, arm_target, arm_detail),
+            )
+            return
+        # Any other state (not-registered, unreadable-entry, target-absent,
+        # target-unreadable) means the named arm target does NOT itself
+        # amount to a verified registration -- the relay does not hold, and
+        # this must not silently swallow the real gap it was reporting.
         doctor.report(
-            "OK",
-            "channel MCP registration: {} is not registered, but {} already "
-            "provides the claude-channel consumer for this repo (an installed "
-            "plugin's own .mcp.json) -- nothing to register.".format(label, arm_target),
+            "WARN",
+            "channel MCP registration: {} is not registered, and "
+            "OSS_WORKSPACE_CHANNEL_ARM_TARGET names {} as covering it, but "
+            "claude mcp get {} answered {} rather than confirming a real "
+            "registration -- treating {} as not registered rather than "
+            "trusting an unverified relay. bin/oss-workspace registers it at "
+            "session-open; run it once, or `claude mcp add -s local {} bun "
+            "<path to claude-channel/channel.ts>`.".format(
+                label, arm_target, arm_target, arm_state, label, label
+            ),
         )
         return
     if state == "could-not-ask":
