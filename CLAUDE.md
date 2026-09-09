@@ -481,7 +481,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/SKILL.md` | 41,739 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 53,938 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
-| `skills/manager/phases/accounting.md` | 22,987 B | 23,000 B |
+| `skills/manager/phases/accounting.md` | 23,564 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
@@ -632,6 +632,17 @@ Ceiling unchanged; comfortably under it.
 22,987 B. The new sentence in Cadence names the #1155 threshold route now activated via
 `curate_route_threshold` -- the config change closing #1303, not a prose expansion of its own.
 Ceiling unchanged; still under it.
+
+**`accounting.md`'s budget was raised again for #1386**: 22,987 B became 23,564 B, past the 23,000 B
+ceiling by 564 B. The Cadence section's own triage paragraph used to say the last-triaged read is
+enforced but consumed by nothing -- true at the time, and the gap this issue closes: a sub-manager
+cannot act on it itself, since it dies with its own context at the end of its tick and cannot count
+ticks or releases across a spawn boundary. `scripts/triage_trigger.py` gives the scheduler -- the one
+actor spanning ticks -- a computed verdict (`due` / `not-due` / `could-not-tell`, mirroring
+`release_trigger.py`'s own three-state shape) to read at the `RELEASE: released` handback in
+`commands/tick.md`, which is where the paragraph now points rather than restating a second copy of
+when the trigger fires. Nothing already in the file argued that point, so nothing was cut to make
+room; the ceiling moved to 25,900 B, ~10% headroom over the new size.
 
 **`merge.md`'s budget was raised for #1007**, which closes the race a tick's own cleanup
 guard was overridden through: 10,012 B measured became 13,198 B. The new bullet states two
@@ -809,7 +820,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 20,177 B | 22,200 B |
+| `commands/tick.md` | 21,917 B | 22,200 B |
 
 **Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
 1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser

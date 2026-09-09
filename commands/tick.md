@@ -110,6 +110,35 @@ Seven answers, not three, and only one of them is the ordinary case:
   same two facts a `paused` sub-manager hands back below — wait on the named observable and resume
   the same releaser with `SendMessage`, never a fresh spawn: a fresh one re-derives from gate 1
   instead of the gate it actually paused at.
+
+  **On `RELEASE: released`, check the triage cadence before spawning the next sub-manager (#1386).**
+  A sub-manager cannot run this check itself — it dies with its own context at the end of its tick
+  and cannot count ticks across spawns — so it falls to this session, the one actor spanning ticks.
+  Run:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/triage_trigger.py" --repo <clone>
+  ```
+
+  Three states, and only one of them is silent: `not-due` needs nothing further. `due` means
+  dispatch `oss:triager` for one sweep before the next sub-manager — the same "fresh spawn, nothing
+  handed to it beyond the spawn itself" shape as the releaser above, since the triager re-derives the
+  board from the tracker rather than from anything this session already holds. `could-not-tell` is
+  not `not-due`: say so, and either fix what the receipt names (an unreadable state file, an
+  unreadable tag) or arm a short wakeup and re-check next tick — never proceed as though the sweep
+  were unnecessary because this call could not see it.
+
+  **Record the sweep the moment the triager reports back, or `due` never clears (#1386).** The
+  triager never writes to the state file itself -- it is Bash and TodoWrite only, and its report is
+  labels applied plus proposed clusters, nothing about cadence. Without this step the next
+  `RELEASE: released` reads the same stale `--last-triage` and dispatches a triager again, forever,
+  on every release after this one. This session runs it, once the triager's own final message
+  confirms the sweep actually ran (not a refusal, not an empty return):
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --triage-recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  ```
+
 - **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
   names it — the same naming step 7 below always asked of a tick that ends blocked.
 - **`paused`** — the `WAIT-DISPATCH:` and `WAIT-OBSERVABLE:` lines name what this tick set in motion

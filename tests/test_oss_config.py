@@ -287,6 +287,33 @@ def test_the_release_triggers_block_honours_the_same_underscore_escape():
     assert oss_config.validate(config) == []
 
 
+def test_triage_after_release_accepts_true_or_false():
+    """#1386: `triage_after_release` is the one `release.triggers` key that is a
+    boolean rather than a count, validated by `TRIGGER_BOOLEAN_KEYS` rather than
+    folded into the numeric `TRIGGER_KEYS` check just below."""
+    for value in (True, False):
+        config = _valid()
+        config["release"] = {"triggers": {"triage_after_release": value}}
+        assert oss_config.validate(config) == []
+
+
+def test_triage_after_release_rejects_a_non_boolean():
+    """Negative control for the test above: a count or a string in this key must
+    be refused rather than silently accepted as truthy."""
+    for value in (1, "yes", None):
+        config = _valid()
+        config["release"] = {"triggers": {"triage_after_release": value}}
+        problems = oss_config.validate(config)
+        if value is None:
+            # None means "declared but unset" everywhere else in this block --
+            # the same escape merged_prs/soak_hours already get.
+            assert problems == [], (value, problems)
+        else:
+            assert any(
+                "triage_after_release" in p and "true or false" in p for p in problems
+            ), (value, problems)
+
+
 def test_load_reports_a_missing_file_as_a_finding_not_a_crash():
     problems = oss_config.load(REPO_ROOT / "does-not-exist.json")[1]
     assert problems and any("not found" in p for p in problems)

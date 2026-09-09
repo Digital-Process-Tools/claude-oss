@@ -123,7 +123,8 @@
     "latest": true,
     "triggers": {
       "merged_prs": 10,
-      "soak_hours": 48
+      "soak_hours": 48,
+      "triage_after_release": true
     }
   }
 }
