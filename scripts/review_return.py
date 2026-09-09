@@ -191,22 +191,26 @@ _NO_FINDINGS = re.compile(
 # continues into its OWN clause -- "reported above in section 2", "noted
 # previously in this review" -- because a bare word ("in") follows the
 # direction word there too, indistinguishable by the #1270 rule alone from
-# "noted above 90%" continuing the same predicate. The distinguishing case
-# this repo has evidence for is specifically "in": a following locative
-# clause ("in section 2", "in this review") names WHERE the material sits,
-# which is still the back-reference gesture completing itself, not a new
-# predicate about the direction word. So the negative lookahead gets one
-# exception: a direction word followed by whitespace then "in" (word-
-# bounded, so "installed" does not qualify) still counts as closing the
-# gesture. Losing a real back-reference is the direction this repo's own
-# defect class treats as worse than over-signalling one (a finding that is
-# silently lost vs. one over-reported), so the exception is deliberately
-# narrow rather than open to any bare word.
+# "noted above 90%" continuing the same predicate. Self-review finding
+# (both spawned reviewers, independently): an unrestricted "any bare `in`
+# closes the gesture" exception reopens #1270's own original bug for this
+# one preposition -- "found already in a scratch venv" is #1270's own
+# reproduction with "in a scratch venv" appended, still ordinary English
+# continuing the SAME predicate, and it matched under the first cut of
+# this fix. The exception is narrowed to what the issue's own two worked
+# examples actually need: "in" followed by a word that names the review's
+# own structure ("section", or "this"/"that"/"the" introducing one --
+# "in this review", "in the diff", "in the linked audit") closes the
+# gesture; "in" followed by anything else (an article introducing an
+# unrelated noun, as in "in a scratch venv") does not. Losing a real
+# back-reference is still the direction this repo's own defect class
+# treats as worse than over-signalling one, so the exception stays --
+# narrowed to the shape that is actually evidenced, not open to any word.
 _BACKREF = re.compile(
     r"\b(?:reported|report|found|listed|list|described|detailed|noted|note|"
     r"mentioned|stated|outlined|flagged|identified|documented|given|shown)"
     r"[ \t]+(?:[\w,'-]+[ \t]+){0,3}(?:above|earlier|previously|already)\b"
-    r"(?:(?![ \t]*[A-Za-z0-9])|(?=[ \t]+in\b))"
+    r"(?:(?![ \t]*[A-Za-z0-9])|(?=[ \t]+in[ \t]+(?:this|that|the|section)\b))"
     r"|\bas[ \t]+(?:noted|described|stated|mentioned)\b"
     r"|\b(?:see|per)[ \t]+(?:above|earlier|my[ \t]+\w+[ \t]+above)\b"
     r"|\b(?:above|earlier)[ \t]+(?:findings|analysis|review)\b",

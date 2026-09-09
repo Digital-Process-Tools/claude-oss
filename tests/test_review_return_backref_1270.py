@@ -126,3 +126,20 @@ def test_noted_previously_in_this_review_is_still_a_backref():
     shape, with a different verb/direction-word pair."""
     verdict = _classify("This bug was noted previously in this review.")
     assert verdict["state"] == "referred-not-stated", verdict
+
+
+def test_found_already_in_a_scratch_venv_is_not_a_backref():
+    """Self-review finding (both spawned reviewers, independently): the
+    first cut of the #1327 "in"-exception matched ANY bare "in" after a
+    direction word, which reopens #1270's own original bug for exactly
+    this shape -- "found already in a scratch venv" is #1270's own
+    reproduction with "in a scratch venv" tacked on, still ordinary
+    English continuing the SAME predicate, not a back-reference. A fully
+    stated, fully detailed finding containing this phrase must not be
+    downgraded to referred-not-stated."""
+    verdict = _classify(
+        "SQL injection in scripts/foo.py:42. A tool was found already in a "
+        "scratch venv, unrelated to this review. Reproduce: run the scan; "
+        "severity: critical, class: injection."
+    )
+    assert verdict["state"] == "states-findings", verdict

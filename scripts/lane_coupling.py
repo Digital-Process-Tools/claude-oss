@@ -404,15 +404,23 @@ def extract_references(repo, source_text):
     # collected into `problems` and surfaced through the return value
     # instead of swallowed; `ValueError`/`NotImplementedError` stay silent,
     # since those mean the base or pattern was well-formed and simply
-    # matched nothing (a legitimate empty result, not a failed walk). The
-    # literal-candidate and import-resolution loops below deliberately keep
-    # their original broad `(OSError, ValueError)` catch: an over-long or
-    # otherwise unstat-able string is a routine outcome of stray sentence-
-    # shaped literals that are not paths at all (confirmed on this repo's
-    # own suite -- a docstring sentence can raise `OSError: [Errno 63] File
+    # matched nothing (a legitimate empty result, not a failed walk).
+    #
+    # The literal-candidate loop below deliberately keeps its original
+    # broad `(OSError, ValueError)` catch: an over-long or otherwise
+    # unstat-able string is a routine outcome of stray sentence-shaped
+    # literals that are not paths at all (confirmed on this repo's own
+    # suite -- a docstring sentence can raise `OSError: [Errno 63] File
     # name too long` when stat'd, deep worktree paths make this worse, and
     # is-this-a-path is exactly what `.is_file()` is being asked here, not
-    # "did a directory walk succeed").
+    # "did a directory walk succeed"). The import-resolution loop right
+    # below it has no exception handling at all, before or after this fix
+    # -- a pre-existing gap this issue did not ask to close (self-review
+    # finding: an earlier version of this comment claimed both loops
+    # "deliberately keep their original broad catch," which was false for
+    # this one -- there was never a catch here to keep). An `OSError`
+    # there still propagates uncaught rather than rendering as an empty
+    # match; left as-is, out of this issue's own five-item scope.
     problems = []
     literals = _string_literal_candidates(tree) + _joined_path_candidates(tree)
     for literal in literals:
