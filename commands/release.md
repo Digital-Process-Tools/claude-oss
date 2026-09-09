@@ -59,14 +59,14 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    here.
 
    **A push-triggered run alone does not satisfy this gate in a repo whose own CI runs a reduced
-   matrix on ordinary pushes and reserves fuller coverage for a manual dispatch — this repository is
-   one instance of exactly that shape (#1246), and it is a per-repo fact rather than something to
-   assume here.** Read the workflow file and the dispatch input from `.github/workflows/*.yml`
-   itself at the time of the release, the same way every other fact in this gate is read rather than
-   named: look for an `on: workflow_dispatch: inputs:` entry that requests wider coverage than the
-   push/pull_request trigger runs. Where one exists, the push-triggered run for the commit being
-   tagged is not the full picture, and gate 1 is satisfied only by also dispatching, and reading, the
-   wider one:
+   matrix on ordinary pushes and reserves fuller coverage for a manual dispatch.** Whether the repo
+   being released is shaped that way is a per-repo fact and never something to assume here — read
+   the workflow file and the dispatch input from `.github/workflows/*.yml` itself at the time of the
+   release, the same way every other fact in this gate is read rather than named: look for an
+   `on: workflow_dispatch: inputs:` entry that requests wider coverage than the push/pull_request
+   trigger runs. Where one exists, the push-triggered run for the commit being tagged is not the full
+   picture, and gate 1 is satisfied only by also dispatching, and reading, the wider one — a shape
+   this loop has observed on at least one managed repo (#1246), never guaranteed on any other:
 
    ```bash
    git rev-parse HEAD
@@ -532,13 +532,14 @@ before its own `tests` run had even started, and that run concluded RED four min
 every non-CodeQL leg, on all three operating systems.
 
 **A push-triggered run alone still does not verify this commit against the coverage a release is
-supposed to require (#1324).** Gate 1, above, dispatches this repo's full 3-OS x Python-3.9-3.12
-matrix — reserved for a `workflow_dispatch` carrying `full_matrix: true` (#1246) — but only against
-the *pre-release* default branch, before this commit exists. The push this commit itself triggers
-runs only the reduced 5-leg set. So the full matrix must be dispatched a second time, against this
-commit specifically, after the push — the same repo-specific check gate 1 already performs (look
-for `on: workflow_dispatch: inputs:` in `.github/workflows/*.yml` at release time; do not assume
-every repo shares this shape):
+supposed to require (#1324), on a repo shaped the way gate 1 checks for above.** Where gate 1 found
+a wider `workflow_dispatch` input, it was only ever dispatched against the *pre-release* default
+branch, before this commit exists — the push this commit itself triggers runs only whatever reduced
+set that repo's own push trigger runs. So the wider dispatch must be repeated a second time, against
+this commit specifically, after the push — the same repo-specific check gate 1 already performed
+(look again at `on: workflow_dispatch: inputs:` in `.github/workflows/*.yml` at release time; do not
+assume every repo shares this shape, and skip the rest of this section entirely on a repo where the
+push trigger already runs full coverage, since there is nothing wider left to dispatch or wait for):
 
 ```bash
 COMMIT_SHA="$(git rev-parse HEAD)"
