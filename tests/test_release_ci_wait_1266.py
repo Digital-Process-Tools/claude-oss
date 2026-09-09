@@ -59,7 +59,7 @@ def _runs_json(rows):
     return json.dumps(rows)
 
 
-def _row(name="tests", status="completed", conclusion="success", url=None):
+def _row(name="tests", status="completed", conclusion="success", url=None, event=None):
     row = {
         "workflowName": name,
         "status": status,
@@ -68,6 +68,8 @@ def _row(name="tests", status="completed", conclusion="success", url=None):
     }
     if url is not None:
         row["url"] = url
+    if event is not None:
+        row["event"] = event
     return row
 
 
@@ -199,6 +201,70 @@ def test_could_not_read_never_folds_into_pending_or_green():
     run2 = _run_sequence([(0, _runs_json([]), "")])
     entry2 = rcw.read_commit(SHA, "gh", run2)
     assert entry2["state"] == rcw.STATE_PENDING
+
+
+# --------------------------------------------------------------- read_commit: --require-event (#1324)
+
+
+def test_require_event_does_not_report_green_from_a_push_triggered_run_alone():
+    """#1324: this repo reserves its full 3-OS x Python-3.9-3.12 matrix for a
+    `workflow_dispatch` carrying `full_matrix: true` (#1246); the ordinary
+    push-triggered run of the same workflow is only the reduced 5-leg set.
+    A caller waiting specifically for the dispatched full-matrix run must
+    never read a green push-triggered run alone as satisfying that wait --
+    zero runs matching the required event is its own state, never GREEN."""
+    rows = [_row("tests", conclusion="success", event="push")]
+    run = _run_sequence([(0, _runs_json(rows), "")])
+    entry = rcw.read_commit(SHA, "gh", run, expect_event="workflow_dispatch")
+    assert entry["state"] != rcw.STATE_GREEN
+    assert entry["state"] == rcw.STATE_PENDING
+
+
+def test_require_event_reports_green_once_the_matching_run_is_green():
+    """Positive control for the test above: once a run with the required
+    event actually exists and is green, the wait is satisfied -- proves the
+    assertion above is not vacuously true because nothing matching the event
+    can ever be green."""
+    rows = [
+        _row("tests", conclusion="success", event="push"),
+        _row("tests", conclusion="success", event="workflow_dispatch"),
+    ]
+    run = _run_sequence([(0, _runs_json(rows), "")])
+    entry = rcw.read_commit(SHA, "gh", run, expect_event="workflow_dispatch")
+    assert entry["state"] == rcw.STATE_GREEN
+
+
+def test_require_event_reports_red_from_the_matching_run_even_if_others_passed():
+    """A green push-triggered run must not mask a failing dispatched run
+    either -- the filter applies to RED the same way it applies to GREEN."""
+    rows = [
+        _row("tests", conclusion="success", event="push"),
+        _row("tests", conclusion="failure", event="workflow_dispatch"),
+    ]
+    run = _run_sequence([(0, _runs_json(rows), "")])
+    entry = rcw.read_commit(SHA, "gh", run, expect_event="workflow_dispatch")
+    assert entry["state"] == rcw.STATE_RED
+
+
+def test_require_event_none_preserves_old_behaviour():
+    """Regression control: omitting `expect_event` (the CLI default) must
+    keep classifying by conclusion alone, exactly as before #1324."""
+    rows = [_row("tests", conclusion="success", event="push")]
+    run = _run_sequence([(0, _runs_json(rows), "")])
+    entry = rcw.read_commit(SHA, "gh", run)
+    assert entry["state"] == rcw.STATE_GREEN
+
+
+def test_main_wires_require_event_through_to_a_pending_verdict(capsys):
+    """The CLI flag actually reaches `read_commit`, not just the library
+    function directly."""
+    rows = [_row("tests", conclusion="success", event="push")]
+    run = _run_sequence([(0, _runs_json(rows), "")])
+    code = rcw.main(["--commit", SHA, "--require-event", "workflow_dispatch"], run=run)
+    assert code == rcw.EXIT_CODES[rcw.STATE_PENDING]
+    out = capsys.readouterr().out
+    assert "PENDING" in out
+    assert "workflow_dispatch" in out
 
 
 # --------------------------------------------------------------- --wait / timeout
