@@ -76,7 +76,7 @@ def test_a_resolved_install_root_is_named_instead_of_plugin_root(tmp_path):
     different directories here on purpose, mirroring a maintainer's own
     clone (`plugin_root`) versus the real installed copy (`install_root`)."""
     plugin_root = _plugin_root(tmp_path, version="9.9.9")
-    install_root = tmp_path / "real-install" / "0.31.0"
+    install_root = tmp_path / "real-install" / "9.9.9"
     (install_root / "bin").mkdir(parents=True)
     remedy = doctor._launcher_remedy(
         plugin_root, install_root=install_root, windows=False
@@ -124,7 +124,7 @@ def test_check_names_the_resolved_install_when_project_dir_is_given(
     plugin_root = _plugin_root(tmp_path)
     project_dir = tmp_path / "some-repo"
     project_dir.mkdir()
-    install_root = tmp_path / "real-install" / "0.31.0"
+    install_root = tmp_path / "real-install" / "9.9.9"
     (install_root / "bin").mkdir(parents=True)
 
     monkeypatch.setattr(doctor.plugin_update, "plugin_name", lambda root: "oss")
