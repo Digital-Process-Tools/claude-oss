@@ -135,9 +135,7 @@ def test_comment_before_watermark_is_excluded():
 
 
 def test_maintainer_comment_is_excluded():
-    comments = [
-        {"created_at": "2026-09-09T10:00:00Z", "author_association": "OWNER"}
-    ]
+    comments = [{"created_at": "2026-09-09T10:00:00Z", "author_association": "OWNER"}]
     result = inbound_triage.comments_needing_answer(
         comments, since_iso="2026-09-08T00:00:00Z"
     )
@@ -178,3 +176,58 @@ def test_unclassifiable_author_is_included_not_dropped():
         comments, since_iso="2026-09-08T00:00:00Z"
     )
     assert result == comments
+
+
+def test_maintainer_comment_excluded_even_with_own_login_and_different_author():
+    """Self-review finding (#1394): both spawned reviewers independently found
+    that passing `own_login` used to short-circuit the association check for
+    any comment whose author differed from it -- so a human maintainer
+    replying under their own account, not the bot's `own_login`, was reported
+    as still needing an answer. Both filters must apply together."""
+    comments = [
+        {
+            "created_at": "2026-09-09T10:00:00Z",
+            "author": "the-human-maintainer",
+            "author_association": "OWNER",
+        }
+    ]
+    result = inbound_triage.comments_needing_answer(
+        comments, since_iso="2026-09-08T00:00:00Z", own_login="oss-bot"
+    )
+    assert result == []
+
+
+def test_external_comment_kept_with_own_login_and_different_author():
+    """Positive control for the fix above: an external author who is neither
+    `own_login` nor a maintainer association must still be kept."""
+    comments = [
+        {
+            "created_at": "2026-09-09T10:00:00Z",
+            "author": "some-outsider",
+            "author_association": "CONTRIBUTOR",
+        }
+    ]
+    result = inbound_triage.comments_needing_answer(
+        comments, since_iso="2026-09-08T00:00:00Z", own_login="oss-bot"
+    )
+    assert result == comments
+
+
+def test_comments_none_is_none_not_empty_list():
+    """Self-review finding (audit spawn, #1394): `comments or []` used to fold
+    'the fetch never ran' into the same `[]` a genuinely empty, successfully
+    fetched list produces -- the same could-not-tell-versus-zero collapse
+    `since_iso=None` is already guarded against, just on the other argument."""
+    assert (
+        inbound_triage.comments_needing_answer(None, since_iso="2026-09-08T00:00:00Z")
+        is None
+    )
+
+
+def test_comments_empty_list_is_empty_list_not_none():
+    """Positive control: a fetch that actually ran and found nothing must
+    still render as a real, measured `[]`, not fold into the `None` above."""
+    assert (
+        inbound_triage.comments_needing_answer([], since_iso="2026-09-08T00:00:00Z")
+        == []
+    )

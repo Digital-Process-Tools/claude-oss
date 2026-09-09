@@ -188,30 +188,42 @@ def comments_needing_answer(comments, since_iso, own_login=None):
     explicitly, the same way every `could-not-tell` state in this file
     must be checked.
 
-    A comment authored by `own_login`, when given, is excluded -- the
-    loop's own replies (once #1395 exists to send them) must not count as
-    inbound work still waiting on an answer. Association-only comments
-    (`own_login` not given, or the comment carries no `author` field) are
-    filtered by `author_association` instead: `"maintainer"` is excluded on
-    the same reasoning `classify_pr` applies to a maintainer-authored PR --
-    it is the loop or the maintainer, not inbound. A comment whose author
-    could not be classified at all (`author_association` untranslatable and
-    no `author`/`own_login` to compare) is **included** rather than dropped:
-    an unrecognised author is not evidence that it's ours, and dropping it
-    silently would produce the same false "nothing waiting" this module
-    exists to prevent.
+    Both filters apply, not one or the other. A comment authored by
+    `own_login`, when given, is excluded -- the loop's own replies (once
+    #1395 exists to send them) must not count as inbound work still waiting
+    on an answer. Every remaining comment is then also filtered by
+    `author_association`: `"maintainer"` is excluded on the same reasoning
+    `classify_pr` applies to a maintainer-authored PR -- it is the loop or
+    the maintainer, not inbound. **Checking `author` and stopping there was
+    the module's own first bug** (self-review, #1394): a maintainer who
+    replies under their own human account rather than `own_login` carries
+    an `author` that is never equal to `own_login`, so the association
+    check must still run for every comment `own_login` alone did not
+    already exclude, not only for the ones with no `author` field at all.
+    A comment whose author could not be classified at all
+    (`author_association` untranslatable, and either no `own_login` was
+    given or `author` did not match it) is **included** rather than
+    dropped: an unrecognised author is not evidence that it's ours, and
+    dropping it silently would produce the same false "nothing waiting"
+    this module exists to prevent.
+
+    `comments=None` -- the caller's own fetch never ran, or failed -- also
+    returns `None`, never `[]` (self-review, #1394: the audit spawn found
+    `comments or []` folding that case into a genuinely empty, successfully
+    fetched list, the identical could-not-tell-versus-measured-zero
+    collapse the `since_iso` check above already guards against). Pass an
+    explicit `[]` only when the fetch actually ran and found nothing.
     """
     if not since_iso:
         return None
+    if comments is None:
+        return None
     kept = []
-    for comment in comments or []:
+    for comment in comments:
         created_at = comment.get("created_at")
         if not created_at or created_at <= since_iso:
             continue
-        if own_login is not None and comment.get("author") is not None:
-            if comment.get("author") == own_login:
-                continue
-            kept.append(comment)
+        if own_login is not None and comment.get("author") == own_login:
             continue
         association = _translate_association(comment.get("author_association"))
         if association == "maintainer":
