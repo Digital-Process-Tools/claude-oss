@@ -198,13 +198,15 @@ Two consequences worth stating on their own:
 
 ## What is not true yet
 
-**The loop does not reach every step it is told to reach.** A release has a
-trigger in config and fires by itself. Curation has one. The triage sweep that
-the cadence rule says follows every release has none — the rule lives in a phase
-file whose only reader is a sub-manager, which is discarded before the next
-release and holds no authority over what the scheduler does next, and no file on
-the release path mentions triage at all. The recorder was built and the consumer
-was not. The first sweep this loop ever recorded was run by hand.
+**The loop does not reach every step it is told to reach — the triage sweep is
+the fixed instance, not the open one.** A release has a trigger in config and
+fires by itself. Curation has one. The triage sweep used to have none — the rule
+lived in a phase file whose only reader is a sub-manager, discarded before the
+next release and holding no authority over what the scheduler does next, and no
+file on the release path mentioned triage at all. The recorder was built and the
+consumer was not: the first sweep this loop ever recorded was run by hand, across
+31 tagged releases (#1386). `scripts/triage_trigger.py` is that consumer now,
+read by the scheduler at the `RELEASE: released` handback in `commands/tick.md`.
 
 That is the shape to watch for, and it is worth more than the instance: **every
 individual file was correct and the loop still did not do the thing.** No
