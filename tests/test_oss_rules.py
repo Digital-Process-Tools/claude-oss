@@ -107,11 +107,23 @@ def test_install_writes_an_index_beside_the_rules(tmp_path):
         )
 
 
+#: Row width per dimension, re-derived from claude-jit-context's `rebuild-tsv.sh`
+#: rather than assumed uniform (#1372). Paths is `match<TAB>filename` -- two columns,
+#: no verdict, because `build_path_tsv` never writes one. Vocabulary is
+#: `keyword<TAB>filename<TAB>verdict` -- three columns, even though the third is empty
+#: for every keyword this repo ships (no `GENERIC_WORDS_FILE` is configured, so
+#: `build_vocab_tsv`'s classify pass defaults every keyword to non-generic, i.e. an
+#: empty third field) -- the row is still three TAB-separated fields, the last one
+#: empty rather than absent. Tools is the seven-column shape covered above.
+ROW_ARITY = {"tools": 7, "paths": 2, "vocabulary": 3}
+
+
 def test_index_rows_are_shaped_per_dimension(tmp_path):
-    """Paths and vocabulary are `pattern<TAB>filename`; tools is the seven-column shape
-    `rebuild-tsv.sh` writes (see FILENAME_COLUMN above) -- a two-column assertion applied to
-    a tools row would fail on a correctly built index, which is this test's own defect
-    wearing the opposite sign.
+    """Paths is `pattern<TAB>filename`; vocabulary is `keyword<TAB>filename<TAB>verdict`
+    (#1372: the empty third field is still part of the shape `rebuild-tsv.sh` writes,
+    not an extra column we get to omit); tools is the seven-column shape (see
+    FILENAME_COLUMN above) -- a uniform arity applied across all three would fail on a
+    correctly built index, which is this test's own defect wearing the opposite sign.
     """
     oss_rules.install(tmp_path)
     for dimension in oss_rules.RULES:
@@ -119,7 +131,7 @@ def test_index_rows_are_shaped_per_dimension(tmp_path):
         column = FILENAME_COLUMN[dimension]
         for line in index.read_text(encoding="utf-8").splitlines():
             fields = line.split("\t")
-            assert len(fields) == (7 if dimension == "tools" else 2), line
+            assert len(fields) == ROW_ARITY[dimension], line
             assert fields[0].strip(), line
             assert fields[column].endswith(".md"), line
 
@@ -468,6 +480,67 @@ def test_tools_index_row_is_the_seven_column_shape():
     )
     for filename, expected in TOOLS_INDEX_EXPECTED.items():
         assert by_filename[filename] == expected, (filename, by_filename[filename])
+
+
+def _rebuild_tsv_vocab_row(keyword, filename):
+    """The column SHAPE `claude-jit-context`'s `rebuild-tsv.sh` (0.7.1+) writes for one
+    vocabulary keyword: `printf '%s\t%s\t%s'` with the keyword, the filename, and a
+    verdict that is "generic" only when the keyword exactly matches one line of a
+    dictionary word list the builder consults (bundled by default; see
+    `oss_rules.index_rows`'s own docstring for the mechanism -- leaving the builder's
+    `GENERIC_WORDS_FILE` unconfigured does NOT mean no wordlist is consulted).
+
+    This reimplements the SHAPE only, hardcoding an empty third field, not the
+    classifier: every keyword this plugin ships today is verified (by hand, against the
+    installed dependency's own `data/generic-words.txt`, not assumed) to produce an
+    empty verdict, but this function does not re-derive that -- it cannot without
+    vendoring or shelling out to the dependency's ~100k-line word list, which is a
+    bigger dependency than this fixed-point check needs. **A newly-added single-token
+    keyword must be checked against that file by hand before assuming it stays empty
+    here** -- see `oss_rules.index_rows`'s docstring.
+    """
+    return "{}\t{}\t".format(keyword, filename)
+
+
+def test_control_the_shipped_vocabulary_index_used_to_drift_from_the_builders_shape_1372():
+    """Positive control, run against what `index_rows()` produced BEFORE #1372's fix:
+    two columns, no trailing tab. Pinned here as a literal so it stays true regardless
+    of what `index_rows()` does today -- this is the "must differ" half CLAUDE.md's own
+    rule requires beside a "must not differ" assertion
+    (`test_vocabulary_index_row_is_the_rebuild_tsv_shape_1372` below): a rebuild over a
+    freshly-scaffolded repo did change the vocabulary index, and this is the row-level
+    reason why.
+    """
+    pre_fix_row = "some keyword\tsome-file.md"  # index_rows()'s old two-column output
+    rebuilt_row = _rebuild_tsv_vocab_row("some keyword", "some-file.md")
+    assert pre_fix_row != rebuilt_row, (
+        "the pre-#1372 two-column row already matches the builder's shape -- the "
+        "positive control has nothing to prove"
+    )
+
+
+def test_vocabulary_index_row_is_the_rebuild_tsv_shape_1372():
+    """`index_rows("vocabulary", ...)` must be a fixed point of `rebuild-tsv.sh`: every
+    row it emits must equal what `_rebuild_tsv_vocab_row` (the builder's own column
+    logic) would write for the same keyword and file, so running the dependency's
+    rebuilder over a freshly-scaffolded repo is a no-op rather than a diff (#1372).
+    """
+    rows = oss_rules.index_rows("vocabulary", oss_rules.RULES["vocabulary"])
+    assert rows
+    for row in rows:
+        fields = row.split("\t")
+        assert len(fields) == 3, row
+        keyword, filename, verdict = fields
+        assert verdict == "", (
+            "a keyword this plugin ships classified as generic in this pinned "
+            "expectation -- {}. If a real dependency rebuild now writes a non-empty "
+            "verdict for it, check the keyword against the installed "
+            "claude-jit-context's data/generic-words.txt by hand (this reimplementation "
+            "only pins the column SHAPE, not the classifier -- see "
+            "_rebuild_tsv_vocab_row's docstring) and update this test to match, rather "
+            "than assuming the empty default still holds".format(row)
+        )
+        assert row == _rebuild_tsv_vocab_row(keyword, filename), row
 
 
 def test_tools_match_fires_on_a_representative_payload_for_each_blocked_tool():

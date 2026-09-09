@@ -945,7 +945,8 @@ def index_rows(dimension, rules):
     """The shape a rebuild produces, per dimension.
 
     Paths index one row of `match<TAB>filename`; vocabulary indexes one row of
-    `keyword<TAB>filename` per keyword; tools indexes one row of
+    `keyword<TAB>filename<TAB>verdict` per keyword (the verdict is always empty here --
+    see #1372 below); tools indexes one row of
     `tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid<TAB>requires` -- seven
     columns, measured against claude-jit-context's `rebuild-tsv.sh` rather than reasoned
     about (#80 found the same list wrong when it was only reasoned about). The seventh
@@ -957,6 +958,29 @@ def index_rows(dimension, rules):
     before `requires:` existed at all -- and `rebuild-tsv.sh` itself has since grown the
     same seventh column, so widening the row here does not overturn that decision so much
     as catch up to what it was already describing when it was written.
+
+    The vocabulary row's third column was added by #1372, for the identical reason:
+    `rebuild-tsv.sh` (claude-jit-context 0.7.1+) writes `keyword<TAB>file<TAB>verdict`,
+    where the verdict is `"generic"` only when the WHOLE keyword string exactly matches
+    one line of a dictionary word list, and empty otherwise. Leaving `GENERIC_WORDS_FILE`
+    unconfigured does NOT mean no such file is consulted -- the builder falls back to its
+    own bundled `data/generic-words.txt` (one lowercase English/French dictionary token
+    per line), and that fallback runs unconditionally unless this plugin overrides it,
+    which it does not. Every keyword this plugin ships today emits an empty verdict, but
+    for the reason the dictionary's own entries are single tokens: a multi-word keyword
+    ("state file") cannot exactly match a one-token line,
+    and this plugin's few single-token keywords ("statusline", "oss-watch") are invented
+    compounds, not ordinary dictionary words -- checked against the installed dependency's
+    own word list at review time, not assumed. **A single-word keyword added later is not
+    covered by that check and must be verified the same way before assuming its verdict
+    stays empty** -- see `_rebuild_tsv_vocab_row` in `tests/test_oss_rules.py`, which
+    reimplements the column SHAPE only, not the classifier itself.
+
+    Shipping the two-column form made a freshly-scaffolded repo not a fixed point of
+    that builder regardless of any single row's verdict: running it once turned every
+    row into `keyword<TAB>file<TAB>` (an oscillation to a third state and back on every
+    `/oss:scaffold --apply` afterwards), which is a dirty working tree for no reason a
+    maintainer of that repo caused.
     """
     rows = []
     for name in sorted(rules):
@@ -966,7 +990,16 @@ def index_rows(dimension, rules):
             for keyword in keywords.split(","):
                 keyword = keyword.strip()
                 if keyword:
-                    rows.append("{}\t{}".format(keyword, name))
+                    # Three columns, not two: `rebuild-tsv.sh` (claude-jit-context
+                    # 0.7.1+) writes `keyword<TAB>file<TAB>verdict`. The verdict is
+                    # empty for every keyword this plugin ships today, but NOT
+                    # because no word list is configured -- see this function's own
+                    # docstring above for the real mechanism and its residual gap.
+                    # Writing two columns here made a freshly-scaffolded repo not a
+                    # fixed point of that builder: running it once added the empty
+                    # column back, and the next `/oss:scaffold --apply` removed it
+                    # again (#1372).
+                    rows.append("{}\t{}\t".format(keyword, name))
         elif dimension == "tools":
             tool = _field(body, "tool")
             match = _field(body, "match")
