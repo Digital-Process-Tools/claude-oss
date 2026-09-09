@@ -245,11 +245,40 @@ def blocking_classes(table):
     )
 
 
+#: Prefix a `Blocks a release?` cell carries when the row states a condition
+#: rather than a bare yes/no (#1374) -- e.g. a secret written wide and
+#: narrowed immediately after, where the answer depends on whether the file
+#: outlives the writing process or the host is shared. A router reads the
+#: row's own stated condition rather than deriving an automatic answer.
+CONDITIONAL_PREFIX = "conditionally"
+
+
+def conditional_classes(table):
+    """Classes whose row states a condition instead of an unconditional
+    answer (#1374), sorted. Excluded from both `blocking_classes` and
+    `non_blocking_classes`: neither automatic answer is safe to derive for
+    one of these, so a caller that only reads those two sets and forgets
+    this one silently drops the row rather than silently misrouting it --
+    ``parse_rows`` still returns it, this only keeps it out of the two
+    automatic buckets."""
+    return sorted(
+        cls
+        for cls, value in parse_rows(table).items()
+        if value.startswith(CONDITIONAL_PREFIX)
+    )
+
+
 def non_blocking_classes(table):
     """Every other ranked class, sorted -- the rows a routing rule sends to
-    ``trap.d/`` instead of the tracker (#1275)."""
+    ``trap.d/`` instead of the tracker (#1275). A conditional row (#1374) is
+    neither this nor blocking, so it is excluded from both."""
     blocking = set(blocking_classes(table))
-    return sorted(cls for cls in parse_rows(table) if cls not in blocking)
+    conditional = set(conditional_classes(table))
+    return sorted(
+        cls
+        for cls in parse_rows(table)
+        if cls not in blocking and cls not in conditional
+    )
 
 
 def load_table(plugin_root):

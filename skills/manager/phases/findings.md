@@ -32,9 +32,19 @@ afterwards.
 | `splices` — a value reaches a subprocess argv where the callee's option parser decides what it means | can ship behind a trap.d fragment | no |
 | `fails-to-preserve` | can ship behind a trap.d fragment | no |
 | `misreports` | can ship behind a trap.d fragment | no |
+| `overexposes` — a secret or private file is created at a mode wider than intended, narrowed immediately after | conditionally — blocks when the file outlives the writing process (a persistent cache, not a scratch file removed before it) or the host is shared between users; otherwise can ship behind a trap.d fragment | conditionally — the same condition as the blocking column: a reporter should hold disclosure exactly when the instance would also block a release, since that is the same test for "is there a standing window to protect" |
 
 **This table is the only place the rows are written down.** The audit agents reference it rather
 than restating it.
+
+**`overexposes` answers the `Blocks a release?` column with a condition, not a bare yes/no (#1374).**
+A window-of-exposure defect is not one class: the same `write_text` then `chmod` shape is a
+sub-second, single-operator-machine non-issue the first time it is seen, and a standing hole the
+moment either the file survives past the process that wrote it or the machine has more than one
+account on it. Stating the condition in the row, rather than picking a side, is what lets a router
+apply it correctly to both. `scripts/ranking_table.py`'s `conditional_classes` reads this the same
+way `blocking_classes` and `non_blocking_classes` read their own two rows -- excluded from both,
+since neither automatic answer is safe to derive here.
 
 **The two verdict columns are two different questions, and they disagree on one row.** Blocking a
 tag asks *what may this project ship*. The embargo column asks *should a reporter hold disclosure*
@@ -42,6 +52,10 @@ tag asks *what may this project ship*. The embargo column asks *should a reporte
 users. `ships-local-state` is the row where those come apart: it blocks a tag, and it is public the
 instant it ships, so there is no private window an embargo could protect. **Read the column you
 actually need**; a finding's row answers both questions and it answers them differently.
+`overexposes` (#1374) is not a second instance of this: its two columns move together, each stating
+the same condition rather than a fixed answer, so neither column can be read on its own without the
+row's own stated condition -- unlike `ships-local-state`, where the two fixed answers genuinely
+disagree.
 
 **The rule that decides which row a finding belongs in: each row invites a different fix.** So when
 two rows both look like they fit, name the fix each would send a reviewer to make and pick the one
@@ -85,10 +99,13 @@ A row that answers `yes, unconditionally` in the `Blocks a release?` column is *
 immediately** -- a blocking finding does not wait on siblings to accumulate. A row that answers
 `can ship behind a trap.d fragment` is written to `trap.d/<issue>.<slug>.md` instead of filed --
 prose, no frontmatter, the same shape `agents/developer.md`'s "Hit a trap? Log it and carry on"
-already uses -- and `/oss:curate` decides later whether it becomes a rule, and can decline it. **Say
-so if a finding fits none of the rows.** `unranked` is filed as an issue too, same as a blocking row
--- the class that does not exist yet is where the worst finding lands, and a directory nothing loads
-by default is not where it is safe to land.
+already uses -- and `/oss:curate` decides later whether it becomes a rule, and can decline it. A row
+that answers `conditionally` (#1374) is routed by evaluating the stated condition against the actual
+instance: filed as an issue when the condition holds, a `trap.d/` fragment otherwise -- never routed
+by the row alone, since the row deliberately withholds a bare answer. **Say so if a finding fits none
+of the rows.** `unranked` is filed as an issue too, same as a blocking row -- the class that does not
+exist yet is where the worst finding lands, and a directory nothing loads by default is not where it
+is safe to land.
 
 **This is a routing rule, not a second classification.** Read the value in the `Blocks a release?`
 column off the table above when you route; nothing in this section restates which class is which, so

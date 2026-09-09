@@ -262,7 +262,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # (#1153) as the normal, mechanical derivation path, alongside
         # `--short-reason`'s continued role as the explicit override for the
         # unmapped `candidates` state. Budget unchanged; comfortably under.
-        54117,
+        # Re-baselined for #1374: 54117 B became 53938 B -- two stale
+        # "eleven-row findings table" mentions (a hardcoded row count, wrong
+        # the moment a twelfth row was added) were corrected to drop the
+        # count rather than update it to thirteen and go stale again the
+        # next time a row is added. Budget unchanged; comfortably under it.
+        53938,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -303,10 +308,27 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         11400,
         "reviewing a returned diff, and what an issue body filed out of one looks like, when a fix-for-a-finding needs its own pass",
     ),
+    # Raised for #1374: 12570 B on disk against the prior 12400 B ceiling, a
+    # 170 B overage. The new `overexposes` row and its accompanying paragraph
+    # answer the `Blocks a release?` column with a stated condition rather
+    # than a bare yes/no -- a v0.59.0 claude-supertool release audit found a
+    # secret written wide then narrowed a line later, and none of the eleven
+    # existing rows fit an instance whose blocking verdict genuinely depends
+    # on whether the file outlives the writing process or the host is
+    # shared. Nothing already in the file argued that point, so nothing was
+    # cut to make room; ceiling moved to 13800 B, ~10% headroom over the new
+    # size, the same terms as every other re-baseline in this table.
+    # Re-baselined for #1374's own self-review round: 12570 B became 13093 B --
+    # the embargo column for `overexposes` was made conditional too (matching
+    # the blocking column, rather than a bare "yes"), after an auditor spawn
+    # found the bare "yes" broke tests/test_embargo_routing.py's invariant
+    # that embargo is a subset of blocking; plus a precision sentence
+    # distinguishing this row from ships-local-state's own disagreement.
+    # Ceiling unchanged; still comfortably under the 13800 B budget.
     "skills/manager/phases/findings.md": (
-        11222,
-        12400,
-        "ranking a finding: the eleven classes, the blocking and embargo columns, routing by row (#1275), and filing on a dependency's own board",
+        13093,
+        13800,
+        "ranking a finding: the twelve classes, the blocking and embargo columns, routing by row (#1275) including a conditional row (#1374), and filing on a dependency's own board",
     ),
     # Raised for #1275: 9326 B became 11222 B, past the old 10300 B ceiling by
     # 922 B. The new "Routing a finding" section states where a ranked finding

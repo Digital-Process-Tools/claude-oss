@@ -670,7 +670,7 @@ one checks what goes into a lane, the other what comes back out of it.
   longer knew what the tool was doing.
 
   **Rank 1 is prose, not a row `select_issues_rank.rank()` ever returns** — nothing here can read an
-  issue against the eleven-row findings table; that classification is a judgment call made when a
+  issue against the findings table; that classification is a judgment call made when a
   finding is written up. Check the blocking-class exception before consulting the computed table,
   the way the old six-row table's rank 2 encoded it: a blocking defect must not lose to any author's
   ordinary ask.
@@ -689,10 +689,8 @@ one checks what goes into a lane, the other what comes back out of it.
   genuine external report — `rank()` refuses on both axes, and sorts an unrankable issue last, never
   first. The absence of a reading is not evidence of value.
 
-- **Rank a finding by what cannot be undone**, then by who is walking away. The eleven-row table --
-  `destroys`, `discloses`, `executes`, the two `containment` rows, `forges`, `ships-local-state`,
-  `misdirects`, `splices`, `fails-to-preserve`, `misreports` -- lives in
-  `skills/manager/phases/findings.md` and **only there**, with the two verdict columns it carries:
+- **Rank a finding by what cannot be undone**, then by who is walking away. The ranking table
+  lives in `skills/manager/phases/findings.md` and **only there**, with the two verdict columns it carries:
   *blocks a release* and *embargo when reported upstream*, which are two different questions and
   disagree on one row. Read that file before ranking anything, and read the column you actually
   need rather than a restatement of it. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/ranking_table.py"`
