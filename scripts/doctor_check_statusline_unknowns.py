@@ -1,6 +1,7 @@
 """``check_statusline_unknowns`` -- names the exact cause behind every ``?``
-``statusline.py`` can render for the watch channel and the default-branch
-marker, each paired with an executable remedy (#1311).
+``statusline.py`` can render for the watch channel, the default-branch
+marker, and (#1345) the ``/oss:doctor`` reading, each paired with an
+executable remedy (#1311).
 
 A new check, so it lives in its own module from the start, per the #497
 convention. Every shared name from ``doctor`` -- ``report``, ``unmeasured``,
@@ -29,13 +30,14 @@ tested in `.claude/jit-context/paths/00-manual/doctor-check-contract.md` (a
 manual op or a scaffold run) reduces to one route here, the manual op named
 in every remedy below.
 
-**Both readers, re-derived rather than read off a computed fact.**
+**All three readers, re-derived rather than read off a computed fact.**
 ``statusline.py`` never writes its own reasoning to disk, only the collapsed
 render -- so this module re-derives the same inputs (``raw_state``,
 ``attribution``, ``channel_fetched_at`` for the channel; ``fetched_at``,
-``default_branch_state`` for the branch marker) from the identical cache
-file ``statusline.py`` itself reads, and hands the channel half to the
-identical function, ``channel_status``, that decides the render. There is
+``default_branch_state`` for the branch marker; ``doctor_fetched_at``,
+``doctor_verdict`` for the doctor reading) from the identical cache file
+``statusline.py`` itself reads, and hands the channel half to the identical
+function, ``channel_status``, that decides the render. There is
 nothing to re-derive for the branch marker -- ``gather()`` computes it
 inline, collapsing three distinguishable causes into one ``"unknown"``
 before ``_default_branch_marker`` ever sees it -- so this module reconstructs
@@ -94,6 +96,27 @@ fact about the plugin, not about the repo being diagnosed -- so it routes
 through `doctor.unmeasured` instead of a WARN with no remedy to name
 (self-review finding, #1311), the same convention this module's own
 top-level ``config is None`` branch already follows.
+
+**The `/oss:doctor` reading (`dr`), and why it gets no bulleted derivation
+here the way the two fields above do (#1345).** Unlike the channel and
+default-branch fields, the cache carries no code for WHICH of five distinct
+causes (no `doctor.py` located, the subprocess could not start,
+`DOCTOR_TIMEOUT` expiry, a non-zero exit, no `VERDICT:` line) produced a
+`None` verdict -- `statusline.py`'s own `_doctor_reading` folds all five into
+the identical `None` before it is ever written to disk. So `doctor_cause`
+distinguishes only what the cache DOES allow (never asked, stale, an
+unrecognised verdict shape, and the honest `"no-answer"` fold of the five
+real causes) rather than a five-way split this module cannot see through the
+cache alone -- see `doctor_cause`'s own docstring for the full reasoning.
+
+**`repo-missing`, a cause shared by all three fields (self-review finding,
+#1345).** A `.oss.json` with no usable `repo` means there is nowhere to look
+up a cache at all -- distinct from `"not-asked"`, whose own remedy
+(`--refresh`) cannot resolve anything without `repo` set either. Computed
+once in `check_statusline_unknowns` and threaded through every `*_cause`
+call, checked ahead of `cache-unreadable` and the individual not-asked/stale
+derivations for the same reason: no `repo` means `cache` itself is `None`
+for a reason distinct from either of those.
 
 Python 3.9 compatible.
 """
@@ -223,6 +246,17 @@ def default_branch_cause(config, cache, now, repo_missing=False):
 #: classifier` pins the two against each other so a drift here is caught rather
 #: than silently misreporting a real reading as `dr?`'s own unexplained state.
 def _doctor_verdict_reason(verdict):
+    # Self-review finding, #1345: `_read_cache_or_unreadable` only validates
+    # that the parsed cache document is a dict overall -- it never validates
+    # any individual field's type, so a hand-edited or otherwise malformed
+    # cache can carry a non-string `doctor_verdict` (an int, a list, ...).
+    # `.startswith` below would raise `AttributeError` for one, which is
+    # exactly doctor.py's own "exit 0 always" contract this module's
+    # docstrings elsewhere invoke -- so a non-string value folds into
+    # `"unrecognized"` here, the same state a corrupted-but-string value
+    # already gets, rather than propagating.
+    if not isinstance(verdict, str):
+        return "unrecognized"
     if verdict == "ok":
         return None
     if verdict.startswith("usable with gaps") or verdict.startswith("not usable"):

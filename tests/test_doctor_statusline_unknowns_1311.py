@@ -410,6 +410,23 @@ def test_doctor_unrecognized_verdict_shape():
     assert result["value"] == "some future shape"
 
 
+def test_doctor_non_string_verdict_is_unrecognized_not_a_crash():
+    """Self-review finding: `_read_cache_or_unreadable` only validates that the
+    parsed JSON document is a dict overall -- it never validates any field's
+    type, so a hand-edited or otherwise malformed cache with e.g.
+    `"doctor_verdict": 123` reaches this function. `_doctor_verdict_reason`
+    used to call `.startswith` on it unguarded, raising `AttributeError` and
+    crashing the whole `/oss:doctor` run -- exactly the "exit 0 always"
+    contract this module's own docstrings invoke. A non-string verdict must
+    fold into the same `unrecognized` state a corrupted string value gets,
+    never propagate."""
+    for verdict in (123, 4.5, ["ok"], {"state": "ok"}, True):
+        cache = {"doctor_verdict": verdict, "doctor_fetched_at": NOW - 5}
+        result = mod.doctor_cause(cache, NOW)
+        assert result["reason"] == "unrecognized", verdict
+        assert result["value"] == verdict
+
+
 def test_doctor_real_reading_has_no_reason():
     """Positive control: a genuine, fresh verdict is not `dr?` at all."""
     cache = {
