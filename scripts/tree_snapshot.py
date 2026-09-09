@@ -247,15 +247,20 @@ def _one_line(text, limit=2000):
 
 
 # `compare`'s own before-snapshot naming convention (#1330): a lane following
-# `.claude/jit-context/tools/00-manual/tree-snapshot-compare.md`'s advice to
+# `.claude/jit-context/tools/01-oss/tree-snapshot-compare.md`'s advice to
 # write the before-snapshot JSON *inside* the worktree (rather than a shared
 # scratchpad, which can vanish mid-run) leaves an untracked file that did not
 # exist when the before-snapshot was taken -- so by construction it always
-# shows up as an "added" status line at compare time. This matches any
-# basename ending in `-before-snapshot.json` or exactly `before-snapshot.json`
-# (a bare name, or one prefixed with an issue number or any other label),
-# never a single hardcoded literal filename -- a caller free to name its own
-# snapshot file must still be recognised, not just today's one instance.
+# shows up as an "added" status line at compare time (observed once in
+# practice, per PR #1291's own self-review round; see #1330's provenance).
+# This matches any basename ending in `-before-snapshot.json` or exactly
+# `before-snapshot.json` (a bare name, or one prefixed with an issue number or
+# any other label), never a single hardcoded literal filename -- a caller
+# free to name its own snapshot file must still be recognised, not just
+# today's one instance. This is a pattern match on the *name* only, not on
+# the file's content or its author: it is meant to absorb this module's own
+# accidental bookkeeping artifact, not to authenticate one, so it is no
+# stronger a guarantee than that.
 SNAPSHOT_ARTIFACT_RE = re.compile(r"(?:^|/)(?:[^/]*-)?before-snapshot\.json$")
 
 

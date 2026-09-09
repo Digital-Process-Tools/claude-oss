@@ -1,12 +1,17 @@
 """#1330 -- `compare` counted its own before-snapshot artifact as a mutation.
 
-A lane following `.claude/jit-context/tools/00-manual/tree-snapshot-compare.md`'s
+A lane following `.claude/jit-context/tools/01-oss/tree-snapshot-compare.md`'s
 own advice writes the before-snapshot JSON *inside* the worktree it is about
 to snapshot (a shared-scratchpad copy can vanish mid-run -- see that rule's
 own incident). At `compare` time, that file is by construction an untracked
 addition relative to the before-snapshot, since it did not exist when the
 before-snapshot was taken. Nothing distinguished it from an unrelated
-mutation, so a lane's own bookkeeping artifact was reported as `mutated`.
+mutation, so a lane's own bookkeeping artifact was reported as `mutated`
+(observed once in practice during PR #1291's own self-review round, per
+#1330's own provenance -- `agents/developer/review.md`'s own worked example
+keeps the before-snapshot in a shell variable and pipes it via stdin rather
+than writing a file, so this shape is one real, observed variant of the
+documented workflow rather than the only one).
 
 `compare` now recognises a file matching `tree_snapshot.py`'s own
 before-snapshot naming convention (see `tree_snapshot.SNAPSHOT_ARTIFACT_RE`)
