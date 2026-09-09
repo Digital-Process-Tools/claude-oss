@@ -84,6 +84,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -245,6 +246,34 @@ def _one_line(text, limit=2000):
     return " ".join(str(text).split())[:limit]
 
 
+# `compare`'s own before-snapshot naming convention (#1330): a lane following
+# `.claude/jit-context/tools/00-manual/tree-snapshot-compare.md`'s advice to
+# write the before-snapshot JSON *inside* the worktree (rather than a shared
+# scratchpad, which can vanish mid-run) leaves an untracked file that did not
+# exist when the before-snapshot was taken -- so by construction it always
+# shows up as an "added" status line at compare time. This matches any
+# basename ending in `-before-snapshot.json` or exactly `before-snapshot.json`
+# (a bare name, or one prefixed with an issue number or any other label),
+# never a single hardcoded literal filename -- a caller free to name its own
+# snapshot file must still be recognised, not just today's one instance.
+SNAPSHOT_ARTIFACT_RE = re.compile(r"(?:^|/)(?:[^/]*-)?before-snapshot\.json$")
+
+
+def _is_own_snapshot_artifact(status_line):
+    """True when a porcelain v2 untracked (``? <path>``) line names a file
+    matching this module's own before-snapshot naming convention.
+
+    Only untracked lines are ever eligible: the artifact this module writes
+    is a brand-new file, never a modification of something already tracked,
+    so a ``1``/``2``-prefixed (ordinary change / rename) line is never
+    excluded here regardless of its path.
+    """
+    if not status_line.startswith("? "):
+        return False
+    path = status_line[2:]
+    return bool(SNAPSHOT_ARTIFACT_RE.search(path))
+
+
 def _verdict(state, reason, **extra):
     out = {
         "state": state,
@@ -286,8 +315,16 @@ def compare(before, after):
     after_lines = {
         line for line in (after.get("status") or "").splitlines() if line.strip()
     }
-    added = sorted(after_lines - before_lines)
-    removed = sorted(before_lines - after_lines)
+    added = sorted(
+        line
+        for line in (after_lines - before_lines)
+        if not _is_own_snapshot_artifact(line)
+    )
+    removed = sorted(
+        line
+        for line in (before_lines - after_lines)
+        if not _is_own_snapshot_artifact(line)
+    )
     head_moved = before.get("head") != after.get("head")
 
     if not added and not removed and not head_moved:
