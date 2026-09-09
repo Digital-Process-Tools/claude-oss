@@ -37,6 +37,25 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import doctor  # noqa: E402
 
 
+def _names(message, path):
+    """Does `message` name `path`, whichever separator it renders with?
+
+    The Windows remedy is a Git Bash command line, so it spells the path with
+    forward slashes while `str(WindowsPath(...))` spells the same directory
+    with backslashes. Asserting on `str()` alone measures the separator rather
+    than the identity: it failed on windows-latest/3.12 while passing on every
+    POSIX leg, where the two spellings are the same string and the stronger
+    property is free.
+
+    The negative form matters more than the positive one: `str(p) not in
+    message` passes on Windows for a path the message DOES name, because the
+    spelling differs. That is a must-not-fire assertion passing for the wrong
+    reason, which is what a control exists to rule out.
+    """
+    p = Path(path)
+    return str(p) in message or p.as_posix() in message
+
+
 @pytest.fixture(autouse=True)
 def _clean_findings():
     doctor.FINDINGS.clear()
@@ -141,8 +160,8 @@ def test_check_names_the_resolved_install_when_project_dir_is_given(
     )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN"
-    assert str(install_root) in message
-    assert str(plugin_root) not in message
+    assert _names(message, install_root)
+    assert not _names(message, plugin_root)
 
 
 def test_check_says_no_install_could_be_resolved_rather_than_naming_the_checkout(
@@ -170,7 +189,7 @@ def test_check_says_no_install_could_be_resolved_rather_than_naming_the_checkout
     )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN"
-    assert str(plugin_root) not in message
+    assert not _names(message, plugin_root)
     assert "no installed copy" in message.lower()
 
 
@@ -201,7 +220,7 @@ def test_an_environment_gap_names_the_reason_not_a_generic_absence(
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN"
     assert "manifest could not be read" in message
-    assert str(plugin_root) not in message
+    assert not _names(message, plugin_root)
 
 
 def test_a_clean_resolution_finding_nothing_names_no_reason(tmp_path, monkeypatch):
@@ -242,4 +261,4 @@ def test_no_project_dir_at_all_keeps_the_pre_1370_behaviour(tmp_path):
     )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN"
-    assert str(plugin_root) in message
+    assert _names(message, plugin_root)
