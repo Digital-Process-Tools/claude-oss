@@ -194,3 +194,63 @@ def test_project_scope_filters_to_the_given_project_dir(tmp_path):
         registry, project_dir=str(this_project)
     )
     assert state == "none"
+
+
+# ------------------------------------------------- #1339 newline injection
+
+
+def test_a_server_name_with_an_embedded_newline_is_never_returned_as_single(
+    tmp_path,
+):
+    """#1339: `bin/oss-workspace`'s `single` precheck arm prints `label` then
+    `resolvable` as two separate lines and reads them back positionally with
+    `sed -n '1p'`/`sed -n '2p'`. `server_name` is a raw JSON object key out
+    of a plugin's own `.mcp.json`, read verbatim with no shape check -- a
+    crafted plugin can make it "chan\nINJECTED", which turns one label into
+    two lines and lets the second become the arm target instead of the real
+    server name. Settled at the boundary: a label built from a
+    control-character-bearing key or server name must never reach the
+    `single` state at all -- it must fall back to `could-not-ask`, the same
+    safe-default state an unreadable registry already produces, so
+    `bin/oss-workspace` registers `oss-channel` unconditionally rather than
+    trust a corrupted value."""
+    install = tmp_path / "supertool"
+    script = str(install / "notifiers" / "claude-channel" / "channel.ts")
+    _mcp_json(install, {"chan\nINJECTED": _channel_server(script)})
+    registry = _registry(tmp_path, {"some@mkt": [{"installPath": str(install)}]})
+    state, detail = mod.plugin_channel_arm_decision(registry)
+    assert state == "could-not-ask"
+    assert detail
+    assert "\n" not in detail
+
+
+def test_a_control_character_in_the_registry_key_is_also_caught(tmp_path):
+    """Must-fire twin: the newline can just as well arrive via the registry's
+    own `key` segment (`plugin:<key>:<server>`) rather than the server name --
+    both segments come from data this process does not control."""
+    install = tmp_path / "supertool"
+    script = str(install / "notifiers" / "claude-channel" / "channel.ts")
+    _mcp_json(install, {"claude-channel": _channel_server(script)})
+    registry = _registry(
+        tmp_path, {"some@mkt\nINJECTED": [{"installPath": str(install)}]}
+    )
+    state, detail = mod.plugin_channel_arm_decision(registry)
+    assert state == "could-not-ask"
+    assert detail
+
+
+def test_a_legitimate_multi_part_server_name_still_resolves(tmp_path):
+    """Positive control for the fix above: a real-world server name that is
+    unusual but carries no control characters (colons, an `@`, unicode) must
+    still resolve to `single` normally -- the new check must not become a
+    second false-positive source over ordinary but odd-looking names."""
+    install = tmp_path / "supertool"
+    script = str(install / "notifiers" / "claude-channel" / "channel.ts")
+    server_name = "weird:name@v2-étoile"
+    _mcp_json(install, {server_name: _channel_server(script)})
+    registry = _registry(tmp_path, {"some@mkt": [{"installPath": str(install)}]})
+    state, detail = mod.plugin_channel_arm_decision(registry)
+    assert state == "single"
+    label, resolvable = detail
+    assert label == "plugin:some@mkt:" + server_name
+    assert resolvable == "plugin:some:" + server_name

@@ -348,6 +348,20 @@ _CHANNEL_CONSUMER_SUFFIX_RE = re.compile(
     r"(?:/|\\)notifiers(?:/|\\)claude-channel(?:/|\\)channel\.ts(?:[ \t\r]|$)"
 )
 
+#: #1339: a `plugin:<key>:<server>` label's `key` and `server` segments are
+#: both attacker-shapable data read verbatim out of files this process does
+#: not control (the plugin registry's own JSON keys, and a plugin's own
+#: `.mcp.json` server names). `bin/oss-workspace`'s `single` precheck arm
+#: transports a label and its resolved target to the shell as two separate
+#: `print()` lines, read back positionally with `sed -n '1p'`/`sed -n '2p'` --
+#: an embedded newline lets a crafted plugin forge a THIRD line that gets
+#: read back as the arm target instead of the real server name. Any other
+#: C0 control character or DEL reaching that same two-line transport is the
+#: identical class of defect even without a literal newline, so the whole
+#: control-character range is rejected here, once, at the boundary -- never
+#: only the one byte the issue's own repro happened to use.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+
 #: `claude mcp list` prints one server per line, `name:` then whitespace then its
 #: command and args -- `oss-channel:    bun /path/to/channel.ts`, padded so the
 #: colons line up, which is why this is `[ \t]+` rather than a single space.
@@ -545,6 +559,26 @@ def _plugin_channel_consumer_names(plugin_registry_path=None, project_dir=None):
                 parts.extend(a for a in args if isinstance(a, str))
             if _CHANNEL_CONSUMER_SUFFIX_RE.search(" ".join(parts)):
                 label = "plugin:{}:{}".format(key, server_name)
+                # #1339: `key` (a plugin registry JSON key) and `server_name`
+                # (a plugin's own `.mcp.json` server name) are both
+                # attacker-shapable data this process does not control, and
+                # EVERY caller of this function -- `plugin_channel_arm_decision`
+                # below, and `channel_consumer_census_state` further down --
+                # eventually hands a built label to a transport that reads a
+                # multi-line report back positionally (`bin/oss-workspace`'s
+                # `single`-arm `print()`/`sed` pair, and its `CHANNEL_CENSUS`
+                # heredoc's own `collision` listing). A control character
+                # (a newline, most directly) forges an extra line either
+                # transport then reads back as real data. Rejected HERE, at
+                # the one place a label is actually built, rather than once
+                # per caller: a caller added later inherits the protection
+                # instead of needing to remember it.
+                if _CONTROL_CHAR_RE.search(label):
+                    return None, (
+                        "{} declares an MCP server name (or the installed-plugin "
+                        "registry declares a key) containing a control character "
+                        "and cannot be trusted".format(mcp_path)
+                    )
                 if label not in seen:
                     seen.add(label)
                     names.append(label)
@@ -615,8 +649,9 @@ def plugin_channel_arm_decision(plugin_registry_path=None, project_dir=None):
     Returns ``(state, detail)``, four states:
 
     * ``could-not-ask`` -- the plugin population could not be established
-      (an unreadable or malformed registry, or one plugin's own unreadable
-      `.mcp.json`). `detail` is the reason. Falls back to registering
+      (an unreadable or malformed registry, one plugin's own unreadable
+      `.mcp.json`, or a label built from it carrying a control character --
+      see below). `detail` is the reason. Falls back to registering
       `oss-channel` as before and letting the post-registration census
       decide -- an unreadable registry must not silently read as "no plugin
       consumer", which would stop registering the only one there is.
@@ -631,6 +666,21 @@ def plugin_channel_arm_decision(plugin_registry_path=None, project_dir=None):
       their labels. Do not register `oss-channel` either -- a third racer
       would not help -- but there is no single target to arm against, so the
       session opens without the flag.
+
+    #1339: `key` (a plugin registry JSON key) and `server_name` (a plugin's
+    own `.mcp.json` server name) are both attacker-shapable data, and
+    `bin/oss-workspace`'s `single` arm transports `label`/`resolvable` to the
+    shell as two bare `print()` lines read back positionally -- an embedded
+    control character (a newline, most directly) forges an extra line the
+    launcher then reads back as the arm target. `_plugin_channel_consumer_names`
+    itself now refuses to build a label carrying one (self-review finding: an
+    earlier version of this fix checked only here, downstream, which left
+    `channel_consumer_census_state`'s own separate call to
+    `_plugin_channel_consumer_names` -- reached via `bin/oss-workspace`'s
+    `CHANNEL_CENSUS` heredoc -- still passing a tainted label through
+    unprotected), so `names` below is never None for that reason alone --
+    it is `(None, reason)`, the SAME `could-not-ask` shape an unreadable
+    registry already produces, which this function only has to relay.
     """
     names, reason = _plugin_channel_consumer_names(
         plugin_registry_path, project_dir=project_dir
