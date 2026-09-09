@@ -145,17 +145,25 @@ def _unwrap_concat(node):
 
 def _mentions_a_resolver(func_node):
     """Does any call anywhere in ``func_node``'s body name (or attribute)
-    something containing ``which``, case-insensitively? Covers both
+    something containing ``safe_which``, case-insensitively? Covers both
     ``gh_which.safe_which(...)`` and a self-contained ``_safe_which(...)``
     -- see this module's own docstring for why presence, not dataflow, is
-    the bar."""
+    the bar.
+
+    #1325: this used to match any call whose name contained ``which`` at
+    all, which also matched a bare, unwrapped ``shutil.which(...)`` --
+    `gh_which.py`'s own docstring is explicit that a plain `shutil.which`
+    call, `path=` argument or not, does NOT close the Windows curdir gap
+    this whole sweep exists to enforce. Narrowed to ``safe_which`` by name
+    so a wrapper that merely calls `shutil.which` and never a real resolver
+    is still treated as unsafe."""
     for child in ast.walk(func_node):
         if child is func_node or not isinstance(child, ast.Call):
             continue
         f = child.func
-        if isinstance(f, ast.Attribute) and "which" in f.attr.lower():
+        if isinstance(f, ast.Attribute) and "safe_which" in f.attr.lower():
             return True
-        if isinstance(f, ast.Name) and "which" in f.id.lower():
+        if isinstance(f, ast.Name) and "safe_which" in f.id.lower():
             return True
     return False
 
@@ -529,6 +537,41 @@ def test_wrapper_that_resolves_its_own_argv_is_not_flagged():
         path.write_text(source, encoding="utf-8")
         hits = _scan_file(path)
         assert hits == [], hits
+
+
+def test_wrapper_that_only_calls_bare_shutil_which_is_still_flagged():
+    """#1325 sub-part 1: `_mentions_a_resolver` used to treat ANY call whose
+    name contained "which", case-insensitively, as a resolver -- including a
+    bare, unwrapped `shutil.which(...)`, which `gh_which.py`'s own docstring
+    says does NOT close the Windows curdir gap this whole sweep exists to
+    enforce (a `path=` argument does not gate the curdir insertion; only a
+    real directory-and-PATHEXT walk does). A wrapper whose body calls only
+    `shutil.which` -- never `safe_which`/`gh_which` by name -- and then
+    spawns its own argv unresolved must still be caught when called with a
+    literal `["git", ...]`/`["gh", ...]` argv. Pairs with
+    `test_wrapper_that_resolves_its_own_argv_is_not_flagged` above: that one
+    proves a genuine `_safe_which`/`gh_which.safe_which` call is still
+    correctly treated as safe, so this fix narrows the match without
+    breaking the real positive case."""
+    source = (
+        "import shutil\n"
+        "import subprocess\n"
+        "\n"
+        "def _run(command, cwd=None):\n"
+        "    shutil.which(command[0])\n"
+        "    return subprocess.run(command, cwd=cwd)\n"
+        "\n"
+        "def f(root):\n"
+        "    return _run(['git', '-C', str(root), 'status'])\n"
+    )
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "i.py"
+        path.write_text(source, encoding="utf-8")
+        hits = _scan_file(path)
+        kinds = [kind for _lineno, kind, _name in hits]
+        assert "argv-literal-via-wrapper" in kinds, (source, hits)
 
 
 def test_bound_argv_then_spawned_is_caught():

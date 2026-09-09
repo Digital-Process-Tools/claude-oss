@@ -140,6 +140,64 @@ def test_statusline_safe_which_agrees_with_gh_which_on_a_real_directory(
     ), (statusline_answer, gh_which_answer, str(target))
 
 
+def test_statusline_safe_which_agrees_with_gh_which_across_real_divergence_shapes(
+    monkeypatch, tmp_path
+):
+    """#1325 sub-part 3: the parity test above
+    (`..._agrees_with_gh_which_on_a_real_directory`) covers exactly one PATH
+    entry holding exactly one binary -- every shape that could actually make
+    the two independent walks disagree is unexercised: PATHEXT candidate
+    order determining WHICH of several real candidates wins, multi-directory
+    precedence, an empty PATH entry normalising to `os.curdir`, and
+    directory dedup (the same directory named two different ways). On POSIX
+    both walks trivially land on the same single binary regardless of any of
+    this, so the Windows branch is forced via monkeypatch, the same
+    REASONED-not-OBSERVED shape `test_statusline_safe_which_never_prefers_
+    the_cwd_shaped_entry` above already uses.
+
+    Two real candidates (`git.BAT` and `git.EXE`) sit in the same directory,
+    and `PATHEXT` order is flipped between the two assertions below -- so
+    this actually pins that a PATHEXT re-ordering changes WHICH file both
+    walks select, identically, rather than merely that each resolves
+    something.
+    """
+    _force_windows(monkeypatch)
+
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    real_dir = tmp_path / "real"
+    real_dir.mkdir()
+    bat = real_dir / "git.BAT"
+    bat.write_text("echo bat\n")
+    _make_executable(bat)
+    exe = real_dir / "git.EXE"
+    exe.write_text("echo exe\n")
+    _make_executable(exe)
+
+    # "" -> os.curdir (empty PATH entry); empty_dir named twice, the second
+    # time with a trailing separator, to exercise directory dedup; real_dir
+    # last, so a walk that stopped early on the wrong precedent would miss
+    # it entirely.
+    dup_with_trailing_sep = str(empty_dir) + os.sep
+    path_value = os.pathsep.join(
+        ["", str(empty_dir), dup_with_trailing_sep, str(real_dir)]
+    )
+    monkeypatch.setenv("PATH", path_value)
+    monkeypatch.chdir(tmp_path)  # empty entry's curdir must not resolve anything
+
+    for pathext, expected in ((".BAT;.EXE", bat), (".EXE;.BAT", exe)):
+        monkeypatch.setenv("PATHEXT", pathext)
+        statusline_answer = statusline._safe_which("git")
+        gh_which_answer = gh_which.safe_which("git")
+        assert statusline_answer is not None, pathext
+        assert gh_which_answer is not None, pathext
+        assert (
+            os.path.normcase(statusline_answer)
+            == os.path.normcase(gh_which_answer)
+            == os.path.normcase(str(expected))
+        ), (pathext, statusline_answer, gh_which_answer, str(expected))
+
+
 def test_oss_config_run_reports_not_on_path_distinctly(monkeypatch):
     """`oss_config._run`'s new fallback arm: when `gh_which.safe_which`
     cannot resolve `command[0]` at all, the failure must be a distinct,
