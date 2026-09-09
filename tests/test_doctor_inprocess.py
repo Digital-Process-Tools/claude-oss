@@ -1113,6 +1113,23 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_lane_other_label",
         lambda *a, **kw: doctor.report("OK", "labels.lane_other"),
     )
+    # #1350: `check_scheduler_processes` shells out to a real `ps` on THIS
+    # machine -- a fact about the CI runner, never about this fixture's
+    # tree -- exactly the same reason `check_stale_branches` and every
+    # #759-#1046 check above is stubbed rather than measured here. Left
+    # unstubbed, this test was the CI failure the fix references: on
+    # windows-latest the `ps` this runner resolves does not accept `-eo`
+    # (`ps: unknown option -- o`), which is a genuine, correctly-reported
+    # WARN from `scheduler_process_state`'s own could-not-tell arm -- not a
+    # crash, and not a fact about a "fully configured, everything clean"
+    # fixture. `doctor_check_scheduler_processes.py`'s own doctor-line tests
+    # (`tests/test_doctor_check_scheduler_processes_1350.py`) already cover
+    # every branch of that check on its own terms.
+    monkeypatch.setattr(
+        doctor,
+        "check_scheduler_processes",
+        lambda *a, **kw: doctor.report("OK", "scheduler processes"),
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether the Windows gap below is real is a question about

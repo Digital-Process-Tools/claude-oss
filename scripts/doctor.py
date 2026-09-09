@@ -2828,6 +2828,10 @@ from doctor_check_clone_head import (
     check_clone_head,
 )
 
+# #1350: same convention, same reason -- see
+# scripts/doctor_check_scheduler_processes.py.
+from doctor_check_scheduler_processes import check_scheduler_processes
+
 # #759: same convention, same reason -- see
 # scripts/doctor_check_branch_protection.py.
 from doctor_check_branch_protection import (
@@ -9253,6 +9257,12 @@ def main(argv=None):
     # in this plugin's own code. Placed beside the two checks above for the same
     # reason: all three are about a worktree reap going wrong.
     check_vanished_worktrees(project_dir, config)
+    # #1350: is more than one scheduler-shaped process live against this same
+    # clone right now? Placed beside the worktree-reap checks above for the
+    # same reason -- a second scheduler sharing the clone can move HEAD or
+    # merge under this tick's own feet, which is a sibling of the #1007 race
+    # rather than a different one.
+    check_scheduler_processes(project_dir, config)
     # #1046: merged-but-undeleted remote branches never checked before -- a
     # curated trap found 57 of 58 origin/fix/* refs on this repo's own forge
     # were exactly this, months old. Placed beside the worktree-reap checks

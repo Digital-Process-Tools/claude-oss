@@ -1,0 +1,294 @@
+"""``check_scheduler_processes`` -- one check, in its own module per the
+#497/#630 convention.
+
+#1350: a tick's sub-manager found the shared clone's `main` already checked
+out to a branch it had never created. `ps aux` turned up two other live
+`claude /oss:tick` processes sharing the same clone, one of them running for
+two days -- a PR belonging to one of them (#1331) sat green and unmerged for
+38 minutes, invisible to the tick that could see it on the board, because
+nothing in this loop records which scheduler owns a lane or even that more
+than one might be running against the same clone at once. Every rule this
+repository has about lane ownership -- claim the issue, release the lane,
+reap the worktree -- assumes one scheduler per clone, and that assumption was
+neither stated nor checked anywhere.
+
+The issue names three candidate mechanisms; this is the cheapest of the
+three, and the only one implemented here (see the issue's own thread for why
+the other two -- a scheduler recording its own pid in the state file, and a
+tick's own step 1 comparing HEAD's branch against one it created itself --
+are left for a follow-up: both need a persisted, cross-session record kept
+current by every scheduler, in a state file (`scripts/oss_state.py`, 4,000+
+lines) that concurrent lanes in the same tick as this one are also touching,
+which is a wider, separately-reviewable change). This check answers a
+narrower question that needs no new persisted state at all: **right now, how
+many live processes shaped like a `claude ... oss:tick` scheduler are running
+with their working directory inside this clone?**
+
+Three states, never two, matching this repository's own convention for a
+check that can fail to look rather than find nothing:
+
+* ``"counted"`` -- `ps` ran, and every candidate process's cwd was either
+  resolved (and could be compared against this clone) or there were no
+  candidates to resolve in the first place. The payload is
+  ``{"count": int, "candidates_seen": int}`` -- ``count`` is the number
+  attributed to *this* clone specifically, which may be lower than
+  ``candidates_seen`` if some matching processes belong to a different
+  clone entirely (a maintainer running ticks against two repositories on the
+  same machine must not see a scheduler on repo B reported as a sibling
+  inside repo A's clone).
+* ``"could-not-tell"`` -- `ps` is not on PATH (expected on Windows: no
+  built-in analogue is spawned here, matching this repo's existing "no
+  Windows shim" choices elsewhere in `doctor_check_*`), `ps` failed to run
+  or exited non-zero, or a candidate process was found but its working
+  directory could not be resolved on this platform/permission set (no
+  `/proc/<pid>/cwd`, no `lsof`, or either denied). A found-but-unattributable
+  candidate is reported as ``could-not-tell`` rather than silently excluded
+  from the count or silently included -- excluding it renders exactly like
+  the #1350 incident (a live sibling nobody could see), and including it
+  unverified could false-positive a maintainer running unrelated ticks on
+  the same box.
+
+**The persistence failure mode this design deliberately avoids**: nothing
+here is written to disk, so there is no stale pid file to misread. A crashed
+scheduler simply has no live process, and `ps` will not find it -- there is
+no "last known" state that could render a dead session as a live sibling.
+The cost of that choice is the flip side: this check answers only "right
+now", never "was a sibling here a moment ago" -- if the sibling scheduler
+exits between this check running and its own decision being acted on, the
+race still exists. Recording an intent (a pid, a claimed branch) in the
+shared state file is what would close that race, and that is exactly the
+piece left to the follow-up.
+
+`doctor` is imported lazily, inside `check_scheduler_processes` itself,
+rather than at module scope -- see that function's own docstring for why:
+the module-scope form every sibling `doctor_check_*.py` uses is a real,
+pre-existing circular-import hazard (confirmed by reproduction against
+several of them during this issue's self-review) whenever one of them is
+imported before `doctor.py` itself is, which a direct `import doctor_check_
+scheduler_processes` -- exactly what this file's own test does -- triggers.
+`import doctor` inside the function still returns the same singleton module
+object from `sys.modules` either way, so a test's `monkeypatch.setattr(doctor,
+"report", ...)` reaches this code exactly as it would under the module-scope
+form.
+"""
+
+import os
+import subprocess
+import sys
+
+import gh_which  # #1175: `gh_which.safe_which`, never a bare `shutil.which` --
+# see that module's own docstring for the Windows curdir-execution mechanism
+# this closes, for every binary this module spawns (`ps`, `lsof`).
+
+#: The two substrings a candidate process's command line must both contain.
+#: Matched against the whole `ps` command column, not tokenised -- a scheduler
+#: invoked as `claude /oss:tick ...`, `claude -p "/oss:tick ..."`, or with any
+#: other flags between the two still matches; a bare `claude` chat session or
+#: an unrelated `oss:tick`-mentioning grep does not, because it lacks the
+#: other half.
+_NEEDLE_A = "claude"
+_NEEDLE_B = "oss:tick"
+
+
+def _decode(data):
+    """Decode subprocess output that may be `bytes` (a real spawn, captured
+    with no `universal_newlines=True`) or already `str` (a test's own fake
+    `run`, which never goes near a real pipe). Never raises: `errors=
+    "replace"` on a fixed `"utf-8"` codec accepts any byte sequence,
+    substituting U+FFFD for whatever it cannot decode, rather than raising
+    `UnicodeDecodeError` -- a `ValueError`, which `except (OSError,
+    subprocess.SubprocessError)` below does not catch.
+
+    #1350 self-review (CI, not the two spawned reviewers): this repository
+    already documents the identical defect class at `check_tool`'s own
+    docstring in `doctor.py` -- `universal_newlines=True` decodes with the
+    RUNNER's locale, and a `ps -eo pid,command` column can legitimately
+    contain a byte that locale cannot decode (an accented process name, a
+    non-ASCII argv value) on any platform, observed on Windows CI here.
+    `check_tool` fixed it by never decoding a probe's output at all, since
+    nothing there reads the text; this module has to read the text, so it
+    decodes itself, deliberately with the one mode that cannot raise.
+    """
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    return data
+
+
+def _run_ps(run, ps_bin):
+    """Returns ``(returncode, stdout_text, stderr_text, exc)`` -- the same
+    4-tuple shape `doctor_check_clone_head.py`'s own `_git_run` uses, for
+    the identical reason: a process that never started must not be
+    confused with an ordinary non-zero exit. ``returncode``/``stdout_text``/
+    ``stderr_text`` are all ``None`` when ``exc`` is set."""
+    try:
+        done = run(
+            [ps_bin, "-eo", "pid,command"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, None, None, exc
+    return done.returncode, _decode(done.stdout), _decode(done.stderr), None
+
+
+def _matching_processes(ps_output):
+    """Parse ``ps -eo pid,command`` output (header row included) for lines
+    whose command column contains both needles. Returns a list of
+    ``(pid, command)`` pairs. Tolerant of a short or malformed line -- one
+    line this loop cannot parse must not abort the whole check."""
+    matches = []
+    lines = ps_output.splitlines()
+    for line in lines[1:] if lines else []:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        parts = stripped.split(None, 1)
+        if len(parts) != 2:
+            continue
+        pid_str, command = parts
+        if not pid_str.isdigit():
+            continue
+        lowered = command.lower()
+        if _NEEDLE_A in lowered and _NEEDLE_B in lowered:
+            matches.append((int(pid_str), command))
+    return matches
+
+
+def _process_cwd(pid, run):
+    """Resolve `pid`'s current working directory, or ``None`` when this
+    platform/permission set cannot answer. Linux reads `/proc/<pid>/cwd`
+    directly; macOS (no `/proc`) shells out to `lsof`; anywhere else
+    (Windows, an unrecognised platform) is unsupported and answers ``None``
+    without attempting a spawn that would only fail."""
+    if sys.platform.startswith("linux"):
+        try:
+            return os.readlink("/proc/{}/cwd".format(pid))
+        except OSError:
+            return None
+    if sys.platform == "darwin":
+        lsof_bin = gh_which.safe_which("lsof")
+        if lsof_bin is None:
+            return None
+        try:
+            done = run(
+                [lsof_bin, "-a", "-d", "cwd", "-p", str(pid), "-Fn"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode != 0:
+            return None
+        # #1350 self-review (CI): same `_decode` reasoning as `_run_ps` above --
+        # no `universal_newlines=True`, so a byte `lsof` prints that the
+        # runner's locale cannot decode never raises `UnicodeDecodeError`
+        # (a `ValueError`, uncaught by the `except` two lines up).
+        for line in _decode(done.stdout).splitlines():
+            if line.startswith("n"):
+                return line[1:]
+        return None
+    return None
+
+
+def scheduler_process_state(project_dir, run=None):
+    """How many live `claude ... oss:tick`-shaped processes have their
+    working directory inside `project_dir`. See the module docstring for the
+    two states and why a found-but-unattributable candidate is
+    ``could-not-tell`` rather than folded into either an OK count or a
+    silent exclusion.
+    """
+    run = subprocess.run if run is None else run
+    ps_bin = gh_which.safe_which("ps")
+    if ps_bin is None:
+        return "could-not-tell", "ps is not on PATH (expected on Windows)"
+    rc, stdout_text, stderr_text, exc = _run_ps(run, ps_bin)
+    if exc is not None:
+        return "could-not-tell", "ps -eo pid,command did not run ({})".format(exc)
+    if rc != 0:
+        return "could-not-tell", "ps -eo pid,command exited {} -- {}".format(
+            rc, (stderr_text or "").strip()[:200]
+        )
+    matches = _matching_processes(stdout_text or "")
+    if not matches:
+        return "counted", {"count": 0, "candidates_seen": 0}
+
+    project_real = os.path.realpath(str(project_dir))
+    attributed = 0
+    unresolved = 0
+    for pid, _command in matches:
+        cwd = _process_cwd(pid, run)
+        if cwd is None:
+            unresolved += 1
+            continue
+        if os.path.realpath(cwd) == project_real:
+            attributed += 1
+    if unresolved:
+        # #1350 self-review: an earlier draft only fell back to could-not-tell
+        # when EVERY candidate was unresolvable (`attributed == 0`), so a mix
+        # of one attributed + one unresolved candidate silently reported the
+        # attributed count alone -- rendering a genuine multi-scheduler
+        # incident (the #1350 shape itself) as a clean single-process OK.
+        # Any unresolved candidate at all means this run cannot yet rule out
+        # a live sibling, so it must never fold into a plain count.
+        return (
+            "could-not-tell",
+            "{} candidate process(es) matching `claude ... oss:tick` were found "
+            "({} attributed to this clone, {} could not be -- working directory "
+            "unresolvable on this platform/permission set)".format(
+                len(matches), attributed, unresolved
+            ),
+        )
+    return "counted", {"count": attributed, "candidates_seen": len(matches)}
+
+
+def check_scheduler_processes(project_dir, config, run=None):
+    """Report `scheduler_process_state`. WARNs on 2+ live scheduler
+    processes against this clone -- the #1350 shape itself -- and on the
+    could-not-tell state, never silently as OK. A count of 0 or 1 is OK:
+    zero means nothing is sharing this clone right now, and one is this
+    tick's own scheduler (or a lone maintainer session), neither a finding.
+
+    ``doctor`` is imported here, not at module scope, on purpose (#1350
+    self-review): `doctor.py` itself imports THIS module at module scope
+    (`from doctor_check_scheduler_processes import check_scheduler_
+    processes`), so a module-level `import doctor` here would re-enter
+    `doctor.py` mid-initialisation the moment this module is anyone's own
+    entry point rather than `doctor.py`'s -- exactly what a standalone `import
+    doctor_check_scheduler_processes` (or a test importing this module
+    directly, as this repo's own convention for `doctor_check_clone_head.py`
+    and several siblings already does and already breaks under, confirmed by
+    reproduction) triggers. Importing `doctor` lazily, inside the one
+    function that actually calls `doctor.report`, sidesteps the cycle
+    regardless of which module is imported first.
+    """
+    import doctor
+
+    state, detail = scheduler_process_state(project_dir, run=run)
+    if state == "could-not-tell":
+        doctor.report(
+            "WARN",
+            "scheduler processes: could not be checked -- {}. UNKNOWN, not clean: "
+            "nothing here has been shown to be free of a sibling scheduler "
+            "sharing this clone (#1350).".format(detail),
+        )
+        return
+    count = detail["count"]
+    if count <= 1:
+        doctor.report(
+            "OK",
+            "scheduler processes: {} live `claude ... oss:tick` process(es) against "
+            "this clone.".format(count),
+        )
+        return
+    doctor.report(
+        "WARN",
+        "scheduler processes: {} live `claude ... oss:tick` processes against this "
+        "clone -- see #1350: a second scheduler sharing this clone can move HEAD, "
+        "occupy worktrees or merge without this tick's own knowledge. Do not touch "
+        "a branch or worktree you did not create until you have confirmed, by "
+        "hand, whether it belongs to one of these.".format(count),
+    )
