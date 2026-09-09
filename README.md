@@ -24,11 +24,14 @@ session start, so a mid-session install leaves the agent registry unresolved unt
 See [docs/install.md](docs/install.md) for developing this plugin's own source, and for setting
 up `oss-workspace` in a repo you maintain.
 
-## One tick
+## Type it once
 
-`/oss:tick` reads the board, decides what is worth building, delegates it, reviews the result, and
-merges on green. Everything repo-specific — default branch, labels, test command, version sites —
-lives in `.oss.json`, written once by `/oss:setup`.
+`/oss:run` is what a session opens on. It asks one question — what does this repo need now — from
+state and config: probes and writes `.oss.json` on a fresh clone, releases when its own trigger has
+fired, curates or triages when a backlog crosses its configured threshold, and otherwise reads the
+board, decides what is worth building, delegates it, reviews the result, and merges on green.
+Everything repo-specific — default branch, labels, test command, version sites — lives in
+`.oss.json`, written once rather than assumed.
 
 ## The launcher
 

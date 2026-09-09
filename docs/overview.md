@@ -58,7 +58,15 @@ the loop's spine — a library that every tick loads, published as a menu entry
 by `user_invocable: true` and invoked by nobody. Reading the menu does not tell
 you what to type.
 
-**The surface we are moving to is two verbs**, and this part is not built yet:
+**The surface we are moving to is two verbs.** `/oss:run` (#1389) and the
+diagnose-repair-report-continue rule it follows on every start (#1390) are
+built and `bin/oss-workspace` no longer picks a prompt at all (#1392) -- it
+always opens `/oss:run`. **Not built yet:** the picker itself still lists the
+older commands `/oss:run` now absorbs (`tick`, `setup`, `triage`, `curate`,
+`release`, `scaffold`, `install-audit`, `changelog`) as their own top-level
+entries, because removing them cascades through roughly forty test files and
+several scripts that name `commands/tick.md` by path; that migration is its
+own, separately-reviewable change.
 
 | type | what it does |
 | --- | --- |

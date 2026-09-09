@@ -1,7 +1,16 @@
 # Commands
 
+**`/oss:run` is the one to type.** It diagnoses the repo on every start, repairs
+what is ours, decides what is needed now (setup, release, curate, triage, or
+the ordinary dispatch below) and acts on it, falling through to `/oss:tick`'s
+own procedure when nothing more urgent is due. `bin/oss-workspace` opens every
+session on it. The rest of this table is still reachable directly -- both as
+`/oss:run <step>` and as its own command -- for anyone who wants one step
+without the decision.
+
 | Command | What it does |
 | --- | --- |
+| `/oss:run` | Run the repo. Diagnoses, decides what this repo needs now, and acts on it -- or dispatches, the ordinary cadence. Type it once. |
 | `/oss:tick` | One pass of the maintainer loop: board, decide, delegate, review, merge on green. |
 | `/oss:setup` | Probes the repo and writes `.oss.json`. Measures; never assumes — a version site is a file read and found to carry a version, and every label that matched no pattern is named. |
 | `/oss:scaffold` | Adds the missing repo furniture. Never overwrites; shows before it writes. Reports what it will not do: create a label, guess a required-check count, or generate a test workflow. Its receipt reads both halves of the board question, so a repo it scaffolded before the preset was added — tiers registered, no route to the op that reads them, and unreachable by a template fix because `.supertool.json` is never replaced — is reported rather than called clean. |

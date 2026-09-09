@@ -83,6 +83,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # in the file argued either point, so nothing was cut to make room;
     # the ceiling moves to 22200 B, ~10% headroom over the new size.
     "commands/tick.md": (20177, 22200),
+    # #1389: the new two-verb entry point. It stays deliberately thin -- it
+    # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
+    # for every branch other than the ordinary dispatch cadence it points at
+    # an existing command file's own procedure rather than duplicating it, the
+    # same "read the phase file when you reach it" shape `agents/developer.md`
+    # already uses for its own late phases. Budgeted from the day it was
+    # added, unlike `tick.md`, which grew unbudgeted for years first (#940).
+    "commands/run.md": (4365, 4800),
 }
 
 

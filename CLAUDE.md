@@ -810,6 +810,18 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 20,177 B | 22,200 B |
+| `commands/run.md` | 4,365 B | 4,800 B |
+
+**#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
+picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
+the single most urgent step or fall through to `tick.md`'s own dispatch cadence, read and followed
+from there rather than duplicated. `commands/tick.md`, `setup.md`, `triage.md`, `curate.md`,
+`release.md`, `scaffold.md`, `install-audit.md` and `changelog.md` are unchanged and still exist as
+their own top-level commands: removing them from the picker cascades through the roughly forty test
+files and several scripts (`lane_setup.py`, `tick_handback.py`, `plugin_update.py`,
+`doctor_check_supertool_ops.py`, `select_issues_overlap.py`, `command_budgets.py` itself) that name
+`commands/tick.md` by path, and that migration is deliberately left for its own change rather than
+folded in here.
 
 **Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
 1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser

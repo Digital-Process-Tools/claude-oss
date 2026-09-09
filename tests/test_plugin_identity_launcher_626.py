@@ -27,8 +27,7 @@ BLOCK_START = (
     "# --- plugin identity: did it change since the last session here? (#626) -------"
 )
 BLOCK_END_MARKER = (
-    "\n\n# --- the setup diagnostic, before the session starts working "
-    "------------------"
+    "\n\n# #1392: the pre-launch setup diagnostic and the #1155 threshold routes both"
 )
 
 
