@@ -945,7 +945,8 @@ def index_rows(dimension, rules):
     """The shape a rebuild produces, per dimension.
 
     Paths index one row of `match<TAB>filename`; vocabulary indexes one row of
-    `keyword<TAB>filename` per keyword; tools indexes one row of
+    `keyword<TAB>filename<TAB>verdict` per keyword (the verdict is always empty here --
+    see #1372 below); tools indexes one row of
     `tool<TAB>match<TAB>filename<TAB>mode<TAB>require<TAB>forbid<TAB>requires` -- seven
     columns, measured against claude-jit-context's `rebuild-tsv.sh` rather than reasoned
     about (#80 found the same list wrong when it was only reasoned about). The seventh
@@ -957,6 +958,17 @@ def index_rows(dimension, rules):
     before `requires:` existed at all -- and `rebuild-tsv.sh` itself has since grown the
     same seventh column, so widening the row here does not overturn that decision so much
     as catch up to what it was already describing when it was written.
+
+    The vocabulary row's third column was added by #1372, for the identical reason:
+    `rebuild-tsv.sh` (claude-jit-context 0.7.1+) writes `keyword<TAB>file<TAB>verdict`,
+    where the verdict is `"generic"` only for a keyword listed in a configured
+    `GENERIC_WORDS_FILE` and empty otherwise. This plugin configures no such file, so
+    every emitted verdict is the empty string -- but the column itself is still there,
+    a trailing empty field rather than an omitted one. Shipping the two-column form
+    made a freshly-scaffolded repo not a fixed point of that builder: running it once
+    turned every row into `keyword<TAB>file<TAB>` (an oscillation to a third state and
+    back on every `/oss:scaffold --apply` afterwards), which is a dirty working tree
+    for no reason a maintainer of that repo caused.
     """
     rows = []
     for name in sorted(rules):
@@ -966,7 +978,15 @@ def index_rows(dimension, rules):
             for keyword in keywords.split(","):
                 keyword = keyword.strip()
                 if keyword:
-                    rows.append("{}\t{}".format(keyword, name))
+                    # Three columns, not two: `rebuild-tsv.sh` (claude-jit-context
+                    # 0.7.1+) writes `keyword<TAB>file<TAB>verdict`, and the verdict
+                    # is empty rather than absent when the keyword is not in a
+                    # configured `GENERIC_WORDS_FILE` -- the only case this plugin
+                    # ships for, since it configures no such file. Writing two
+                    # columns here made a freshly-scaffolded repo not a fixed point
+                    # of that builder: running it once added the empty column back,
+                    # and the next `/oss:scaffold --apply` removed it again (#1372).
+                    rows.append("{}\t{}\t".format(keyword, name))
         elif dimension == "tools":
             tool = _field(body, "tool")
             match = _field(body, "match")
