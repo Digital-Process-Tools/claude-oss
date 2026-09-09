@@ -1700,6 +1700,11 @@ if [ "$channel_ready" -eq 1 ]; then
         # falls through to its own ask and its own could-not-ask state rather
         # than reading an empty relay as an empty listing.
         if mcp_list_output=$(claude mcp list 2>&1); then
+            # The sentinel is what makes the value trustworthy downstream
+            # (#1372) -- same shape as OSS_WORKSPACE_MCP_CHECKED (#629) and
+            # OSS_WORKSPACE_CENSUS_CHECKED (#810). Exported together, and only
+            # when the ask actually succeeded.
+            export OSS_WORKSPACE_MCP_LIST_CHECKED=1
             export OSS_WORKSPACE_MCP_LIST_OUTPUT="$mcp_list_output"
         fi
         census_report=$("$python_bin" - "$plugin_root/scripts" "$repo_root" <<'CHANNEL_CENSUS'
@@ -2303,7 +2308,7 @@ unset OSS_WORKSPACE_CENSUS_CHECKED OSS_WORKSPACE_CENSUS_REPORT
 # session that inherited it would read a session-open reading as its own,
 # arbitrarily later, which is the stale-reading trap this repo has paid for
 # three times over.
-unset OSS_WORKSPACE_MCP_LIST_OUTPUT
+unset OSS_WORKSPACE_MCP_LIST_CHECKED OSS_WORKSPACE_MCP_LIST_OUTPUT
 # Same reason, same terms, for #1307's own single-plugin-consumer relay
 # (#1343): left exported, `check_mcp_channel_registration`'s in-session
 # `/oss:doctor` would go on reading a launch-time arm decision as though it

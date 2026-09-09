@@ -325,7 +325,16 @@ def test_the_launcher_relay_is_used_instead_of_a_second_ask():
     state, _ = conn.mcp_channel_connection_state(
         run=_explode,
         which=_explode,
-        env={"OSS_WORKSPACE_MCP_LIST_OUTPUT": FAILED_ROW},
+        env={
+            # #1372: the sentinel, not the value, is what makes the relay
+            # trustworthy. This fixture predated it and asserted the value
+            # alone was enough -- which is exactly the hole gate 3 round one
+            # found (a forged variable answering `connected` on a machine with
+            # no `claude` at all). The no-sentinel case is asserted in
+            # tests/test_gate3_round1_findings_1372.py.
+            "OSS_WORKSPACE_MCP_LIST_CHECKED": "1",
+            "OSS_WORKSPACE_MCP_LIST_OUTPUT": FAILED_ROW,
+        },
     )
     assert state == "failed"
 
@@ -339,7 +348,10 @@ def test_an_absent_or_blank_relay_falls_through_rather_than_reading_as_empty():
         asked.append(argv)
         return type("C", (), {"returncode": 0, "stdout": CONNECTED_ROW})()
 
-    for relay in ({}, {"OSS_WORKSPACE_MCP_LIST_OUTPUT": "   "}):
+    for relay in (
+        {},
+        {"OSS_WORKSPACE_MCP_LIST_CHECKED": "1", "OSS_WORKSPACE_MCP_LIST_OUTPUT": "   "},
+    ):
         state, _ = conn.mcp_channel_connection_state(
             run=_run, which=lambda _n: "/usr/bin/claude", env=relay
         )
