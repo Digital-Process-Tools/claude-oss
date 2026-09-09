@@ -7,6 +7,276 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-09
+
+### Added
+
+- `trap.d/` is now a defaults-class directory `/oss:scaffold` creates when absent, with an
+  owned `trap.d/README.md` (naming and body convention) replaced on every run, and a matching
+  `.claude/jit-context/paths/01-oss/trap-fragments.md` rule -- every fragment already logged
+  there is never touched. Every scaffolded repository gets the same capture path this
+  repository has used informally, without hand-copying a jit rule (#1302).
+
+- Trap.d curation had no owner and no cadence: `scripts/workspace_routes.py`'s #1155 threshold
+  route already opens a session with `/oss:curate` once `trap.d/` crosses a configured
+  `curate_route_threshold`, but this repository never set the key, so the built route sat inert
+  while 49 fragments went undrained. Activated with a threshold of 15 (a judgment call, justified
+  in `.oss.json`'s own `_curate_route_threshold_note`), and documented in
+  `skills/manager/phases/accounting.md`'s Cadence section (#1303).
+
+- The statusline gained a sixth field, `dr`, showing `/oss:doctor`'s own last
+  verdict beside `plug`/`ch` -- `dr✓` clean, `dr◐` `usable with gaps`, `dr✗`
+  `not usable`, `dr?` when the reading is absent or stale. Cached and detached on
+  an hour-long clock, never run at render time: one of the diagnostic's own
+  checks is documented past 20 seconds in its worst case. This makes an effect
+  already real and previously silent visible on every render -- `bin/oss-workspace`
+  already routes a launch to `/oss:doctor` instead of `/oss:tick` on any
+  `usable with gaps`/`not usable` reading, and a single false-positive WARN that
+  nothing can clear now pins this marker at `dr◐` permanently, the same standing
+  alert `.claude/jit-context/paths/00-manual/doctor-check-contract.md` already
+  names as a defect in the check rather than in the repo it fired against (#1314).
+
+### Changed
+
+- The status-line marker glued onto the repository name (`_default_branch_marker`,
+  #856) is now documented and guarded as speaking only about the `.oss.json`-declared
+  default branch's own CI state, never about whichever branch or worktree the line is
+  rendered from. Nothing behavioural changed -- it already worked that way -- but
+  nothing said so, and nothing guarded it, which matters because this loop
+  runs from a worktree checked out to something other than the default on every
+  lane. Both docstrings now state the rule explicitly, and a new regression test
+  proves it mechanically -- identical across three different current branches,
+  moving only when the declared default's own state genuinely changes, and shown
+  non-vacuous against a deliberately branch-sensitive stand-in (#1312).
+
+### Fixed
+
+- The agent-report schema's `plugin_root` field was a bare, unbounded string, relayed
+  verbatim into a handback receipt (`skills/manager/phases/handback.md`) another reader
+  is told to paste into prose without re-checking its shape -- the same forging risk
+  `workspace_routes._flatten` already guards elsewhere. It now carries a `pattern`
+  (printable ASCII, no newline or control character) and a `maxLength` (4096), enforced
+  by `scripts/report_schema.py`. Contract bump to 11, BREAKING against 10 (#1298).
+
+- The new `trap.d/` jit rule cannot be the sole delivery path for the "log a trap" convention,
+  and this repository's own session logs confirm it: a rule matching `trap.d/` cannot fire
+  before the touch that would trigger it, and a spawned lane inherits its parent's session, so
+  the first agent to touch `trap.d/` in a tick silently consumes the rule for every later lane.
+  The rule now says so in its own body, and plugin-owned agent/skill prose stays the primary,
+  guaranteed carrier of the invitation to log a trap (#1304).
+
+- Nothing scanned `trap.d/` fragment content before it shipped in the installed plugin artifact,
+  beyond the `#1255`/`#1261` absolute-home-path guard. `tests/test_content_invariants.py`'s
+  `_scan_for_hardcoded_paths` now takes a `patterns` argument, and a second fixed-format
+  pattern list, `CREDENTIAL_LEAK_PATTERNS` (AWS access key IDs, GitHub/Slack tokens, PEM private
+  key headers), is scanned across the same `SHIPPED_MID_LANE_DIRS` the home-path guard already
+  covers -- deliberately fixed-format shapes rather than a generic "password="/"token:" heuristic,
+  which would be red forever on this repository's own prose about credentials (#1305).
+
+- `doctor`'s oss-workspace launcher check named the exact `ln -sf ... ~/.local/bin/oss-workspace`
+  remedy command for three of its four PATH-mismatch findings but left the fourth
+  (`matched-elsewhere`, a stale plugin-cache pin whose bytes still match today) as bare prose --
+  "re-point the symlink" with nothing to paste. It now carries the same paste-ready command as
+  its siblings (#1306).
+
+- `bin/oss-workspace` registered its own `oss-channel` MCP server unconditionally on
+  every launch, even when an installed plugin's own `.mcp.json` already provides a
+  claude-channel consumer -- so the pre-launch collision census then counted two
+  servers (its own just-added registration, plus the plugin's) and disarmed the
+  channel flag over the collision the launcher itself just created, permanently, with
+  no configuration a maintainer could write to clear it. The launcher now asks the
+  in-scope installed-plugin population BEFORE deciding whether to register
+  `oss-channel`: when exactly one plugin-provided consumer already covers this repo,
+  it arms the flag against that server instead (never against `oss-channel`), and
+  removes a stale `oss-channel` left behind by an earlier launcher version rather than
+  leaving it to keep the census counting two forever. Two or more plugin-provided
+  consumers already colliding with each other, or the population itself being
+  unreadable, both fall back to today's behaviour and let the post-registration
+  census decide. `/oss:doctor`'s own registration check no longer tells a maintainer
+  to manually `claude mcp add ... oss-channel ...` in the covered-by-a-plugin case --
+  that used to be exactly the collision this fix avoids, recreated by hand on its own
+  advice (#1307).
+
+- A scaffolded repo could never reach `0nl` (zero unlabelled-lane issues) on its own
+  statusline: `scripts/scaffold.py` never declared `labels.lane_other`, `agents/triager.md` never
+  fell back to it, and `doctor` treated an undeclared fallback lane as a clean `OK` rather than a
+  warning with a remedy. All three now move together -- scaffold reports the missing declaration
+  with the `.oss.json` key and the `gh label create` command to add, the triager falls back to
+  `lane-other` for a genuine one-off that fits no declared lane, and doctor's `not-declared` state
+  is a `WARN` naming both steps (#1310).
+
+- `/oss:doctor` now names the exact cause of every `?` `statusline.py` can render for the watch
+  channel (`ch?`) and the default-branch marker (`unk`), each paired with an executable remedy --
+  a new `check_statusline_unknowns`, in `scripts/doctor_check_statusline_unknowns.py`. Both fields
+  used to fold several distinct causes into one glyph: the channel's five `channel_status` reasons
+  (`not-asked`, `stale`, `not-attributable`, `declaration-unreadable`, `unrecognized`) all rendered
+  `ch?` identically, and the default-branch marker collapsed "cache stale", "nobody has ever taken
+  a reading" and "the forge did not answer" into one `unknown`. The one genuinely permanent cause
+  (`not-attributable`, when this machine legitimately shares a socket with another project's fleet)
+  reports `NOTICE` rather than an unclearable `WARN`; every other cause names a runnable
+  `statusline.py --refresh --root` command (#1311).
+
+- A triage pass now invalidates the status line's cached board when it ends, the
+  same way `/oss:release` already invalidates the `latest` cache the moment a
+  Release is created (#549) -- because relabelling issues is the event that
+  falsifies the unlabelled-issue count the line renders, and nothing called
+  `statusline.mark_board_stale` for that event before now. `statusline.py`
+  gained a `--mark-stale [--root PATH]` CLI branch, mirroring the existing
+  `--refresh` branch beside it; `commands/triage.md`'s own procedure now runs it
+  once, from the orchestrating session, after the triager's report comes back --
+  never on every label write, and never for a spawn that returned nothing or
+  could not run at all (#1313).
+
+- Mutualised the ten slowest tests in the suite's own #1318 measurement (11.57s down to 5.67s on
+  windows-latest/py3.12, 82.4s cumulative) without weakening any positive control: the two
+  `test_root_scratch_isolation_1214.py` "not vacuous" controls that spawned byte-identical nested
+  pytest runs to check two different substrings of the SAME output now spawn one; the real-repo
+  lane-coupling sweep `test_doctor_check_lane_coupling_1244.py` and `test_lane_coupling_allowlist_
+  1244.py` each ran now share one walk of this repo's own tree through a new session-scoped
+  `lane_coupling_real_repo_report` fixture in `tests/conftest.py`; and `test_doctor_inprocess.py`'s
+  own `test_main_labels_every_config_dependent_check_unmeasured_and_still_measures_them` -- despite
+  the file's name -- no longer spawns roughly two dozen real `git`/`gh` subprocesses for checks its
+  own assertions never examine (`check_branch_protection` and its whole `gh api` sibling family,
+  `check_loop_repository`, `check_gitignore_hides_config`, and others), stubbed to a no-op the same
+  way its neighbours already were (#1318).
+
+- The tagged release commit was only ever verified by the reduced 5-leg push/PR matrix -- the full
+  3-OS x Python-3.9-3.12 matrix, reserved for a `workflow_dispatch` carrying `full_matrix: true`
+  (#1246), was dispatched only against the *pre-release* default branch (gate 1), never against the
+  commit that actually gets tagged. `commands/release.md`'s CI wait now dispatches that same
+  `workflow_dispatch` a second time, against the release commit's own sha, after it is pushed, and
+  `scripts/release_ci_wait.py` gained a `--require-event` filter so the wait is scoped to the
+  dispatched run specifically -- a green push-triggered run alone can no longer read as GREEN when
+  the full-matrix run has not even been created yet (#1324).
+
+- `scripts/gh_which.py`'s docstring overclaimed being "the one place this repo resolves
+  an external binary before spawning it" -- false since `b95ae4b` gave `scripts/statusline.py`
+  its own, vendoring-forced independent copy of the identical resolution walk (`_safe_which`).
+  Reworded to name that copy rather than claim exclusivity past it, and a new test
+  (`test_gh_which_docstring_no_longer_overclaims_the_vendored_copy_away`) pins the
+  acknowledgement. `tests/test_bare_gh_git_spawn_sweep_1165.py`'s `_mentions_a_resolver`
+  used to treat any call whose name contained "which" (case-insensitive) as a safe resolver,
+  including a bare, unwrapped `shutil.which` -- which does not close the Windows curdir gap
+  this sweep exists to enforce; narrowed to require `safe_which` by name. Two real parity
+  tests replace single-directory, single-binary coverage that could not see real drift: one
+  drives `statusline._safe_which` against `gh_which.safe_which` across a multi-directory
+  PATH, two PATHEXT orderings that select different real files, an empty PATH entry, and
+  directory dedup; the other extracts `statusline.py`'s inlined `oss_config.
+  effective_lane_labels` copy into its own `_effective_lane_labels` function and drives it
+  directly against the real `oss_config.effective_lane_labels`, across several config shapes,
+  rather than only through hand-written expected counts on the whole of `refresh()`. A fourth
+  named gap (the wrapper-mediated sweep missing an attribute-form call, `module.wrapper([...])`,
+  to a wrapper defined in another file) has no live instance today and is left as
+  `trap.d/1325.wrapper-sweep-attribute-form-blind-spot.md` for a follow-up rather than fixed
+  in this lane (#1325).
+
+- Three guards that could not fail for what they claimed to cover, all logged from gate 3
+  audits as non-blocking `misreports`, are fixed: `test_skill_phase_split.py`'s isolated
+  control test now `.start()`s its `_TrackedPathWatcher` before driving the two inline
+  create-then-delete probes, so it is actually the continuously-polling detector CI runs
+  rather than a construct-then-single-poll shape blind to a create-then-delete that finishes
+  before the lone poll; `tests/import_closure.py`'s `local_import_closure` now returns a
+  companion `unresolved` list naming every `importlib.import_module(...)`/`__import__(...)`
+  call it found but could not follow statically (a non-literal argument), so a caller no
+  longer reads an incomplete closure as complete -- both consumers
+  (`test_workspace_routes_launcher_1155.py`, `test_workspace_doctor_route_receipt_1064.py`)
+  now assert that list stays empty, naming the live dormant instance
+  (`scripts/borrowed_authority.py:224`) that would otherwise silently go unnoticed the day a
+  seed's own import graph starts reaching it; and
+  `test_cohort_citation_order_1220.py`'s cross-check oracle now derives its independent
+  `"Cohort freeze: "` slice from `cohort_citation_order._marker_section(text)`, matching the
+  function it cross-checks, rather than searching the whole of CLAUDE.md -- the two only ever
+  agreed today because CLAUDE.md happens to carry just one such occurrence (#1326).
+
+- Five silent-absence collapses fixed, each a distinct third state a check computed but never
+  surfaced to a reader (#1327): `doctor_check_lane_patterns.py` rendered a bare "OK" for both
+  "no lane resolved a single file, so no scope was established" and "scope established, nothing
+  uncovered" -- now distinguished; `lane_coupling.py`'s `extract_references` treated an `OSError`
+  mid-glob-walk as an indistinguishable empty match, only ever setting `problem` for a
+  `SyntaxError` -- now surfaced; `growth_per_turn_scan.py`'s `analyze_growth` counted
+  `non_blank_lines`/`parsed_records` internally but discarded the gap between them the moment at
+  least one line parsed -- now surfaced as `unparsed_lines`, per-transcript and summed per side;
+  `commands/release.md` enumerated only two causes of the `cohort_citation_order.py` gate's
+  `could-not-check` state, missing the third ("no cohort citation found in the marker" -- the
+  exact shape v0.29.0's paraphrased marker produced, #1299) -- now named, with a pointer to read
+  the `reason` string rather than branch on state alone; `review_return.py`'s `_BACKREF` lookahead
+  swallowed a genuine back-reference gesture followed by a continuing clause ("reported above in
+  section 2", "noted previously in this review"), misclassifying it as `states-findings` instead
+  of `referred-not-stated` -- the direction that silently loses a finding.
+
+- Release gate 3's "checklist in effect" line -- the auditor's own report of the
+  definitions it actually loaded -- was free text nobody compared against
+  anything. `checklist_skew.py` measures `installed_version` off `--plugin-root`
+  (the resolved install root `plugin_update.py` reports), but a spawned
+  `Agent(subagent_type: "oss:release-auditor")` resolves its own system prompt
+  through the harness's own, separate plugin registration, which can point at an
+  older cached copy -- v0.29.0's own gate 3 ran two minors behind what
+  `checklist_skew.py` itself reported (0.26.0 vs. 0.27.1), discovered only by
+  hand, after the fact (#1328). `checklist_skew.compare_effect(installed_version,
+  effect_line)` (and its CLI form, `checklist_skew.py --compare-effect
+  --installed-version ... --effect-line ...`) now makes that comparison
+  mechanical, in three states -- `effect-matches`, `effect-differs`,
+  `effect-could-not-tell` -- and `commands/release.md` gate 3 requires and
+  quotes it after every audit round. This closes the detection/reporting half
+  of #1328 (the "make the skew loud and comparable" direction); it does not
+  make the spawned agent's own resolution mechanism observable or fixable from
+  outside the harness, which stays out of scope.
+
+- Two mis-scoped guards, closed together (#1329). `tests/test_content_invariants.py`'s
+  personal-path-leak scan (`SHIPPED_MID_LANE_DIRS`) now also covers `scripts/` and
+  `commands/`, both tracked, shipped in the plugin artifact, and edited mid-lane the
+  same way the six directories it already covered are. `scripts/doctor_check_merge_
+  permission.py`'s covering-wildcard scan (`SUPERTOOL_COMMAND_HEADS`, shared by
+  `scripts/doctor_check_worktree_reap_permission.py`'s identical `_GIT_COMMAND_HEADS`
+  pattern) now also recognises an absolute path ending in one of its command heads
+  (e.g. `Bash(/usr/local/bin/supertool *)`), the third spelling `SUPERTOOL_ENTRY_RE`
+  already recognised elsewhere in the same module but the wildcard scan did not.
+
+- `scripts/tree_snapshot.py`'s `compare` counted its own before-snapshot artifact as a
+  mutation, when it was written *inside* the worktree per this repo's own jit-context
+  advice (a shared-scratchpad copy can silently vanish mid-run). `compare` now excludes any
+  untracked file matching its before-snapshot naming convention -- any basename ending in
+  `-before-snapshot.json`, not one hardcoded literal filename -- from the mutation lines it
+  reports, so a lane following the recommended convention no longer trips a false `mutated`
+  on its own bookkeeping (#1330).
+
+- A dispatched developer lane can land with no `Agent`/`Task` tool at all, and one did:
+  neither of the two mandatory self-review spawns (`Explore`, `oss:auditor`) could run,
+  and the lane correctly reported the gap as `not-checked` rather than a clean pass.
+  Proving a reviewer spawn actually ran is not reachable from a JSON validator (the
+  agent-report schema's own `x-convention` says so, and still does), but nothing
+  previously stopped `review.mechanism` -- a required field -- from being an empty
+  string paired with a claimed-clean `review.findings`, which is literally no evidence
+  at all. `review.mechanism` now carries a `minLength` (20), enforced by
+  `scripts/report_schema.py`. Contract bump to 12, BREAKING against 11 (#1333).
+
+- `scripts/statusline.py`'s `doctor.py` resolution trusted any sibling file that
+  happened to exist beside the running module, with no check on WHICH copy of the
+  module was running it. In a managed repository the vendored copy lives at
+  `<repo>/.oss/statusline.py`, so that sibling candidate resolved to
+  `<repo>/.oss/doctor.py` -- a path inside the repository under inspection, not
+  gitignored, addable by an ordinary pull request, and executed with `sys.executable`
+  in the maintainer's own session with no user action (#1334). A sibling candidate
+  resolving inside `scaffold.py`'s vendored `.oss/` directory is now refused outright;
+  `_doctor_script_path` falls through to the installed-plugin-root candidate instead,
+  exactly as it already does when the sibling is simply missing.
+
+- `_plugin_channel_consumer_names` in `scripts/doctor_check_mcp_channel_registration.py`
+  built a `plugin:<key>:<server>` label from a raw JSON object key in an installed
+  plugin's own `.mcp.json`, with no shape check. `bin/oss-workspace`'s `single`
+  precheck arm transports `label` and its resolved target to the shell as two bare
+  `print()` lines, read back positionally with `sed -n '1p'`/`sed -n '2p'` -- a
+  plugin whose MCP server name carried an embedded newline could forge a third line
+  that got read back as the arm target and exported as
+  `OSS_WORKSPACE_CHANNEL_ARM_TARGET` (#1339). `_plugin_channel_consumer_names` now
+  refuses to build a label carrying a control character at all, and reports it as
+  `could-not-ask` -- the same safe fallback an unreadable registry already produces
+  -- so every caller (`plugin_channel_arm_decision`, and the separate `#1241`
+  consumer census `channel_consumer_census_state` also reached via
+  `bin/oss-workspace`'s `CHANNEL_CENSUS` heredoc) inherits the protection at the
+  one place a label is actually built, rather than each needing its own copy of
+  the check.
+
 ## [0.29.1] - 2026-09-08
 
 ### Fixed
@@ -10027,7 +10297,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.29.1...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.30.0
 [0.29.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.29.1
 [0.29.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.29.0
 [0.28.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.28.0
