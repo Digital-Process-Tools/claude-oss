@@ -186,16 +186,32 @@ def _parse_effect_version(effect_line):
     section. On success ``reason`` is ``None``; on failure ``version`` is
     ``None`` and ``reason`` says why, one printable line.
 
-    An auditor that itself reported "could not tell" is relayed as that,
-    never silently treated as a parse failure with a different cause.
+    An auditor that itself reported "could not tell", or the template's own
+    other disclaimer form -- "version unknown" -- is relayed as that, never
+    silently treated as a parse failure with a different cause. This check
+    runs BEFORE the version-token regex on purpose: the audited plugin's own
+    cache path routinely embeds a version-shaped directory component (e.g.
+    ".../dpt-plugins/oss/1.2.3/agents/auditor.md"), so an explicit "version
+    unknown" tail would otherwise be silently overridden by a digit run
+    pulled out of the FILE PATH portion of the same line, reporting a
+    confident (and wrong) effect-matches/effect-differs where the auditor
+    said outright that it did not know.
     """
     if not effect_line or not effect_line.strip():
         return None, "no 'checklist in effect' line was given to compare"
     flat = _one_line(effect_line, limit=300)
-    if "could not tell" in flat.lower():
+    lowered = flat.lower()
+    if "could not tell" in lowered:
         return (
             None,
             "the auditor's own report said 'could not tell' for the checklist in effect: {0}".format(
+                flat
+            ),
+        )
+    if "version unknown" in lowered:
+        return (
+            None,
+            "the auditor's own report said 'version unknown' for the checklist in effect: {0}".format(
                 flat
             ),
         )
@@ -221,11 +237,23 @@ def compare_effect(installed_version, effect_line):
     `installed_version` may itself be ``None`` (this script's own `compute()`
     already returned `could-not-tell`) -- a distinct cause landing in the
     same third state, not silently dropped.
+
+    `effect_line` is text a spawned agent wrote, relayed here through a
+    caller who copies it from that agent's report -- flattened to one
+    printable line ONCE, in this payload, the same way `_read_version`
+    already flattens the adjacent `version` field for the same reason (a
+    newline could otherwise forge extra lines in whatever renders this
+    payload). `effect_receipt` used to be the only place this happened,
+    which protected the human-readable form but not a `--json` caller that
+    reads `effect_line` straight out of the payload -- exactly the shape
+    `commands/release.md`'s own worked example asks for.
     """
     effect_version, reason = _parse_effect_version(effect_line)
     payload = {
         "installed_version": installed_version,
-        "effect_line": effect_line,
+        "effect_line": _one_line(effect_line, limit=300)
+        if effect_line
+        else effect_line,
         "effect_version": effect_version,
     }
     if installed_version is None:

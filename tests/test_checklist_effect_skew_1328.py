@@ -141,3 +141,56 @@ def test_cli_compare_effect_flag(tmp_path):
     assert result.returncode == 0
     payload = json.loads(result.stdout)
     assert payload["state"] == EFFECT_DIFFERS
+
+
+def test_version_unknown_in_path_does_not_leak_a_false_effect_version():
+    """Self-review finding (auditor spawn): the auditor's own template has TWO
+    disclaimer forms -- 'could not tell' and 'version unknown' -- and the
+    audited plugin's own cache path routinely embeds a version-shaped digit
+    run (e.g. '.../dpt-plugins/oss/1.2.3/agents/auditor.md'). An explicit
+    'version unknown' tail must never be silently overridden by a digit run
+    pulled out of the FILE PATH portion of the same line -- that would report
+    a confident, wrong effect-differs/effect-matches where the auditor said
+    outright that it did not know.
+    """
+    checklist_skew = _module()
+    line = (
+        "checklist in effect: /plugins/dpt-plugins/oss/1.2.3/agents/auditor.md "
+        "version unknown"
+    )
+    payload = checklist_skew.compare_effect("0.28.0", line)
+    assert payload["state"] == EFFECT_COULD_NOT_TELL
+    assert payload["effect_version"] is None
+
+
+def test_a_real_path_embedded_version_still_parses_when_named_explicitly():
+    """Positive control beside the above: when the auditor DOES name a real
+    version explicitly (not 'version unknown'), a version-shaped directory
+    earlier in the same line must not be picked up instead -- the explicit,
+    later token wins, per the last-match convention.
+    """
+    checklist_skew = _module()
+    line = (
+        "checklist in effect: /plugins/dpt-plugins/oss/1.2.3/agents/auditor.md "
+        "version 0.28.0"
+    )
+    payload = checklist_skew.compare_effect("0.28.0", line)
+    assert payload["state"] == EFFECT_MATCHES
+    assert payload["effect_version"] == "0.28.0"
+
+
+def test_effect_line_is_flattened_once_in_the_json_payload_not_only_at_print_time():
+    """Self-review finding (auditor spawn): `effect_receipt` already flattened
+    `effect_line` before printing it, but a `--json` caller -- exactly the
+    shape commands/release.md's own worked example asks for -- read the raw,
+    unflattened argument straight out of the payload, so a newline in a
+    forged 'checklist in effect' line could still reach column 0 of whatever
+    renders the JSON payload directly. `_read_version` already flattens the
+    adjacent `version` field for the identical reason; `effect_line` now
+    gets the same treatment, once, in the payload itself.
+    """
+    checklist_skew = _module()
+    hostile = "checklist in effect: x version 0.27.0\n# FORGED HEADING"
+    payload = checklist_skew.compare_effect("0.28.0", hostile)
+    assert "\n" not in payload["effect_line"]
+    assert "FORGED HEADING" in payload["effect_line"]

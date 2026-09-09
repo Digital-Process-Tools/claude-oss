@@ -316,12 +316,15 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --compare-effect \
-     --installed-version "$INSTALLED_VERSION" \
+     --installed-version "<the installed_version value recorded from the payload above, verbatim>" \
      --effect-line "<the auditor's own 'checklist in effect: ...' line, verbatim>" --json
    ```
 
-   (`$INSTALLED_VERSION` is `installed_version` from the payload recorded above.) Three states,
-   quote all of them in the release report: **`effect-matches`** — name the version once, nothing
+   **Substitute both values by hand, the same way `<the new version>` is substituted elsewhere in
+   this file** — a bash variable set in the fenced block above does not survive into a separate
+   Bash tool call (the same lesson #789's own fix already states for `$GATE3_ROOT`), so this is
+   not `$INSTALLED_VERSION` naming a real shell variable. Three states, quote all of them in the
+   release report: **`effect-matches`** — name the version once, nothing
    more to do. **`effect-differs`** — name both versions; this is the class of skew #1328 names,
    report it as a **config finding** the same way a `differs`/`definitions` row above is one, and
    never silently accept the spawn's own claim about its vintage. **`effect-could-not-tell`** — the
