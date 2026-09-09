@@ -134,7 +134,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # "the three receipts", stale the moment review.md gained a fourth
         # (a trap.d/ fragment for a non-blocking row). Budget unchanged;
         # comfortably under it.
-        41738,
+        # Re-baselined for #1391: 41738 B became 41739 B -- `user_invocable`
+        # flipped from true to false so the spine no longer publishes into
+        # the slash picker as /oss:manager; it is a library loaded by
+        # commands/tick.md and commands/release.md via Skill(manager), never
+        # an entry point. Budget unchanged; comfortably under it.
+        41739,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),

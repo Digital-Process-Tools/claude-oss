@@ -478,7 +478,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 41,738 B | 44,800 B |
+| `skills/manager/SKILL.md` | 41,739 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 53,938 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,987 B | 23,000 B |
