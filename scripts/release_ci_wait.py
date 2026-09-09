@@ -56,6 +56,19 @@ A commit with runs but none matching the required event reads as
 `pending`, never `green` -- see `read_commit`'s own docstring for why that
 is folded into the existing pending state rather than invented as a fifth.
 
+**This filters by trigger, not by input value (self-review, #1324).** Neither
+`gh run list --json` nor `gh run view --json` nor the GraphQL `WorkflowRun`
+type exposes a `workflow_dispatch` run's own input values after the fact --
+confirmed against `gh`'s own `--help` output and a live `gh api graphql`
+introspection query at review time -- so `--require-event workflow_dispatch`
+cannot itself distinguish a `full_matrix: true` dispatch from an ordinary one
+left at its `false` default. A caller that dispatches immediately after the
+push (as `commands/release.md`'s #1266 section does) is protected in the
+ordinary case because no other `workflow_dispatch` run exists yet for that
+sha; a stray, unrelated `workflow_dispatch` run against the exact same sha
+is a residual gap this module does not close. See #1324's own report for
+the follow-up this was left as (job-count or run-id based verification).
+
 `--wait` polls while the commit is `pending`; on timeout it returns `None`
 rather than any of the four states above, so a caller cannot mistake "gave
 up waiting" for a real conclusion of any kind -- a tag is not revocable, so

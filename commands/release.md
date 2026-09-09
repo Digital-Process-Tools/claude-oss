@@ -537,8 +537,17 @@ one of them — reserved for an argparse usage error, the same discipline gate 3
 `cohort_citation_order.py` exit codes now follow, #1267):
 
 - **exit 0, `GREEN`** — every run matching `--require-event workflow_dispatch` on this commit
-  concluded and passed — the dispatched full-matrix run, not merely the push-triggered one.
-  Proceed to the tag, below.
+  concluded and passed — a manually-dispatched run, not merely the push-triggered one, no longer
+  masking the wait. Proceed to the tag, below.
+
+  **This filters by how the run was triggered, not by which inputs it carried.** Neither
+  `gh run list`/`gh run view --json` nor the GraphQL `WorkflowRun` type exposes a
+  `workflow_dispatch` run's own input values after the fact, so `--require-event workflow_dispatch`
+  cannot on its own tell a `full_matrix: true` dispatch from an ordinary one left at its default --
+  see `release_ci_wait.py`'s own docstring. Dispatching immediately after the push, as this section
+  does, is what makes the matched run the intended one in the ordinary case; a stray unrelated
+  `workflow_dispatch` against this exact sha is a residual gap, tracked rather than silently
+  accepted.
 - **exit 1, `RED`** — a run failed, or completed with a conclusion this script has never seen
   (including `cancelled` — a concurrency-superseded run is not a green run). **Stop. Do not create
   the tag.** The release commit is already on the default branch and can be fixed forward like any
