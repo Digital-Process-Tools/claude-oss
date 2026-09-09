@@ -479,13 +479,13 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 41,738 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 54,117 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 53,938 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,987 B | 23,000 B |
 | `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
-| `skills/manager/phases/findings.md` | 12,570 B | 13,800 B |
+| `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
 | `skills/manager/phases/merge.md` | 14,230 B | 15,400 B |
 | `skills/manager/phases/ci-green.md` | 2,646 B | 2,700 B |
 
@@ -519,7 +519,18 @@ first-of-its-kind instance on a shared host, or a cache that survives past the w
 different answer -- and `scripts/ranking_table.py` gained `conditional_classes` to keep reading it as
 a third bucket rather than sorting it silently into `blocking_classes` or `non_blocking_classes`.
 Nothing already in the file argued that point, so nothing was cut to make room; the ceiling carries
-the same ~10% headroom the other re-baselines in this table use.
+the same ~10% headroom the other re-baselines in this table use. Re-baselined in the same lane's own
+self-review round: 12,570 B became 13,093 B. An auditor spawn found the new row's embargo column, a
+bare `yes`, broke `tests/test_embargo_routing.py`'s invariant that the embargo set is a subset of the
+blocking set -- `overexposes` blocks only `conditionally`, so a bare `yes` in the embargo column put
+it in `embargo - blocking` with no recorded exception covering it. Fixed by making the embargo
+column conditional too, on the same stated condition as blocking, rather than adding a new kind of
+exception to that test's own invariant. A reviewer spawn separately found two stale "eleven-row
+findings table" mentions in `skills/manager/phases/dispatch.md` and `scripts/select_issues_rank.py`
+-- a hardcoded row count, wrong the moment a twelfth row landed -- both corrected to drop the count
+rather than bump it to thirteen and go stale again at the next row; `dispatch.md`'s own baseline
+below moved with it (54,117 B -> 53,938 B, still comfortably under its ceiling). Ceiling for
+`findings.md` unchanged at 13,800 B; still comfortably under it.
 
 **#1047 re-baselined `skills/manager/phases/review.md` without raising its ceiling**: 10,353 B
 became 10,829 B. A fix commit answering an audit's own findings is a diff nothing makes a subject

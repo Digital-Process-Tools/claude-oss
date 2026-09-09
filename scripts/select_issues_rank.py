@@ -26,7 +26,7 @@ The order now has three author values in strength order, not two:
 
 **Rank 1 -- "any author, a blocking-class row in the findings table" -- is
 prose, not a computed row**, and `rank()` never returns it. Nothing here can
-read a GitHub issue against the eleven-row findings table in
+read a GitHub issue against the findings table in
 `skills/manager/phases/findings.md`; that classification is a judgment call
 made when a finding is written up, not a fact derivable from an issue's
 labels. A caller applying this table checks the blocking-class exception
