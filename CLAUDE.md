@@ -478,16 +478,17 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 41,739 B | 44,800 B |
+| `skills/manager/SKILL.md` | 42,837 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 53,938 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 22,987 B | 23,000 B |
-| `skills/manager/phases/tick-order.md` | 34,266 B | 36,000 B |
+| `skills/manager/phases/tick-order.md` | 34,816 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
-| `skills/manager/phases/merge.md` | 14,230 B | 15,400 B |
+| `skills/manager/phases/merge.md` | 14,621 B | 15,400 B |
 | `skills/manager/phases/ci-green.md` | 2,646 B | 2,700 B |
+| `skills/manager/phases/inbound.md` | 6,262 B | 6,900 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
@@ -568,6 +569,16 @@ became 41,738 B for `SKILL.md` (a stale "the three receipts" summary sentence, c
 and 10,829 B became 11,390 B for `phases/review.md` (the receipt list itself gained the fourth entry
 -- a `trap.d/` fragment for a non-blocking row -- and a rank-first instruction). Both files stayed
 under their existing ceilings; `phases/review.md` now has 10 B of headroom left.
+
+**#1394 re-baselined `SKILL.md` and added a new phase file, `inbound.md` (6,262 B), rather than
+folding the new material into `tick-order.md`.** The loop had no owner anywhere for work that
+arrives from outside -- refusing an issue nobody filed on our behalf, an external contributor's
+pull request, a comment on either -- and the subject is genuinely new rather than a rule about the
+existing dispatch order, the same test `ci-green.md` applied for its own split. 41,738 B became
+42,837 B for `SKILL.md`: a new table row plus one directive block, "Inbound, before anything new",
+pointing a tick at the new file at step 3 of `tick-order.md` rather than restating its own closed
+set of six refusal reasons and four pull-request states. Neither ceiling moved; `SKILL.md` still
+has ~2,000 B of headroom.
 
 **#1136 cut the rationale out of the loop's own markdown: 581,678 B became 480,591 B across 23 files, -17.4%.** The rule applied, written down as `.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`: **a loop markdown file is an operator's manual for the tools its phase runs.** The rule, the call, every state and every payload field stay; the measurement that justified a constant belongs beside the constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each rule keeps a bare issue citation for provenance. `dispatch.md`'s selection band was the worked example -- 14,240 B to 6,601 B, prose still explaining how to drive by hand the four scripts `select_issues.py` had already composed (#970, #1068, #1129). Every ceiling came down with its measurement rather than being left where it was (#958, #960). Four content guards refused cuts that went too far and every one was right: the bundle cap rule, the #499 citation, the `27m36s` threshold, and an unhyphenated `could not tell` -- each restored as a rule, without its narrative.
 
