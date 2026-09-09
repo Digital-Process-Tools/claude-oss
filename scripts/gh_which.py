@@ -1,6 +1,18 @@
-"""#1157: the one place this repo resolves an external binary before
-spawning it, so there is exactly one copy of "how gh/git gets resolved" to
-keep in sync rather than one per call site.
+"""#1157: the one place this repo DEFINES how an external binary is
+resolved before spawning it, and the one copy every call site that can
+import a module routes through -- #1325's own audit found this docstring
+overclaiming past that: `scripts/statusline.py` is vendored standalone (see
+its own module docstring -- "No third-party imports... installs nothing to
+run it") and therefore CANNOT import this module, so it carries its own,
+deliberately parallel copy of this exact walk (`_safe_which`,
+`_win_candidate_names`) rather than a bypass of it. That copy is legitimate
+and permanent, not a gap to close -- see
+`tests/test_gh_git_resolution_arms_1295.py` for the direct parity checks
+between the two, and this module's own docstring no longer claims there is
+only one implementation, only that there is one DEFINITION every other
+site (all of `scripts/*.py` except the vendored file) is required to route
+through -- a claim `tests/test_bare_gh_git_spawn_sweep_1165.py`'s sweep
+still checks live.
 
 The round-1 release audit that opened #1157 found seven sites #1109 had
 just taught to call ``shutil.which("gh")`` (with no ``path=``) ahead of a

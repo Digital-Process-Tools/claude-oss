@@ -56,6 +56,20 @@ def test_changelog_folded_entry_retracts_the_every_site_overclaim():
     )
 
 
+def test_gh_which_docstring_no_longer_overclaims_the_vendored_copy_away():
+    """#1325: `gh_which.py`'s docstring said "the one place this repo
+    resolves an external binary before spawning it" -- false since
+    `b95ae4b` added `scripts/statusline.py`'s own independent,
+    vendoring-forced copy of the identical walk (`_safe_which`). The
+    reworded docstring must acknowledge that copy by name rather than
+    silently continuing to claim there is only ever one implementation."""
+    text = (REPO_ROOT / "scripts" / "gh_which.py").read_text(encoding="utf-8")
+    assert "statusline" in text.lower(), (
+        "gh_which.py's own docstring should name statusline.py's vendored "
+        "copy rather than overclaiming exclusivity past it"
+    )
+
+
 def test_gh_which_docstring_the_one_place_claim_is_currently_true():
     """`gh_which.py`'s docstring says it is 'the one place this repo
     resolves an external binary before spawning it'. That is a live claim
