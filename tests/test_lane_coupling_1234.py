@@ -292,6 +292,47 @@ def test_extract_references_reports_oserror_mid_glob_walk_not_silently_empty(
     assert "permission" in problem.lower()
 
 
+def test_extract_references_reports_oserror_mid_import_resolution_not_a_crash(
+    tmp_path, monkeypatch
+):
+    """#1347 finding 1: the import-resolution loop calling
+    `(repo / candidate).is_file()` has no exception handling at all, before
+    or after #1327's fix to the sibling glob loop -- an `OSError` there (a
+    permission error during the underlying stat) propagated uncaught rather
+    than rendering as `problem is not None`, which would crash
+    `extract_references` and transitively `doctor.py`'s own exit-0-always
+    contract."""
+    (tmp_path / "scripts").mkdir()
+    source = "import select_issues_overlap\n"
+
+    from pathlib import Path as RealPath
+
+    def _boom(self):
+        raise PermissionError("[Errno 13] Permission denied: 'scripts'")
+
+    monkeypatch.setattr(RealPath, "is_file", _boom)
+    # The call itself completing (rather than raising `PermissionError`) is
+    # the assertion: the pre-fix loop had no exception handling at all, so
+    # this line crashed `extract_references` outright rather than returning.
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
+def test_extract_references_import_resolving_nothing_is_still_the_must_not_fire_control(
+    tmp_path,
+):
+    """Positive control for the test above: an import that resolves to no
+    real file on disk (no OSError) must still report `problem is None` --
+    the fix for the OSError case must not start reporting a problem for an
+    ordinary, clean, unresolved import."""
+    (tmp_path / "scripts").mkdir()
+    source = "import no_such_module_at_all\n"
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
 def test_extract_references_glob_matching_nothing_is_still_the_must_not_fire_control(
     tmp_path,
 ):

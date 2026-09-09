@@ -68,6 +68,15 @@ ordinary case because no other `workflow_dispatch` run exists yet for that
 sha; a stray, unrelated `workflow_dispatch` run against the exact same sha
 is a residual gap this module does not close. See #1324's own report for
 the follow-up this was left as (job-count or run-id based verification).
+Reconfirmed live at #1347 (finding 4) -- `gh run list --json`, `gh run view
+--json` and the GraphQL `WorkflowRun` type still expose no dispatch input
+values -- with two candidate fixes named and neither picked, since choosing
+one is a design decision this module's own diff was not briefed to make:
+(a) cross-check the job count via `gh run view --json jobs` against a
+per-repo-read expected count (never hardcoded, per this repo's own rule
+against a per-repo fact in shared code); (b) capture the dispatched run's
+own id at dispatch time in `commands/release.md` and wait on that id
+directly, needing no cross-repo job-count lookup at all.
 
 `--wait` polls while the commit is `pending`; on timeout it returns `None`
 rather than any of the four states above, so a caller cannot mistake "gave

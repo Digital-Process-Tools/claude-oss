@@ -348,10 +348,13 @@ def _shipped_mid_lane_documents(dirs=SHIPPED_MID_LANE_DIRS, root=REPO_ROOT):
 #: evidence the scan never reached them: `trap.d/` is emptied by `/oss:curate`
 #: (its own instruction is that the directory ends the pass empty), and
 #: `changelog.d/` is folded into `CHANGELOG.md` at release time. For these two,
-#: the vacuity guard below asserts the directory EXISTS and is readable rather
-#: than that it holds at least one document -- which is the distinction the guard
-#: was reaching for anyway: a directory nothing looked at, versus one that was
-#: looked at and had nothing in it.
+#: the vacuity guard below (`_missing_shipped_mid_lane_dirs`) asserts the
+#: directory EXISTS, is readable, AND -- #1347 -- is genuinely empty of real
+#: documents under `pattern` (its own independent `directory.glob(pattern)`
+#: call, filtered through `is_file()` the same way `_shipped_mid_lane_documents`
+#: already is), rather than accepting existence alone as proof of a legitimate
+#: drain: existence alone cannot tell a genuinely drained directory from one
+#: whose scan is silently broken and will report zero matches forever.
 DRAINABLE_MID_LANE_DIRS = frozenset({"trap.d", "changelog.d"})
 
 
@@ -518,6 +521,62 @@ def test_shipped_mid_lane_scan_reaches_directories_beyond_trap_d(tmp_path):
     )
 
 
+def _missing_shipped_mid_lane_dirs(dirs=SHIPPED_MID_LANE_DIRS, root=REPO_ROOT):
+    """The `missing` computation `test_every_shipped_mid_lane_dir_has_documents`
+    asserts against, pulled out into its own function so a test can call it
+    against an isolated root/dirs pair -- see
+    `test_broken_glob_for_a_drainable_dir_is_caught_not_silently_passed` below,
+    #1347 finding 2.
+
+    A drainable directory legitimately holds nothing between passes, so for
+    those the vacuity question is "was it reached at all" -- but existence
+    alone (the original #1262 carve-out) cannot tell a genuinely drained
+    directory from one whose glob is silently broken and will report zero
+    forever: both render as the identical clean `missing == []`. The
+    difference is checked independently here, with a fresh `directory.
+    glob(pattern)` call of its own rather than trusting the document count
+    `_shipped_mid_lane_documents` already produced -- a directory that is
+    drainable, exists, AND genuinely has nothing under `pattern` on disk is
+    accepted; one that is drainable, exists, but DOES have real files under
+    `pattern` (so the zero-document count came from a broken scan, not a
+    drained directory) is still reported as missing.
+    """
+    prose_documents, code_documents = _shipped_mid_lane_documents(dirs=dirs, root=root)
+    documents_by_label = {}
+    for label, _text in prose_documents + code_documents:
+        # `label` is a Path (from `path.relative_to(root)`) -- read its first
+        # component via `.parts`, not a "/" string split, which would return
+        # the whole relative path unsplit on a Windows checkout where
+        # `str(label)` uses backslash separators.
+        directory = label.parts[0]
+        documents_by_label.setdefault(directory, 0)
+        documents_by_label[directory] += 1
+    missing = []
+    for dirname, pattern, _is_code in dirs:
+        if documents_by_label.get(dirname, 0) > 0:
+            continue
+        directory = root / dirname
+        if dirname in DRAINABLE_MID_LANE_DIRS and directory.is_dir():
+            try:
+                # Self-review finding (#1347): a bare `any(glob(pattern))`
+                # counts a directory whose own name matches `pattern` (a
+                # stray `trap.d/leftover.md/` from a broken tool or an
+                # accidental mkdir) as proof of a real document -- the same
+                # `is_file()` filter `_shipped_mid_lane_documents` already
+                # applies before counting a match is required here too, or
+                # this independent check disagrees with the very count it
+                # exists to double-check.
+                on_disk = any(path.is_file() for path in directory.glob(pattern))
+            except OSError:
+                # Unreadable -- can't confirm it is genuinely empty, so this
+                # is a problem too, not a pass.
+                on_disk = True
+            if not on_disk:
+                continue
+        missing.append(dirname)
+    return missing
+
+
 def test_every_shipped_mid_lane_dir_has_documents():
     """Review findings (#1262): `test_trap_d_has_documents` above proves trap.d/
     is non-empty specifically so the guard can't pass vacuously if trap.d/ ever
@@ -531,33 +590,88 @@ def test_every_shipped_mid_lane_dir_has_documents():
     SHIPPED_MID_LANE_DIRS must actually exist and actually yield at least one
     document at HEAD, or this check is testing nothing for that directory.
     """
-    prose_documents, code_documents = _shipped_mid_lane_documents()
-    documents_by_label = {}
-    for label, _text in prose_documents + code_documents:
-        # `label` is a Path (from `path.relative_to(root)`) -- read its first
-        # component via `.parts`, not a "/" string split, which would return
-        # the whole relative path unsplit on a Windows checkout where
-        # `str(label)` uses backslash separators.
-        directory = label.parts[0]
-        documents_by_label.setdefault(directory, 0)
-        documents_by_label[directory] += 1
-    # A drainable directory legitimately holds nothing between passes, so for those
-    # the vacuity question is "was it reached at all", answered by existence rather
-    # than by a document count (see DRAINABLE_MID_LANE_DIRS above). Every other
-    # directory must still yield at least one document.
-    missing = [
-        dirname
-        for dirname, _pattern, _is_code in SHIPPED_MID_LANE_DIRS
-        if documents_by_label.get(dirname, 0) == 0
-        and (
-            dirname not in DRAINABLE_MID_LANE_DIRS or not (REPO_ROOT / dirname).is_dir()
-        )
-    ]
+    missing = _missing_shipped_mid_lane_dirs()
     assert not missing, (
         "these SHIPPED_MID_LANE_DIRS entries yielded zero documents, so "
         "test_no_absolute_home_paths_in_shipped_mid_lane_dirs is not actually "
         "scanning them -- a directory that yields nothing renders identically "
         "to one that was scanned and found clean: {}".format(missing)
+    )
+
+
+def test_broken_glob_for_a_drainable_dir_is_caught_not_silently_passed(
+    tmp_path, monkeypatch
+):
+    """#1347 finding 2: the DRAINABLE_MID_LANE_DIRS carve-out let a genuinely
+    drained trap.d/ and a broken glob (one that will report zero matches
+    forever, regardless of what is really on disk) render as the identical
+    clean result. Plants a real, non-empty trap.d/ under an isolated root,
+    then monkeypatches `_shipped_mid_lane_documents` so it silently drops
+    every trap.d document it found -- simulating a broken pattern/scan --
+    while the directory genuinely holds a file on disk. The independent
+    on-disk check inside `_missing_shipped_mid_lane_dirs` must still catch
+    this and report trap.d as missing, not let the carve-out silently pass
+    it because the directory merely exists."""
+    (tmp_path / "trap.d").mkdir()
+    (tmp_path / "trap.d" / "9999.fixture-not-a-real-file.md").write_text(
+        "planted for #1347\n", encoding="utf-8"
+    )
+    real_shipped_mid_lane_documents = _shipped_mid_lane_documents
+
+    def _broken(dirs=SHIPPED_MID_LANE_DIRS, root=REPO_ROOT):
+        prose, code = real_shipped_mid_lane_documents(dirs=dirs, root=root)
+        prose = [doc for doc in prose if doc[0].parts[0] != "trap.d"]
+        code = [doc for doc in code if doc[0].parts[0] != "trap.d"]
+        return prose, code
+
+    monkeypatch.setattr(sys.modules[__name__], "_shipped_mid_lane_documents", _broken)
+    missing = _missing_shipped_mid_lane_dirs(
+        dirs=[("trap.d", "*.md", False)], root=tmp_path
+    )
+    assert "trap.d" in missing, (
+        "a broken glob that silently returns zero matches for a non-empty "
+        "drainable directory must be reported as missing, not silently "
+        "passed by the DRAINABLE_MID_LANE_DIRS carve-out"
+    )
+
+
+def test_genuinely_drained_dir_is_still_the_must_not_fire_control(tmp_path):
+    """Paired negative control for the test above: a genuinely empty drainable
+    directory (no broken scan, nothing planted) must still pass -- the fix for
+    the broken-glob case above must not start reporting a problem for an
+    ordinary, correctly-drained trap.d/."""
+    (tmp_path / "trap.d").mkdir()
+    missing = _missing_shipped_mid_lane_dirs(
+        dirs=[("trap.d", "*.md", False)], root=tmp_path
+    )
+    assert missing == []
+
+
+def test_stray_matching_subdirectory_does_not_false_positive_a_drained_dir(
+    tmp_path,
+):
+    """Self-review finding (#1347): the independent on-disk check added above
+    did `any(True for _ in directory.glob(pattern))`, which counts ANY glob
+    match -- including a directory whose own name happens to match `pattern`
+    (e.g. a stray `trap.d/some-leftover.md/` directory from a broken tool or
+    an accidental `mkdir`) -- as proof the drain is not genuine.
+    `_shipped_mid_lane_documents` itself filters every match through
+    `path.is_file()` before counting it as a document (see its own
+    docstring), so the independent check must apply the identical filter or
+    it disagrees with the very count it exists to double-check: a directory
+    correctly drained of real documents, holding nothing but a same-named
+    subdirectory, must still be accepted as drained, not reported missing."""
+    trap_d = tmp_path / "trap.d"
+    trap_d.mkdir()
+    (trap_d / "stale-subdir.md").mkdir()
+    missing = _missing_shipped_mid_lane_dirs(
+        dirs=[("trap.d", "*.md", False)], root=tmp_path
+    )
+    assert missing == [], (
+        "a directory-shaped glob match must not count as a real document -- "
+        "the on-disk check disagreed with _shipped_mid_lane_documents's own "
+        "is_file() filter and false-positived a genuinely drained directory "
+        "as missing: {}".format(missing)
     )
 
 
