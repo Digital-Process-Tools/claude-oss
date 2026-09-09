@@ -63,7 +63,26 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Nothing already in the file argued that point, so there was nothing
     # safe to cut in its place; the ceiling moves to 20100 B, ~10% headroom
     # over the new size.
-    "commands/tick.md": (18276, 20100),
+    # Re-baselined for #1349: 18276 B became 19645 B, then 20177 B in the
+    # same lane's own self-review round -- past the 20100 B ceiling by
+    # 77 B. Step 7's `work-started` handling used to read a sub-manager's
+    # task-notification as "the tick is over" and spawned a second
+    # sub-manager on it -- but a task-notification firing is not the same
+    # fact as that agent's turn having ended permanently, since the same
+    # spawn can notify more than once. The new paragraph says "keep
+    # working" can mean the same sub-manager continuing, and names a
+    # check to tell that apart from a genuinely finished one before
+    # spawning a fresh oss:sub-manager. A self-review reviewer spawn
+    # caught the first draft naming a nonexistent `ListAgents` tool (not
+    # granted to any agent in this repo, not used anywhere else in it)
+    # and leaving no case for a `SendMessage` probe that neither refuses
+    # nor replies -- fixed by reusing the file's own existing
+    # SendMessage-refusal idiom (the same one the could-not-classify
+    # re-ask a few lines above already relies on) and naming all three
+    # outcomes (refusal, reply, unresolved) explicitly. Nothing already
+    # in the file argued either point, so nothing was cut to make room;
+    # the ceiling moves to 22200 B, ~10% headroom over the new size.
+    "commands/tick.md": (20177, 22200),
 }
 
 
