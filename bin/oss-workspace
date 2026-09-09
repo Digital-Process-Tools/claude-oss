@@ -1384,6 +1384,47 @@ fi
 # That shape is not a contract either -- the same command prints no Command/Args at
 # all for a project-scope entry -- which is why failing to find those lines is its
 # own reported state below and not a silent pass.
+#
+# `channel_ready` is initialised ONCE here, before the whole if/elif/else below,
+# rather than inside each arm separately (#1343): the `plural` arm never set it at
+# all -- it relied on this exact initialisation existing, which it did not -- so
+# under `set -eu` the later `[ "$channel_ready" -eq 1 ]` read killed the launcher
+# with "channel_ready: unbound variable" before it ever reached `exec claude`,
+# directly contradicting this file's own stated rule that a session with no
+# channel beats no session.
+#
+# Deliberately NOT the bare line `channel_ready=0` on its own -- that exact
+# text is a marker `tests/test_find_consumer_578.py`'s `_extract_block`
+# searches for (`DECIDE_START`) to isolate the LATER, unrelated mcp-get-based
+# decision chain a few hundred lines down. A second bare occurrence here
+# would make `str.find` match THIS line first and extract from here through
+# that chain's own closing `fi` -- the whole single/plural/else block in
+# between, referencing variables the test's synthetic harness never sets.
+channel_ready=0  # #1343: default before the whole single/plural/else decision
+
+# #1343: the `single` state below is a NAME `plugin_channel_arm_decision` reports
+# from a plugin's own `.mcp.json`, not a registration `claude mcp` has confirmed --
+# every OTHER arm in this file (the oss-channel registration a few lines down, the
+# #810 census) verifies via `claude mcp get`/`claude mcp list` before trusting a
+# name, and this one alone did not. A plugin that reports a consumer `claude` does
+# not actually know about must fall back to registering $CHANNEL_SERVER from
+# scratch rather than arm a name the launch will then refuse outright.
+if [ "$plugin_channel_state" = "single" ] \
+   && ! claude mcp get "$plugin_channel_target" >/dev/null 2>&1; then
+    echo "oss-workspace: $plugin_channel_target ($plugin_channel_label in the" \
+         "#810 census) was named as the claude-channel consumer for this repo," \
+         "but claude mcp get $plugin_channel_target could not verify it." \
+         "Falling back to registering $CHANNEL_SERVER instead of trusting an" \
+         "unverified name." >&2
+    plugin_channel_state="single-unverified"
+    # `channel_arm_server`, far below, arms against `$plugin_channel_target`
+    # whenever it is non-empty, independent of `$plugin_channel_state` -- so an
+    # unverified target left in place here would still get armed at the very
+    # end even though this fallback just chose NOT to trust it and registered
+    # $CHANNEL_SERVER instead.
+    plugin_channel_target=""
+fi
+
 if [ "$plugin_channel_state" = "single" ]; then
     # An installed plugin's own .mcp.json already provides the one in-scope
     # claude-channel consumer for this repo
@@ -2178,6 +2219,13 @@ fi
 unset OSS_WORKSPACE_MCP_CHECKED OSS_WORKSPACE_MCP_STATUS OSS_WORKSPACE_MCP_OUTPUT
 # Same reason, same terms, for the #810 census relay (#629's shape reapplied).
 unset OSS_WORKSPACE_CENSUS_CHECKED OSS_WORKSPACE_CENSUS_REPORT
+# Same reason, same terms, for #1307's own single-plugin-consumer relay
+# (#1343): left exported, `check_mcp_channel_registration`'s in-session
+# `/oss:doctor` would go on reading a launch-time arm decision as though it
+# were still current -- and, unlike the two relays above, this one is ALSO
+# read by `doctor.sh` a few lines above THIS unset, so it must be unset here
+# rather than immediately after the plugin-arm precheck runs.
+unset OSS_WORKSPACE_CHANNEL_ARM_TARGET
 
 # #1307: which name to arm the channel flag against. `oss-channel` unless the
 # plugin-population precheck above found exactly one in-scope plugin-provided

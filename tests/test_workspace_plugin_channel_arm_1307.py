@@ -106,6 +106,15 @@ def test_a_single_plugin_consumer_arms_against_it_without_registering_oss_channe
         repo,
         with_channel=False,  # the plugin fixture above already planted it
         env_extra=_NO_AUTO_UPDATE,
+        # #1343: the `single` arm now VERIFIES the plugin-reported server via
+        # `claude mcp get` before trusting it -- named here so that verification
+        # succeeds, matching the real world this fixture represents (a plugin's
+        # own `.mcp.json` server really is a `claude mcp`-visible registration).
+        mcp_get_by_name={
+            "plugin:supertool:claude-channel": _mcp_get_output(
+                str(_consumer_path(repo))
+            )
+        },
     )
     # `run()` plants its own `_home`/`_stubbin` when `with_channel=True`; since
     # this test needs to plant an EXTRA .mcp.json on top of that same fixture,

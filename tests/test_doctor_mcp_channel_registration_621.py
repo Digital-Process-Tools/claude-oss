@@ -97,7 +97,7 @@ def test_not_registered_is_the_ordinary_absence(tmp_path):
     assert "not registered" in message.lower(), message
 
 
-def test_not_registered_is_ok_when_a_plugin_covers_it():
+def test_not_registered_is_ok_when_a_plugin_covers_it(tmp_path):
     """#1307 self-review finding: when `bin/oss-workspace` arms the flag
     against an installed plugin's own server instead of `oss-channel`
     (`plugin_channel_arm_decision`'s `single` state), `oss-channel` is
@@ -107,10 +107,28 @@ def test_not_registered_is_ok_when_a_plugin_covers_it():
     telling a maintainer to manually recreate the exact collision the
     launcher just avoided. `OSS_WORKSPACE_CHANNEL_ARM_TARGET`, exported by
     the launcher only in that branch, must turn this into `OK` naming the
-    real target instead."""
+    real target instead -- #1344 added a verification step here (`claude mcp
+    get` against the arm target itself, and its own file existing, per
+    `mcp_channel_registration_state`'s `registered` state), so this fixture
+    answers a SECOND, distinct `claude mcp get` call confirming a REAL,
+    on-disk consumer path -- rather than the name-blind `not-registered`
+    every OTHER call site in this file still uses for the single,
+    oss-channel-only ask. `tests/test_doctor_arm_target_verify_1344.py` is
+    the dedicated must-fire/must-not-fire pair for that verification itself;
+    this test stays about the relay's OWN wiring."""
+    consumer = tmp_path / "channel.ts"
+    consumer.write_text("// consumer\n", encoding="utf-8")
+
+    def run(cmd, **kwargs):
+        server = cmd[3] if len(cmd) > 3 else None
+        if server == "plugin:supertool:claude-channel":
+            text = "Type: stdio\nCommand: bun\nArgs: {}\n".format(consumer)
+            return _FakeCompleted(0, text.encode("utf-8"))
+        return _FakeCompleted(1, b"")
+
     doctor.check_mcp_channel_registration(
         which=lambda name: "/usr/bin/claude",
-        run=_run_answering("", returncode=1),
+        run=run,
         env={"OSS_WORKSPACE_CHANNEL_ARM_TARGET": "plugin:supertool:claude-channel"},
     )
     level, message = doctor.FINDINGS[-1]
