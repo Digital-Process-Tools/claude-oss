@@ -69,3 +69,57 @@ decision rather than an absence and does not refile it. The rule builder skips t
   structural rather than prose.
 - `976.check-plugin-root-says-could-not-read-for-two-unrelated-worlds` — already on the tracker as
   its own issue number.
+
+## 2026-09-08 — 50 fragments, 11 promoted into 7 new rules, 10 merged, 22 filed, 7 declined
+
+The four buckets sum to 50: eleven fragments feed the seven new rules below, ten are merged into
+six existing ones, twenty-two are declined **as rules** and filed as defect reports instead, and
+seven are declined outright with the reason.
+
+Seven new rules: `tools/00-manual/waiting-on-a-status-line.md`,
+`tools/00-manual/pr-body-closing-keywords.md`, `tools/00-manual/a-watcher-is-a-checker.md`,
+`tools/00-manual/a-write-outside-supertool-meets-no-validator.md`,
+`paths/00-manual/subprocess-decodes-with-the-locale.md`,
+`vocabulary/00-manual/measuring-ci-cost.md`,
+`vocabulary/00-manual/worktree-writes-land-where-cwd-says.md`.
+
+Six merges, into `tools/00-manual/ci-evidence-is-about-one-commit.md` (four fragments on polling CI
+truthfully), `paths/00-manual/filesystem-probe-states.md`, `paths/00-manual/loop-prose-parity.md`,
+`paths/00-manual/config-value-validation.md`, `paths/00-manual/test-fixture-pitfalls.md` and
+`vocabulary/00-manual/jit-rules-and-subagents.md`.
+
+Twenty-two fragments were declined as rules **because they are defect reports**, and were filed
+instead: #1324 (`1266.full-matrix-never-actually-dispatched`), #1325 (six fragments on the
+`gh_which` "one place" claim and the two vendored copies nothing compares), #1326 (three guards that
+cannot fail), #1327 (five third states that never reach the reader), #1328 (a spawned agent's own
+definition vintage), #1329 (two guards whose declared scope is narrower than their reach), #1330
+(`tree_snapshot compare` flagging its own artifact), plus a comment on #1310 carrying the three
+`doctor_check_lane_other_label.py` findings into the lane that will touch that file, and a comment
+on #1318 for the test-isolation fragment.
+
+**Declined, with the reason.**
+
+- `1069.supertool-read-op-served-stale-content` — one observation, explicitly unconfirmed, on one
+  path, with the fragment itself unable to distinguish a supertool cache bug from a one-off. The
+  transferable half ("cross-check the one file a diagnosis hinges on") is already the habit that
+  found it. If it recurs with a second instance, it becomes a supertool issue, not a rule here.
+- `1075.payload-rule-fires-too-late` — a correct observation about rule *placement*: a `PreToolUse`
+  rule matched on `~gh-issue-create` is read at composition time only by accident, because the
+  natural order is to write the body first. Both proposed shapes are upstream changes (match the
+  draft write instead, or make `gh-issue-create` accept a markdown file). Nothing to write here.
+  Superseded in part by `1146`'s merge above, which states the general limit of `mode: remind`.
+- `1079.gh-jq-join-of-empty-array-can-vanish-under-strip` — the specific hazard (a trailing empty
+  data row eaten by `_run`'s `.strip()`) was removed by #1226's move to `tojson`, which cannot print
+  an empty line. The general form is a special case of `filesystem-probe-states.md`'s existing rule
+  about collapsing two states into one.
+- `1228.site3-race-recurred-on-release-commit-dd2353e` — a recurrence of a closed issue, which is
+  tracker work rather than a rule. The mechanism behind it is now in `filesystem-probe-states.md`
+  via `1293`'s merge above.
+- `1291.supertool-paste-backslash-heuristic-full-resend` — the refusal was a correct catch; the
+  request is that it point at the offending line rather than the whole field. Upstream, in supertool.
+- `1295.changelog-fragment-overstates-watcher-and-is-stale` — both overclaims already folded into
+  `CHANGELOG.md` at v0.28.0 and v0.29.0 (lines 48 and 144). Released history is not edited here. The
+  substantive half of the second one is #1324; the first is a wording debt on a shipped entry.
+- `1299.patch-tag-must-bump-version-sites-too` — `commands/release.md`'s own procedure already
+  produces a release commit before the tag moves, and v0.29.1 followed it correctly. The exposure is
+  time pressure on a fix-forward, not missing knowledge, and a rule cannot fire on haste.

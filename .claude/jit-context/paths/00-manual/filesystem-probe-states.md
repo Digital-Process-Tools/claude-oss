@@ -31,3 +31,18 @@ ran and a check that found nothing must not render identically.**
 - **Do not catch the raise into `[]`** when `[]` already means something. `scaffold._workflow_scan`
   returns `(files, unreadable)` because "no workflows here" and "could not read the tree" are two
   states, and collapsing them wrote the owned trio into a repo nobody had looked at.
+
+- **List-then-read is a TOCTOU, and it is the shape most of these functions have.**
+  `skill_phases._undeclared_rows()` listed a directory (`manager_docs.documents(root)`) and then
+  read each listed path in a separate call. Anything deleting a file in that window -- here a
+  sibling xdist worker's own legitimate cleanup in the same shared, tracked directory -- makes the
+  second call raise uncaught. Confirmed against the real function with a monkeypatch that deletes
+  between the list and the read; no timing or threading needed, it is a plain two-step race (#1293).
+  The brief's own hypothesis (xdist collection timing) was plausible and wrong, and ruling it out
+  explicitly was worth the time.
+- **`except FileNotFoundError` alone does not close that race on Windows**, where a delete racing an
+  open more commonly surfaces as `PermissionError` (WinError 5/32, delete-pending or a sharing
+  violation). Catch both, or use an `OSError` arm that reports rather than silently continuing.
+- **Grep for the second copy once the first is confirmed.** That same `_undeclared_rows` body is
+  copy-pasted verbatim into `developer_phases.py`, scanning a different directory. Same bug, fixed
+  in the same commit even though nothing writes concurrently there today.

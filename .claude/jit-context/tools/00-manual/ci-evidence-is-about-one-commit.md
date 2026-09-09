@@ -42,3 +42,46 @@ first two; noticing that no sha was ever cleared catches the third.
 And read a GREEN sentence for what it excludes. `gh-branch` names the workflows that produced no
 run — in this repo `changelog` produces none on a push commit, every time — so "every leg passed"
 routinely describes 2 of 3 declared workflows. That third one is `unknown`, never covered.
+
+**A commit with zero check-runs is not a green commit (#1266).** A poll
+shaped as "read `commits/SHA/check-runs`, break when nothing is
+`in_progress` or `queued`, then report the tally" fired within seconds
+of a merge and reported `{"success": 2}` -- CodeQL's two Analyze legs.
+The `tests` workflow had produced no check-run at all, so "nothing
+pending" was true vacuously, and a commit with 16 unstarted legs was
+reported concluded and green. The same poll made the same false report
+one merge earlier. **Enumerate the workflows expected on the ref and
+require each to have a run whose status is `completed`.** Zero runs for
+an expected workflow is a third state -- not-yet-created -- and folding
+it into the pass arm is this repository's own defect class.
+
+The runs API answers where check-runs cannot, and tells a `cancelled`
+run (superseded by a later merge, leaving no check-runs behind) from a
+failed one: read `repos/OWNER/REPO/actions/runs?head_sha=SHA` and take
+each run's own `name`, `status` and `conclusion`.
+
+**A `went_not_green` saying "nothing has failed" is a pending reading,
+not a failure reading, and it expires (#1214).** The watcher emits that
+event for two states meaning opposite things and emits nothing when one
+becomes the other: `main` was NOT GREEN for "not concluded yet", then
+NOT GREEN because a leg had genuinely failed, and the verdict string
+never changed category, so no second event fired. `main` stayed red for
+12 minutes and two further merges landed on top of it. Treat such an
+event as a promise to look again, never as a state.
+
+**Events from two watchers do not order against each other (#1214).**
+The `ts` is the poller's observation time, not the forge's event time,
+so a per-PR watcher routinely reports checks for a pull request the feed
+watcher has not yet announced as open -- three times in one evening.
+Within one `watcher_source` and one `id` the order holds; across sources
+it does not.
+
+**A freeze, a tag or a sweep that reports work done must leave something
+a later session can read (#1122).** A releaser reported `cohort-24
+frozen at 37`; the label still carried the generic default description
+every cohort is created with, while the previous cohort carried a dated,
+tag-specific one written at its own freeze. A triage sweep in the same
+session read that difference and concluded the opposite. Both readings
+cannot hold, and the honest state is that nothing on the repository
+recorded either. The contradiction was luck; a single agent reading only
+the handback would have carried `frozen at 37` forward as fact.

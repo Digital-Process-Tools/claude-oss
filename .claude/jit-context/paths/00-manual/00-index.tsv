@@ -1,5 +1,5 @@
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
-(^|/)scripts/(oss_config|scaffold)\.py$	config-value-validation.md
+(^|/)scripts/(oss_config|scaffold|fix_commit_scope)\.py$	config-value-validation.md
 (^|/)(scripts/doctor(_check_[a-z0-9_]+)?\.(py|sh)|commands/doctor\.md)$	doctor-check-contract.md
 (^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
 (^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$	issue-selection-goal.md
@@ -13,6 +13,7 @@
 (^|/)(bin/[^/]+|scripts/shell_sources\.py|tests/test_unwired_scripts_253\.py)$	shell-sources-survey.md
 (^|/)scripts/statusline\.py$	statusline-cache-staleness.md
 (^|/)(agents/sub-manager\.md|commands/tick\.md|skills/manager/phases/tick-order\.md)$	sub-manager-goal.md
+(^|/)(scripts|tests)/[^/]+\.py$	subprocess-decodes-with-the-locale.md
 (^|/)tests/	test-fixture-pitfalls.md
 (^|/)trap\.d/	trap-fragments.md
 (^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md

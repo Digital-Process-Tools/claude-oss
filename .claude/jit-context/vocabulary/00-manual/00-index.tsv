@@ -21,9 +21,23 @@ byte budget	loop-document-structure.md
 document budget	loop-document-structure.md	
 split a document	loop-document-structure.md	
 loop prose	loop-document-structure.md	
+ci slow	measuring-ci-cost.md	
+slowest test	measuring-ci-cost.md	
+durations	measuring-ci-cost.md	
+test suite performance	measuring-ci-cost.md	
+matrix reduction	measuring-ci-cost.md	
+wall clock	measuring-ci-cost.md	
+runner concurrency	measuring-ci-cost.md	
+queue time	measuring-ci-cost.md	
+flaky rerun	measuring-ci-cost.md	
 vendored	vendored-and-unwired.md	
 vendoring	vendored-and-unwired.md	
 unwired script	vendored-and-unwired.md	
 unreferenced file	vendored-and-unwired.md	
 copied script	vendored-and-unwired.md	
 coverage gate	vendored-and-unwired.md	
+worktree	worktree-writes-land-where-cwd-says.md	
+lane worktree	worktree-writes-land-where-cwd-says.md	
+cd prefix	worktree-writes-land-where-cwd-says.md	
+sibling lane	worktree-writes-land-where-cwd-says.md	
+main clone	worktree-writes-land-where-cwd-says.md	
