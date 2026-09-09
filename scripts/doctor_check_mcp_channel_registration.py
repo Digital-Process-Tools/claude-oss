@@ -348,6 +348,20 @@ _CHANNEL_CONSUMER_SUFFIX_RE = re.compile(
     r"(?:/|\\)notifiers(?:/|\\)claude-channel(?:/|\\)channel\.ts(?:[ \t\r]|$)"
 )
 
+#: #1339: a `plugin:<key>:<server>` label's `key` and `server` segments are
+#: both attacker-shapable data read verbatim out of files this process does
+#: not control (the plugin registry's own JSON keys, and a plugin's own
+#: `.mcp.json` server names). `bin/oss-workspace`'s `single` precheck arm
+#: transports a label and its resolved target to the shell as two separate
+#: `print()` lines, read back positionally with `sed -n '1p'`/`sed -n '2p'` --
+#: an embedded newline lets a crafted plugin forge a THIRD line that gets
+#: read back as the arm target instead of the real server name. Any other
+#: C0 control character or DEL reaching that same two-line transport is the
+#: identical class of defect even without a literal newline, so the whole
+#: control-character range is rejected here, once, at the boundary -- never
+#: only the one byte the issue's own repro happened to use.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+
 #: `claude mcp list` prints one server per line, `name:` then whitespace then its
 #: command and args -- `oss-channel:    bun /path/to/channel.ts`, padded so the
 #: colons line up, which is why this is `[ \t]+` rather than a single space.
@@ -615,8 +629,9 @@ def plugin_channel_arm_decision(plugin_registry_path=None, project_dir=None):
     Returns ``(state, detail)``, four states:
 
     * ``could-not-ask`` -- the plugin population could not be established
-      (an unreadable or malformed registry, or one plugin's own unreadable
-      `.mcp.json`). `detail` is the reason. Falls back to registering
+      (an unreadable or malformed registry, one plugin's own unreadable
+      `.mcp.json`, or a label built from it carrying a control character --
+      see below). `detail` is the reason. Falls back to registering
       `oss-channel` as before and letting the post-registration census
       decide -- an unreadable registry must not silently read as "no plugin
       consumer", which would stop registering the only one there is.
@@ -631,6 +646,21 @@ def plugin_channel_arm_decision(plugin_registry_path=None, project_dir=None):
       their labels. Do not register `oss-channel` either -- a third racer
       would not help -- but there is no single target to arm against, so the
       session opens without the flag.
+
+    #1339: `key` (a plugin registry JSON key) and `server_name` (a plugin's
+    own `.mcp.json` server name) are both attacker-shapable data, and
+    `bin/oss-workspace`'s `single` arm transports `label`/`resolvable` to the
+    shell as two bare `print()` lines read back positionally -- an embedded
+    control character (a newline, most directly) forges an extra line the
+    launcher then reads back as the arm target. Rejected here, at the one
+    place every consumer label passes through before a caller can act on it,
+    rather than only where the immediate repro happened to bite: a label
+    surviving `_plugin_channel_consumer_names` with a control character in
+    it downgrades the WHOLE population to `could-not-ask` -- the same safe
+    fallback an unreadable registry already produces -- rather than being
+    silently dropped from `names` (which would still leave a real collision
+    unreported) or passed through into `single`/`plural` (which is the
+    defect this closes).
     """
     names, reason = _plugin_channel_consumer_names(
         plugin_registry_path, project_dir=project_dir
@@ -639,6 +669,14 @@ def plugin_channel_arm_decision(plugin_registry_path=None, project_dir=None):
         return "could-not-ask", reason
     if not names:
         return "none", ""
+    tainted = [name for name in names if _CONTROL_CHAR_RE.search(name)]
+    if tainted:
+        return "could-not-ask", (
+            "{} of {} in-scope plugin consumer label(s) contain a control "
+            "character and cannot be trusted as an arm target".format(
+                len(tainted), len(names)
+            )
+        )
     if len(names) == 1:
         label = names[0]
         return "single", (label, resolvable_plugin_server_name(label))
