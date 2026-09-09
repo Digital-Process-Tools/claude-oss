@@ -961,14 +961,26 @@ def index_rows(dimension, rules):
 
     The vocabulary row's third column was added by #1372, for the identical reason:
     `rebuild-tsv.sh` (claude-jit-context 0.7.1+) writes `keyword<TAB>file<TAB>verdict`,
-    where the verdict is `"generic"` only for a keyword listed in a configured
-    `GENERIC_WORDS_FILE` and empty otherwise. This plugin configures no such file, so
-    every emitted verdict is the empty string -- but the column itself is still there,
-    a trailing empty field rather than an omitted one. Shipping the two-column form
-    made a freshly-scaffolded repo not a fixed point of that builder: running it once
-    turned every row into `keyword<TAB>file<TAB>` (an oscillation to a third state and
-    back on every `/oss:scaffold --apply` afterwards), which is a dirty working tree
-    for no reason a maintainer of that repo caused.
+    where the verdict is `"generic"` only when the WHOLE keyword string exactly matches
+    one line of a dictionary word list, and empty otherwise. Leaving `GENERIC_WORDS_FILE`
+    unconfigured does NOT mean no such file is consulted -- the builder falls back to its
+    own bundled `data/generic-words.txt` (one lowercase English/French dictionary token
+    per line), and that fallback runs unconditionally unless this plugin overrides it,
+    which it does not. Every keyword this plugin ships today emits an empty verdict, but
+    for the reason the dictionary's own entries are single tokens: a multi-word keyword
+    ("state file") cannot exactly match a one-token line,
+    and this plugin's few single-token keywords ("statusline", "oss-watch") are invented
+    compounds, not ordinary dictionary words -- checked against the installed dependency's
+    own word list at review time, not assumed. **A single-word keyword added later is not
+    covered by that check and must be verified the same way before assuming its verdict
+    stays empty** -- see `_rebuild_tsv_vocab_row` in `tests/test_oss_rules.py`, which
+    reimplements the column SHAPE only, not the classifier itself.
+
+    Shipping the two-column form made a freshly-scaffolded repo not a fixed point of
+    that builder regardless of any single row's verdict: running it once turned every
+    row into `keyword<TAB>file<TAB>` (an oscillation to a third state and back on every
+    `/oss:scaffold --apply` afterwards), which is a dirty working tree for no reason a
+    maintainer of that repo caused.
     """
     rows = []
     for name in sorted(rules):

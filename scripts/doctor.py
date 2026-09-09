@@ -4714,7 +4714,10 @@ JIT_ENTRY_SKIP = "00-README.md"
 #
 #   tools       tool <TAB> match <TAB> filename <TAB> mode|remind <TAB> require <TAB> forbid <TAB> requires
 #   paths       match <TAB> filename
-#   vocabulary  keyword <TAB> filename, one row per keyword
+#   vocabulary  keyword <TAB> filename <TAB> verdict, one row per keyword (#1372: the
+#               verdict is empty rather than absent for every keyword this plugin
+#               ships, since no GENERIC_WORDS_FILE is configured -- the trailing
+#               column is still there)
 #
 # #80's report said the tools columns were `tool, match, mode, require, forbid` -- five,
 # with the filename absent. There are now seven and the filename is the third of them,

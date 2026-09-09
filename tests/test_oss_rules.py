@@ -483,15 +483,21 @@ def test_tools_index_row_is_the_seven_column_shape():
 
 
 def _rebuild_tsv_vocab_row(keyword, filename):
-    """The column shape `claude-jit-context`'s `rebuild-tsv.sh` (0.7.1+) writes for one
-    vocabulary keyword, reimplemented from its own `build_vocab_tsv` (the real script
-    is a bash pipeline over `common.sh`, `JIT_BASE` and a live tree layout, not
-    something this suite can invoke cleanly): `printf '%s\t%s\t%s'` with the keyword,
-    the filename, and a verdict that is "generic" only when the keyword appears in
-    a configured `GENERIC_WORDS_FILE` -- unconfigured (the case for every keyword this
-    plugin ships; there is no such file here), every keyword defaults to non-generic,
-    i.e. an EMPTY third field. The row is still three TAB-separated columns, the last
-    one empty rather than dropped -- that is the byte #1372 is about.
+    """The column SHAPE `claude-jit-context`'s `rebuild-tsv.sh` (0.7.1+) writes for one
+    vocabulary keyword: `printf '%s\t%s\t%s'` with the keyword, the filename, and a
+    verdict that is "generic" only when the keyword exactly matches one line of a
+    dictionary word list the builder consults (bundled by default; see
+    `oss_rules.index_rows`'s own docstring for the mechanism -- leaving the builder's
+    `GENERIC_WORDS_FILE` unconfigured does NOT mean no wordlist is consulted).
+
+    This reimplements the SHAPE only, hardcoding an empty third field, not the
+    classifier: every keyword this plugin ships today is verified (by hand, against the
+    installed dependency's own `data/generic-words.txt`, not assumed) to produce an
+    empty verdict, but this function does not re-derive that -- it cannot without
+    vendoring or shelling out to the dependency's ~100k-line word list, which is a
+    bigger dependency than this fixed-point check needs. **A newly-added single-token
+    keyword must be checked against that file by hand before assuming it stays empty
+    here** -- see `oss_rules.index_rows`'s docstring.
     """
     return "{}\t{}\t".format(keyword, filename)
 
@@ -526,8 +532,13 @@ def test_vocabulary_index_row_is_the_rebuild_tsv_shape_1372():
         assert len(fields) == 3, row
         keyword, filename, verdict = fields
         assert verdict == "", (
-            "a keyword this plugin ships classified as generic, which should not "
-            "happen with no GENERIC_WORDS_FILE configured: {}".format(row)
+            "a keyword this plugin ships classified as generic in this pinned "
+            "expectation -- {}. If a real dependency rebuild now writes a non-empty "
+            "verdict for it, check the keyword against the installed "
+            "claude-jit-context's data/generic-words.txt by hand (this reimplementation "
+            "only pins the column SHAPE, not the classifier -- see "
+            "_rebuild_tsv_vocab_row's docstring) and update this test to match, rather "
+            "than assuming the empty default still holds".format(row)
         )
         assert row == _rebuild_tsv_vocab_row(keyword, filename), row
 
