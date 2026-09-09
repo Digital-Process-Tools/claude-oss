@@ -95,11 +95,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails, when a fix-for-a-finding needs its own pass",
     ),
     "agents/developer/report.md": (
-        # #1103: capture the literal ${CLAUDE_PLUGIN_ROOT} a lane validated
-        # against in the new optional plugin_root field, so a schema-version
-        # mismatch a sub-manager sees later can be attributed to a mid-tick
-        # plugin update. 17401 became 18286. Ceiling unchanged.
-        18286,
+        # #1333: review.mechanism gained a schema minLength (empty or
+        # near-empty mechanism strings can no longer pair with a
+        # claimed-clean review), documented in the new paragraph beside
+        # "What the validator checks is shape, not truth." 18286 became
+        # 18942. Ceiling unchanged, still under it.
+        18942,
         19100,
         "the note, the JSON report and its validator, the pull request payload",
     ),

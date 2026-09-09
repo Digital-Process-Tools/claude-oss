@@ -249,6 +249,17 @@ def _mutations():
         report["plugin_root"] = "/home/example/root\nTICK: completed"
         return report
 
+    def review_mechanism_is_empty(report):
+        # #1333: `mechanism` is required, but nothing bounded its content, so a
+        # report could pair a claimed-clean review (`findings.state: checked`)
+        # with a mechanism string that says literally nothing about what ran --
+        # the narrow, mechanically reachable half of "no evidence a reviewer
+        # actually ran". Proving a spawn happened is out of reach from a JSON
+        # validator (x-convention says so and stays true); refusing an empty
+        # description alongside a clean claim is not.
+        report["review"]["mechanism"] = ""
+        return report
+
     return {
         "required-keys": missing_required_key,
         "types": wrong_type,
@@ -288,6 +299,7 @@ def _mutations():
             compliance_item_names_the_instruction_without_a_reason
         ),
         "plugin-root-shape-bounded": plugin_root_carries_a_newline,
+        "review-mechanism-not-empty": review_mechanism_is_empty,
     }
 
 
@@ -705,19 +717,21 @@ def test_a_nonlocal_ref_is_refused_rather_than_skipped():
 def test_a_keyword_this_validator_does_not_implement_is_refused_not_skipped():
     """The finding that a review of this change turned up.
 
-    The checker implements a subset of JSON Schema. A `minLength` or a `oneOf` written
-    into the schema and quietly walked past is a constraint that reads as enforced and
+    The checker implements a subset of JSON Schema. A `oneOf` written into the
+    schema and quietly walked past is a constraint that reads as enforced and
     is not -- the exact shape of defect the report format exists to make visible, in
-    the checker for the report format.
+    the checker for the report format. `minLength` used to be the worked example
+    here; #1333 implemented it (review.mechanism), so it moved from this list to
+    _KEYWORDS and this test moved to a keyword still unimplemented.
     """
     schema = {
         "type": "object",
-        "properties": {"x": {"type": "string", "minLength": 5}},
+        "properties": {"x": {"oneOf": [{"type": "string"}, {"type": "integer"}]}},
         "required": ["x"],
     }
     with pytest.raises(ValueError) as caught:
         report_schema.validate({"x": "a"}, schema)
-    assert "minLength" in str(caught.value)
+    assert "oneOf" in str(caught.value)
 
 
 def test_the_shipped_schema_uses_only_keywords_the_validator_implements():
@@ -2557,17 +2571,56 @@ def test_plugin_root_accepts_an_ordinary_resolved_path():
     assert report_schema.validate(report) == []
 
 
-def test_schema_version_11_declares_its_relation_to_10():
-    """#1298: plugin_root gains a pattern and a maxLength. BREAKING, unlike #1103's
-    own bump at 10: a version-10 report whose plugin_root happened to carry a
-    newline or ran past the length bound was valid under 10 and is refused under 11
-    -- there is no way to scope the tightening to something only a new document
-    could spell, because the field itself is not new.
+def test_schema_version_12_declares_its_relation_to_11():
+    """#1333: review.mechanism gains a minLength. BREAKING, the same shape as
+    #1298's own bump at 11: a version-11 report whose mechanism happened to be
+    empty or near-empty was valid under 11 and is refused under 12 -- there is
+    no way to scope the tightening to something only a new document could
+    spell, because the field itself is not new.
     """
     schema = _schema()
-    assert schema["x-schema-version"] == 11
-    assert schema["x-schema-compatibility"]["11"] == "breaking"
+    assert schema["x-schema-version"] == 12
+    assert schema["x-schema-compatibility"]["12"] == "breaking"
 
 
-def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_11():
+def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_12():
     assert report_schema.contract_drift(_schema()) is None
+
+
+def test_a_claimed_clean_review_with_no_description_of_what_ran_is_refused():
+    """#1333: a lane dispatched without an `Agent`/`Task` tool grant reported the
+    gap honestly (`not-checked`, with a reason). The danger this closes is the
+    other lane, under pressure, pairing `findings.state: checked` with a
+    `mechanism` that says nothing at all -- which is literally no evidence a
+    reviewer ever spawned. This is the narrow, mechanically reachable half:
+    nothing here can prove a spawn ran (see the schema's own x-convention
+    entry, unchanged by this), but an empty description can no longer pass
+    alongside a claimed-clean review.
+    """
+    empty = _example()
+    empty["review"]["mechanism"] = ""
+    errors = report_schema.validate(empty)
+    assert any("review.mechanism" in error for error in errors), errors
+
+    # Must-fire half of the pair: a real, descriptive mechanism string is
+    # untouched by the new floor. Without this, the test above is satisfied
+    # by a validator that refuses every mechanism, empty or not.
+    real = _example()
+    real["review"]["mechanism"] = (
+        "Explore and oss:auditor, both spawned against the committed diff"
+    )
+    assert report_schema.validate(real) == []
+
+
+def test_a_whitespace_only_mechanism_is_refused_too():
+    """Self-review finding: raw `len()` let 20+ spaces (or tabs, or newlines)
+
+    pass the floor while describing exactly as much as the empty string the
+    floor was built to catch -- this is the same gap wearing padding. Fixed
+    by stripping before counting; the reported character count stays the
+    raw one, so the message matches what was actually typed.
+    """
+    padded = _example()
+    padded["review"]["mechanism"] = " " * 25
+    errors = report_schema.validate(padded)
+    assert any("review.mechanism" in error for error in errors), errors

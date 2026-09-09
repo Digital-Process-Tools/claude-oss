@@ -127,6 +127,46 @@ def _entry_prefix_wildcard_head(entry):
     return head
 
 
+#: An absolute path (POSIX or Windows, optionally drive-lettered) as the
+#: very first character(s) of a Bash command head -- the same shape
+#: `SUPERTOOL_ENTRY_RE` below already recognises inside its own anchored
+#: `Bash(...supertool:` spelling. Applied to a bare head string here rather
+#: than a whole `Bash(...)` entry, so it is reusable for the wildcard scan
+#: below too.
+_ABSOLUTE_HEAD_RE = re.compile(r"^(?:[A-Za-z]:)?[/\\]")
+
+
+def _entry_head_covers(head, op_heads):
+    """Does `head` (`_entry_command_head`'s return value) name one of
+    `op_heads`, either directly -- the bare command a caller passed
+    (`"git"`, or the repo-relative `"./supertool"` `SUPERTOOL_COMMAND_HEADS`
+    itself carries) -- or as an absolute path ending in one of those same
+    bare names?
+
+    #1329: before this fix, only `SUPERTOOL_ENTRY_RE` (the narrow,
+    spelling-anchored entry check a few lines below) recognised the third
+    shape -- `Bash(/usr/local/bin/supertool *)` names the identical launcher
+    `Bash(supertool *)` does, but the wildcard-covers scan's plain `head in
+    op_heads` membership test missed it, so a covering wildcard grant (or
+    deny) written with an absolute path sailed through unrecognised as
+    neither `present`/`denied` (no literal op-name match) nor
+    `cannot-tell-whether-covered`/`-forbidden` (this scan never saw it
+    either). Low practical severity -- a maintainer is far more likely to
+    write the bare form -- but genuinely untested either way before this.
+
+    `head` may be `None` (`_entry_command_head` returns that for anything
+    not shaped like `Bash(...)`); this returns `False` rather than raising.
+    """
+    if head is None:
+        return False
+    if head in op_heads:
+        return True
+    if not _ABSOLUTE_HEAD_RE.match(head):
+        return False
+    tail = re.split(r"[/\\]", head)[-1]
+    return tail in op_heads
+
+
 def _bash_wildcard_allow_detail(project_dir, op_heads, home=None):
     """Count-and-file detail (same convention as `_permission_rule_state`,
     never the entry text) for Bash allow entries whose command head is one of
@@ -156,9 +196,9 @@ def _bash_wildcard_allow_detail(project_dir, op_heads, home=None):
             if (
                 WILDCARD_MARKER in e
                 and PREFIX_SUFFIX not in e
-                and _entry_command_head(e) in op_heads
+                and _entry_head_covers(_entry_command_head(e), op_heads)
             )
-            or _entry_prefix_wildcard_head(e) in op_heads
+            or _entry_head_covers(_entry_prefix_wildcard_head(e), op_heads)
         ]
         if matches:
             found.append(_entry_count(len(matches), "allow", path))
@@ -188,9 +228,9 @@ def _bash_wildcard_deny_detail(project_dir, op_heads, home=None):
             if (
                 WILDCARD_MARKER in e
                 and PREFIX_SUFFIX not in e
-                and _entry_command_head(e) in op_heads
+                and _entry_head_covers(_entry_command_head(e), op_heads)
             )
-            or _entry_prefix_wildcard_head(e) in op_heads
+            or _entry_head_covers(_entry_prefix_wildcard_head(e), op_heads)
         ]
         if matches:
             found.append(_entry_count(len(matches), "deny", path))

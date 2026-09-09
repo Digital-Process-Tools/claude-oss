@@ -2293,6 +2293,15 @@ def _channel_reading(root, config):
     return parse_channel_report(_run_channel_health()), attribution
 
 
+#: Mirrors `scaffold.py`'s own `OWNED_DIR` (".oss") -- the one directory name
+#: `scaffold.py` ever vendors this module into (`_owned_statusline`). Not
+#: imported from `scaffold.py`: this module is vendored standalone into
+#: managed repositories with "No third-party imports" (see the module
+#: docstring above), so a duplicate literal is the only route available here,
+#: the same trade-off `_safe_which` above already documents for `gh_which.py`.
+_VENDORED_DIR_NAME = ".oss"
+
+
 def _statusline_sibling_doctor_path():
     """`doctor.py` beside this file on disk. Real only when this file IS the
     plugin's own tracked `scripts/statusline.py`, run directly out of a checkout
@@ -2302,8 +2311,59 @@ def _statusline_sibling_doctor_path():
     copies exactly one file at write time, and `doctor.py` is not it -- see
     `OWNED` in `scaffold.py`). Split out from `_doctor_script_path` below so that
     fallback is testable without patching `__file__` itself.
+
+    Returns the candidate path unconditionally -- existence and provenance are
+    both `_doctor_script_path`'s job, not this function's (#1334): this file's
+    own `is_file()` check was previously the ONLY gate, and the candidate it
+    resolves to is under attacker control in a managed repository (see
+    `_sibling_doctor_candidate_is_trusted` below).
     """
     return Path(__file__).with_name("doctor.py")
+
+
+def _sibling_doctor_candidate_is_trusted(candidate):
+    """Whether `candidate` (`_statusline_sibling_doctor_path()`'s return value)
+    is safe to execute unread, beyond merely existing (#1334).
+
+    `_statusline_sibling_doctor_path` resolves a path beside `__file__` with no
+    check on WHICH `__file__` is running it. In a managed repository the
+    vendored copy of this module lives at `<repo>/.oss/statusline.py`
+    (`scaffold.py`'s `OWNED_DIR`), so the sibling candidate resolves to
+    `<repo>/.oss/doctor.py` -- a path INSIDE the repository under inspection,
+    not gitignored, and addable by an ordinary pull request. `_doctor_reading`
+    then runs whatever is there with `sys.executable`, in the maintainer's own
+    session, reachable with no user action (`gather()` forks a refresh
+    whenever the board is stale) and before any review of that pull request.
+
+    This checks the one fact that is NOT attacker-controlled: the name of the
+    directory the running module actually lives in. `scaffold.py` is the only
+    writer of a vendored copy and always uses the literal ".oss" -- a pull
+    request against the managed repo can add files inside that directory but
+    cannot relocate which directory `.oss/statusline.py` itself executes from.
+    So a sibling candidate whose parent directory is named `.oss` is refused
+    outright, and `_doctor_script_path` falls through to the installed-plugin
+    candidate instead, exactly as it already does when the sibling is simply
+    missing. Everywhere else -- this repository's own `scripts/` checkout, a
+    pytest fixture directory, the plugin's own installed `scripts/` directory
+    -- is unaffected; this closes one specific, attacker-reachable path rather
+    than adding a hash or signature scheme this loop has no way to bootstrap
+    trust for.
+
+    Compared case-folded (self-review finding): on a case-insensitive but
+    case-preserving filesystem (default macOS APFS, default Windows NTFS),
+    `<repo>/.OSS/statusline.py` is the SAME directory on disk as
+    `<repo>/.oss/statusline.py` even though the two path strings differ, and
+    `scaffold.py` never varies its own literal-lowercase spelling -- but
+    nothing here controls what string the harness's own invocation path (a
+    hook config, a symlink, a future resolver) happens to carry. A
+    case-sensitive comparison would (wrongly) trust the vendored sibling the
+    moment that string happened to spell the directory with any other
+    casing, silently reopening the exact bypass this function exists to
+    close. `.lower()` on both sides removes that dependency entirely rather
+    than assuming today's one invocation path is the only one that will ever
+    exist.
+    """
+    return candidate.parent.name.lower() != _VENDORED_DIR_NAME
 
 
 def _installed_plugin_root(project_root, name, plugins_root=None):
@@ -2341,22 +2401,27 @@ def _doctor_script_path(root):
 
     1. Beside this file (`_statusline_sibling_doctor_path`) -- this repository's
        own dev checkout, where `scripts/statusline.py` and `scripts/doctor.py`
-       are genuine siblings.
+       are genuine siblings. Only trusted when
+       `_sibling_doctor_candidate_is_trusted` says so (#1334): a candidate
+       resolving inside `scaffold.py`'s vendored `.oss/` directory is refused
+       even when it exists, since a file there is attacker-plantable via an
+       ordinary pull request against the managed repo.
     2. Failing that, the `oss` plugin's own installed copy
        (`_installed_plugin_root`, `OSS_STATUSLINE_PLUGIN` env, default `"oss"` --
        the same name `plugin_facts` below already reads this repo's own entry
        under) -- `<install path>/scripts/doctor.py`. This is the candidate that
        actually answers in a managed repository: `scaffold.py` never ships
        `doctor.py` alongside the vendored `.oss/statusline.py` it writes, so
-       candidate 1 does not exist there by construction, and the plugin
-       installed under `~/.claude/plugins` is where the real diagnostic lives.
+       candidate 1 does not exist there by construction (and would be refused
+       by the trust check even if it did), and the plugin installed under
+       `~/.claude/plugins` is where the real diagnostic lives.
 
-    Returns the first candidate that exists on disk, or `None` when neither
-    does -- `_doctor_reading` folds that to the same absent-reading `None`
-    every other unreachable-subprocess case there already produces.
+    Returns the first trusted candidate that exists on disk, or `None` when
+    neither does -- `_doctor_reading` folds that to the same absent-reading
+    `None` every other unreachable-subprocess case there already produces.
     """
     beside = _statusline_sibling_doctor_path()
-    if beside.is_file():
+    if beside.is_file() and _sibling_doctor_candidate_is_trusted(beside):
         return beside
     loop_name = os.environ.get("OSS_STATUSLINE_PLUGIN", "oss")
     install_path = _installed_plugin_root(root, loop_name)
