@@ -36,5 +36,15 @@ that shape feels like generating a file rather than editing one. It is
 still an `edit`: anchor `old` on the last existing block and carry it
 into `new` along with everything appended.
 
+**A multi-anchor mutation is the other pull, and it loses the same
+race.** #1333: two sites in one Python test file -- one dict entry, one
+function definition -- were patched with a throwaway
+`python3 - <<'PY' ... write_text(...) PY` because a small script felt
+more surgical than two edits. The reminder fired *after* the write had
+landed (`mode: remind` is not a block), so the write had no jsonlint, no
+gitleaks, no rollback and no receipt. It happened to be correct, which is
+a fact about that afternoon and not about the route. Two `edit:@-` calls
+with literal `old`/`new` blocks are both faster and validated.
+
 A background watcher escapes the guard the same way, for a different
 reason: `tools/00-manual/a-watcher-is-a-checker.md`.

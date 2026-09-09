@@ -8,7 +8,7 @@
 (^|/)(agents/([^/]+\.md|[^/]+/[^/]+\.md)|skills/manager/([^/]+\.md|phases/[^/]+\.md)|commands/[^/]+\.md)$	md-is-a-manual-not-a-rationale.md
 (^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
-(^|/)scripts/oss_rules\.py$	rules-layer-symlinks.md
+(^|/)scripts/oss_rules\.py$|(^|/)\.claude/jit-context/.*/00-index\.tsv$	rules-layer-symlinks.md
 (^|/)scripts/[^/]+\.py$	script-boundaries.md
 (^|/)(bin/[^/]+|scripts/shell_sources\.py|tests/test_unwired_scripts_253\.py)$	shell-sources-survey.md
 (^|/)scripts/statusline\.py$	statusline-cache-staleness.md
