@@ -30,7 +30,7 @@ wall clock	measuring-ci-cost.md
 runner concurrency	measuring-ci-cost.md	
 queue time	measuring-ci-cost.md	
 flaky rerun	measuring-ci-cost.md	
-CLAUDE_PLUGIN_ROOT	self-hosted-plugin-resolution.md	
+claude plugin root	self-hosted-plugin-resolution.md	
 plugin root	self-hosted-plugin-resolution.md	
 pinned root	self-hosted-plugin-resolution.md	
 resolved install	self-hosted-plugin-resolution.md	
