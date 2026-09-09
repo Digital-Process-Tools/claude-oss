@@ -487,7 +487,7 @@ rendered the same as `clean`. `could-not-tell` means nothing was actually captur
 that must never read as either `clean` or `bypassed`, and a sign to re-run the capture and the scan
 in the same call rather than trust the result.
 
-## Wait for the release commit's own CI before it is tagged (#1266)
+## Wait for the release commit's own CI before it is tagged (#1266, #1324)
 
 Gates 1-6 above verify the default branch is green **before** this commit was written — the right
 check for the delta being released, but not a check on the commit itself. Its own content (the
@@ -496,19 +496,49 @@ nothing yet. `v0.27.0` shipped without this: tagged and published the moment the
 before its own `tests` run had even started, and that run concluded RED four minutes later, on
 every non-CodeQL leg, on all three operating systems.
 
-Resolve the pushed commit's own full sha — never abbreviated, see the script's own docstring for
-why — and wait on it:
+**A push-triggered run alone still does not verify this commit against the coverage a release is
+supposed to require (#1324).** Gate 1, above, dispatches this repo's full 3-OS x Python-3.9-3.12
+matrix — reserved for a `workflow_dispatch` carrying `full_matrix: true` (#1246) — but only against
+the *pre-release* default branch, before this commit exists. The push this commit itself triggers
+runs only the reduced 5-leg set. So the full matrix must be dispatched a second time, against this
+commit specifically, after the push — the same repo-specific check gate 1 already performs (look
+for `on: workflow_dispatch: inputs:` in `.github/workflows/*.yml` at release time; do not assume
+every repo shares this shape):
 
 ```bash
 COMMIT_SHA="$(git rev-parse HEAD)"
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_ci_wait.py" --commit "$COMMIT_SHA" --wait
+gh workflow run <workflow file> --ref <default_branch> \
+  -f <dispatch input>=<value requesting full coverage>
 ```
+
+`--ref <default_branch>` rather than the sha itself, for the same reason gate 1 uses it: the
+dispatch API takes a branch or tag name, not an arbitrary commit. It resolves to `$COMMIT_SHA` only
+because nothing has landed on the branch since the push moments earlier — the same unsolved race
+gate 1 names.
+
+Resolve the pushed commit's own full sha — never abbreviated, see the script's own docstring for
+why — and wait on **the dispatched run specifically**, not on whatever else already exists for this
+sha:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_ci_wait.py" --commit "$COMMIT_SHA" --wait \
+  --require-event workflow_dispatch
+```
+
+`--require-event workflow_dispatch` is what makes this a wait on the full-matrix run rather than on
+the ordinary push-triggered one: without it, `release_ci_wait.py` reports GREEN the moment *any* run
+on this sha concludes and passes — which the reduced push run alone can do before the dispatched
+wider run has even been created, exactly the gap #1324 named. With it, a commit whose only runs are
+push-triggered reads as **PENDING** ("no run with event=workflow_dispatch has appeared for this
+commit yet"), never GREEN, until the dispatched run itself shows up and concludes.
 
 Four outcomes from `release_ci_wait.py`, read as an exit code rather than as prose (2 is never
 one of them — reserved for an argparse usage error, the same discipline gate 3's
 `cohort_citation_order.py` exit codes now follow, #1267):
 
-- **exit 0, `GREEN`** — every run on this commit concluded and passed. Proceed to the tag, below.
+- **exit 0, `GREEN`** — every run matching `--require-event workflow_dispatch` on this commit
+  concluded and passed — the dispatched full-matrix run, not merely the push-triggered one.
+  Proceed to the tag, below.
 - **exit 1, `RED`** — a run failed, or completed with a conclusion this script has never seen
   (including `cancelled` — a concurrency-superseded run is not a green run). **Stop. Do not create
   the tag.** The release commit is already on the default branch and can be fixed forward like any

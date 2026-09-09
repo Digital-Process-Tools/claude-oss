@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Wait for one commit's own CI to conclude before it is tagged -- #1266.
+"""Wait for one commit's own CI to conclude before it is tagged -- #1266,
+#1324.
 
 `v0.27.0` was tagged and published at `fb73907` before that commit's own
 `tests` run had even started -- it concluded RED four minutes later, on
@@ -45,6 +46,15 @@ one call -- the same reason `pr_green.py` does.
                     can read) and never into `green` (a tag cut over a run
                     nobody confirmed) -- this repository's own named defect
                     class, applied to one call.
+
+`--require-event` (#1324) restricts every state above to runs whose own
+`event` matches it -- this repository's full 3-OS x Python-3.9-3.12 matrix
+only ever runs via a `workflow_dispatch` carrying `full_matrix: true`
+(#1246), and without this filter a green ordinary push-triggered run of
+the same workflow would satisfy a wait meant for the wider dispatched one.
+A commit with runs but none matching the required event reads as
+`pending`, never `green` -- see `read_commit`'s own docstring for why that
+is folded into the existing pending state rather than invented as a fifth.
 
 `--wait` polls while the commit is `pending`; on timeout it returns `None`
 rather than any of the four states above, so a caller cannot mistake "gave
@@ -109,7 +119,7 @@ EXIT_CODES = {
 # `pr_green.py`'s own `_PASSING_CONCLUSIONS` uses for its own vocabulary.
 _PASSING_CONCLUSIONS = frozenset(("success", "neutral", "skipped"))
 
-_RUN_LIST_FIELDS = "workflowName,status,conclusion,headSha,url"
+_RUN_LIST_FIELDS = "workflowName,status,conclusion,headSha,url,event"
 
 
 def _decode(value):
@@ -147,11 +157,26 @@ def _gh(gh, args, run, timeout=30):
     return stdout, None
 
 
-def read_commit(sha, gh, run, repo=None):
+def read_commit(sha, gh, run, repo=None, expect_event=None):
     """Read one commit's own workflow runs and classify them.
 
     ``sha`` should be the full 40-character sha -- see the module docstring
     for why an abbreviated one silently returns no runs rather than failing.
+
+    ``expect_event`` (#1324), when given, restricts classification to runs
+    whose own ``event`` field matches it -- e.g. ``"workflow_dispatch"`` to
+    ask specifically about a manually-dispatched run rather than whatever
+    ordinary push-triggered run also exists for this sha. This repository
+    dispatches its full 3-OS x Python-3.9-3.12 matrix only via
+    ``workflow_dispatch`` with ``full_matrix: true`` (#1246); the push run
+    the same commit also triggers is a reduced 5-leg set, and without this
+    filter a green push run alone would satisfy a wait meant for the wider
+    one. A commit with runs but none matching ``expect_event`` reads as
+    `pending` -- not created yet from this read's point of view -- never as
+    `green`: the zero-matching-runs case is its own state, folded into the
+    existing "nothing has shown up yet" pending semantics rather than a new
+    fifth state, since both mean the same thing to a caller deciding whether
+    to tag: not yet safe.
     """
     args = ["run", "list", "--commit", sha, "--json", _RUN_LIST_FIELDS]
     if repo:
@@ -174,19 +199,22 @@ def read_commit(sha, gh, run, repo=None):
             "detail": "unexpected `gh run list` shape (not a list)",
         }
 
+    rows = [row for row in rows if isinstance(row, dict)]
+    if expect_event is not None:
+        rows = [row for row in rows if row.get("event") == expect_event]
+
     if not rows:
         return {
             "sha": sha,
             "state": STATE_PENDING,
             "failing": [],
             "pending_runs": [],
+            "expect_event": expect_event,
         }
 
     failing = []
     pending_runs = []
     for row in rows:
-        if not isinstance(row, dict):
-            continue
         name = row.get("workflowName") or "?"
         status = row.get("status")
         conclusion = row.get("conclusion")
@@ -215,6 +243,7 @@ def read_commit(sha, gh, run, repo=None):
         "state": state,
         "failing": failing,
         "pending_runs": pending_runs,
+        "expect_event": expect_event,
     }
 
 
@@ -227,16 +256,19 @@ def wait_for_conclusion(
     timeout=None,
     sleep=time.sleep,
     clock=time.monotonic,
+    expect_event=None,
 ):
     """Poll `read_commit` while the commit is `pending`; return the instant
     it is not. Returns ``None`` only when ``timeout`` expired with the
     commit still `pending` -- the caller's cue to stop rather than tag on a
     guess, the same contract `pr_green.py`'s own `wait_for_first_actionable`
     keeps for pull requests.
+
+    ``expect_event`` is passed straight through to `read_commit` (#1324).
     """
     start = clock()
     while True:
-        entry = read_commit(sha, gh, run, repo=repo)
+        entry = read_commit(sha, gh, run, repo=repo, expect_event=expect_event)
         if entry["state"] != STATE_PENDING:
             return entry
         if timeout is not None and (clock() - start) >= timeout:
@@ -261,9 +293,16 @@ def _render(entry):
             )
         return "\n".join(lines)
     # STATE_PENDING
+    pending_runs = entry.get("pending_runs", [])
+    expect_event = entry.get("expect_event")
+    if not pending_runs and expect_event:
+        return (
+            "PENDING | sha: {0} | no run with event={1} has appeared for "
+            "this commit yet"
+        ).format(entry.get("sha", "?"), expect_event)
     return "PENDING | sha: {0} | still running or not yet created: {1}".format(
         entry.get("sha", "?"),
-        ", ".join(_flatten(name) for name in entry.get("pending_runs", []))
+        ", ".join(_flatten(name) for name in pending_runs)
         or "(no run has appeared for this commit yet)",
     )
 
@@ -300,6 +339,15 @@ def main(argv=None, run=None):
     )
     parser.add_argument("--repo", default=None, help="OWNER/NAME, passed to gh as -R")
     parser.add_argument(
+        "--require-event",
+        default=None,
+        help=(
+            "restrict classification to runs whose own `event` field "
+            "matches this (e.g. workflow_dispatch, #1324) -- a commit with "
+            "runs but none matching reads as PENDING, never GREEN"
+        ),
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="also emit the winning entry as JSON on stdout",
@@ -332,6 +380,7 @@ def main(argv=None, run=None):
             repo=args.repo,
             interval=args.interval,
             timeout=args.timeout,
+            expect_event=args.require_event,
         )
         if entry is None:
             sys.stdout.write(
@@ -341,7 +390,9 @@ def main(argv=None, run=None):
             )
             return EXIT_CODES[STATE_PENDING]
     else:
-        entry = read_commit(args.commit, gh, run, repo=args.repo)
+        entry = read_commit(
+            args.commit, gh, run, repo=args.repo, expect_event=args.require_event
+        )
 
     sys.stdout.write(_render(entry) + "\n")
     if args.json:
