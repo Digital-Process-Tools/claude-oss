@@ -286,7 +286,7 @@ One command, once, and the `label` line goes quiet.
 
 `tests` — if `.oss.json` carries a `test_command`, and no workflow runs it, the run says
 so. A pull request in that repo goes green with its changelog fragment checked and its
-tests not run at all, and `/oss:manager` merges on green — so green there is an absence
+tests not run at all, and the manager loop merges on green — so green there is an absence
 rather than a result. **No test workflow is generated.** The runner, the matrix, the
 language version and whether a failure blocks a merge are all decisions nothing here has
 measured, and a `ubuntu-latest` single-version guess shipped into a repo about

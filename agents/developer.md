@@ -1,6 +1,6 @@
 ---
 name: developer
-description: Implement one issue in the repo named by .oss.json — worktree, TDD, cross-platform audit, self-review, commit. Never pushes, never opens a PR. The maintainer half is /oss:manager; this is the hands.
+description: Implement one issue in the repo named by .oss.json — worktree, TDD, cross-platform audit, self-review, commit. Never pushes, never opens a PR. The maintainer half is the manager loop (skills/manager); this is the hands.
 model: sonnet
 color: green
 tools: Bash,TodoWrite,Skill,Agent

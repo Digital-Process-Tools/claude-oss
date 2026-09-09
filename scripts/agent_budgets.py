@@ -61,7 +61,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # locations plus a resolves-in-tree fallback, and added an instruction
     # against opening a self-review finding by quoting/negating the
     # NO FINDINGS sentinel. Ceiling unchanged; comfortably under it.
-    "agents/developer.md": (41206, 44100),
+    # Re-baselined for #1391's own self-review round: 41206 B became
+    # 41227 B -- both reviewer spawns independently found the frontmatter
+    # description still naming `/oss:manager` as a typeable slash command,
+    # the exact confusion #1391 set out to remove now that SKILL.md no
+    # longer publishes into the picker. Reworded to name the manager loop
+    # without slash notation. Ceiling unchanged; comfortably under it.
+    "agents/developer.md": (41227, 44100),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
@@ -87,7 +93,9 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # shared 8-grams between the two files) from being crossed again by the
     # restoration: 13992 B became 14424 B. Ceiling unchanged.
     "agents/release-auditor.md": (14636, 16400),
-    "agents/triager.md": (15467, 16600),
+    # Re-baselined for #1391's own self-review round, same fix as
+    # agents/developer.md above: 15467 B became 15488 B.
+    "agents/triager.md": (15488, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):
