@@ -134,11 +134,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # "the three receipts", stale the moment review.md gained a fourth
         # (a trap.d/ fragment for a non-blocking row). Budget unchanged;
         # comfortably under it.
-        # Re-baselined for #1391: 41738 B became 41739 B -- `user_invocable`
-        # flipped from true to false so the spine no longer publishes into
-        # the slash picker as /oss:manager; it is a library loaded by
-        # commands/tick.md and commands/release.md via Skill(manager), never
-        # an entry point. Budget unchanged; comfortably under it.
+        # Re-baselined for #1391: 41738 B became 41739 B -- `user-invocable`
+        # (HYPHENATED; the frontmatter key Claude Code actually documents,
+        # not the underscored `user_invocable` an earlier draft of this fix
+        # mistakenly pinned, which the harness silently ignores) set to
+        # false so the spine no longer publishes into the slash picker as
+        # /oss:manager; it is a library loaded by commands/tick.md and
+        # commands/release.md via Skill(manager), never an entry point.
+        # Budget unchanged; comfortably under it.
         41739,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",

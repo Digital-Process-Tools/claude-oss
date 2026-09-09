@@ -56,5 +56,5 @@ def test_both_callers_still_name_the_skill():
         text = (ROOT / path).read_text(encoding="utf-8")
         assert "Skill(manager)" in text, (
             f"{path} must still invoke Skill(manager) -- flipping "
-            "user_invocable must not sever either caller (#1391)"
+            "user-invocable must not sever either caller (#1391)"
         )
