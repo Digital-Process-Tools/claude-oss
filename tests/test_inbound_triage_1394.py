@@ -1,8 +1,8 @@
 """Classifying what arrived from outside the loop -- #1394.
 
 Every negative assertion here (a case that must not be flagged inbound, must
-not be refused, must not be ready-to-merge) carries its positive control (the
-neighbouring case that must) in the same fixture -- the same discipline
+not be refused, must not be green-and-mergeable) carries its positive control
+(the neighbouring case that must) in the same fixture -- the same discipline
 `test_gate3_disposition_1043.py` uses for gate 3's own decision function.
 """
 
@@ -84,13 +84,13 @@ def test_maintainer_pr_is_not_inbound():
     assert inbound_triage.classify_pr(pr) == "not-inbound"
 
 
-def test_external_pr_green_and_mergeable_is_ready_to_merge():
+def test_external_pr_green_and_mergeable_is_green_and_mergeable():
     pr = {"author_association": "CONTRIBUTOR", "ci_state": "green", "mergeable": True}
-    assert inbound_triage.classify_pr(pr) == "ready-to-merge"
+    assert inbound_triage.classify_pr(pr) == "green-and-mergeable"
 
 
 def test_external_pr_red_needs_answer():
-    """Negative case for ready-to-merge, paired with the positive control above."""
+    """Negative case for green-and-mergeable, paired with the positive control above."""
     pr = {"author_association": "CONTRIBUTOR", "ci_state": "red", "mergeable": True}
     assert inbound_triage.classify_pr(pr) == "needs-answer"
 
@@ -107,7 +107,7 @@ def test_pr_with_unrecognised_association_is_could_not_tell():
 
 def test_pr_accepts_already_translated_association():
     pr = {"author_association": "external", "ci_state": "green", "mergeable": True}
-    assert inbound_triage.classify_pr(pr) == "ready-to-merge"
+    assert inbound_triage.classify_pr(pr) == "green-and-mergeable"
 
 
 # ----------------------------------------------------------------------- comments

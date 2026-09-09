@@ -58,19 +58,21 @@ translated), `ci_state` and `mergeable`, and answers one of four states:
 
 - **`not-inbound`** -- a maintainer-authored pull request. This is the loop's own PR, or the
   maintainer's; `merge.md` already governs it and this step has nothing further to say.
-- **`ready-to-merge`** -- external, CI green, and GitHub itself reports it mergeable. Both
+- **`green-and-mergeable`** -- external, CI green, and GitHub itself reports it mergeable. Both
   conditions: a green rollup on a branch GitHub cannot merge cleanly is not actually ready.
-  **This state is a classification, never a merge** -- the never-auto-merge rule in `merge.md`
-  still applies in full; what changes is that the tick now has something to surface rather than
-  ticking past it silently.
+  **The name reports a measurement, not an instruction (self-review, #1394)** -- an earlier draft
+  called this state `ready-to-merge`, a name that reads as a verdict authorising the one act
+  `merge.md` forbids absolutely for an external contributor's pull request. This state is a
+  classification, never a merge -- the never-auto-merge rule in `merge.md` still applies in full;
+  what changes is that the tick now has something to surface rather than ticking past it silently.
 - **`needs-answer`** -- external and anything else: red, pending, unknown CI, or not cleanly
   mergeable. A person has to look at it -- review, request changes, explain a decline -- and this
   step does not compute which.
 - **`could-not-tell`** -- the association could not be translated at all. Never folded into
   `not-inbound` or either real outcome; an unrecognised value is not evidence of anything.
 
-A pull request that sits `needs-answer` or `ready-to-merge` for a second consecutive tick with no
-change is worth naming in the tick's own decision -- "an outsider's pull request sits unread for a
+A pull request that sits `needs-answer` or `green-and-mergeable` for a second consecutive tick with
+no change is worth naming in the tick's own decision -- "an outsider's pull request sits unread for a
 fourth day" is the exact failure #1394 was filed to close, and a tick that dispatches three fresh
 lanes past one is not free of it just because nothing crashed.
 

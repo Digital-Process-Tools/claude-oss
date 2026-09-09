@@ -385,8 +385,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # line now points an external-contributor PR at phases/inbound.md's own
     # classification instead of leaving it as a dead-end sentence. Budget
     # unchanged; comfortably under it.
+    # Re-baselined for #1394's own maintainer review: 14621 B became 14776 B
+    # -- the same ready-to-merge -> green-and-mergeable rename, plus one
+    # sentence stating why the old name was a verdict. Budget unchanged.
     "skills/manager/phases/merge.md": (
-        14621,
+        14776,
         15400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),
@@ -411,8 +414,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # outcomes (six refusal reasons, four PR states, answered/needs-answer)
     # and states the boundary explicitly: it surfaces, #1395's queue acts.
     # ~10% headroom over the measured 6262 B, same terms as every other row.
+    # Re-baselined for #1394's own maintainer review: 6262 B became 6533 B --
+    # `ready-to-merge` renamed to `green-and-mergeable` (a returned string
+    # that names the one act merge.md forbids absolutely is a verdict, not a
+    # measurement). Budget unchanged; comfortably under it.
     "skills/manager/phases/inbound.md": (
-        6262,
+        6533,
         6900,
         "classifying what arrived from outside: refusing an issue with a stated reason, an external pull request's readiness, and an unanswered comment -- never performing the act itself (#1394)",
     ),

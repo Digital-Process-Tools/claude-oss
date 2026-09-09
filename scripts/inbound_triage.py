@@ -71,7 +71,7 @@ REFUSAL_REASONS = frozenset(
 #: same tuple as the three real outcomes would let a caller iterate "every
 #: state a PR can hold" and silently include a state that means "skip this
 #: one".
-PR_OUTCOMES = ("ready-to-merge", "needs-answer", "could-not-tell")
+PR_OUTCOMES = ("green-and-mergeable", "needs-answer", "could-not-tell")
 
 #: GitHub's own `author_association` vocabulary, translated. Not imported
 #: from `select_issues.py`: that module is the one place a raw `gh api`
@@ -147,15 +147,24 @@ def classify_pr(pr):
     same discipline `is_inbound_issue` applies to an undeclared label.
 
     For an external pull request, one of `PR_OUTCOMES`'s two live members:
-    `"ready-to-merge"` only when CI is green **and** GitHub itself reports
-    the pull request mergeable -- both conditions, because a green rollup on
-    a branch GitHub cannot merge cleanly is not actually ready. Everything
-    else -- red, pending, unknown CI, or `mergeable` anything but `True` --
-    is `"needs-answer"`: a person has to look at it, whether that means
-    requesting changes, explaining a decline, or waiting out CI, and this
-    module does not compute which. Per the module's own boundary, even
-    `"ready-to-merge"` is a classification for the tick to act on or
-    surface -- this function never merges anything itself.
+    `"green-and-mergeable"` only when CI is green **and** GitHub itself
+    reports the pull request mergeable -- both conditions, because a green
+    rollup on a branch GitHub cannot merge cleanly is not actually ready.
+    Everything else -- red, pending, unknown CI, or `mergeable` anything but
+    `True` -- is `"needs-answer"`: a person has to look at it, whether that
+    means requesting changes, explaining a decline, or waiting out CI, and
+    this module does not compute which.
+
+    **The name is deliberately a measurement, not an instruction (self-review,
+    #1394).** An earlier draft called this state `"ready-to-merge"` -- a name
+    that reads as a verdict authorising the one act `merge.md` forbids
+    absolutely for an external contributor's pull request, never-auto-merge,
+    no exception. A caller that sees a string naming the act, on its own,
+    without this docstring or `merge.md` beside it, has been handed
+    permission it was never given. `"green-and-mergeable"` says only what was
+    observed; what happens next -- merge it, or surface it -- is still never
+    this function's decision, and now the name cannot be misread as making it
+    one.
     """
     association = _translate_association(pr.get("author_association"))
     if association is None:
@@ -163,7 +172,7 @@ def classify_pr(pr):
     if association == "maintainer":
         return "not-inbound"
     if pr.get("ci_state") == "green" and pr.get("mergeable") is True:
-        return "ready-to-merge"
+        return "green-and-mergeable"
     return "needs-answer"
 
 
