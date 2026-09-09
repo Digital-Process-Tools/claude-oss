@@ -145,7 +145,7 @@ The plugin writes into other people's repositories. What it may touch is fixed:
 | --- | --- | --- |
 | **yours** | everywhere else | never read, never written |
 | **defaults** | `SECURITY.md`, `CLAUDE.md`, `.github/ISSUE_TEMPLATE/`, `.gitignore`, `.supertool.json` | created once when absent, then theirs forever |
-| **ours** | `.oss/`, `.github/workflows/oss-changelog.yml`, `.claude/jit-context/*/01-oss/` | replaced wholesale every run |
+| **ours** | `.oss/`, `.github/workflows/oss-changelog.yml`, `.claude/jit-context/*/01-oss/`, `trap.d/README.md` | replaced wholesale every run |
 
 A default must never win against a decision somebody made. An owned file must always be replaceable,
 or fixes never reach anyone. Keeping those apart is why `apply()` returns `created` and `replaced`
