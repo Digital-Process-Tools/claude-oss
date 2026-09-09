@@ -112,3 +112,29 @@ def test_unresolved_calls_are_reported_alongside_a_still_complete_reach_1326(tmp
 
     assert reached == {"seed", "target"}
     assert unresolved == ["seed.py:4", "seed.py:5"]
+
+
+def test_two_unresolved_calls_on_the_same_line_are_not_reported_as_duplicates_1326(
+    tmp_path,
+):
+    """Reviewer finding on this same round (#1326): two distinct declined
+    calls that happen to share a physical line must not collapse into
+    indistinguishable duplicate `"seed.py:3"` entries -- a caller could not
+    tell "one call, reported twice by accident" from "two real, separate
+    declined sites" from that shape. `set(...)` before sorting closes it;
+    this only asserts there is exactly one entry for the shared line, not
+    that both calls are individually named (this closure has no column
+    information to tell them apart with)."""
+    _write(
+        tmp_path,
+        "seed",
+        "import importlib\n"
+        "name = 'other'\n"
+        "importlib.import_module(name); __import__(name)\n",
+    )
+    _write(tmp_path, "other", "x = 1\n")
+
+    reached, unresolved = import_closure.local_import_closure(["seed"], tmp_path)
+
+    assert reached == {"seed"}
+    assert unresolved == ["seed.py:3"]

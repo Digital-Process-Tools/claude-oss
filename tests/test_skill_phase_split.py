@@ -339,24 +339,68 @@ def test_the_isolated_control_test_actually_starts_its_watcher(
     from that snapshot -- so a watcher that never called `.start()` before
     driving the two inline probes is blind to their own create-then-delete
     shape regardless of whether detection is actually broken. Fails red
-    before the fix (`.start()` never called) and green after."""
-    calls = []
+    before the fix (`.start()` never called) and green after.
+
+    Reviewer finding on this same round (#1326): a call-count-only spy on
+    `.start()` cannot tell "started before the probes ran" apart from
+    "started, then immediately stopped, before the probes ran" -- a
+    reordering that would silently reintroduce the very shape this fix
+    closes while still calling `.start()` exactly once. So this also spies
+    on `.stop()` and on both probe functions, and asserts the actual
+    order: `.start()` before either probe begins, `.stop()` after both
+    finish."""
+    order = []
     real_start = root_scratch_guard._DirectoryWatcher.start
+    real_stop = root_scratch_guard._DirectoryWatcher.stop
 
     def _spy_start(self):
-        calls.append(self)
+        order.append("start")
         return real_start(self)
 
+    def _spy_stop(self):
+        order.append("stop")
+        return real_stop(self)
+
     monkeypatch.setattr(root_scratch_guard._DirectoryWatcher, "start", _spy_start)
+    monkeypatch.setattr(root_scratch_guard._DirectoryWatcher, "stop", _spy_stop)
+
+    this_module = sys.modules[__name__]
+    real_probe_1 = test_unreferenced_is_reported_rather_than_assumed
+    real_probe_2 = test_a_phase_file_on_disk_that_nobody_budgeted_is_reported
+
+    def _spy_probe_1(*args, **kwargs):
+        order.append("probe1")
+        return real_probe_1(*args, **kwargs)
+
+    def _spy_probe_2(*args, **kwargs):
+        order.append("probe2")
+        return real_probe_2(*args, **kwargs)
+
+    monkeypatch.setattr(
+        this_module, "test_unreferenced_is_reported_rather_than_assumed", _spy_probe_1
+    )
+    monkeypatch.setattr(
+        this_module,
+        "test_a_phase_file_on_disk_that_nobody_budgeted_is_reported",
+        _spy_probe_2,
+    )
+
     test_the_two_isolated_control_tests_never_touch_the_real_tracked_directory(
         tmp_path_factory
     )
-    assert calls, (
+    assert "start" in order, (
         "the isolated control test never called .start() on its "
         "_TrackedPathWatcher -- it drives a construct-then-single-poll "
         "shape, not the continuously-polling detector CI actually runs, so "
         "it cannot prove the isolated tests never touched the real tracked "
         "directory"
+    )
+    assert order == ["start", "probe1", "probe2", "stop"], (
+        "the watcher was not actually running for the whole duration of "
+        "both inline probes -- .start() must precede both probes and "
+        ".stop() must follow both, or the background poll thread may not "
+        "have been alive during the probes' own create-then-delete window: "
+        + repr(order)
     )
 
 

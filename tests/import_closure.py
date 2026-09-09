@@ -113,4 +113,10 @@ def local_import_closure(seed_names, scripts_dir):
             for candidate in candidates:
                 if candidate in available and candidate not in seen:
                     queue.append(candidate)
-    return seen, sorted(unresolved)
+    # Deduplicated as well as sorted: two distinct declined calls on the
+    # same physical line (`a(x); b(y)`, or one nested inside the other's
+    # arguments) would otherwise render as indistinguishable duplicate
+    # strings -- a reviewer finding on this same round (#1326) -- which is
+    # exactly the "can a caller tell two different things apart" question
+    # this companion list exists to answer.
+    return seen, sorted(set(unresolved))
