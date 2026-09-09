@@ -65,6 +65,7 @@
         "tests/test_changelog_rule_commands_721.py",
         "tests/test_claude_md_currency.py",
         "tests/test_claude_md_injection.py",
+        "tests/test_claude_md_ownership_table_1348.py",
         "tests/test_content_invariants.py",
         "tests/test_contributing_md_460.py",
         "tests/test_developer_brief_duties.py",
