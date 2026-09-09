@@ -38,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import root_scratch_guard  # noqa: E402
 import skill_phases  # noqa: E402
 
 
@@ -282,7 +283,14 @@ def test_the_two_isolated_control_tests_never_touch_the_real_tracked_directory(
     own `_TrackedPathWatcher` exists to police -- completely untouched.
     Reuses that watcher directly rather than a hand-rolled poll, so this is
     a proof against the same detector CI runs, not a second, looser copy
-    of it.
+    of it -- which requires `.start()`-ing it before the inline probes run
+    (#1326): `_DirectoryWatcher.__init__` snapshots at construction, and
+    `_poll_once` only records names still absent from that snapshot, so a
+    single poll driven *after* the probes' own create-then-delete has
+    already finished cannot see it regardless of whether detection is
+    broken. CI's real detector is the continuously-polling background
+    thread `pytest_sessionstart` starts, not a construct-then-single-poll
+    shape.
 
     Paired must-fire half: `test_unreferenced_is_reported_rather_than_
     assumed` and `test_a_phase_file_on_disk_that_nobody_budgeted_is_
@@ -297,13 +305,16 @@ def test_the_two_isolated_control_tests_never_touch_the_real_tracked_directory(
     watcher = root_scratch_guard._TrackedPathWatcher(
         root_scratch_guard._TRACKED_PHASES_DIR
     )
-    with pytest.MonkeyPatch.context() as mp:
-        tmp_path_1 = tmp_path_factory.mktemp("isolated-unreferenced")
-        test_unreferenced_is_reported_rather_than_assumed(tmp_path_1, mp)
-    with pytest.MonkeyPatch.context() as mp:
-        tmp_path_2 = tmp_path_factory.mktemp("isolated-undeclared")
-        test_a_phase_file_on_disk_that_nobody_budgeted_is_reported(tmp_path_2, mp)
-    watcher._poll_once_for_test()
+    watcher.start()
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            tmp_path_1 = tmp_path_factory.mktemp("isolated-unreferenced")
+            test_unreferenced_is_reported_rather_than_assumed(tmp_path_1, mp)
+        with pytest.MonkeyPatch.context() as mp:
+            tmp_path_2 = tmp_path_factory.mktemp("isolated-undeclared")
+            test_a_phase_file_on_disk_that_nobody_budgeted_is_reported(tmp_path_2, mp)
+    finally:
+        watcher.stop()
     assert not watcher.could_not_watch(), (
         "the watcher could never read skills/manager/phases/ at all -- "
         "this control establishes nothing, rather than confirming a clean "
@@ -312,6 +323,40 @@ def test_the_two_isolated_control_tests_never_touch_the_real_tracked_directory(
     assert watcher.offenders() == [], (
         "the isolated tests still touched the real, shared "
         "skills/manager/phases/ directory: " + ", ".join(watcher.offenders())
+    )
+
+
+def test_the_isolated_control_test_actually_starts_its_watcher(
+    tmp_path_factory, monkeypatch
+):
+    """#1326: `test_the_two_isolated_control_tests_never_touch_the_real_
+    tracked_directory` above claims to reuse `_TrackedPathWatcher` directly
+    so it is "a proof against the same detector CI runs" -- CI's real
+    detector is the continuously-polling session watcher (`_poll` on a
+    background thread, started in `pytest_sessionstart`), not a construct-
+    then-single-`_poll_once_for_test()` shape. `_DirectoryWatcher.__init__`
+    snapshots at construction, and `_poll_once` only records names absent
+    from that snapshot -- so a watcher that never called `.start()` before
+    driving the two inline probes is blind to their own create-then-delete
+    shape regardless of whether detection is actually broken. Fails red
+    before the fix (`.start()` never called) and green after."""
+    calls = []
+    real_start = root_scratch_guard._DirectoryWatcher.start
+
+    def _spy_start(self):
+        calls.append(self)
+        return real_start(self)
+
+    monkeypatch.setattr(root_scratch_guard._DirectoryWatcher, "start", _spy_start)
+    test_the_two_isolated_control_tests_never_touch_the_real_tracked_directory(
+        tmp_path_factory
+    )
+    assert calls, (
+        "the isolated control test never called .start() on its "
+        "_TrackedPathWatcher -- it drives a construct-then-single-poll "
+        "shape, not the continuously-polling detector CI actually runs, so "
+        "it cannot prove the isolated tests never touched the real tracked "
+        "directory"
     )
 
 

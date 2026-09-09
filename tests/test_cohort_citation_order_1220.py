@@ -156,10 +156,16 @@ def test_extract_cited_cohort_on_this_repos_own_claude_md_cross_checked():
     cited = cco.extract_cited_cohort(text)
     assert cited is not None
 
+    # Scoped to the same section `extract_cited_cohort` itself searches
+    # (#1269) -- never the whole file. This repository's own prose narrates
+    # past cohort counts elsewhere, so an unscoped `text.index(...)` here
+    # would read a different sentence than the function under test the first
+    # time an earlier "Cohort freeze: " occurrence appears (#1326).
+    section = cco._marker_section(text)
     marker = "Cohort freeze: "
-    start = text.index(marker)
-    sentence_end = text.index(".", start)
-    sentence = text[start + len(marker) : sentence_end]
+    start = section.index(marker)
+    sentence_end = section.index(".", start)
+    sentence = section[start + len(marker) : sentence_end]
 
     if sentence.startswith("cannot be cleanly cited this release"):
         assert cited == {"cohort": None, "count": None, "declined": True}
@@ -613,3 +619,65 @@ def test_extract_cited_cohort_falls_back_to_whole_text_with_no_marker_heading():
     section) still searches the whole string rather than finding nothing."""
     cited = cco.extract_cited_cohort(MARKER_TEXT)
     assert cited == {"cohort": "cohort-22", "count": 42}
+
+
+# ---------------------------------------------------------------------------
+# #1326: the cross-check test's own independent oracle must be scoped to
+# `_marker_section`, exactly like the function it cross-checks -- never to
+# the whole file. This repository's own CLAUDE.md happens to carry only one
+# "Cohort freeze: " occurrence today, so the two agree by coincidence; this
+# reproduces the latent scope mismatch on synthetic text carrying a stale,
+# earlier occurrence, which the live file does not (yet) have.
+# ---------------------------------------------------------------------------
+
+
+def _independent_oracle_1326(text, marker="Cohort freeze: ", scoped=True):
+    """The same plain string-slicing oracle `test_extract_cited_cohort_on_
+    this_repos_own_claude_md_cross_checked` uses above, extracted so #1326's
+    regression can exercise it on synthetic text carrying more than one
+    "Cohort freeze: " occurrence -- the live CLAUDE.md does not (yet) have
+    one, so a bug here cannot be pinned against the real file alone.
+    `scoped=False` reproduces the pre-fix shape (`text.index(...)` over the
+    whole file) so the must-fire half below can show it disagreeing."""
+    haystack = cco._marker_section(text) if scoped else text
+    start = haystack.index(marker)
+    sentence_end = haystack.index(".", start)
+    sentence = haystack[start + len(marker) : sentence_end]
+    if sentence.startswith("cannot be cleanly cited this release"):
+        return {"cohort": None, "count": None, "declined": True}
+    number_str, rest = sentence[len("cohort-") :].split(" at ", 1)
+    count_str = rest.split(" ", 1)[0]
+    return {"cohort": "cohort-" + number_str, "count": int(count_str)}
+
+
+_STALE_THEN_CURRENT_TEXT = (
+    "History: Cohort freeze: cohort-20 at 10 open issues, against "
+    "cohort-19's 8.\n\n"
+    "## What is not proven yet\n\n"
+    "**Cohort freeze: cohort-22 at 42 open issues, against cohort-21's "
+    "29.**\n"
+)
+
+
+def test_cross_check_oracle_scoped_to_marker_section_agrees_with_the_real_function():
+    """MUST FIRE (the fix): scoping the oracle to `_marker_section`, the same
+    way `extract_cited_cohort` itself is scoped (#1269), makes the two agree
+    on synthetic text carrying a stale, earlier "Cohort freeze: " mention --
+    the shape the real cross-check test could not yet exercise because the
+    live CLAUDE.md only ever has one occurrence."""
+    cited = cco.extract_cited_cohort(_STALE_THEN_CURRENT_TEXT)
+    oracle = _independent_oracle_1326(_STALE_THEN_CURRENT_TEXT, scoped=True)
+    assert cited == oracle == {"cohort": "cohort-22", "count": 42}
+
+
+def test_cross_check_oracle_unscoped_disagrees_with_the_real_function_1326():
+    """MUST NOT (the bug this pins): the unscoped oracle -- `text.index(...)`
+    over the whole file, the shape the real cross-check test used before this
+    fix -- finds the stale, earlier citation first and disagrees with the
+    real, marker-scoped `extract_cited_cohort`. Pins the exact latent mismatch
+    #1326 describes: the two only agreed on the live CLAUDE.md by coincidence,
+    because it carries just one "Cohort freeze: " occurrence."""
+    cited = cco.extract_cited_cohort(_STALE_THEN_CURRENT_TEXT)
+    oracle = _independent_oracle_1326(_STALE_THEN_CURRENT_TEXT, scoped=False)
+    assert oracle == {"cohort": "cohort-20", "count": 10}
+    assert cited != oracle
