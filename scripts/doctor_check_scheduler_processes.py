@@ -59,16 +59,23 @@ race still exists. Recording an intent (a pid, a claimed branch) in the
 shared state file is what would close that race, and that is exactly the
 piece left to the follow-up.
 
-Every shared name is reached through `doctor` imported as a module, so a
-test's `monkeypatch.setattr(doctor, ...)` still reaches this code, the same
-convention `doctor_check_vanished_worktree.py` documents for its own checks.
+`doctor` is imported lazily, inside `check_scheduler_processes` itself,
+rather than at module scope -- see that function's own docstring for why:
+the module-scope form every sibling `doctor_check_*.py` uses is a real,
+pre-existing circular-import hazard (confirmed by reproduction against
+several of them during this issue's self-review) whenever one of them is
+imported before `doctor.py` itself is, which a direct `import doctor_check_
+scheduler_processes` -- exactly what this file's own test does -- triggers.
+`import doctor` inside the function still returns the same singleton module
+object from `sys.modules` either way, so a test's `monkeypatch.setattr(doctor,
+"report", ...)` reaches this code exactly as it would under the module-scope
+form.
 """
 
 import os
 import subprocess
 import sys
 
-import doctor  # noqa: F401 -- imported for the shared-name convention above
 import gh_which  # #1175: `gh_which.safe_which`, never a bare `shutil.which` --
 # see that module's own docstring for the Windows curdir-execution mechanism
 # this closes, for every binary this module spawns (`ps`, `lsof`).
@@ -186,13 +193,20 @@ def scheduler_process_state(project_dir, run=None):
             continue
         if os.path.realpath(cwd) == project_real:
             attributed += 1
-    if unresolved and attributed == 0:
+    if unresolved:
+        # #1350 self-review: an earlier draft only fell back to could-not-tell
+        # when EVERY candidate was unresolvable (`attributed == 0`), so a mix
+        # of one attributed + one unresolved candidate silently reported the
+        # attributed count alone -- rendering a genuine multi-scheduler
+        # incident (the #1350 shape itself) as a clean single-process OK.
+        # Any unresolved candidate at all means this run cannot yet rule out
+        # a live sibling, so it must never fold into a plain count.
         return (
             "could-not-tell",
-            "{} candidate process(es) matching `claude ... oss:tick` were found, but "
-            "{} of them could not be attributed to a clone (working directory "
+            "{} candidate process(es) matching `claude ... oss:tick` were found "
+            "({} attributed to this clone, {} could not be -- working directory "
             "unresolvable on this platform/permission set)".format(
-                len(matches), unresolved
+                len(matches), attributed, unresolved
             ),
         )
     return "counted", {"count": attributed, "candidates_seen": len(matches)}
@@ -204,7 +218,22 @@ def check_scheduler_processes(project_dir, config, run=None):
     could-not-tell state, never silently as OK. A count of 0 or 1 is OK:
     zero means nothing is sharing this clone right now, and one is this
     tick's own scheduler (or a lone maintainer session), neither a finding.
+
+    ``doctor`` is imported here, not at module scope, on purpose (#1350
+    self-review): `doctor.py` itself imports THIS module at module scope
+    (`from doctor_check_scheduler_processes import check_scheduler_
+    processes`), so a module-level `import doctor` here would re-enter
+    `doctor.py` mid-initialisation the moment this module is anyone's own
+    entry point rather than `doctor.py`'s -- exactly what a standalone `import
+    doctor_check_scheduler_processes` (or a test importing this module
+    directly, as this repo's own convention for `doctor_check_clone_head.py`
+    and several siblings already does and already breaks under, confirmed by
+    reproduction) triggers. Importing `doctor` lazily, inside the one
+    function that actually calls `doctor.report`, sidesteps the cycle
+    regardless of which module is imported first.
     """
+    import doctor
+
     state, detail = scheduler_process_state(project_dir, run=run)
     if state == "could-not-tell":
         doctor.report(

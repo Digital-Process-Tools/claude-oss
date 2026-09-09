@@ -162,6 +162,38 @@ def test_unresolvable_cwd_is_warn_could_not_tell_not_ok(tmp_path, monkeypatch):
     assert "could not" in line.lower()
 
 
+# --- mixed resolution: some attributed, some unresolvable --------------------
+
+
+def test_mixed_resolution_is_could_not_tell_not_a_silent_undercount(
+    tmp_path, monkeypatch
+):
+    """#1350 self-review finding: an earlier draft only fell back to
+    could-not-tell when EVERY candidate was unresolvable, so one attributed
+    + one unresolved candidate silently reported the attributed count alone
+    -- rendering a genuine multi-scheduler incident (the #1350 shape itself)
+    as a clean single-process OK. Paired with `test_one_matching_process_
+    against_this_clone_is_ok` (all-resolved, one candidate) and
+    `test_unresolvable_cwd_is_warn_could_not_tell_not_ok` (all-unresolved):
+    this is the third combination neither of those two fixtures reaches."""
+    monkeypatch.setattr(dcsp.gh_which, "safe_which", _fake_which_factory({"ps"}))
+    resolved = {111: str(tmp_path), 222: None}
+    monkeypatch.setattr(dcsp, "_process_cwd", lambda pid, run: resolved[pid])
+
+    def _run(*args, **kwargs):
+        return _FakeDone(
+            0,
+            stdout=_ps_lines(
+                (111, "claude /oss:tick --resolved"),
+                (222, "claude /oss:tick --unresolved"),
+            ),
+        )
+
+    line = _doctor_line(tmp_path, {"clone": str(tmp_path)}, run=_run)
+    assert line.startswith("WARN "), line
+    assert "could not" in line.lower()
+
+
 # --- state function's own three states ---------------------------------------
 
 
