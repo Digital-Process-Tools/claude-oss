@@ -53,13 +53,13 @@ walk stops before it is read.
 
 ## What this deliberately does not do
 
-**No triage-staleness-by-tag-age check.** #1386, on a separate branch, is
-adding a triage trigger of its own to `.oss.json` and `oss_state.py`. This
-module reads `workspace_routes`'s existing label-coverage triage route
-instead -- a real, already-shipped signal, not a placeholder -- and is
-structured so a second triage signal can be added to `_triage_check` without
-touching anything else: precedence, the state machine and every other check
-are unaware of how many signals feed one slot.
+**Two independent triage signals, not one.** `scripts/triage_trigger.py`
+(#1386, landed after this module's own first cut) reads exactly the "last
+sweep older than the last tag" signal #1389's own issue text describes, and
+is checked first; `workspace_routes`'s label-coverage route (missing
+`lane-*`/`priority-*`) is checked second, only once the first cleanly reports
+`not-due`. Neither displaces the other -- a repo can decline
+`triage_after_release` and still be routed to triage on label coverage alone.
 
 **No dispatch.** `next: dispatch` names the residual state; it never runs
 `select_issues.py` to ask whether the board actually has a claimable
@@ -89,6 +89,7 @@ import gh_which  # noqa: E402
 import oss_config  # noqa: E402
 import release_trigger  # noqa: E402
 import release_version  # noqa: E402
+import triage_trigger  # noqa: E402
 import workspace_routes  # noqa: E402
 
 DUE = "due"
@@ -295,6 +296,31 @@ def decide(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
                 evidence=curate,
             )
 
+    # #1386 landed `scripts/triage_trigger.py` after this module's own first
+    # cut, which reads exactly the "last sweep older than the last tag" signal
+    # #1389's own issue text describes -- checked first, ahead of the
+    # label-coverage route below, because it is the more specific of the two:
+    # `triggers.triage_after_release` absent means the repo declined it, in
+    # which case this call is a clean `not-due` and the label-coverage route
+    # still gets its turn.
+    state_file = config.get("state_file")
+    state_path = (
+        str(Path(repo_root) / state_file)
+        if isinstance(state_file, str) and state_file.strip()
+        else None
+    )
+    tt = triage_trigger.compute(str(repo_root), config=config, state_path=state_path)
+    if tt["state"] == triage_trigger.STATE_DUE:
+        return _due("triage", tt.get("detail", "triage_trigger: due"), evidence=tt)
+    if tt["state"] == triage_trigger.STATE_COULD_NOT_TELL:
+        return _could_not_decide(
+            "the post-release triage trigger could not be evaluated ({0})".format(
+                tt.get("detail")
+            ),
+            "triage",
+            evidence=tt,
+        )
+
     triage = routes.get("triage", {"configured": False})
     if triage.get("configured"):
         if triage.get("state") == workspace_routes.OVER:
@@ -313,9 +339,15 @@ def decide(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
             )
 
     return _nothing_due(
-        "release trigger not fired, and neither curate nor triage is over its "
+        "release trigger not fired, the post-release triage trigger is not due, "
+        "and neither curate nor the label-coverage triage route is over its "
         "configured threshold (or neither is configured)",
-        evidence={"release": rel, "curate": curate, "triage": triage},
+        evidence={
+            "release": rel,
+            "curate": curate,
+            "triage_trigger": tt,
+            "triage": triage,
+        },
     )
 
 

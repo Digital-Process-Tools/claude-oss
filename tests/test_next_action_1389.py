@@ -327,6 +327,111 @@ def test_nothing_configured_and_nothing_fired_is_nothing_due(tmp_path, monkeypat
     assert result["next"] == "dispatch"
 
 
+# --- the #1386 triage trigger, landed after this module's own first cut ----
+
+
+def test_triage_trigger_due_is_due_triage_ahead_of_label_coverage(
+    tmp_path, monkeypatch
+):
+    """The post-release trigger is checked first: a repo where it fires must
+    route to triage even if the label-coverage route is not even configured."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 100})
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_NOT_FIRED,
+            "fired": [],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    monkeypatch.setattr(
+        next_action.triage_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": next_action.triage_trigger.STATE_DUE,
+            "detail": "the last recorded triage sweep predates the tag",
+        },
+    )
+    result = next_action.decide(root)
+    assert result["state"] == next_action.DUE
+    assert result["next"] == "triage"
+
+
+def test_triage_trigger_not_due_falls_back_to_label_coverage(tmp_path, monkeypatch):
+    """Positive control: the same repo, with the trigger reporting not-due
+    instead -- the label-coverage route must still get its turn."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 100, "triage_route_threshold": 0})
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_NOT_FIRED,
+            "fired": [],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    monkeypatch.setattr(
+        next_action.triage_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": next_action.triage_trigger.STATE_NOT_DUE,
+            "detail": "release.triggers.triage_after_release is not enabled",
+        },
+    )
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        lambda *a, **k: (
+            None,
+            {
+                "release": {"configured": False},
+                "curate": {"configured": False},
+                "triage": {
+                    "configured": True,
+                    "state": workspace_routes.OVER,
+                    "count": 2,
+                    "threshold": 0,
+                    "why": "2 of 4 open issue(s) missing lane-* or priority-*",
+                },
+            },
+        ),
+    )
+    result = next_action.decide(root)
+    assert result["state"] == next_action.DUE
+    assert result["next"] == "triage"
+
+
+def test_triage_trigger_could_not_tell_is_could_not_decide(tmp_path, monkeypatch):
+    root = _git_repo(tmp_path)
+    _write_config(root)
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_NOT_FIRED,
+            "fired": [],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    monkeypatch.setattr(
+        next_action.triage_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": next_action.triage_trigger.STATE_COULD_NOT_TELL,
+            "detail": "could not read the commit date of tag",
+        },
+    )
+    result = next_action.decide(root)
+    assert result["state"] == next_action.COULD_NOT_DECIDE
+    assert result["blocked_on"] == "triage"
+
+
 # --- CLI --------------------------------------------------------------------
 
 
