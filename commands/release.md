@@ -59,14 +59,14 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    here.
 
    **A push-triggered run alone does not satisfy this gate in a repo whose own CI runs a reduced
-   matrix on ordinary pushes and reserves fuller coverage for a manual dispatch — this repository is
-   one instance of exactly that shape (#1246), and it is a per-repo fact rather than something to
-   assume here.** Read the workflow file and the dispatch input from `.github/workflows/*.yml`
-   itself at the time of the release, the same way every other fact in this gate is read rather than
-   named: look for an `on: workflow_dispatch: inputs:` entry that requests wider coverage than the
-   push/pull_request trigger runs. Where one exists, the push-triggered run for the commit being
-   tagged is not the full picture, and gate 1 is satisfied only by also dispatching, and reading, the
-   wider one:
+   matrix on ordinary pushes and reserves fuller coverage for a manual dispatch.** Whether the repo
+   being released is shaped that way is a per-repo fact and never something to assume here — read
+   the workflow file and the dispatch input from `.github/workflows/*.yml` itself at the time of the
+   release, the same way every other fact in this gate is read rather than named: look for an
+   `on: workflow_dispatch: inputs:` entry that requests wider coverage than the push/pull_request
+   trigger runs. Where one exists, the push-triggered run for the commit being tagged is not the full
+   picture, and gate 1 is satisfied only by also dispatching, and reading, the wider one — a shape
+   this loop has observed on at least one managed repo (#1246), never guaranteed on any other:
 
    ```bash
    git rev-parse HEAD
@@ -532,13 +532,32 @@ before its own `tests` run had even started, and that run concluded RED four min
 every non-CodeQL leg, on all three operating systems.
 
 **A push-triggered run alone still does not verify this commit against the coverage a release is
-supposed to require (#1324).** Gate 1, above, dispatches this repo's full 3-OS x Python-3.9-3.12
-matrix — reserved for a `workflow_dispatch` carrying `full_matrix: true` (#1246) — but only against
-the *pre-release* default branch, before this commit exists. The push this commit itself triggers
-runs only the reduced 5-leg set. So the full matrix must be dispatched a second time, against this
-commit specifically, after the push — the same repo-specific check gate 1 already performs (look
-for `on: workflow_dispatch: inputs:` in `.github/workflows/*.yml` at release time; do not assume
-every repo shares this shape):
+supposed to require (#1324), on a repo shaped the way gate 1 checks for above.** Where gate 1 found
+a wider `workflow_dispatch` input, it was only ever dispatched against the *pre-release* default
+branch, before this commit exists — the push this commit itself triggers runs only whatever reduced
+set that repo's own push trigger runs. So the wider dispatch must be repeated a second time, against
+this commit specifically, after the push — the same repo-specific check gate 1 already performed
+(look again at `on: workflow_dispatch: inputs:` in `.github/workflows/*.yml` at release time; do not
+assume every repo shares this shape).
+
+**On a repo where the push trigger already runs full coverage, skip only the dispatch step below and
+the `--require-event workflow_dispatch` wait that goes with it — never the CI wait itself.** The
+paragraph above this one still applies unconditionally: this commit's own content has been verified
+by nothing yet, and that risk exists whether or not a wider dispatch shape exists. Wait on the
+ordinary push-triggered run instead, with the same script and the same commit sha, but without
+`--require-event`:
+
+```bash
+COMMIT_SHA="$(git rev-parse HEAD)"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_ci_wait.py" --commit "$COMMIT_SHA" --wait
+```
+
+and read its exit code the same way the four outcomes below are read — `RED`, `COULD-NOT-READ` and
+`PENDING` mean exactly what they say there regardless of which wait produced them; `GREEN` here
+means only that the push-triggered run itself concluded and passed, not the `--require-event
+workflow_dispatch`-specific reading the exit-0 bullet below describes. On `GREEN`, skip straight to
+*Only on `GREEN` does the tag get created*, below. What follows next — the dispatch and the
+`--require-event` wait — is for a repo where gate 1 did find a wider shape:
 
 ```bash
 COMMIT_SHA="$(git rev-parse HEAD)"
