@@ -413,14 +413,15 @@ def extract_references(repo, source_text):
     # suite -- a docstring sentence can raise `OSError: [Errno 63] File
     # name too long` when stat'd, deep worktree paths make this worse, and
     # is-this-a-path is exactly what `.is_file()` is being asked here, not
-    # "did a directory walk succeed"). The import-resolution loop right
-    # below it has no exception handling at all, before or after this fix
-    # -- a pre-existing gap this issue did not ask to close (self-review
-    # finding: an earlier version of this comment claimed both loops
-    # "deliberately keep their original broad catch," which was false for
-    # this one -- there was never a catch here to keep). An `OSError`
-    # there still propagates uncaught rather than rendering as an empty
-    # match; left as-is, out of this issue's own five-item scope.
+    # "did a directory walk succeed"). #1347 finding 1: the import-
+    # resolution loop right below it had no exception handling at all,
+    # before or after #1327's fix to the sibling glob loop -- an
+    # `OSError` there (a permission error during the underlying stat)
+    # propagated uncaught instead of rendering as an empty match, which
+    # would crash `extract_references` and transitively `doctor.py`'s own
+    # exit-0-always contract. Same catch shape as the literal-candidate
+    # loop above it: a stat failure on one candidate means only that
+    # candidate is unresolvable, not that the whole scan failed.
     problems = []
     literals = _string_literal_candidates(tree) + _joined_path_candidates(tree)
     for literal in literals:
@@ -432,7 +433,11 @@ def extract_references(repo, source_text):
             found.add(Path(literal).as_posix())
     for module_name in _import_module_names(tree):
         for candidate in _candidate_paths_for_module(module_name):
-            if (repo / candidate).is_file():
+            try:
+                is_file = (repo / candidate).is_file()
+            except (OSError, ValueError):
+                continue
+            if is_file:
                 found.add(candidate)
                 break
     for base, pattern, recursive in _glob_call_targets(tree):

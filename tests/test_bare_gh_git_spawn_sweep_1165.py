@@ -75,6 +75,23 @@ chased: closing it needs real dataflow tracking, which is the same
 interprocedural analysis this module's predecessor declined for the same
 reason -- "grep-based is fine" was the brief this sweep is built to.
 
+**Attribute-form blind spot, named and accepted (#1347 finding 3).**
+`is_wrapper_call` (below, in `_Visitor.visit_Call`) only recognises a
+wrapper called as a bare `ast.Name` -- `_run([...])`. A cross-module
+`module.wrapper([...])` (an `ast.Attribute`) never matches, because
+`_WrapperFinder` only ever learns wrapper names from module-level
+`FunctionDef`s in the *same* file being scanned, and has no route to
+resolve which module a `module.` prefix even names. Confirmed: there is
+no live gap inside this sweep's own declared scope today (`scripts/*.py`
+only) -- `scaffold._run` is never called cross-module from anywhere in
+`scripts/`, and the one attribute-form call that exists at all
+(`tests/test_scaffold.py`) sits outside the scan by construction, since
+this sweep only walks `scripts/`. `test_attribute_form_wrapper_call_is_a_
+known_blind_spot` below pins the current behaviour rather than silently
+depending on it: real cross-file resolution (matching `module.attr` back
+to a wrapper defined in another scanned file) would need the same
+interprocedural analysis declined two paragraphs up, for the same reason.
+
 **Bound argv (#1295).** `command = ["git", ...]` then, several lines
 later, `subprocess.run(command)` or `_run(command)` -- the shape
 `oss_config._ignore_rule` had before this issue -- used to be invisible
@@ -572,6 +589,42 @@ def test_wrapper_that_only_calls_bare_shutil_which_is_still_flagged():
         hits = _scan_file(path)
         kinds = [kind for _lineno, kind, _name in hits]
         assert "argv-literal-via-wrapper" in kinds, (source, hits)
+
+
+def test_attribute_form_wrapper_call_is_a_known_blind_spot():
+    """#1347 finding 3: `is_wrapper_call` only matches a wrapper called as a
+    bare `ast.Name` (`_run([...])`), never a cross-module
+    `module.wrapper([...])` (an `ast.Attribute`). Pins the current,
+    deliberately-accepted behaviour rather than leaving it undocumented --
+    see "Attribute-form blind spot" in this module's own docstring for why
+    this is not fixed: there is no live instance inside this sweep's own
+    declared scope (`scripts/*.py`) today, and closing it for real needs the
+    same interprocedural analysis this sweep's brief already declined. If
+    this assertion ever starts failing, that is real progress on the gap,
+    not a regression -- update this test and the docstring together rather
+    than treating a catch here as a bug."""
+    source = (
+        "import subprocess\n"
+        "import other_module\n"
+        "\n"
+        "def f(root):\n"
+        "    return other_module._run(['git', '-C', str(root), 'status'])\n"
+    )
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "j.py"
+        path.write_text(source, encoding="utf-8")
+        hits = _scan_file(path)
+        kinds = [kind for _lineno, kind, _name in hits]
+        assert "argv-literal-via-wrapper" not in kinds, (
+            "an attribute-form wrapper call is being caught now -- this is "
+            "progress on the #1347 finding 3 gap, not a regression; update "
+            "this test and the docstring's 'Attribute-form blind spot' "
+            "paragraph together rather than reverting the fix",
+            source,
+            hits,
+        )
 
 
 def test_bound_argv_then_spawned_is_caught():
