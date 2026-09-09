@@ -2280,11 +2280,29 @@ def _channel_reading(root, config):
         attribution = "derivation"
     else:
         declared, problem = _declared_watch_names(root)
+        only = next(iter(declared)) if len(declared) == 1 else None
         if problem:
             attribution = "declaration-unreadable"
-        elif (
-            actual is not None and len(declared) == 1 and next(iter(declared)) == actual
-        ):
+        elif only is not None and only in (actual, expected):
+            # Two ways one declared name attributes, and #1365 added the second.
+            #
+            # `only == actual` is #754's own case: a repository whose declared
+            # name differs from what it would derive, matching what this
+            # process was handed.
+            #
+            # `only == expected` is ownership stated in the repository's own
+            # tracked `.supertool.json` and agreeing with what the repository
+            # derives -- which is a fact about the repository, not about
+            # whether THIS process happens to carry SUPERTOOL_WATCH_NAME. It
+            # did not attribute before, so every session not started by
+            # `bin/oss-workspace` read its own channel as possibly another
+            # project's fleet, and the marker flapped between `derivation` and
+            # `not-attributable` for one unchanged repository depending on
+            # which kind of session took the reading. The WARN doctor printed
+            # asked the maintainer to declare `ops.<name>.watch_name`, which
+            # was already declared -- no manual op and no scaffold run could
+            # clear it, which by this repository's own rule makes it a bug in
+            # the check rather than work.
             attribution = "declaration"
         else:
             attribution = "not-attributable"
