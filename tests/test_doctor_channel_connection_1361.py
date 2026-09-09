@@ -189,14 +189,50 @@ def test_forwarding_is_the_only_ok_state():
     assert _levels() == ["OK"]
 
 
-def test_no_reading_and_a_stale_reading_both_warn_rather_than_passing():
-    """Neither is a pass. Paired with the OK above as its positive control."""
+def test_nothing_established_is_a_notice_rather_than_work_nobody_can_do():
+    """The line this module draws: WARN only where a fault is POSITIVELY
+    established; NOTICE wherever nothing could be established at all.
+
+    Warning on the second kind invents work nobody can do. It took a
+    fully-scaffolded fixture asserting `VERDICT: ok` red on four CI legs -- a
+    runner has no `claude` and no channel, so a first version of these checks
+    warned there permanently, which by this repository's own doctor rule is a
+    bug in the check rather than work. #764's NOTICE is the state for a check
+    declaring itself unable to answer, and it does not gate the verdict.
+
+    Four such states, asserted together because they must not diverge: no
+    reading, a reading too old to speak for the present, `claude` absent, and a
+    listing whose shape was not understood. Each keeps its own remedy text, so
+    a reader who does want a reading still knows how to take one."""
     conn.check_channel_delivery("/repo", resolve=lambda _d: (None, None, None))
     conn.check_channel_delivery(
         "/repo", resolve=lambda _d: (None, "cached-stale", 4000.0)
     )
-    assert _levels() == ["WARN", "WARN"]
+    conn.check_mcp_channel_connection(run=None, which=lambda _n: None, env={})
+    conn.check_mcp_channel_connection(
+        run=lambda *_a, **_k: type("C", (), {"returncode": 1, "stdout": "boom"})(),
+        which=lambda _n: "/usr/bin/claude",
+        env={},
+    )
+    assert _levels() == ["NOTICE", "NOTICE", "NOTICE", "NOTICE"]
     assert "not established" in _text()
+
+
+def test_an_established_fault_is_still_a_warning():
+    """The positive control the four NOTICEs above need. Without it, a module
+    that answered NOTICE to everything would pass every assertion in this file
+    that is not an OK -- and this check would have been written to warn about
+    nothing at all, which is the defect it exists to remove wearing the other
+    mask."""
+    conn.check_mcp_channel_connection(
+        run=lambda *_a, **_k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _n: "/usr/bin/claude",
+        env={},
+    )
+    conn.check_channel_delivery(
+        "/repo", resolve=lambda _d: ("not_delivering", "cached", 12.0)
+    )
+    assert _levels() == ["WARN", "WARN"]
 
 
 def test_an_unrecognised_health_state_is_reported_verbatim_not_folded():

@@ -205,16 +205,36 @@ def check_mcp_channel_connection(run=None, which=None, env=None):
     """
     state, detail = mcp_channel_connection_state(run=run, which=which, env=env)
     if state == "could-not-ask":
+        # NOTICE, not WARN, when the reason is that `claude` is not on PATH at
+        # all: there is no manual op and no `/oss:scaffold` run that clears it,
+        # which by this repository's own doctor rule would make a WARN a bug in
+        # the check rather than work. A CI runner is the standing example, and
+        # it is where this first showed up -- a fully-scaffolded fixture
+        # asserting `VERDICT: ok` went red on a check that could never answer
+        # there. NOTICE is exactly #764's state for a check declaring itself
+        # structurally unable to answer, and it does not gate the verdict.
+        #
+        # A call that RAN and failed is a different fact and stays a WARN:
+        # something is wrong with an installation that has `claude` and cannot
+        # ask it.
         doctor.report(
-            "WARN",
+            "NOTICE" if "not on PATH" in detail else "WARN",
             "channel MCP connection: {}, so whether the channel consumer "
             "actually connects is unknown -- not answered as connected, which "
             "is the false OK this check exists to remove.".format(detail),
         )
         return
     if state == "could-not-read":
+        # NOTICE for the same #764 reason as the arm above: this says the
+        # listing's shape was not understood, which no manual op and no
+        # `/oss:scaffold` run clears. The line drawn across this whole module:
+        # WARN only where a fault is POSITIVELY established -- a failed
+        # transport, no configured server, a consumer that is not delivering --
+        # and NOTICE wherever nothing could be established at all. Warning on
+        # the second kind invents work nobody can do, which is what took a
+        # fully-scaffolded fixture asserting `VERDICT: ok` red on four CI legs.
         doctor.report(
-            "WARN",
+            "NOTICE",
             "channel MCP connection: `claude mcp list` answered, but its "
             "connection status for the channel consumer could not be read "
             "({}) -- reported rather than passed, because a status that was "
@@ -291,8 +311,15 @@ def check_channel_delivery(project_dir, resolve=None):
     raw_state, source, age = resolve(project_dir)
     aged = " ({:.0f}s old)".format(age) if isinstance(age, (int, float)) and age else ""
     if source in (None, "cached-stale"):
+        # Neither arm establishes anything: `None` is no reading at all and
+        # `cached-stale` is a reading too old to speak for the present. Both
+        # are #764 NOTICEs, on the line this module draws throughout -- WARN
+        # only where a fault is positively established. The remedy stays in the
+        # text either way, so a reader who does want a reading knows how to
+        # take one; what changes is that neither renders as work outstanding on
+        # a machine that simply has no channel.
         doctor.report(
-            "WARN",
+            "NOTICE",
             "channel delivery: no usable channel:health reading{} -- whether "
             "any consumer is live, and whether anything is subscribed to it, "
             "was not established. Not answered as delivering: this is the "
