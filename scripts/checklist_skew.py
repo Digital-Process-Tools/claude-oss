@@ -154,6 +154,139 @@ DEF_IDENTICAL = "identical"
 DEF_DIFFERS = "differs"
 DEF_COULD_NOT_TELL = "could-not-tell"
 
+#: #1328: `installed_version` above is read off the plugin root THIS SCRIPT was
+#: told to read -- `${CLAUDE_PLUGIN_ROOT}` or `plugin_update.py`'s resolved
+#: root, passed in by the caller. A spawned `Agent(subagent_type:
+#: "oss:release-auditor")` resolves its own system prompt through the
+#: harness's own plugin registration instead, a SEPARATE mechanism that can
+#: point at an older cached copy -- and nothing compared the two, three times
+#: in one release cycle (v0.29.0 gate 3 ran under 0.26.0, two minors behind
+#: the 0.27.1 this script itself reported as installed). The auditor already
+#: reports a "checklist in effect: <file> <version>" line in every round
+#: (agents/release-auditor.md); `compare_effect` below is what makes that
+#: line mechanically comparable against `installed_version`, rather than
+#: text a human re-derives by hand each time it happens.
+EFFECT_MATCHES = "effect-matches"
+EFFECT_DIFFERS = "effect-differs"
+EFFECT_COULD_NOT_TELL = "effect-could-not-tell"
+
+#: A version-shaped token inside a free-text "checklist in effect" line --
+#: "version 0.26.0", ".../0.26.0/agents/auditor.md", "0.26.0" alone. Matches
+#: the last such token in the line rather than the first: the auditor's own
+#: template puts the file path (which itself commonly embeds a version
+#: directory, e.g. "dpt-plugins/oss/0.26.0/agents/auditor.md") before the
+#: version it names explicitly, and the explicit one is the one this
+#: comparison means.
+_VERSION_TOKEN_RE = re.compile(r"\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?")
+
+
+def _parse_effect_version(effect_line):
+    """``(version, reason)`` out of a "checklist in effect: ..." line -- the
+    auditor's own report line, agents/release-auditor.md's "Report format"
+    section. On success ``reason`` is ``None``; on failure ``version`` is
+    ``None`` and ``reason`` says why, one printable line.
+
+    An auditor that itself reported "could not tell" is relayed as that,
+    never silently treated as a parse failure with a different cause.
+    """
+    if not effect_line or not effect_line.strip():
+        return None, "no 'checklist in effect' line was given to compare"
+    flat = _one_line(effect_line, limit=300)
+    if "could not tell" in flat.lower():
+        return (
+            None,
+            "the auditor's own report said 'could not tell' for the checklist in effect: {0}".format(
+                flat
+            ),
+        )
+    matches = _VERSION_TOKEN_RE.findall(flat)
+    if not matches:
+        return (
+            None,
+            "no version-shaped token (N.N.N) found in the checklist-in-effect line: {0}".format(
+                flat
+            ),
+        )
+    return matches[-1], None
+
+
+def compare_effect(installed_version, effect_line):
+    """Compare `installed_version` (what THIS script measured, off the root
+    the caller passed it) against the version named in the auditor's own
+    "checklist in effect" report line -- what the spawned agent says it
+    ACTUALLY loaded, through a separate resolution mechanism this script
+    cannot see into. Three states, and never a verdict about whether a skew
+    mattered, same caveat as `definitions` in the module docstring above.
+
+    `installed_version` may itself be ``None`` (this script's own `compute()`
+    already returned `could-not-tell`) -- a distinct cause landing in the
+    same third state, not silently dropped.
+    """
+    effect_version, reason = _parse_effect_version(effect_line)
+    payload = {
+        "installed_version": installed_version,
+        "effect_line": effect_line,
+        "effect_version": effect_version,
+    }
+    if installed_version is None:
+        return dict(
+            payload,
+            state=EFFECT_COULD_NOT_TELL,
+            reason="checklist_skew.py's own installed_version is unknown, so "
+            "there is nothing to compare the checklist in effect against"
+            + (
+                " (effect line named {0})".format(effect_version)
+                if effect_version
+                else ""
+            ),
+        )
+    if effect_version is None:
+        return dict(payload, state=EFFECT_COULD_NOT_TELL, reason=reason)
+    if effect_version == installed_version:
+        return dict(
+            payload,
+            state=EFFECT_MATCHES,
+            reason="the checklist in effect ({0}) matches what this script "
+            "measured as installed ({1})".format(effect_version, installed_version),
+        )
+    return dict(
+        payload,
+        state=EFFECT_DIFFERS,
+        reason="the checklist in effect ({0}) differs from what this script "
+        "measured as installed ({1}) -- the spawned agent loaded a DIFFERENT "
+        "copy of the plugin than the one this gate compared against the "
+        "repo".format(effect_version, installed_version),
+    )
+
+
+def effect_receipt(payload):
+    """One block a human reads for `compare_effect`'s payload, same shape as
+    `receipt()` above but for the effect-vs-measured comparison rather than
+    the installed-vs-repo one.
+    """
+    heading = {
+        EFFECT_MATCHES: "matches",
+        EFFECT_DIFFERS: "differs",
+        EFFECT_COULD_NOT_TELL: "could not tell",
+    }[payload["state"]]
+    lines = ["checklist-effect-skew: {0}".format(heading)]
+    lines.append("reason              : {0}".format(payload["reason"]))
+    if payload.get("installed_version") not in (None, ""):
+        lines.append("installed version   : {0}".format(payload["installed_version"]))
+    if payload.get("effect_version") not in (None, ""):
+        lines.append("effect version      : {0}".format(payload["effect_version"]))
+    if payload.get("effect_line") not in (None, ""):
+        lines.append(
+            "effect line         : {0}".format(
+                _one_line(payload["effect_line"], limit=300)
+            )
+        )
+    lines.append(
+        "gate                : ANNOTATES -- this never stops the release. "
+        "could-not-tell never renders as a match."
+    )
+    return "\n".join(lines)
+
 
 def _one_line(text, limit=200):
     """Text from outside this script (an OS error, a path), one printable line."""
@@ -512,6 +645,28 @@ def main(argv=None):
     parser.add_argument(
         "--json", action="store_true", help="emit the payload instead of the receipt"
     )
+    parser.add_argument(
+        "--compare-effect",
+        action="store_true",
+        help=(
+            "compare --installed-version against the version named in "
+            "--effect-line (the auditor's own 'checklist in effect' report "
+            "line), instead of the installed-vs-repo comparison above (#1328)"
+        ),
+    )
+    parser.add_argument(
+        "--installed-version",
+        default=None,
+        help="with --compare-effect: what this gate measured as installed",
+    )
+    parser.add_argument(
+        "--effect-line",
+        default=None,
+        help=(
+            "with --compare-effect: the auditor's own "
+            "'checklist in effect: ...' report line"
+        ),
+    )
     args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -519,6 +674,14 @@ def main(argv=None):
             stream.reconfigure(errors="backslashreplace")
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
+
+    if args.compare_effect:
+        payload = compare_effect(args.installed_version, args.effect_line)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(effect_receipt(payload))
+        return EXIT_OK
 
     payload = compute(args.repo, args.plugin_root)
     if args.json:

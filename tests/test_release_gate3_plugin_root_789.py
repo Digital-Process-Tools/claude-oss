@@ -76,11 +76,18 @@ def test_gate3_resolves_the_plugin_root_before_using_it():
 
 
 def test_checklist_skew_call_passes_plugin_root_explicitly():
+    """#1328's `--compare-effect` call is excluded: it takes no `--plugin-root`
+    by design -- it compares two already-resolved version strings
+    (`--installed-version`/`--effect-line`) and never reads
+    `$CLAUDE_PLUGIN_ROOT` internally at all, so the #789 degradation this test
+    guards against (a silent env-var fallback) does not apply to it."""
     text = _text()
     calls = [
         line
         for line in text.splitlines()
-        if "scripts/checklist_skew.py" in line and "python3" in line
+        if "scripts/checklist_skew.py" in line
+        and "python3" in line
+        and "--compare-effect" not in line
     ]
     assert calls, "no checklist_skew.py invocation found in commands/release.md"
     for line in calls:
@@ -143,6 +150,23 @@ def _blocks_calling(script_name):
     return [b for b in _bash_blocks() if script_name in b and "python3" in b]
 
 
+def _blocks_requiring_plugin_root(script_name):
+    """`_blocks_calling`, minus a block whose only invocation of `script_name`
+    is #1328's `--compare-effect` mode -- that call takes no `--plugin-root`
+    at all, so a block containing only that mode has no resolution step to
+    require in the first place."""
+    blocks = []
+    for block in _blocks_calling(script_name):
+        calls = [
+            line
+            for line in block.splitlines()
+            if script_name in line and "python3" in line
+        ]
+        if any("--compare-effect" not in line for line in calls):
+            blocks.append(block)
+    return blocks
+
+
 def test_checklist_skew_resolution_and_call_share_one_fenced_block():
     """The class of defect a reviewer found in this lane's own first draft:
     resolving GATE3_ROOT in one fence and consuming it in a different, later
@@ -150,7 +174,7 @@ def test_checklist_skew_resolution_and_call_share_one_fenced_block():
     across invocations. Every bash block that calls checklist_skew.py with
     --plugin-root must also contain the resolution logic that produces the
     value it passes."""
-    blocks = _blocks_calling("scripts/checklist_skew.py")
+    blocks = _blocks_requiring_plugin_root("scripts/checklist_skew.py")
     assert blocks, "no checklist_skew.py bash block found"
     for block in blocks:
         assert "--print-resolved-root" in block, (
