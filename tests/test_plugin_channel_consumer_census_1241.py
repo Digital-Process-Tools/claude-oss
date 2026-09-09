@@ -176,6 +176,79 @@ def test_an_unreadable_mcp_json_is_a_reason_not_a_silent_skip(tmp_path):
     assert reason
 
 
+def test_a_server_name_with_a_control_character_is_a_reason_not_a_label(tmp_path):
+    """#1339: `_plugin_channel_consumer_names` is the ONE place a
+    `plugin:<key>:<server>` label is built, and it has (at least) two
+    independent callers -- `plugin_channel_arm_decision` and
+    `channel_consumer_census_state`, below -- each of which transports a
+    label to a positional shell readback. A control character embedded in
+    `server_name` (a raw JSON object key out of a plugin's own `.mcp.json`,
+    read verbatim with no shape check) must never survive into a returned
+    label: reject it here, at the source, so every caller inherits the
+    protection rather than needing its own copy of the check."""
+    install_dir = tmp_path / "supertool"
+    _mcp_json(
+        install_dir,
+        {
+            "chan\nINJECTED": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    registry = _registry(
+        tmp_path, {"supertool@dpt-plugins": [{"installPath": str(install_dir)}]}
+    )
+    names, reason = mod._plugin_channel_consumer_names(registry)
+    assert names is None
+    assert reason
+    assert "\n" not in reason
+
+
+def test_a_registry_key_with_a_control_character_is_also_a_reason(tmp_path):
+    """Must-fire twin: the control character can arrive via the registry's
+    own `key` segment instead of the server name -- both are data this
+    process does not control."""
+    install_dir = tmp_path / "supertool"
+    _mcp_json(
+        install_dir,
+        {
+            "claude-channel": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    registry = _registry(
+        tmp_path,
+        {"supertool@dpt-plugins\nINJECTED": [{"installPath": str(install_dir)}]},
+    )
+    names, reason = mod._plugin_channel_consumer_names(registry)
+    assert names is None
+    assert reason
+
+
+def test_an_ordinary_odd_looking_server_name_is_still_found(tmp_path):
+    """Positive control: a server name that is unusual but carries no
+    control character (colons, an `@`, unicode) must still be found
+    normally -- the new check must not become a second false-positive
+    source over ordinary but odd-looking names."""
+    install_dir = tmp_path / "supertool"
+    server_name = "weird:name@v2-étoile"
+    _mcp_json(
+        install_dir,
+        {
+            server_name: _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    registry = _registry(
+        tmp_path, {"supertool@dpt-plugins": [{"installPath": str(install_dir)}]}
+    )
+    names, reason = mod._plugin_channel_consumer_names(registry)
+    assert reason is None
+    assert names == ["plugin:supertool@dpt-plugins:" + server_name]
+
+
 # --------------------------------------------------------- channel_consumer_census_state
 
 
@@ -204,6 +277,41 @@ def test_the_issues_own_repro_is_now_a_collision_not_single(tmp_path):
     assert state == "collision"
     assert "oss-channel" in detail
     assert "plugin:supertool@dpt-plugins:claude-channel" in detail
+
+
+def test_a_control_character_in_a_plugin_label_is_could_not_ask_not_collision(
+    tmp_path,
+):
+    """#1339: `channel_consumer_census_state` is a SECOND, independent
+    caller of `_plugin_channel_consumer_names` -- the fix that closed the
+    injection at `plugin_channel_arm_decision` alone (an earlier self-review
+    round of this diff) left this call site still folding a tainted label
+    straight into `collision`'s `detail` list, which `bin/oss-workspace`'s
+    own `CHANNEL_CENSUS` heredoc then echoes unsanitised. Now that the
+    rejection lives in `_plugin_channel_consumer_names` itself, this call
+    site inherits it automatically: a tainted label must surface as
+    `could-not-ask`, the same safe fallback an unreadable registry already
+    produces, never as a `collision` (or `single`) carrying corrupted text."""
+    install_dir = tmp_path / "supertool" / "0.57.0"
+    _mcp_json(
+        install_dir,
+        {
+            "chan\nINJECTED": _channel_server(
+                str(install_dir / "notifiers" / "claude-channel" / "channel.ts")
+            )
+        },
+    )
+    registry = _registry(
+        tmp_path, {"supertool@dpt-plugins": [{"installPath": str(install_dir)}]}
+    )
+    state, detail = mod.channel_consumer_census_state(
+        run=_run_answering(ONE_MCP_LIST_ROW),
+        which=lambda x: "/usr/bin/claude",
+        plugin_registry_path=registry,
+    )
+    assert state == "could-not-ask"
+    assert detail
+    assert "\n" not in detail
 
 
 def test_no_mcp_list_rows_plus_one_plugin_consumer_is_single(tmp_path):
