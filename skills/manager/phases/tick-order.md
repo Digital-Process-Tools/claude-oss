@@ -231,6 +231,13 @@ tool, and you are gone by the time step 7 would run.
    branch, or an agent whose work is sitting uncommitted all outrank the next issue. Finishing beats
    starting.
 
+   **Inbound work is in this same bucket, and it outranks the loop's own findings (#1394).** An
+   issue nobody filed on our behalf, a pull request whose author is not the loop, and a comment new
+   since the last tick all have a person waiting on them. Read
+   `skills/manager/phases/inbound.md` here, before dispatch -- it is a branch on the board step 2
+   already read, not a second call, and it classifies rather than acts: recording a refusal, an
+   external pull request's readiness, or an answer still owed, for `#1395`'s own queue to send.
+
    **A wait is not an act, and it does not outrank dispatch (#820).** The three examples above are
    all work; watching CI go green is not. Dispatch every lane that is ready to run before starting
    any wait. Prefer polling (`gh-pr:N:status`, `gh-branch`) over a blocking `gh run watch`, which

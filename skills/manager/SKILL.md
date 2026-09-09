@@ -26,6 +26,7 @@ lives in its own file, and is read when the loop enters that phase**, not before
 
 | Phase | File | Read it when |
 | --- | --- | --- |
+| Inbound | `skills/manager/phases/inbound.md` | step 3 of a tick, before dispatch -- an issue nobody filed on our behalf, an outside pull request, or a comment on either (#1394) |
 | Dispatch | `skills/manager/phases/dispatch.md` | before the first brief of a tick |
 | Handback | `skills/manager/phases/handback.md` | a lane replied with a report path |
 | Review | `skills/manager/phases/review.md` | a pull request is open and the diff is yours |
@@ -236,6 +237,19 @@ to read, and that is said rather than passed over); **tiers are registered** (ba
 delivery tally); and **the probe itself did not answer**, which is `unknown` and gets reported. Bare
 `radar` heals and forks pollers, so it is a write and a separate, deliberate call — never folded
 into the probe.
+
+## Inbound, before anything new
+
+**An issue nobody filed on our behalf, a pull request from someone other than the loop, and a
+comment on either since the last tick all outrank starting fresh work, for the same reason step 3
+of `skills/manager/phases/tick-order.md` gives every other unfinished act priority: a person is
+waiting on it, and the loop's own findings never are.** Read
+`skills/manager/phases/inbound.md` at that step, before dispatch. It carries the closed set of six
+refusal reasons `CLAUDE.md`'s own doctrine needs to mean anything ("closed with the reason
+stated"), what an external pull request classifies to, and how a new comment is told apart from
+one already answered -- all read off the board step 2 already fetched, never a second call.
+**This step classifies and surfaces; it does not close an issue, merge a pull request, or post a
+reply itself** -- that queue is `#1395`'s, not this one's.
 
 ## Deciding what to build
 
