@@ -367,9 +367,15 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
       including a marker that honestly declines to cite a cohort** (#1268: an earlier version
       validated `--at` only on the path that goes on to compare it, so a malformed `--at` paired
       with a declined marker silently rendered `declined` with the bad input never even read).
-      `ok`, `could-not-check` (no state file, or a malformed `--at`) or `declined` (the marker
-      honestly declined a number rather than guessing one -- #1264) are all fine; `finding` means
-      this citation is about to repeat v0.25.0's own mistake.
+      `ok`, `could-not-check` (no state file, a malformed `--at`, **or the marker's own citation
+      could not be parsed at all -- "no cohort citation found in the marker", the exact shape
+      v0.29.0's paraphrased marker produced, #1299**) or `declined` (the marker honestly declined a
+      number rather than guessing one -- #1264) are all fine; `finding` means this citation is about
+      to repeat v0.25.0's own mistake. `could-not-check` covers several distinct causes in
+      `scripts/cohort_citation_order.py` (not only the ones named above -- also a state file it could
+      not read, no `measured` freeze record for the cited cohort, and a freeze timestamp it could not
+      parse), all sharing one state and exit code -- read the `reason` string, not the state name
+      alone, to tell which one actually happened.
    2. After folding the changelog and before the release commit, run the repo's own
       `tests/test_claude_md_currency.py` and `tests/test_cohort_citation_order_1220.py`
       (`python3 -m pytest`, not a plugin script under `${CLAUDE_PLUGIN_ROOT}`, so it stays a prose

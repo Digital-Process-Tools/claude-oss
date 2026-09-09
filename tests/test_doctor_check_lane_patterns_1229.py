@@ -153,6 +153,68 @@ def test_warn_branch_also_surfaces_a_failed_walk_not_only_the_ok_branch(
     assert "boom" in message
 
 
+def test_no_scope_established_is_distinguished_from_a_clean_zero_count(
+    tmp_path, monkeypatch
+):
+    """#1327: `uncovered_count is None` with `uncovered_count_problem is
+    None` means "no lane resolved a single file, so no scope was
+    established at all" -- a structurally different state from `count ==
+    0` ("scope established, nothing left uncovered in it"). Before this
+    fix, both fell into the same bare `elif count:` branch (`None` and `0`
+    are both falsy) and rendered the identical flat OK line, with no way
+    for a reader to tell "nothing to count" from "count established, zero
+    uncovered". Reproduced by monkeypatching `lane_pattern_report` itself
+    (rather than only `_walk_all_files`) so the walk-failure branch --
+    already fixed by #1252 -- is not what is under test here."""
+    import lane_pattern_coverage
+
+    def _no_scope(repo, lane_patterns):
+        return {
+            "state": "ok",
+            "overlaps": [],
+            "dead_patterns": [],
+            "refused": [],
+            "malformed": [],
+            "uncovered_count": None,
+            "uncovered_count_problem": None,
+        }
+
+    monkeypatch.setattr(lane_pattern_coverage, "lane_pattern_report", _no_scope)
+    config = {"labels": {"lane_patterns": {"lane-a": ["scripts/covered.py"]}}}
+    dclp.check_lane_patterns(tmp_path, config)
+    assert _states() == ["OK"]
+    message = doctor.FINDINGS[0][1]
+    assert "could not be counted" not in message.lower()
+    assert "no scope" in message.lower() or "no lane" in message.lower()
+
+
+def test_clean_zero_uncovered_count_is_the_must_not_fire_control(tmp_path, monkeypatch):
+    """Positive control for the test above: a genuinely established scope
+    with nothing left uncovered (`count == 0`, `problem is None`) must not
+    be mistaken for -- or itself claim to be -- the no-scope-established
+    state."""
+    import lane_pattern_coverage
+
+    def _zero_uncovered(repo, lane_patterns):
+        return {
+            "state": "ok",
+            "overlaps": [],
+            "dead_patterns": [],
+            "refused": [],
+            "malformed": [],
+            "uncovered_count": 0,
+            "uncovered_count_problem": None,
+        }
+
+    monkeypatch.setattr(lane_pattern_coverage, "lane_pattern_report", _zero_uncovered)
+    config = {"labels": {"lane_patterns": {"lane-a": ["scripts/covered.py"]}}}
+    dclp.check_lane_patterns(tmp_path, config)
+    assert _states() == ["OK"]
+    message = doctor.FINDINGS[0][1]
+    assert "no scope" not in message.lower()
+    assert "could not" not in message.lower()
+
+
 def test_non_dict_lane_patterns_is_warn_not_a_crash(tmp_path):
     config = {"labels": {"lane_patterns": ["not", "a", "dict"]}}
     dclp.check_lane_patterns(tmp_path, config)

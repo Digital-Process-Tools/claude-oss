@@ -267,6 +267,14 @@ def analyze_growth(path):
         "last_timestamp": last_timestamp,
         "turns": turns,
         "turns_with_unusable_usage": turns_with_unusable_usage,
+        # #1327: `non_blank_lines` and `parsed_records` used to be counted
+        # here and then discarded the moment at least one line parsed --
+        # only the "every line failed" branch above ever consumed the pair.
+        # A transcript where most lines fail `json.loads` still rendered
+        # `ok: True` with `growth_per_turn` computed silently from whatever
+        # DID parse, and nothing in this dict (or `run()`'s report) said so.
+        # Surfaced the same way `turns_with_unusable_usage` already is.
+        "unparsed_lines": non_blank_lines - parsed_records,
         "turn1_context": first_context,
         "final_context": last_context,
         "growth_per_turn": growth_per_turn,
@@ -300,6 +308,10 @@ def _summarize_side(analyses):
         "turns_with_unusable_usage": sum(
             a.get("turns_with_unusable_usage", 0) for a in analyses
         ),
+        # #1327: summed the same way `turns_with_unusable_usage` is, so a
+        # side with a lot of unparsable transcript lines is visible in the
+        # report rather than silently folded into whatever DID parse.
+        "unparsed_lines": sum(a.get("unparsed_lines", 0) for a in analyses),
         "window": {
             "first_timestamp": min(timestamps) if timestamps else None,
             "last_timestamp": max(timestamps) if timestamps else None,

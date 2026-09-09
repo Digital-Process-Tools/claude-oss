@@ -186,11 +186,31 @@ _NO_FINDINGS = re.compile(
 # other three words rather than special-casing "already" alone, since the
 # same adjacency-without-a-clause-boundary shape reaches all four, and to
 # digits (the "noted above 90%" shape) rather than letters alone.
+#
+# #1327: that same lookahead also swallowed a genuine gesture that
+# continues into its OWN clause -- "reported above in section 2", "noted
+# previously in this review" -- because a bare word ("in") follows the
+# direction word there too, indistinguishable by the #1270 rule alone from
+# "noted above 90%" continuing the same predicate. Self-review finding
+# (both spawned reviewers, independently): an unrestricted "any bare `in`
+# closes the gesture" exception reopens #1270's own original bug for this
+# one preposition -- "found already in a scratch venv" is #1270's own
+# reproduction with "in a scratch venv" appended, still ordinary English
+# continuing the SAME predicate, and it matched under the first cut of
+# this fix. The exception is narrowed to what the issue's own two worked
+# examples actually need: "in" followed by a word that names the review's
+# own structure ("section", or "this"/"that"/"the" introducing one --
+# "in this review", "in the diff", "in the linked audit") closes the
+# gesture; "in" followed by anything else (an article introducing an
+# unrelated noun, as in "in a scratch venv") does not. Losing a real
+# back-reference is still the direction this repo's own defect class
+# treats as worse than over-signalling one, so the exception stays --
+# narrowed to the shape that is actually evidenced, not open to any word.
 _BACKREF = re.compile(
     r"\b(?:reported|report|found|listed|list|described|detailed|noted|note|"
     r"mentioned|stated|outlined|flagged|identified|documented|given|shown)"
     r"[ \t]+(?:[\w,'-]+[ \t]+){0,3}(?:above|earlier|previously|already)\b"
-    r"(?![ \t]*[A-Za-z0-9])"
+    r"(?:(?![ \t]*[A-Za-z0-9])|(?=[ \t]+in[ \t]+(?:this|that|the|section)\b))"
     r"|\bas[ \t]+(?:noted|described|stated|mentioned)\b"
     r"|\b(?:see|per)[ \t]+(?:above|earlier|my[ \t]+\w+[ \t]+above)\b"
     r"|\b(?:above|earlier)[ \t]+(?:findings|analysis|review)\b",

@@ -72,6 +72,19 @@ def check_lane_patterns(project_dir, config):
             # named after. Say the coverage figure could not be produced,
             # rather than silently omitting the clause.
             message += " coverage could not be counted ({}).".format(problem)
+        elif count is None:
+            # #1327: `count is None` with `problem is None` is a THIRD
+            # state, not the same as `count == 0` -- no lane resolved a
+            # single file, so there is no scope to count uncovered files
+            # against at all. Both used to fall into the same falsy
+            # `elif count:` branch and render the identical bare OK line;
+            # say plainly that no scope was established, rather than let
+            # this collapse onto "scope established, nothing uncovered".
+            message += (
+                " coverage could not be established -- no lane pattern "
+                "resolved a single file, so there is no scope to count "
+                "uncovered files against."
+            )
         elif count:
             message += (
                 " {} tracked-like file(s) inside an already-claimed "
