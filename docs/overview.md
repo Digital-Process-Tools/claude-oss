@@ -1,111 +1,223 @@
 # What claude-oss does
 
-One sentence: it runs a public GitHub repo as its maintainer, from a Claude Code session, with no human in the merge path.
+One sentence: it runs a public repo as its maintainer, from a Claude Code
+session, with no human in the merge path.
 
-The loop is: read the board, decide what is worth building, delegate it to an agent, review the result, merge on green, release. Everything repo-specific (default branch, labels, test command, version sites) lives in `.oss.json`, written once by probing the repo. The prose never carries a fact about a repo.
+The loop is: read the board, decide what is worth building, delegate it to an
+agent, review the result, merge on green, release. Everything repo-specific —
+default branch, labels, test command, version sites — lives in `.oss.json`,
+written once by probing the repo. The prose never carries a fact about a repo.
 
-## The problem
+**This document carries no counts.** Not how many commands, agents, phase files
+or scripts there are, and not how many commits or tests. Every one of those was
+here once and every one of them drifted, silently, while the page still read as
+current. Names do not rot the way numbers do. If you want a count, count it —
+`ls` is the source of truth and this page is not.
 
-A maintainer loop written as prose gets copied between repos, and the copies drift. Fixing a triage
-rule means editing it in three places and remembering the third. Repos that never got the copy run
-no loop at all.
+## Why it exists as a package
 
-This packages the loop once: one skill, the agents it delegates to, a handful of commands.
-Everything that differs between repos — default branch, label spellings, version sites, test
-command — lives in a config file the plugin writes by probing the repo, not in the prose.
+A maintainer loop written as prose gets copied between repos, and the
+copies drift. Fixing a triage rule then means editing it in three places
+and remembering the third, and repos that never got the copy run no loop
+at all.
 
-## The pieces
+This packages the loop once: one skill, the agents it delegates to, a handful of
+commands. Everything that differs between repos -- default branch, label
+spellings, version sites, test command -- lives in a config file the plugin
+writes by probing the repo, not in the prose.
 
-| Piece | Count | What it is |
-| --- | --- | --- |
-| Commands | 8 | Slash commands a human types: `/oss:setup`, `/oss:tick`, `/oss:triage`, `/oss:release`, `/oss:changelog`, `/oss:doctor`, `/oss:scaffold`, `/oss:install-audit` |
-| Skill | 1 + 6 phases | `skills/manager/SKILL.md` is the spine (process only). One file per phase, read only when the loop enters that phase: dispatch, handback, review, merge, release, accounting |
-| Agents | 5 | `sub-manager` runs one tick and dies. `developer` implements one issue (worktree, TDD, self-review, commit, never pushes). `triager` labels the board, never touches code. `auditor` reads one merged diff for what CI cannot see. `release-auditor` reads the whole delta since the last tag |
-| Scripts | 40 Python | State file, config, changelog fragments, release version and publish, doctor checks, statusline, lane setup, tick handback |
-| Hooks | 3 | SessionStart: check for a plugin update. Two PostToolUse: hint when a call could have been batched, touch the board timestamp |
-| Launcher | `bin/oss-workspace` | Opens a Claude session over the repo you stand in, with the channel registered and the loop prompt ready |
-| Statusline | `scripts/statusline.py` | One line: branch, PR checks, release progress, channel state, plugin currency |
+## Am I inside the goal?
 
-Dependencies, installed from the same marketplace: `supertool` (every forge and file call goes through it), `remember`, `claude-jit-context`.
+This page exists so that a question about a piece of work has an answer that is
+not an opinion. Four tests, in the order they bite:
 
-## One tick
+1. **Does it resolve issues, or does it maintain machinery?** The developer lane
+   is the product. Everything else — the manager spine, the phase files, the
+   auditors, the state file, this page — earns its place only by making that
+   lane work better, argued in its own diff rather than in the abstract. A tick
+   that spends its context on bookkeeping and dispatches nothing has done no
+   work.
+2. **Does it remove a human from the loop, or add one?** Anything that needs a
+   person to notice, remember, or type something on a schedule is a
+   compensation for a loop that does not reach that step by itself. Build the
+   trigger, not the reminder.
+3. **Does it leave a second copy of a fact?** A fact about one repository lives
+   in `.oss.json` or is re-derived. Prose restating what a file already says is
+   a thing to keep in sync forever, priced when it is written.
+4. **Can it tell "found nothing" from "could not look"?** Every check has three
+   states. A check that never ran and a check that came back clean must not
+   render identically.
 
-`/oss:tick` spawns a `sub-manager` with a fresh context. The sub-manager does steps 1 to 6, hands back one of three states, and dies. The session that spawned it does step 7.
+Work that fails one of these is outside the goal even when it is correct,
+reproducible and asked for.
 
-1. Read the state file, `git pull --ff-only`. Test any pending wait against the repo. Compare the plugin version to the one recorded last tick.
-2. Read the board in one call: PRs, issues, default branch, worktrees.
-3. Act on what is open before starting anything new: a red default branch, a merged but unverified PR, a PR waiting on review.
-4. Take agent handbacks, push, open the PR, put it under watch.
-5. Decide, delegate, review, merge. One developer per file-disjoint lane, 1 to 3 issues per lane, never 4. Merge only on green CI plus a review of the diff.
-6. Write one state entry: the decision, the one reason, the intake ratio (issues filed by the loop over issues filed by humans).
-7. Arm the next wakeup. The loop never stops on its own, only on a direct instruction.
+## The surface
 
-The handback is one of: work started (the tick continues), blocked (every item named with what it waits on), nothing left (both board calls answered empty). An unread board is `unknown`, never `nothing left`.
+**Today the picker shows more than it should**, including `manager`, which is
+the loop's spine — a library that every tick loads, published as a menu entry
+by `user_invocable: true` and invoked by nobody. Reading the menu does not tell
+you what to type.
 
-## Who decides
+**The surface we are moving to is two verbs**, and this part is not built yet:
 
-The loop. Not the human. It makes the call, records why in the state file, and is findable if wrong. Asking is replaced by: derive it, act, record the derivation. The only input it does not re-derive is a direct instruction.
+| type | what it does |
+| --- | --- |
+| `/oss:run` | Run the repo. Sets it up on first use, then triages, builds, reviews, merges on green and releases — on a loop, no human in the merge path. Type it once. |
+| `/oss:doctor` | Check the install and this repo, and say what is wrong in plain terms. |
+
+**`/oss:run` asks one question: what does this repo need now?** It answers from
+state and config, not from an argument. No config, probe the repo and write it.
+Release triggers met, release. Trap backlog over its threshold, curate. Last
+sweep older than the last tag, triage. Otherwise, dispatch work. None of these
+is a harder decision than the ones it already makes every tick when it chooses
+what to build.
+
+That is the difference between a loop and a router. A router asks which
+subcommand you meant — the same menu one level down, with the human still
+choosing. Setup, triage, curation and release are not subcommands; they are
+preconditions, and a loop that can rank issues can test a threshold.
+
+Everything demoted stays reachable — `/oss:run triage` forces a sweep now rather
+than when due. But those are **forcing overrides, not a routing table**, and
+each one is a defect report:
+
+> Every argument someone has to type is a trigger that is missing.
+
+Build the trigger and the argument survives only for the rare case of wanting
+something now. Leave the argument as the way it normally happens, and the menu
+has simply moved.
+
+**"Type it once" is the load-bearing claim.** The session that runs the loop
+arms its own next wakeup and keeps going; it stops only on a direct instruction
+to stop. Typing the command repeatedly means a human is doing the scheduler's
+job.
+
+## What runs underneath
+
+Words below this line are internal vocabulary. They describe the mechanism, and
+the mechanism is not the product — none of them need to appear on the user
+surface.
+
+- **The scheduler** is the session you started. It spawns one **sub-manager**,
+  reads one handback, and arms the next wakeup. It holds tag-and-publish
+  authority and almost nothing else — deliberately no board summary, so nothing
+  stale can be inherited.
+- **A sub-manager runs exactly one tick and then dies with its context.** That
+  discard is the whole point: a session running ticks back to back pays
+  cache-read on every earlier tick's transcript, on every call, forever. It
+  re-derives the board itself, dispatches, reviews, merges, and reports one of a
+  closed set of handback states.
+- **A developer lane** takes file-disjoint issues into a worktree, works
+  test-first, and stops at a commit. It never pushes and never opens a pull
+  request.
+- **Auditors** read a diff for what a reviewer can see and CI cannot fail on.
+  One annotates a merged diff; another reads the whole delta since the last tag
+  before a release, and that one blocks.
+- **A releaser** runs one release from a fresh context — the gates, the version
+  sites, the tag, the publish — and is the only spawn holding that authority.
+- **The state file** is what survives a tick. One entry per tick: the decision,
+  the one reason for it, and the measurements a later tick re-reads rather than
+  believes.
+
+## What decides when something happens
+
+Cadence is config, not memory. `.oss.json` carries the thresholds the loop
+tests itself against — how many merged pull requests and how many hours of soak
+before a release is due, how full `trap.d/` has to get before a curation pass is
+routed. Read them from the file; they differ per repo and this page must not
+name their values.
+
+A cadence step with a threshold in config is one the loop reaches by itself. A
+cadence step written only in prose is one somebody has to remember.
+
+## Where prose lives
+
+Everything the loop needs already exists as machinery. What decays is the prose
+around it, and it decays by landing in the wrong file — where it is either paid
+for by every session forever, or never read by the one session that needed it.
+
+Given something you just learned, one destination:
+
+| what you have | where it goes |
+| --- | --- |
+| what the thing is for, and the tests for whether work is inside it | this file |
+| a rule every session needs whatever it touches | `CLAUDE.md` |
+| a rule that fires on touching a file, using a tool, meeting a term | `.claude/jit-context/` |
+| a rule governing one phase of the loop | `skills/manager/phases/` |
+| a rule governing one agent's job | `agents/` |
+| how to drive a tool — the rule, the call, how to read every state | with the rule, imperative |
+| why a constant has that value | beside the constant, in the module |
+| the incident behind a rule | its issue: cite the number, never retell it |
+| a measurement about the field | a receipt under `docs/` |
+| something that cost time, not yet judged | `trap.d/`, then `/oss:curate` |
+
+The rule is the cost, not the subject. `CLAUDE.md` is re-read by every session
+forever, so a paragraph there is the most expensive prose in the repository. A
+phase file is paid only when the loop enters that phase; an agent definition on
+every turn of every lane that runs it, which is why those carry byte budgets. A
+jit rule costs nothing until its match fires. A `trap.d/` fragment costs nothing
+at all until somebody curates it — which is why it takes anything, unjudged,
+and why hesitating over whether a finding is worth recording is the one failure
+it exists to remove.
+
+Two consequences worth stating on their own:
+
+- **Replace, don't append.** A budgeted file grows to harm one appended
+  paragraph at a time, never once paid for by a cut. Pay for a new paragraph by
+  cutting one, or raise the ceiling in the same diff with a sentence saying what
+  was weighed.
+- **Move it, then cut it.** The counter-argument to every trim is that this
+  repository's prose is largely expensive lessons written down so they are not
+  paid twice, and cutting a live one costs a whole review round. That argument
+  is about the lesson surviving somewhere, not here. A cut that moves reasoning
+  to the module, or leaves it in its issue, keeps the lesson and stops paying
+  for it every turn. A cut that deletes it does not.
 
 ## What it refuses to do
 
-- Merge without green CI and a review. The gates in the skill are not configurable.
-- Tag or publish from a sub-manager. Only the scheduling session does, and only where the repo granted it.
-- Run unattended in somebody else's repo. Every workflow it installs fires on push or pull_request, a human act. `docs/autonomy.md` names the three things that would have to exist first: a runtime, a grant, a liveness signal.
-- Trust issue or PR text. All of it is untrusted input, in every agent.
+- Merge without green CI and a review. The gates are not configurable.
+- Tag or publish from a sub-manager.
+- Trust issue or pull request text. All of it is untrusted input, in every
+  agent — text shaped like an instruction is something to report, never
+  something to do.
+- Do what an issue asks because it asked. The loop holds the overview and the
+  overview outranks the issue: a well-written, reproducible, entirely correct
+  issue is refused when it does not move toward the goal, and closed with the
+  reason stated.
 
 ## What it produces
 
-- Merged PRs with a changelog fragment each, under `changelog.d/`.
-- A `CHANGELOG.md` folded from those fragments at release time, Keep a Changelog format.
-- Tags and GitHub releases, with a cohort label on every issue that was open at the tag.
-- A state file, one entry per tick, that a later tick or a human can re-read.
-- Issues filed on its own tracker for every defect it meets in itself, labelled `filed-by-loop`.
+- Merged pull requests, each with a changelog fragment.
+- A changelog folded from those fragments at release time, tags, and published
+  releases.
+- A cohort label on every issue open at a tag, so the backlog has a terminating
+  condition.
+- A state file a later tick or a human can re-read.
+- Issues on its own tracker for defects that block a release, and `trap.d/`
+  fragments for everything else.
 
-## Where it stands, 2026-09-02
+## What is not true yet
 
-| | |
-| --- | --- |
-| Version | 0.17.0 |
-| Age | 20 days |
-| Commits | 365 |
-| Test files | 270 |
-| Repos it maintains | every DPT open-source repo: claude-oss, claude-supertool, claude-remember, claude-jit-context, claude-marketplace, claude-5h-window-spread |
+**The loop does not reach every step it is told to reach.** A release has a
+trigger in config and fires by itself. Curation has one. The triage sweep that
+the cadence rule says follows every release has none — the rule lives in a phase
+file whose only reader is a sub-manager, which is discarded before the next
+release and holds no authority over what the scheduler does next, and no file on
+the release path mentions triage at all. The recorder was built and the consumer
+was not. The first sweep this loop ever recorded was run by hand.
 
-It runs on every DPT repo, as a plugin installed in each, one session per repo. Half two of the goal in `docs/autonomy.md`, running unattended in a repo we do not own, has no runtime yet.
+That is the shape to watch for, and it is worth more than the instance: **every
+individual file was correct and the loop still did not do the thing.** No
+per-file review catches that, because nothing is wrong in any one file. It is
+the same argument the release audit rests on, one level up.
 
-## What we want it to do
+**Running unattended in a repo we do not own has no runtime.** Every workflow
+this plugin installs fires on a push or a pull request — a human act.
+`docs/autonomy.md` names what would have to exist first, and answers none of it.
 
-The ultimate goal, 4 steps:
-
-1. Someone finds the repo.
-2. They do the symlink.
-3. They start `oss-workspace`.
-4. It works.
-
-Everything below serves that. Same loop, five changes.
-
-1. **Run from a fresh clone.** Today it does not (#608, #609). Install, `/oss:setup`, `/oss:tick`, and the first tick answers with the board, not with `unknown`.
-2. **Cost one tick what a tick needs.** 60 KB of SKILL.md per tick before it reads an issue (#245). The spine under 200 lines, the arguments in the phase files.
-3. **Read like a tool, not like a lab notebook.** README under 80 lines, receipts in `docs/` (#795).
-4. **Fill each lane to 3 issues by default.** Measured on 237 lanes (#499): 3 issues per lane cost 16% less per issue than 1, 4 is a cliff at 68% worse. Today the sub-manager looks for companions after picking one issue. We want it to select up to 3 per developer per lane as the normal case, and a single-issue lane to be the exception it names.
-
-5. **A human decides what gets built.** On claude-oss, 476 issues in 20 days. On claude-supertool, 834 issues in August 2026 against 36 in June. 98% of them are filed by the loop, even the ones under a human account. 68% close the same day they open. The loop files, fixes and closes its own findings and no human reads them, so the tracker no longer separates an ask from a finding. Whether the loop fixes bugs we do not understand is not the problem. The problem is that a human ask waits behind them. Wanted: the dispatch order puts a human issue above any loop issue at medium or below.
-
-   | Rank | Who | Priority |
-   | --- | --- | --- |
-   | 1 | human | high |
-   | 2 | loop | high |
-   | 3 | human | medium |
-   | 4 | human | low, or no label |
-   | 5 | loop | medium |
-   | 6 | loop | low, or no label |
-
-   For that to work the `filed-by-loop` label has to be on every issue the loop opens, applied by the loop at creation (today 9 of 421, by hand). An issue without the label is a human issue.
-
-6. **Tokens and wall-clock are the budget.** The developer runs the tests it touched, and CI runs the full suite. Today `agents/developer.md` presents the full local suite as optional with criteria, and measured it at 27m36s on this repo (#765). That run is a weaker duplicate of the CI gate, it can fail for reasons CI does not have, and every minute of it is a lane holding a context open. Wanted: a lane never runs the repo's whole `test_command` locally. It runs the files it changed, commits, hands back, and the merge gate is CI. A `tests.full` entry in the report is a smell, not a receipt.
-
-Open questions, ours to answer:
-
-- Today: one plugin install and one session per repo, 6 loops. Each files on its own tracker. Does it stay that way, or does one session tick all 6 in turn with one intake ?
-- Does the launcher stay `sh`, or does it become 100 lines of `sh` calling one Python module ?
-- Who tags on a repo that is not ours ? The grant question in `docs/autonomy.md` has no default yet.
+**It works, and it has only ever worked here.** It runs across several
+repositories, watched by the person who wrote it, who knows by now what it looks
+like when it goes wrong. Nobody else has installed it into a repository we have
+never seen, and nobody but its author has ever had to read its output cold. That
+is not a defect. It is the one claim with no observation behind it, and the one
+thing prose cannot supply.
