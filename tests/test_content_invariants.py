@@ -348,10 +348,13 @@ def _shipped_mid_lane_documents(dirs=SHIPPED_MID_LANE_DIRS, root=REPO_ROOT):
 #: evidence the scan never reached them: `trap.d/` is emptied by `/oss:curate`
 #: (its own instruction is that the directory ends the pass empty), and
 #: `changelog.d/` is folded into `CHANGELOG.md` at release time. For these two,
-#: the vacuity guard below asserts the directory EXISTS and is readable rather
-#: than that it holds at least one document -- which is the distinction the guard
-#: was reaching for anyway: a directory nothing looked at, versus one that was
-#: looked at and had nothing in it.
+#: the vacuity guard below (`_missing_shipped_mid_lane_dirs`) asserts the
+#: directory EXISTS, is readable, AND -- #1347 -- is genuinely empty of real
+#: documents under `pattern` (its own independent `directory.glob(pattern)`
+#: call, filtered through `is_file()` the same way `_shipped_mid_lane_documents`
+#: already is), rather than accepting existence alone as proof of a legitimate
+#: drain: existence alone cannot tell a genuinely drained directory from one
+#: whose scan is silently broken and will report zero matches forever.
 DRAINABLE_MID_LANE_DIRS = frozenset({"trap.d", "changelog.d"})
 
 
@@ -555,7 +558,15 @@ def _missing_shipped_mid_lane_dirs(dirs=SHIPPED_MID_LANE_DIRS, root=REPO_ROOT):
         directory = root / dirname
         if dirname in DRAINABLE_MID_LANE_DIRS and directory.is_dir():
             try:
-                on_disk = any(True for _ in directory.glob(pattern))
+                # Self-review finding (#1347): a bare `any(glob(pattern))`
+                # counts a directory whose own name matches `pattern` (a
+                # stray `trap.d/leftover.md/` from a broken tool or an
+                # accidental mkdir) as proof of a real document -- the same
+                # `is_file()` filter `_shipped_mid_lane_documents` already
+                # applies before counting a match is required here too, or
+                # this independent check disagrees with the very count it
+                # exists to double-check.
+                on_disk = any(path.is_file() for path in directory.glob(pattern))
             except OSError:
                 # Unreadable -- can't confirm it is genuinely empty, so this
                 # is a problem too, not a pass.
@@ -634,6 +645,34 @@ def test_genuinely_drained_dir_is_still_the_must_not_fire_control(tmp_path):
         dirs=[("trap.d", "*.md", False)], root=tmp_path
     )
     assert missing == []
+
+
+def test_stray_matching_subdirectory_does_not_false_positive_a_drained_dir(
+    tmp_path,
+):
+    """Self-review finding (#1347): the independent on-disk check added above
+    did `any(True for _ in directory.glob(pattern))`, which counts ANY glob
+    match -- including a directory whose own name happens to match `pattern`
+    (e.g. a stray `trap.d/some-leftover.md/` directory from a broken tool or
+    an accidental `mkdir`) -- as proof the drain is not genuine.
+    `_shipped_mid_lane_documents` itself filters every match through
+    `path.is_file()` before counting it as a document (see its own
+    docstring), so the independent check must apply the identical filter or
+    it disagrees with the very count it exists to double-check: a directory
+    correctly drained of real documents, holding nothing but a same-named
+    subdirectory, must still be accepted as drained, not reported missing."""
+    trap_d = tmp_path / "trap.d"
+    trap_d.mkdir()
+    (trap_d / "stale-subdir.md").mkdir()
+    missing = _missing_shipped_mid_lane_dirs(
+        dirs=[("trap.d", "*.md", False)], root=tmp_path
+    )
+    assert missing == [], (
+        "a directory-shaped glob match must not count as a real document -- "
+        "the on-disk check disagreed with _shipped_mid_lane_documents's own "
+        "is_file() filter and false-positived a genuinely drained directory "
+        "as missing: {}".format(missing)
+    )
 
 
 def test_no_credential_leaks_in_shipped_mid_lane_dirs():
