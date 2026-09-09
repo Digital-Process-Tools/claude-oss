@@ -2865,6 +2865,19 @@ def _fork_refresh(root, repo, session_id=None):
     to name (the caller's own session id was itself unknown), rather than
     passing a literal `"None"` string that would attribute the reading to a
     session that does not exist.
+
+    Self-review finding: `payload.get("session_id")` is read from a JSON
+    document this module does not control the shape of, and a non-string
+    value (an int, a dict, anything `Popen`'s own argv marshalling does not
+    accept) reaching `subprocess.Popen` here raises `TypeError`, which is
+    NOT one of the two exceptions this function already catches -- and
+    unlike every other malformed-input case in this module, that one is not
+    scoped to this field: it kills `gather()`'s whole caller, so a bad
+    `session_id` would take down the ENTIRE status line rather than costing
+    only the channel reading its answer. Checked with `isinstance` here for
+    the same reason `_watch_preset_declared` guards a malformed
+    `.supertool.json`: a value this module cannot trust is treated as
+    absent, never as a crash.
     """
     lock = _lock_path(repo)
     try:
@@ -2881,7 +2894,7 @@ def _fork_refresh(root, repo, session_id=None):
         "--root",
         str(root),
     ]
-    if session_id:
+    if isinstance(session_id, str) and session_id:
         argv.extend(["--session-id", session_id])
     try:
         subprocess.Popen(
@@ -2905,7 +2918,15 @@ def gather(payload, root, now=None):
     # freshly-taken channel reading is stamped with the session that asked
     # for it) and to `channel_status` below (so a reading stamped with a
     # DIFFERENT session's id is never rendered as this session's own).
+    # Self-review finding: a malformed payload could carry a non-string
+    # value here, and `_fork_refresh` would otherwise pass it straight into
+    # `subprocess.Popen`'s argv -- a `TypeError` that function does not
+    # catch and that would crash this whole render, not only the channel
+    # field. Coerced to "absent" at the source, the same treatment this
+    # module already gives any input it cannot trust.
     current_session = (payload or {}).get("session_id")
+    if not isinstance(current_session, str):
+        current_session = None
     config = repo_config(root)
     cache = read_cache(cache_path(config.get("repo")))
     board = board_from_cache(cache, now=now)

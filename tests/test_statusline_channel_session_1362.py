@@ -256,6 +256,27 @@ def test_fork_refresh_the_must_not_fire_control_no_session_id_omits_the_flag(
     assert "--session-id" not in captured["argv"]
 
 
+def test_fork_refresh_a_non_string_session_id_does_not_crash_the_whole_render(
+    tmp_path, monkeypatch
+):
+    """Self-review finding: a malformed statusline payload (e.g. `session_id`
+    arriving as an int or a dict, not a string) must not blow up `Popen`'s
+    argv construction and take the entire render down with it -- that would
+    be strictly worse than the bug this fix closes, which only ever cost one
+    field its answer. Forwarding nothing is the safe fallback, the same shape
+    `_fork_refresh` already uses for a falsy `session_id`."""
+    captured = {}
+
+    class _FakePopen:
+        def __init__(self, argv, **kwargs):
+            captured["argv"] = argv
+
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(statusline.subprocess, "Popen", _FakePopen)
+    statusline._fork_refresh(str(tmp_path), "owner/repo", 123)
+    assert "--session-id" not in captured["argv"]
+
+
 # ------------------------------------------------------------------------ main
 
 
