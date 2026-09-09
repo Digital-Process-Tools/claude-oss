@@ -151,6 +151,13 @@ RELEASE_KEYS = {
 MERGE_METHODS = {"squash", "merge", "rebase"}
 TRIGGER_KEYS = {"merged_prs", "soak_hours"}
 
+#: #1386: the one trigger key in this set that is a boolean, not a count -- the
+#: post-release triage sweep has no meaningful threshold to tune (see
+#: scripts/triage_trigger.py's own docstring), so it is validated separately
+#: below rather than folded into the "expected a number" arm every other key
+#: in this set shares.
+TRIGGER_BOOLEAN_KEYS = {"triage_after_release"}
+
 # #478: whether this repository has granted the loop authority to tag and publish a
 # release without stopping. Per-repository -- CLAUDE.md's governing rule -- because the
 # grant used to live only in a per-machine memory file the skill cannot read and a second
@@ -2405,7 +2412,8 @@ def _validate_release(release):
         if not isinstance(triggers, dict):
             problems.append("release.triggers: expected an object")
         else:
-            for key in sorted(set(triggers) - TRIGGER_KEYS):
+            known_trigger_keys = TRIGGER_KEYS | TRIGGER_BOOLEAN_KEYS
+            for key in sorted(set(triggers) - known_trigger_keys):
                 problems.extend(
                     _unknown_key_problems(
                         key, "release.triggers.{}: unknown key".format(key)
@@ -2416,6 +2424,14 @@ def _validate_release(release):
                 if value is not None and not isinstance(value, int):
                     problems.append(
                         "release.triggers.{}: expected a number, got {!r}".format(
+                            key, value
+                        )
+                    )
+            for key in sorted(TRIGGER_BOOLEAN_KEYS & set(triggers)):
+                value = triggers[key]
+                if value is not None and not isinstance(value, bool):
+                    problems.append(
+                        "release.triggers.{}: expected true or false, got {!r}".format(
                             key, value
                         )
                     )

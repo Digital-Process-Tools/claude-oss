@@ -524,8 +524,20 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Cadence naming the #1155 threshold route now activated for
         # curate_route_threshold. Comfortably under the 23000 B ceiling;
         # ceiling unchanged.
-        22987,
-        23000,
+        # Raised for #1386: 22987 B became 23564 B, past the 23000 B ceiling
+        # by 564 B. The Cadence section's own triage paragraph used to state
+        # that the last-triaged read is enforced but nothing consumes it --
+        # true when written, and the gap #1386 closes: a sub-manager cannot
+        # act on the reading itself (it dies with its own context at the end
+        # of its tick and cannot count ticks or releases across spawns), so
+        # scripts/triage_trigger.py is read by the scheduler instead, at the
+        # `RELEASE: released` handback in commands/tick.md. The paragraph now
+        # points there rather than restating a second copy of when the
+        # trigger fires. Nothing already in the file argued that point, so
+        # nothing was cut to make room; ceiling moved to 25900 B, ~10%
+        # headroom over the new size.
+        23564,
+        25900,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
     # New for #1037: `commands/tick.md` used to inject its own numbered steps 1-6
