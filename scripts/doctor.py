@@ -4715,9 +4715,12 @@ JIT_ENTRY_SKIP = "00-README.md"
 #   tools       tool <TAB> match <TAB> filename <TAB> mode|remind <TAB> require <TAB> forbid <TAB> requires
 #   paths       match <TAB> filename
 #   vocabulary  keyword <TAB> filename <TAB> verdict, one row per keyword (#1372: the
-#               verdict is empty rather than absent for every keyword this plugin
-#               ships, since no GENERIC_WORDS_FILE is configured -- the trailing
-#               column is still there)
+#               verdict is "generic" only when the whole keyword exactly matches a
+#               dictionary token in the builder's word list -- which it consults by
+#               DEFAULT, bundled, even with nothing configured. Every keyword this
+#               plugin ships today emits an empty verdict because each one is
+#               multi-word or an invented compound, not because no such file is
+#               read. See `oss_rules.index_rows()`'s own docstring.)
 #
 # #80's report said the tools columns were `tool, match, mode, require, forbid` -- five,
 # with the filename absent. There are now seven and the filename is the third of them,

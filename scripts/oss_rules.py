@@ -991,13 +991,14 @@ def index_rows(dimension, rules):
                 keyword = keyword.strip()
                 if keyword:
                     # Three columns, not two: `rebuild-tsv.sh` (claude-jit-context
-                    # 0.7.1+) writes `keyword<TAB>file<TAB>verdict`, and the verdict
-                    # is empty rather than absent when the keyword is not in a
-                    # configured `GENERIC_WORDS_FILE` -- the only case this plugin
-                    # ships for, since it configures no such file. Writing two
-                    # columns here made a freshly-scaffolded repo not a fixed point
-                    # of that builder: running it once added the empty column back,
-                    # and the next `/oss:scaffold --apply` removed it again (#1372).
+                    # 0.7.1+) writes `keyword<TAB>file<TAB>verdict`. The verdict is
+                    # empty for every keyword this plugin ships today, but NOT
+                    # because no word list is configured -- see this function's own
+                    # docstring above for the real mechanism and its residual gap.
+                    # Writing two columns here made a freshly-scaffolded repo not a
+                    # fixed point of that builder: running it once added the empty
+                    # column back, and the next `/oss:scaffold --apply` removed it
+                    # again (#1372).
                     rows.append("{}\t{}\t".format(keyword, name))
         elif dimension == "tools":
             tool = _field(body, "tool")
