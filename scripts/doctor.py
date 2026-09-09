@@ -2370,7 +2370,9 @@ _UNSET = object()  # #1370: distinguishes "no install-resolution attempt was
 # from `install_root=None` -- resolution WAS attempted and came back empty.
 
 
-def _launcher_remedy(plugin_root, install_root=_UNSET, windows=None):
+def _launcher_remedy(
+    plugin_root, install_root=_UNSET, install_reason=None, windows=None
+):
     """How to make `oss-workspace` reachable, on the platform this is running on.
 
     **#330 asked the prior question first: is `bin/oss-workspace` installable on
@@ -2432,13 +2434,22 @@ def _launcher_remedy(plugin_root, install_root=_UNSET, windows=None):
     if install_root is _UNSET:
         target = Path(plugin_root) / "bin" / "oss-workspace"
     elif install_root is None:
+        # #1370 self-review finding: `install_reason`, when given, tells the
+        # reader WHY resolution came back empty -- an environment gap
+        # (`plugin_update` unavailable, the manifest unreadable, `OSError`
+        # from the lookup itself) reads identically to "genuinely nothing is
+        # installed" without it, and the two call for different next steps.
+        # Absent (the ordinary case: resolution ran cleanly and found no
+        # recorded install), the sentence below stands alone.
+        cause = " ({})".format(install_reason) if install_reason else ""
         return (
-            "no installed copy of this plugin is on record for this project -- "
-            "naming this process's own checkout would pin the launcher to "
-            "whatever that tree contains next (a maintainer's own clone, a "
-            "feature branch), which is worse than printing no remedy at all. "
-            "Run /plugin install (or /oss:setup, if the plugin is already "
-            "installed) to record a real install, then re-run this check."
+            "no installed copy of this plugin is on record for this project"
+            "{} -- naming this process's own checkout would pin the launcher "
+            "to whatever that tree contains next (a maintainer's own clone, "
+            "a feature branch), which is worse than printing no remedy at "
+            "all. Run /plugin install (or /oss:setup, if the plugin is "
+            "already installed) to record a real install, then re-run this "
+            "check.".format(cause)
         )
     else:
         target = Path(install_root) / "bin" / "oss-workspace"
@@ -2476,19 +2487,46 @@ def check_oss_workspace_launcher(
     copy actually recorded as installed for THIS project") and hands the
     result to `_launcher_remedy` as `install_root`; omitted, `_launcher_remedy`
     falls back to `plugin_root` unchanged (see its own docstring for the
-    three-state shape)."""
+    three-state shape).
+
+    #1370 self-review finding: `install_root is None` collapsed four distinct
+    causes into one identical message -- `plugin_update` missing at import
+    time, this plugin's own manifest unreadable (`plugin_name` returning
+    falsy), `resolved_plugin_root` raising `OSError`, and a clean resolution
+    that simply found no recorded install. The first three are an
+    ENVIRONMENT gap (this diagnostic could not even ask the question); the
+    fourth is the ordinary, answerable "nothing is installed here" state.
+    `install_reason` carries which of the first three applied, if any, so
+    `_launcher_remedy` can say so rather than rendering all four alike.
+    """
     plugin_root = Path(plugin_root or PLUGIN_ROOT)
     install_root = _UNSET
+    install_reason = None
     if project_dir is not None:
         install_root = None
-        if plugin_update is not None:
+        if plugin_update is None:
+            install_reason = "plugin_update could not be imported"
+        else:
             name = plugin_update.plugin_name(plugin_root)
-            if name:
+            if not name:
+                install_reason = (
+                    "this plugin's own manifest could not be read, so its "
+                    "name is unknown"
+                )
+            else:
                 try:
                     install_root = plugin_update.resolved_plugin_root(name, project_dir)
-                except OSError:
+                except OSError as exc:
                     install_root = None
-    remedy = _launcher_remedy(plugin_root, install_root=install_root, windows=windows)
+                    install_reason = "the lookup itself failed ({})".format(
+                        exc.__class__.__name__
+                    )
+    remedy = _launcher_remedy(
+        plugin_root,
+        install_root=install_root,
+        install_reason=install_reason,
+        windows=windows,
+    )
     state, detail = oss_workspace_launcher_state(plugin_root=plugin_root, path=path)
     if state == "matched":
         report(

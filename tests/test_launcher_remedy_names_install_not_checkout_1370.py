@@ -174,6 +174,63 @@ def test_check_says_no_install_could_be_resolved_rather_than_naming_the_checkout
     assert "no installed copy" in message.lower()
 
 
+def test_an_environment_gap_names_the_reason_not_a_generic_absence(
+    tmp_path, monkeypatch
+):
+    """Self-review finding (auditor spawn, class A): `install_root is None`
+    used to collapse four causes (plugin_update missing, an unreadable
+    manifest, a raised OSError, and a genuinely clean resolution finding
+    nothing) into one identical message. When the cause is an ENVIRONMENT
+    gap -- here, this plugin's own manifest cannot be read -- the message
+    must say so rather than reading exactly like the ordinary
+    nothing-installed case."""
+    plugin_root = _plugin_root(tmp_path)
+    # Corrupt this plugin's own manifest so `plugin_update.plugin_name`
+    # returns falsy -- an environment gap, not a clean "nothing installed".
+    (plugin_root / ".claude-plugin" / "plugin.json").write_text(
+        "not json", encoding="utf-8"
+    )
+    project_dir = tmp_path / "some-repo"
+    project_dir.mkdir()
+
+    doctor.check_oss_workspace_launcher(
+        plugin_root=plugin_root,
+        path=str(tmp_path / "empty-path"),
+        project_dir=str(project_dir),
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN"
+    assert "manifest could not be read" in message
+    assert str(plugin_root) not in message
+
+
+def test_a_clean_resolution_finding_nothing_names_no_reason(tmp_path, monkeypatch):
+    """Must-not-fire control paired with the test above: a resolution that
+    ran cleanly and simply found no recorded install (the ordinary case)
+    must NOT print an environment-gap sentence it did not earn."""
+    plugin_root = _plugin_root(tmp_path)
+    project_dir = tmp_path / "some-repo"
+    project_dir.mkdir()
+
+    monkeypatch.setattr(doctor.plugin_update, "plugin_name", lambda root: "oss")
+    monkeypatch.setattr(
+        doctor.plugin_update,
+        "resolved_plugin_root",
+        lambda name, proj, plugins_root=None: None,
+    )
+
+    doctor.check_oss_workspace_launcher(
+        plugin_root=plugin_root,
+        path=str(tmp_path / "empty-path"),
+        project_dir=str(project_dir),
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN"
+    assert "manifest could not be read" not in message
+    assert "could not be imported" not in message
+    assert "lookup itself failed" not in message
+
+
 def test_no_project_dir_at_all_keeps_the_pre_1370_behaviour(tmp_path):
     """Must-not-fire control: a caller that never passes `project_dir` (no
     existing call site outside a test does this any more, but nothing here
