@@ -2304,8 +2304,22 @@ def _sibling_doctor_candidate_is_trusted(candidate):
     -- is unaffected; this closes one specific, attacker-reachable path rather
     than adding a hash or signature scheme this loop has no way to bootstrap
     trust for.
+
+    Compared case-folded (self-review finding): on a case-insensitive but
+    case-preserving filesystem (default macOS APFS, default Windows NTFS),
+    `<repo>/.OSS/statusline.py` is the SAME directory on disk as
+    `<repo>/.oss/statusline.py` even though the two path strings differ, and
+    `scaffold.py` never varies its own literal-lowercase spelling -- but
+    nothing here controls what string the harness's own invocation path (a
+    hook config, a symlink, a future resolver) happens to carry. A
+    case-sensitive comparison would (wrongly) trust the vendored sibling the
+    moment that string happened to spell the directory with any other
+    casing, silently reopening the exact bypass this function exists to
+    close. `.lower()` on both sides removes that dependency entirely rather
+    than assuming today's one invocation path is the only one that will ever
+    exist.
     """
-    return candidate.parent.name != _VENDORED_DIR_NAME
+    return candidate.parent.name.lower() != _VENDORED_DIR_NAME
 
 
 def _installed_plugin_root(project_root, name, plugins_root=None):

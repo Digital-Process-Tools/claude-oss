@@ -63,6 +63,27 @@ def test_sibling_candidate_outside_the_vendored_directory_is_still_trusted(
     assert statusline._doctor_script_path(str(tmp_path)) == sibling
 
 
+def test_vendored_dir_check_is_case_folded(tmp_path):
+    """Self-review finding (reviewer spawn, #1334): the trust check must not
+    depend on the literal casing of the vendored directory name. On a
+    case-insensitive-but-case-preserving filesystem (default macOS APFS,
+    default Windows NTFS), `<repo>/.OSS/statusline.py` is the SAME directory
+    on disk as `<repo>/.oss/statusline.py` even though the strings differ --
+    a case-sensitive comparison would (wrongly) trust the vendored sibling
+    the moment some invocation path spelled the directory with any other
+    casing. Exercised directly against the pure function so it is
+    deterministic regardless of the real filesystem's own case sensitivity."""
+    upper_cased = tmp_path / ".OSS" / "doctor.py"
+    assert not statusline._sibling_doctor_candidate_is_trusted(upper_cased)
+    mixed_case = tmp_path / ".Oss" / "doctor.py"
+    assert not statusline._sibling_doctor_candidate_is_trusted(mixed_case)
+    # Positive control: a directory that merely CONTAINS ".oss" as part of a
+    # longer name, or is unrelated, must still be trusted -- the check is
+    # exact-name-after-casefold, not a substring test.
+    unrelated = tmp_path / "not-dot-oss-really" / "doctor.py"
+    assert statusline._sibling_doctor_candidate_is_trusted(unrelated)
+
+
 def test_vendored_sibling_falls_back_to_the_installed_plugin_copy(
     tmp_path, monkeypatch
 ):
