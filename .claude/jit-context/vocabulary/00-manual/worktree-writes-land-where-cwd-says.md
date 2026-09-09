@@ -17,6 +17,19 @@ very lane assigned to investigate it.
   write.** It is printed on every write op whether or not you ask, and
   it is the cheapest possible confirmation available.
 
+- **It recurred on the retry right after a refusal (#1307).** Same shape,
+  same file, third instance. The call that got refused by the
+  raw-command guard *did* carry `cd <worktree> && ...`; the immediate
+  resend dropped the prefix, on the assumption that cwd still held from
+  a successful call two calls earlier. It landed in the main clone,
+  which was itself checked out to a concurrent session's branch. **A
+  retry is a new call and needs its own `cd`** -- and a refusal is
+  exactly the moment attention is on the refusal rather than on the
+  prefix. Caught only by reading the receipt's `[branch: ...]` line and
+  finding a branch name this session never created; reverted with
+  `git checkout -- <file>` in the main clone before anything else
+  touched it.
+
 - **`cd` and the command joined with `&&` still resolved elsewhere
   (#1078).** `cd <root>/1078 && python3 .../tree_snapshot.py snapshot`
   recorded `"root": "<root>/1042"` -- a sibling lane named in the brief

@@ -123,3 +123,53 @@ on #1318 for the test-isolation fragment.
 - `1299.patch-tag-must-bump-version-sites-too` — `commands/release.md`'s own procedure already
   produces a release commit before the tag moves, and v0.29.1 followed it correctly. The exposure is
   time pressure on a fix-forward, not missing knowledge, and a rule cannot fire on haste.
+
+## 2026-09-09 — 27 fragments, 3 promoted into 1 new rule, 4 merged, 19 filed, 1 declined
+
+The four buckets sum to 27: three fragments feed the one new rule below, four are merged into three
+existing ones, nineteen are declined **as rules** and filed as defect reports instead (eight
+issues, #1343-#1350), and one is declined outright with the reason.
+
+One new rule: `vocabulary/00-manual/self-hosted-plugin-resolution.md` — this repo IS the plugin, so
+the checkout is the authority and `${CLAUDE_PLUGIN_ROOT}` may be several releases behind it.
+Assembled from `1127.plugin-install-cache-severely-behind-checkout`,
+`1324.report-schema-skew-pinned-plugin-cache` and `1334.gate3-checklist-vintage-behind-tree-being-gated`,
+which are three readings of one fact: a stale pinned copy makes a script regress silently, a
+validator answer `UNVALIDATABLE` about a valid payload, and a release gate audit prose older than
+the tree it gates.
+
+Four merges: `paths/00-manual/trap-fragments.md` (`1338.home-path-in-fragments-three-times` — never
+paste an absolute machine path into a fragment; the guard fired three times in one morning and each
+one reddened the default branch), `paths/00-manual/rules-layer-symlinks.md`
+(`1331.rebuild-tsv-writes-a-column-oss-rules-does-not`, plus a widened `match:` so the rule also
+fires on a jit-context index file rather than only on `scripts/oss_rules.py`),
+`vocabulary/00-manual/worktree-writes-land-where-cwd-says.md` (`1307.cwd-reset-lands-write-in-main-clone`
+— a retry right after a refusal is a new call and needs its own `cd`; third instance of #1155's
+shape), and `tools/00-manual/a-write-outside-supertool-meets-no-validator.md`
+(`1333.raw-python-write-in-lane-setup` — a multi-anchor mutation is the second pull toward a
+throwaway patch script, and loses the same validators).
+
+Nineteen fragments were declined as rules **because they are defect reports**, and were filed
+instead as eight issues:
+
+| issue | fragments | subject |
+| --- | --- | --- |
+| #1343 | 5 | `bin/oss-workspace`'s channel-arming block, including an unbound `channel_ready` that kills the launcher outright |
+| #1344 | 2 | two rounds of the same unvalidated-env-var short circuit in `doctor_check_mcp_channel_registration.py` |
+| #1345 | 3 | `doctor_check_statusline_unknowns.py` — the `repo`-missing collapse, and the uncovered `dr?` field |
+| #1346 | 2 | two rounds of `--mark-stale`'s silent no-op and the `--root` IndexError |
+| #1347 | 4 | four guards that cannot report what they could not look at |
+| #1348 | 1 | CLAUDE.md's ownership table missing `trap.d/`, with no test comparing it to `scaffold.OWNED` |
+| #1349 | 1 | a task-notification read as a handback, which ran two sub-managers over one board for an hour |
+| #1350 | 1 | nothing can tell a lane branch held by a live scheduler from one abandoned by a dead session |
+
+**Declined, with the reason.**
+
+- `0.requivo-session-lookup-is-cwd-scoped` — `requivo session list` resolves `.requivo/sessions`
+  under the current working directory, so a `cd` to the path a handoff named hid the session that
+  was actually wanted and produced a confident "it does not exist". Real, and it cost a correction
+  — but it is one incident about a tool outside this repository, and the transferable half ("a tool
+  that resolves relative to cwd answers about somewhere else without saying so") is already
+  `vocabulary/00-manual/worktree-writes-land-where-cwd-says.md`'s subject. Nothing here would fire
+  usefully on any match this repo has. Note the fragment also broke the naming convention: there was
+  no issue being worked on, so it was filed as `0.<slug>.md`.

@@ -30,6 +30,13 @@ wall clock	measuring-ci-cost.md
 runner concurrency	measuring-ci-cost.md	
 queue time	measuring-ci-cost.md	
 flaky rerun	measuring-ci-cost.md	
+CLAUDE_PLUGIN_ROOT	self-hosted-plugin-resolution.md	
+plugin root	self-hosted-plugin-resolution.md	
+pinned root	self-hosted-plugin-resolution.md	
+resolved install	self-hosted-plugin-resolution.md	
+report schema	self-hosted-plugin-resolution.md	
+schema version	self-hosted-plugin-resolution.md	
+checklist skew	self-hosted-plugin-resolution.md	
 vendored	vendored-and-unwired.md	
 vendoring	vendored-and-unwired.md	
 unwired script	vendored-and-unwired.md	
