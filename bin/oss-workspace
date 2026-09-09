@@ -38,9 +38,10 @@
 #     which is exactly how this script failed on its first real use.
 #
 # Also not the default, added by #753 and #810 after the above was written:
-# before the setup diagnostic below, this file checks synchronously whether the
-# oss plugin itself is current (switching the opening prompt to /oss:doctor on
-# a genuine update) and repoints its own ~/.local/bin/oss-workspace pin if it
+# this file checks synchronously whether the oss plugin itself is current
+# (self-review, #1392: it used to switch the opening prompt to /oss:doctor on
+# a genuine update -- it no longer picks a prompt at all, and only still says
+# the version moved) and repoints its own ~/.local/bin/oss-workspace pin if it
 # is stale, and checks whether a SECOND configured MCP server races oss-channel
 # for the same consumer script before arming the flag mentioned above. #1307
 # adds a THIRD check, run before oss-channel's own registration rather than
@@ -1510,8 +1511,10 @@ if [ "$plugin_channel_state" = "single" ]; then
         fi
     fi
     channel_ready=1
-    # Relayed to `scripts/doctor.py`'s own registration check, a few lines
-    # below via `doctor.sh` (#1307 self-review finding): that check asks
+    # Relayed to `scripts/doctor.py`'s own registration check (#1307
+    # self-review finding), now run from inside the session's own /oss:run,
+    # not from this file (#1392 moved the `doctor.sh` invocation there): that
+    # check asks
     # `claude mcp get oss-channel` on its own, independent of this branch,
     # and oss-channel really is not registered here -- correctly. With no
     # relay, it would answer `not-registered` and print its ordinary "run
@@ -1554,10 +1557,11 @@ registered_args=""
 # `mcp_get_status` is captured on the `if` itself (`set -eu`-safe: a command used
 # as an `if` condition is exempt from errexit either way) and exported below
 # alongside the raw output, so `scripts/doctor.py`'s own registration check --
-# `check_mcp_channel_registration`, run a few lines later via `doctor.sh` -- can
-# read this answer instead of shelling out to `claude mcp get` a second time in
-# the same session-open (#629: `claude` is not a cheap binary to start, and this
-# question was being asked twice back to back).
+# `check_mcp_channel_registration`, run from inside the session's own /oss:run
+# rather than from this file (#1392 moved the `doctor.sh` invocation there) --
+# can read this answer instead of shelling out to `claude mcp get` a second
+# time in the same session-open (#629: `claude` is not a cheap binary to
+# start, and this question was being asked twice back to back).
 mcp_get_status=1
 if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
     channel_registered=1
@@ -1774,11 +1778,13 @@ CHANNEL_CENSUS
                  "census check crashed, exit status $census_parse_status)." \
                  "Opening WITHOUT the channel flag." >&2
         else
-            # Relayed to doctor.sh's own check a few lines below (#810 review
-            # finding, the identical shape #629 already fixed for the
-            # registration check above): without this, a launcher-opened
-            # session pays for a real `claude mcp list` twice in one
-            # session-open sequence, seconds apart, for an answer that cannot
+            # Relayed to doctor.sh's own check, run from inside the session's
+            # own /oss:run rather than from this file (#1392 moved the
+            # `doctor.sh` invocation there; #810 review finding, the identical
+            # shape #629 already fixed for the registration check above):
+            # without this, a launcher-opened session pays for a real
+            # `claude mcp list` twice in one session-open sequence, seconds
+            # apart, for an answer that cannot
             # have changed. `census_report` is exactly the shape
             # `channel_consumer_census_state`'s own relay parsing expects,
             # because both sides are the same function.
@@ -1824,23 +1830,28 @@ fi
 # --- plugin identity: did it change since the last session here? (#626) -------
 #
 # `commands/tick.md` step 1 already compares this tick's plugin identity
-# against the last one recorded (#477) -- but only a `/oss:tick` reaches that
-# step. A QA session, a review, or an ordinary working session never does, and
+# against the last one recorded (#477) -- but only the dispatch cadence
+# `/oss:run` falls through to when nothing more urgent is due reaches that
+# step (#1392: `/oss:run` is what every session now opens with, and it may
+# never reach `tick.md`'s own procedure at all on a given launch). A QA
+# session, a review, or an ordinary working session never does either, and
 # those are exactly the sessions that carry a stale environmental picture: an
 # earlier session's command text against a later session's registry. The
-# setup diagnostic just below already runs `scripts/doctor.py` over THIS REPO
-# on every launch, and "oss plugin version X" is one line inside its many
-# findings -- printed only when the overall VERDICT is not `ok`, and a version
-# change is not itself a failure there, so it is routinely swallowed by a
-# healthy VERDICT and never said loudly.
+# `/oss:run` session about to open runs `scripts/doctor.py` over THIS REPO on
+# its own first turn (#1390), and "oss plugin version X" is one line inside
+# its many findings -- printed only when the overall VERDICT is not `ok`, and
+# a version change is not itself a failure there, so it is routinely
+# swallowed by a healthy VERDICT and never said loudly.
 #
 # The prior lives in a file of its own rather than in `<state_file>`, the
 # per-repo path named in `.oss.local.json`: that file will not exist yet on
-# the very first launch after a clone (the branch above sends that session to
-# /oss:setup instead, before any `.oss.json` does), and the plugin's identity
-# is a fact about this MACHINE's install, not about any one repo -- one file
-# serves every repo this launcher opens, the same way the launcher itself is
-# one binary symlinked in front of all of them.
+# the very first launch after a clone (#1392: every launch opens the same
+# `/oss:run`, whether or not `.oss.json` exists yet -- probing and writing one
+# is `/oss:run`'s own first decision now, not a fact this launcher branches
+# on), and the plugin's identity is a fact about this MACHINE's install, not
+# about any one repo -- one file serves every repo this launcher opens, the
+# same way the launcher itself is one binary symlinked in front of all of
+# them.
 #
 # The read stays fast on purpose: `doctor.plugin_identity()` alone -- a
 # manifest read plus a tree digest over the PLUGIN's own checkout -- never the
@@ -1959,8 +1970,9 @@ fi
 # dispatch cadence. A launcher-side copy of either check would be exactly
 # the second copy of a fact this project's governing rule forbids.
 
-# #629: exported only to relay one already-computed answer into the doctor
-# subprocess a few lines above -- never meant to reach the session itself. Left
+# #629: exported only to relay one already-computed answer -- #1392 removed
+# this file's own synchronous `doctor.sh` call, which used to read it a few
+# lines above; never meant to reach the session itself either way. Left
 # exported, a `claude mcp get` answer read at session-open would go on
 # answering an in-session `/oss:doctor` run for the rest of the session, which
 # is precisely the reading-taken-once-and-treated-as-fresh-forever defect this
@@ -1977,9 +1989,12 @@ unset OSS_WORKSPACE_MCP_LIST_CHECKED OSS_WORKSPACE_MCP_LIST_OUTPUT
 # Same reason, same terms, for #1307's own single-plugin-consumer relay
 # (#1343): left exported, `check_mcp_channel_registration`'s in-session
 # `/oss:doctor` would go on reading a launch-time arm decision as though it
-# were still current -- and, unlike the two relays above, this one is ALSO
-# read by `doctor.sh` a few lines above THIS unset, so it must be unset here
-# rather than immediately after the plugin-arm precheck runs.
+# were still current for the rest of the session -- unsetting it here, right
+# before `exec claude`, is what stops that: #1392 removed this file's own
+# synchronous `doctor.sh` call, the relay's one-time consumer, so the value
+# now has no reader left inside this process either way, but staleness is
+# the reason it is not simply left exported for the session's own later
+# `/oss:doctor` runs to find.
 unset OSS_WORKSPACE_CHANNEL_ARM_TARGET
 
 # #1307: which name to arm the channel flag against. `oss-channel` unless the

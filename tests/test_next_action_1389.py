@@ -191,6 +191,45 @@ def test_release_trigger_not_fired_lets_curate_through(tmp_path, monkeypatch):
     assert result["next"] == "curate"
 
 
+# --- self-review: a broken changelog_dir must not silently substitute the ---
+# --- default fragment directory for the release trigger's own soak check ----
+
+
+def test_bad_changelog_dir_blocks_the_release_trigger(tmp_path):
+    """A `changelog_dir` `oss_config.changelog_dir_problem` refuses (a `..`
+    segment, here) must not be silently swapped for the ordinary default
+    directory -- that would let the release trigger's soak condition read
+    fragments from the wrong place with nobody told."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"changelog_dir": "../escape"})
+    result = next_action.decide(root)
+    assert result["state"] == next_action.COULD_NOT_DECIDE
+    assert result["blocked_on"] == "release"
+    assert "changelog_dir" in result["reason"]
+
+
+def test_no_changelog_dir_is_the_ordinary_case_and_does_not_block(
+    tmp_path, monkeypatch
+):
+    """Positive control: the same repo with no `changelog_dir` at all is the
+    documented, ordinary "no fragment practice" state -- it must reach the
+    release trigger, not `could-not-decide`."""
+    root = _git_repo(tmp_path)
+    _write_config(root)
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_NOT_FIRED,
+            "fired": [],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    result = next_action.decide(root)
+    assert result["state"] != next_action.COULD_NOT_DECIDE
+
+
 # --- curate / triage --------------------------------------------------------
 
 
@@ -430,6 +469,98 @@ def test_triage_trigger_could_not_tell_is_could_not_decide(tmp_path, monkeypatch
     result = next_action.decide(root)
     assert result["state"] == next_action.COULD_NOT_DECIDE
     assert result["blocked_on"] == "triage"
+
+
+# --- self-review: an unresolved curate/triage backlog must not loop forever -
+
+
+def _quiet_release_and_triage_trigger(monkeypatch):
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_NOT_FIRED,
+            "fired": [],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    monkeypatch.setattr(
+        next_action.triage_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": next_action.triage_trigger.STATE_NOT_DUE,
+            "detail": "release.triggers.triage_after_release is not enabled",
+        },
+    )
+
+
+def test_an_unchanged_curate_backlog_does_not_repeat_due_forever(tmp_path, monkeypatch):
+    """The must-not-fire-again half: calling `decide()` twice in a row against
+    the identical, unresolved backlog must report `due: curate` only once --
+    the second call must fall through rather than looping."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_release_and_triage_trigger(monkeypatch)
+
+    first = next_action.decide(root)
+    assert first["state"] == next_action.DUE
+    assert first["next"] == "curate"
+
+    second = next_action.decide(root)
+    assert second["next"] != "curate", second
+
+
+def test_a_changed_curate_count_re_arms(tmp_path, monkeypatch):
+    """Positive control: the same repo, but the backlog actually grows between
+    the two calls -- the second call must still fire, proving the fall-through
+    above is keyed to the reading, not to a route that never fires twice."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_release_and_triage_trigger(monkeypatch)
+
+    first = next_action.decide(root)
+    assert first["next"] == "curate"
+
+    (root / "trap.d" / "2.another-lesson.md").write_text("a second lesson\n")
+    second = next_action.decide(root)
+    assert second["state"] == next_action.DUE
+    assert second["next"] == "curate"
+
+
+def test_no_state_file_configured_never_suppresses_curate(tmp_path):
+    """No `state_file` means no receipt can be read or written -- this must
+    fail OPEN (armed, as though never seen), the same direction every other
+    unknown in this module fails, not silently treated as already-handled.
+    Unit-level, at `_route_already_seen` itself: `oss_config.load` derives a
+    `state_file` for almost any real repo (#608), so exercising this through
+    `decide()` end to end would need a repo where derivation itself fails
+    rather than one that simply never set the key."""
+    root = _git_repo(tmp_path)
+    seen, detail = next_action._route_already_seen(root, {}, "curate", "over:1")
+    assert seen is False, detail
+    assert "no state_file" in detail
+
+
+def test_a_broken_receipt_read_also_fails_open(tmp_path):
+    """Positive control: `state_file` IS configured, but points at something
+    `oss_state._last_workspace_route` cannot parse -- still armed, never
+    silently `True`."""
+    root = _git_repo(tmp_path)
+    state_path = root / "oss-watch.json"
+    state_path.write_text("{not json at all", encoding="utf-8")
+    seen, detail = next_action._route_already_seen(
+        root, {"state_file": "oss-watch.json"}, "curate", "over:1"
+    )
+    assert seen is False, detail
 
 
 # --- CLI --------------------------------------------------------------------

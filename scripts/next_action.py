@@ -67,10 +67,20 @@ candidate. That question has its own three states already (`candidates` /
 `none-available` / `could-not-select`) and belongs to the phase that acts on
 this answer, not to the one naming it.
 
-**No writes, no receipts.** This is a read: it does not write `.oss.json`,
-does not run `oss_config.py --probe`, and does not record a workspace-route
-receipt the way `bin/oss-workspace` does for its own routes. Recording "this
-exact due-state was already acted on" is the caller's job.
+**No writes except one, narrow receipt.** This call never writes `.oss.json`
+and never runs `oss_config.py --probe` -- that stays the caller's job, taken
+only once `due: setup` has actually been acted on. It DOES record a
+`workspace_route_check`-shaped receipt (#1064/#1155's own mechanism,
+relocated here) for the label-coverage curate and triage routes only, the
+first time each exact `over` reading is reported due -- self-review found
+that without it, `/oss:run`'s own decide-act-decide-again loop would report
+the identical unresolved backlog `due` forever, which is exactly the
+permanent-divert defect #1390 exists to close, one layer in from where #1064
+originally fixed it for the launcher. `release_trigger` and `triage_trigger`
+need no such receipt: completing either action moves the underlying signal
+itself (a merged-PR delta resets after a real release; a recorded triage
+sweep moves `oss_state.last_triage` past the tag), so both are naturally
+self-resolving without this module remembering anything.
 
 Python 3.9 compatible.
 """
@@ -81,12 +91,14 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gh_which  # noqa: E402
 import oss_config  # noqa: E402
+import oss_state  # noqa: E402
 import release_trigger  # noqa: E402
 import release_version  # noqa: E402
 import triage_trigger  # noqa: E402
@@ -207,6 +219,59 @@ def _default_branch_unreadable(repo_root, config, run=subprocess.run, git_bin=No
     )
 
 
+def _route_already_seen(repo_root, config, route, signature):
+    """Self-review finding (Explore reviewer): the label-coverage curate and
+    triage routes have no completion signal of their own the way
+    `triage_trigger`'s tag-vs-last-sweep comparison does -- an interactive
+    curate pass that does not fully drain `trap.d/` in one sitting, or a
+    triage sweep that does not clear every missing label, leaves the exact
+    same `over` reading behind. Without this check, `/oss:run`'s own loop
+    (decide -> take the step -> decide again) would report `due` on that
+    unchanged reading forever, reintroducing the permanent-divert defect
+    #1390 exists to close, just one layer in from where #1064 originally
+    fixed it for the launcher.
+
+    Same shape as `workspace_routes.main`'s own receipt (#1064/#1155),
+    relocated here because `next_action.py`, not the launcher, is what now
+    makes this decision. Never raises -- any failure to read or write a
+    receipt is announced by returning `False` (never "already seen", the
+    same fail-open direction every other unknown in this module takes) and
+    named in the returned detail rather than silently swallowed."""
+    state_file = config.get("state_file")
+    if not isinstance(state_file, str) or not state_file.strip():
+        return False, "no state_file configured, so no receipt could be read or written"
+    record_path = str(Path(repo_root) / state_file)
+    try:
+        _entry, prior_signature = oss_state._last_workspace_route(record_path, route)
+        check = oss_state.workspace_route_check(route, signature, prior_signature)
+    except Exception as exc:  # noqa: BLE001 -- fail open, name why
+        return False, "the receipt comparison failed ({0}: {1})".format(
+            type(exc).__name__, exc
+        )
+    if not check["armed"]:
+        return True, "unchanged since the receipt already recorded ({0})".format(
+            signature
+        )
+    try:
+        oss_state.append(
+            record_path,
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "next_action.py: recorded a #1155-shaped route receipt",
+            detail={
+                "workspace_route_name": route,
+                "workspace_route_signature": signature,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 -- announced, not raised
+        return (
+            False,
+            "armed ({0}), but the receipt could not be recorded ({1}: {2})".format(
+                check["state"], type(exc).__name__, exc
+            ),
+        )
+    return False, "armed ({0})".format(check["state"])
+
+
 def _routes(repo_root, config, gh=None, run=subprocess.run):
     """One `workspace_routes.decide` call, shared by the curate and triage
     checks below -- each reads its own repo-declared threshold-vs-count
@@ -253,11 +318,33 @@ def decide(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
 
     gh = gh if gh is not None else gh_which.safe_which("gh")
 
+    # Self-review finding: the first cut of this call discarded `_fragment_dir`'s
+    # own `problem` half, so a genuinely misconfigured `changelog_dir` (refused,
+    # unrecognised, a bare `--dir` on a scaffolded gate) fell through to
+    # `release_trigger.compute`'s own default-directory fallback exactly like the
+    # ordinary, no-fragment-practice repo does -- two different facts rendered as
+    # one silent substitution. `release_version.NO_DIRECTORY` alone is the
+    # ordinary case (`commands/setup.md` calls it "not a finding on its own");
+    # every other named problem is real and blocks the same way an unresolved
+    # release-trigger condition already does, a few lines below.
+    fragment_dir, fragment_dir_problem = release_version._fragment_dir(
+        str(repo_root), None, config
+    )
+    if fragment_dir is None and fragment_dir_problem != release_version.NO_DIRECTORY:
+        return _could_not_decide(
+            "changelog_dir could not be resolved ({0}), so whether the release "
+            "trigger's user-visible-soak condition holds is unknown".format(
+                fragment_dir_problem
+            ),
+            "release",
+            evidence={"fragment_dir_problem": fragment_dir_problem},
+        )
+
     rel = release_trigger.compute(
         str(repo_root),
         config=config,
         findings=None,
-        fragment_dir=release_version._fragment_dir(str(repo_root), None, config)[0],
+        fragment_dir=fragment_dir,
         now=now,
     )
     if rel["state"] == release_trigger.STATE_FIRED:
@@ -280,13 +367,23 @@ def decide(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
     curate = routes.get("curate", {"configured": False})
     if curate.get("configured"):
         if curate.get("state") == workspace_routes.OVER:
-            return _due(
-                "curate",
-                "trap.d/ has {0} fragment(s), over curate_route_threshold ({1})".format(
-                    curate.get("count"), curate.get("threshold")
-                ),
-                evidence=curate,
+            curate_signature = "{0}:{1}".format(
+                curate.get("state"), curate.get("count")
             )
+            seen, seen_detail = _route_already_seen(
+                repo_root, config, "curate", curate_signature
+            )
+            if not seen:
+                return _due(
+                    "curate",
+                    "trap.d/ has {0} fragment(s), over curate_route_threshold ({1})".format(
+                        curate.get("count"), curate.get("threshold")
+                    ),
+                    evidence=dict(curate, receipt=seen_detail),
+                )
+            # Unchanged since the last time this exact reading was routed --
+            # fall through rather than re-arming forever on a backlog nobody
+            # has cleared yet (self-review finding, see `_route_already_seen`).
         if curate.get("state") == workspace_routes.COULD_NOT_COUNT:
             return _could_not_decide(
                 "the trap.d/ backlog could not be counted ({0})".format(
@@ -324,11 +421,20 @@ def decide(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
     triage = routes.get("triage", {"configured": False})
     if triage.get("configured"):
         if triage.get("state") == workspace_routes.OVER:
-            return _due(
-                "triage",
-                "{0}".format(triage.get("why")),
-                evidence=triage,
+            triage_signature = "{0}:{1}".format(
+                triage.get("state"), triage.get("count")
             )
+            seen, seen_detail = _route_already_seen(
+                repo_root, config, "triage", triage_signature
+            )
+            if not seen:
+                return _due(
+                    "triage",
+                    "{0}".format(triage.get("why")),
+                    evidence=dict(triage, receipt=seen_detail),
+                )
+            # Unchanged since the last time this exact reading was routed --
+            # see the identical comment on the curate branch above.
         if triage.get("state") == workspace_routes.COULD_NOT_COUNT:
             return _could_not_decide(
                 "the triage backlog could not be counted ({0})".format(
