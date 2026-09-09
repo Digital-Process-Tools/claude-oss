@@ -1812,6 +1812,17 @@ RANKING_BLOCKS = "yes, unconditionally"
 RANKING_FILES_IT = "can ship behind a trap.d fragment"
 RANKING_VERDICTS = (RANKING_BLOCKS, RANKING_FILES_IT)
 
+# #1374: a third, deliberately non-binary answer -- a row whose verdict depends
+# on the instance rather than the class, and states the condition rather than
+# picking a side. Matched by prefix, since the condition itself varies per row
+# and is not a fixed string like the two answers above.
+RANKING_CONDITIONAL_PREFIX = "conditionally"
+
+
+def _ranking_verdict_is_recognised(verdict):
+    return verdict in RANKING_VERDICTS or verdict.startswith(RANKING_CONDITIONAL_PREFIX)
+
+
 # The table gained a second verdict column when release-blocking and embargo were split
 # (#139): they are two questions and they disagree on one row. This file still checks the
 # blocking column, which is what the release trigger joins against; the embargo column and
@@ -1909,21 +1920,33 @@ def test_the_ranking_table_is_findable_and_named():
 
 
 def test_every_ranking_row_states_whether_it_blocks():
-    """Two recognised spellings and no third. A row whose verdict is worded some new
-    way is not a row that does not block -- it is a row nobody ruled on, and it must
-    fail rather than be read as the lenient half.
+    """Two recognised spellings, plus a third for a stated condition (#1374), and
+    nothing else. A row whose verdict is worded some new way is not a row that does
+    not block -- it is a row nobody ruled on, and it must fail rather than be read as
+    the lenient half.
     """
     rows = _ranking_table()
     assert rows is not None
     unruled = [
-        (name, verdict) for name, verdict in rows if verdict not in RANKING_VERDICTS
+        (name, verdict)
+        for name, verdict in rows
+        if not _ranking_verdict_is_recognised(verdict)
     ]
     assert not unruled, (
-        "these ranking rows carry a verdict that is neither {!r} nor {!r}, so nothing "
-        "can tell whether they block: {!r}".format(
-            RANKING_BLOCKS, RANKING_FILES_IT, unruled
+        "these ranking rows carry a verdict that is neither {!r}, {!r}, nor a "
+        "'{}'-prefixed condition, so nothing can tell whether they block: {!r}".format(
+            RANKING_BLOCKS, RANKING_FILES_IT, RANKING_CONDITIONAL_PREFIX, unruled
         )
     )
+
+
+def test_the_ranking_verdict_check_still_fires_on_an_unrecognised_spelling():
+    """Positive control for the #1374 loosening: a verdict that is neither of the
+    two fixed answers nor conditionally-prefixed must still be caught."""
+    assert not _ranking_verdict_is_recognised("maybe")
+    assert _ranking_verdict_is_recognised(RANKING_BLOCKS)
+    assert _ranking_verdict_is_recognised(RANKING_FILES_IT)
+    assert _ranking_verdict_is_recognised("conditionally -- see row")
 
 
 def _trigger_join_mismatch(rows, trigger):
