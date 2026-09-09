@@ -29,28 +29,39 @@ def _string_literal(node):
     return None
 
 
-def _call_candidates(node):
-    """The module name(s) a call node names, if it is an
-    ``importlib.import_module("x")`` or ``__import__("x")`` call with a
-    string-literal first argument -- ``[]`` for anything else, including a
-    computed or non-literal argument, which this closure cannot follow
-    statically and must not guess at."""
-    if not node.args:
-        return []
-    literal = _string_literal(node.args[0])
-    if literal is None:
-        return []
+def _import_call_func(node):
+    """True if ``node``'s callee is the ``importlib.import_module`` or
+    ``__import__`` shape this closure knows how to follow -- independent of
+    whether the argument itself turns out to be a literal. Used to tell
+    "not an import call at all" apart from "an import call with an argument
+    this closure declines to follow" (#1326): both used to render the
+    identical ``[]`` from ``_call_candidates`` alone, with nothing to tell a
+    caller which one actually happened."""
     func = node.func
     if isinstance(func, ast.Name) and func.id == "__import__":
-        return [literal.split(".")[0]]
+        return True
     if (
         isinstance(func, ast.Attribute)
         and func.attr == "import_module"
         and isinstance(func.value, ast.Name)
         and func.value.id == "importlib"
     ):
-        return [literal.split(".")[0]]
-    return []
+        return True
+    return False
+
+
+def _call_candidates(node):
+    """The module name(s) a call node names, if it is an
+    ``importlib.import_module("x")`` or ``__import__("x")`` call with a
+    string-literal first argument -- ``[]`` for anything else, including a
+    computed or non-literal argument, which this closure cannot follow
+    statically and must not guess at."""
+    if not node.args or not _import_call_func(node):
+        return []
+    literal = _string_literal(node.args[0])
+    if literal is None:
+        return []
+    return [literal.split(".")[0]]
 
 
 def local_import_closure(seed_names, scripts_dir):
@@ -66,9 +77,21 @@ def local_import_closure(seed_names, scripts_dir):
     earlier draft of this docstring, and its own predecessor in `tests/
     test_workspace_doctor_route_receipt_1064.py`, said "top-level" and
     that was never actually true of the implementation). Read via
-    ``ast.parse``, so nothing here is executed."""
+    ``ast.parse``, so nothing here is executed.
+
+    Returns ``(seen, unresolved)`` -- ``seen`` is the same reached-module
+    set this function always returned; ``unresolved`` is a sorted list of
+    ``"<module>.py:<lineno>"`` strings, one per ``importlib.import_module``
+    / ``__import__`` call this closure found but declined to follow because
+    its argument was not a string literal (#1326). Both `[]` (nothing to
+    follow) and "declined to follow a real import call" used to render as
+    the identical `[]` return, so a caller reading `seen` alone could not
+    tell a genuinely complete closure from one that silently gave up on a
+    real call it could not resolve -- ``unresolved`` is what lets a caller
+    tell the two apart, rather than trusting completeness it cannot see."""
     available = {p.stem: p for p in scripts_dir.glob("*.py")}
     seen = set()
+    unresolved = []
     queue = list(seed_names)
     while queue:
         name = queue.pop()
@@ -83,9 +106,17 @@ def local_import_closure(seed_names, scripts_dir):
                 candidates = [node.module.split(".")[0]]
             elif isinstance(node, ast.Call):
                 candidates = _call_candidates(node)
+                if not candidates and _import_call_func(node):
+                    unresolved.append("{}.py:{}".format(name, node.lineno))
             else:
                 continue
             for candidate in candidates:
                 if candidate in available and candidate not in seen:
                     queue.append(candidate)
-    return seen
+    # Deduplicated as well as sorted: two distinct declined calls on the
+    # same physical line (`a(x); b(y)`, or one nested inside the other's
+    # arguments) would otherwise render as indistinguishable duplicate
+    # strings -- a reviewer finding on this same round (#1326) -- which is
+    # exactly the "can a caller tell two different things apart" question
+    # this companion list exists to answer.
+    return seen, sorted(set(unresolved))

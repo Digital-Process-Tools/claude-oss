@@ -34,9 +34,10 @@ def test_importlib_import_module_with_a_string_literal_is_followed(tmp_path):
     _write(tmp_path, "seed", "import importlib\nimportlib.import_module('target')\n")
     _write(tmp_path, "target", "x = 1\n")
 
-    reached = import_closure.local_import_closure(["seed"], tmp_path)
+    reached, unresolved = import_closure.local_import_closure(["seed"], tmp_path)
 
     assert reached == {"seed", "target"}
+    assert unresolved == []
 
 
 def test_dunder_import_with_a_string_literal_is_followed(tmp_path):
@@ -45,9 +46,10 @@ def test_dunder_import_with_a_string_literal_is_followed(tmp_path):
     _write(tmp_path, "seed", "__import__('target')\n")
     _write(tmp_path, "target", "x = 1\n")
 
-    reached = import_closure.local_import_closure(["seed"], tmp_path)
+    reached, unresolved = import_closure.local_import_closure(["seed"], tmp_path)
 
     assert reached == {"seed", "target"}
+    assert unresolved == []
 
 
 def test_a_non_literal_importlib_argument_is_not_followed(tmp_path):
@@ -56,7 +58,10 @@ def test_a_non_literal_importlib_argument_is_not_followed(tmp_path):
     though it named `target` would be a guess this closure must not make.
     `target` exists on disk and is never reached, proving the closure
     genuinely evaluated the argument shape rather than following anything
-    reachable by that name."""
+    reachable by that name. #1326: unlike a line that is not an import call
+    at all, this one IS an import call this closure declined to follow --
+    the companion `unresolved` list must say so rather than rendering the
+    identical `[]` either way."""
     _write(
         tmp_path,
         "seed",
@@ -64,9 +69,10 @@ def test_a_non_literal_importlib_argument_is_not_followed(tmp_path):
     )
     _write(tmp_path, "target", "x = 1\n")
 
-    reached = import_closure.local_import_closure(["seed"], tmp_path)
+    reached, unresolved = import_closure.local_import_closure(["seed"], tmp_path)
 
     assert reached == {"seed"}
+    assert unresolved == ["seed.py:3"]
 
 
 def test_static_imports_still_work_alongside_the_new_call_forms(tmp_path):
@@ -75,6 +81,60 @@ def test_static_imports_still_work_alongside_the_new_call_forms(tmp_path):
     _write(tmp_path, "seed", "import target\n")
     _write(tmp_path, "target", "x = 1\n")
 
-    reached = import_closure.local_import_closure(["seed"], tmp_path)
+    reached, unresolved = import_closure.local_import_closure(["seed"], tmp_path)
 
     assert reached == {"seed", "target"}
+    assert unresolved == []
+
+
+def test_unresolved_calls_are_reported_alongside_a_still_complete_reach_1326(tmp_path):
+    """#1326: a module can carry both a resolvable import AND a call this
+    closure cannot follow -- the two must not be conflated. `reached` still
+    names every module a static path actually proves, while `unresolved`
+    separately names the site(s) that could not be verified, the same live
+    shape `scripts/borrowed_authority.py:224` uses
+    (`importlib.import_module(module_name)` on a variable, plus a second
+    unresolved `__import__(other_name)` call, proving more than one site is
+    collected rather than only the first)."""
+    _write(
+        tmp_path,
+        "seed",
+        "import target\n"
+        "import importlib\n"
+        "name = 'other'\n"
+        "importlib.import_module(name)\n"
+        "__import__(name)\n",
+    )
+    _write(tmp_path, "target", "x = 1\n")
+    _write(tmp_path, "other", "x = 1\n")
+
+    reached, unresolved = import_closure.local_import_closure(["seed"], tmp_path)
+
+    assert reached == {"seed", "target"}
+    assert unresolved == ["seed.py:4", "seed.py:5"]
+
+
+def test_two_unresolved_calls_on_the_same_line_are_not_reported_as_duplicates_1326(
+    tmp_path,
+):
+    """Reviewer finding on this same round (#1326): two distinct declined
+    calls that happen to share a physical line must not collapse into
+    indistinguishable duplicate `"seed.py:3"` entries -- a caller could not
+    tell "one call, reported twice by accident" from "two real, separate
+    declined sites" from that shape. `set(...)` before sorting closes it;
+    this only asserts there is exactly one entry for the shared line, not
+    that both calls are individually named (this closure has no column
+    information to tell them apart with)."""
+    _write(
+        tmp_path,
+        "seed",
+        "import importlib\n"
+        "name = 'other'\n"
+        "importlib.import_module(name); __import__(name)\n",
+    )
+    _write(tmp_path, "other", "x = 1\n")
+
+    reached, unresolved = import_closure.local_import_closure(["seed"], tmp_path)
+
+    assert reached == {"seed"}
+    assert unresolved == ["seed.py:3"]

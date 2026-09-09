@@ -63,12 +63,22 @@ DOCTOR_MODE = 0o644
 # and this closure picks it up on the next run with no edit here.
 _SEED_MODULES = ["doctor", "oss_config", "oss_state", "select_issues_rank", "gh_which"]
 
-_REAL_MODULES = sorted(
-    name + ".py"
-    for name in import_closure.local_import_closure(
-        _SEED_MODULES, REPO_ROOT / "scripts"
-    )
+_REACHED_MODULES_1326, _UNRESOLVED_IMPORTS_1326 = import_closure.local_import_closure(
+    _SEED_MODULES, REPO_ROOT / "scripts"
 )
+_REAL_MODULES = sorted(name + ".py" for name in _REACHED_MODULES_1326)
+
+
+def test_the_closure_seeded_here_has_nothing_unresolved():
+    """#1326: see `test_workspace_routes_launcher_1155.py`'s identically-
+    named test for the full argument -- the same closure, the same live
+    dormant instance (`scripts/borrowed_authority.py:224`), and the same
+    reason this must stay empty rather than being trusted silently."""
+    assert _UNRESOLVED_IMPORTS_1326 == [], (
+        "local_import_closure found an import call it could not resolve "
+        "while walking this fixture's own seeds -- _REAL_MODULES may be "
+        "missing a transitively-reached module: " + repr(_UNRESOLVED_IMPORTS_1326)
+    )
 
 
 def _require_shell():

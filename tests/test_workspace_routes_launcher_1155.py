@@ -78,12 +78,29 @@ _SEED_MODULES = [
     "release_version",
     "release_delta",
 ]
-_REAL_MODULES = sorted(
-    name + ".py"
-    for name in import_closure.local_import_closure(
-        _SEED_MODULES, REPO_ROOT / "scripts"
-    )
+_REACHED_MODULES_1326, _UNRESOLVED_IMPORTS_1326 = import_closure.local_import_closure(
+    _SEED_MODULES, REPO_ROOT / "scripts"
 )
+_REAL_MODULES = sorted(name + ".py" for name in _REACHED_MODULES_1326)
+
+
+def test_the_closure_seeded_here_has_nothing_unresolved():
+    """#1326: `local_import_closure` can silently under-report the modules
+    this launcher fixture needs -- a call it declined to follow (a
+    non-literal `importlib.import_module(...)`/`__import__(...)` argument)
+    used to render as the identical `[]` a line with no import call at all
+    also renders. `scripts/borrowed_authority.py:224` is exactly this shape
+    (`importlib.import_module(module_name)` on a variable) and, per #1236,
+    is not reached by any of this fixture's own `_SEED_MODULES` today -- so
+    this must stay empty for as long as that holds, and fail loudly, naming
+    the site, the day a seed's own import graph starts reaching it, rather
+    than silently copying an incomplete `_REAL_MODULES` into the fixture
+    forever."""
+    assert _UNRESOLVED_IMPORTS_1326 == [], (
+        "local_import_closure found an import call it could not resolve "
+        "while walking this fixture's own seeds -- _REAL_MODULES may be "
+        "missing a transitively-reached module: " + repr(_UNRESOLVED_IMPORTS_1326)
+    )
 
 
 def _require_shell():
