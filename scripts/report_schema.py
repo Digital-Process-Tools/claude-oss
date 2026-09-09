@@ -669,14 +669,20 @@ def _walk(value, sub, root, path, errors, rules):
                     _label(path), len(value), sub["maxLength"]
                 )
             )
-        if "minLength" in sub and len(value) < sub["minLength"]:
+        if "minLength" in sub and len(value.strip()) < sub["minLength"]:
             # #1333: mechanism was required but unbounded, so an empty or
             # near-empty string satisfied "type: string" while describing
             # nothing -- the narrow, mechanically reachable half of "no
             # evidence a reviewer actually ran" (see the x-convention entry
             # this does NOT retire: nothing here can see whether a spawn
             # actually happened, only whether the field claims anything at
-            # all).
+            # all). Stripped before counting, self-review finding: raw
+            # len() let a string of 20+ spaces (or tabs, or newlines) pass
+            # this floor while describing exactly as much as the empty
+            # string it was meant to catch. The reported count is the raw
+            # length, not the stripped one, so the message still shows what
+            # was actually typed rather than a number that does not match
+            # what a reader would count.
             errors.append(
                 "{}: {} characters, shorter than the {} minimum -- too short "
                 "to describe what actually ran".format(

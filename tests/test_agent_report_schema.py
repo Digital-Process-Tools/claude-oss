@@ -2610,3 +2610,17 @@ def test_a_claimed_clean_review_with_no_description_of_what_ran_is_refused():
         "Explore and oss:auditor, both spawned against the committed diff"
     )
     assert report_schema.validate(real) == []
+
+
+def test_a_whitespace_only_mechanism_is_refused_too():
+    """Self-review finding: raw `len()` let 20+ spaces (or tabs, or newlines)
+
+    pass the floor while describing exactly as much as the empty string the
+    floor was built to catch -- this is the same gap wearing padding. Fixed
+    by stripping before counting; the reported character count stays the
+    raw one, so the message matches what was actually typed.
+    """
+    padded = _example()
+    padded["review"]["mechanism"] = " " * 25
+    errors = report_schema.validate(padded)
+    assert any("review.mechanism" in error for error in errors), errors
