@@ -823,88 +823,75 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.30.0`, and it was written inside the v0.30.0 release commit.**
+**The marker below names `v0.31.0`, and it was written inside the v0.31.0 release commit.**
 
-**Delta, taken two ways that agree.** The range is `v0.29.1..HEAD`: `git rev-list --count
-v0.29.1..HEAD` returns **34**. `gh pr list --state merged --search "merged:>=2026-09-08T15:06:57Z"`
-(the `v0.29.1` tag's own commit timestamp, converted to UTC) returns **23** merged pull requests --
-`#1301`, `#1308`-`#1309`, `#1315`-`#1323`, `#1331`-`#1332`, `#1335`-`#1338`, `#1340`-`#1342`,
-`#1351`-`#1353`. The eleven-commit gap is direct commits to `main` outside a pull request -- the
-sanctioned logging exception this section's own history uses, plus fix-forward commits for CI
-failures this release's own gate 3 rounds triggered (a malformed trap.d fragment name, redacted
-absolute-path leaks) -- not a disagreement between the two routes. Both numbers are reported rather
-than one being silently preferred.
+**Delta, taken two ways that agree.** The range is `v0.30.0..HEAD` at `492cb1ce`: `git rev-list
+--count v0.30.0..HEAD` returns **13**. `gh-prs:state=merged,merged-since=v0.30.0` returns **11**
+merged pull requests -- `#1355`-`#1358`, `#1360`, `#1363`, `#1366`-`#1368`, `#1371`, `#1377`. The
+two-commit gap is direct pushes carrying no trailing `(#N)`, named as such by the op's own output
+rather than inferred here. Both numbers are reported rather than one being silently preferred.
 
-**Gate 3, two formal rounds, the hard cap, plus one commit that landed after both concluded.**
-Round one (dispatch token `gate3-9ad91e037fb7`, over `v0.29.1..HEAD` at `660b6f31`, 30 commits): 4
-findings, none in a blocking row -- `misreports` (`bin/oss-workspace`'s
-`OSS_WORKSPACE_CHANNEL_ARM_TARGET` never unset, pinning a doctor check `OK` for the rest of a
-session); `unranked`, ranked here as `fails-to-preserve` (`statusline.py`'s `_VENDORED_DIR_NAME`
-and `scaffold.py`'s `OWNED_DIR` carry one fact twice with nothing comparing the copies);
-`misreports` (gate 3's own checklist was three minors behind the tree it was gating, worse than the
-one-minor instance #1328 was written for); `misdirects` (`doctor_check_statusline_unknowns.py`'s
-paste-able remedy has unescaped shell quoting). `gate3_disposition.py --round 1 --verdict findings
---blocking no` returned `stop-tag`, per the rule that round-one findings always stop the tag
-regardless of the blocking column. All four routed to `trap.d/` fragments.
+**One workflow is declared and produced no run on this commit, and that is not a gap.** `changelog`
+is `pull_request`-only, so it gated every pull request in this delta before each merged and simply
+does not re-run at the tag: unrepeated, not unchecked. Gate 1's coverage came from `tests` and
+`CodeQL`, and from a **dispatched full matrix** rather than the push run alone -- this repository
+reduces its push/pull_request matrix and reserves all twelve OS x Python legs for
+`workflow_dispatch` with `full_matrix: true` (#1246), so the push run is never the whole picture
+here. Run `34380226158` on `f07bf240`, 14 legs, `conclusion=success`.
 
-Round two (dispatch token `gate3-r2-68183c5a1a90`, over the identical range re-derived at
-`55ff1269`, 32 commits -- nothing from round one was fixed, since nothing blocked): the auditor
-re-derived independently, reproduced 3 of round one's 4 findings on its own evidence, and found
-**6 new**, two of them `unranked`. The most consequential: `bin/oss-workspace`'s `plural` branch
-carries a comment asserting `channel_ready` is initialised above the whole `if/elif/else` -- false
-about its own file, since the only initialiser sits inside the `else` arm -- so under `set -eu` the
-branch that is supposed to open a session *without* the channel flag instead aborts before `exec
-claude`, opening no session at all. No row in the ranking table names "announces a degraded mode
-and then crashes instead of reaching it", so it was ranked here as `unranked` and filed --
-initially as `#1354`, closed minutes later as a duplicate of `#1343` once a concurrent `/oss:curate`
-run (merged as `#1351`, see below) turned out to have filed the identical finding first from the
-same underlying `trap.d/` fragments this round re-derived independently before either audit round
-knew `#1343` existed. The second `unranked` finding (the `statusline.py`/`scaffold.py` duplicate
-literal from round one) stayed ranked `fails-to-preserve`: round two argued for higher stakes since
-the duplicate is the sole term of an `executes`-class guard, but could not demonstrate a live
-execution path independent of an already-arbitrary `.claude/settings.json` write, so the ranking
-did not change. The remaining five (a `misreports` in `report_schema.py`'s length-mismatch error
-message, a `misreports` in `checklist_skew.py`'s ambiguous version-scrape provenance, a `misreports`
-in the plural-branch test's missing `returncode` positive control, a `misreports`/`fails-to-preserve`
-in `scaffold.py` now overwriting `trap.d/README.md` with `CLAUDE.md`'s ownership table not naming
-it, and a `misreports` in `tree_snapshot.py`'s artifact-exclusion regex matching at any depth)
-routed to `trap.d/` fragments; the `scaffold.py`/`CLAUDE.md` one was already independently filed as
-`#1348` by the same concurrent curate run. `gate3_disposition.py --round 2 --verdict findings
---blocking no` returned `carry-forward-and-proceed`: no finding across either round sits in a
-blocking row, so the rest carry to the next milestone.
+**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-4f2a9c7e1b83`,
+over `v0.30.0..HEAD` at `f07bf240`, 12 commits): 4 findings, none in a blocking row.
+`gate3_disposition.py --round 1 --verdict findings --blocking no` returned `stop-tag`, per the rule
+that round-one findings always stop the tag regardless of the blocking column. **All four were
+defects that had shipped in that same delta**, and three of them had already passed a per-PR review
+and a green CI run: `statusline._trap_count` and `trap_curate.OWNED_README` disagreeing by one
+permanently (16 against 17, so a fully drained `trap.d/` rendered `trap 1` forever with nothing left
+to delete); `OSS_WORKSPACE_MCP_LIST_OUTPUT` read with no sentinel, so a forged variable reported the
+channel consumer `connected` on a machine with no `claude` binary; `bin/oss-workspace`'s own
+`declared-but-not-live` repair composing with the #810 census to disarm the channel flag -- the fix
+reproducing the bug it fixed; and that arm having no test at all. Two of the four were
+**compositions of two commits each, and neither commit's own diff contains the defect**, which is
+the argument for auditing a delta rather than only its parts, restated by measurement. Fixed and
+merged as `#1377` before round two, and filed as `#1376`.
 
-**One commit landed after round two concluded and was not inside either round's audited range:**
-`c01fd10a`, a `/oss:curate` pass (PR `#1351`) merged concurrently by activity outside this release
-session, converting 27 `trap.d/` fragments into one new jit-context rule, four merges into existing
-rules, eight filed issues (`#1343`-`#1350`, several of them the same underlying defects both gate 3
-rounds above had already independently re-derived), and one decline. This was not run through a
-third gate 3 round -- the hard cap was already reached -- but its diff was read directly rather than
-assumed clean: every changed file is under `.claude/jit-context/` or `trap.d/`, no `scripts/`,
-`agents/` or `commands/` file is touched, and the commit's own message records seven guard suites
-run green in that worktree. That is a maintainer's read, not an independent audit round, and is
-named as such rather than folded into either round's own verdict above.
+Round two (dispatch token `gate3-r2-9d13ba60c4f7`, over the range re-derived at `492cb1ce`, 13
+commits, with round one's fixes inside it): the auditor re-derived independently and returned **6
+findings, none in a blocking row**. `gate3_disposition.py --round 2 --verdict findings --blocking
+no` returned `carry-forward-and-proceed`. Five are `misreports`; the sixth arrived `unranked` and
+was ranked **here**, by the maintainer, as `fails-to-preserve` -- a session-open latency and
+duplicate-spawn regression against the relay economy #629 and #810 built, which no existing row
+names. That ranking is a decision on record, not a column read, and the auditor explicitly flagged
+that passing `--blocking no` without it would have been one made silently. All six carry forward as
+`#1378`.
 
-**Cohort freeze: cohort-26 at 7.** Per #1122's rule, this marker must cite a cohort that has
-already finished freezing -- never this release's own not-yet-frozen one -- so the candidate is
-`cohort-26`, frozen at `v0.29.1`'s tag. The state file's own entry records `cohort-26` as
-`measured` at **7**, with two independently-agreeing routes (`cohort_freeze_py: 7`,
-`gh-graphql-label: 7`). Cited cleanly, no discrepancy carried forward.
+**Two of round two's six are defects inside round one's own fix commit.** That is PR #921's shape --
+a fix answering an audit shipping as though already reviewed -- recurring in a release where the
+dispatch brief named that precedent and warned about it explicitly. The rule existed, it was read,
+and it happened anyway. One of the two makes `492cb1ce`'s own commit message false where it claims
+the relay fix landed "on both sides"; the commit cannot be amended and `#1378` is the correction.
+Three of the six sit in `bin/oss-workspace` and the channel census, an area repaired three times in
+thirteen commits.
 
-**The reach probe was NOT re-derived at `v0.30.0`** -- it is still `v0.21.0`'s, measured at
-`c565488`, eleven repositories in the one org it can see and four carrying `.oss.json`. The rest
-of the field readings were not either: the owned-files table, the two installs and the `doctor`
-run are still `v0.17.0`'s, measured at `ad38b93` and now carried through **fourteen** tags
-(`v0.18.0` through `v0.29.1`). `#1127` tracks re-deriving them -- replacing `#815`, which closed at
-`v0.18.0` having tracked only the marker-paragraph fix (#817), never the full pass, and had been
-cited here as the tracker for over eight releases after it stopped being one. A fourteenth release
-disclosing the identical, unmeasured-since-`v0.17.0` gap is one of two things: either the gap is
-genuinely low priority against everything else this loop spends a tick on, or the disclosure is not
-actually driving anyone to close it. Both are worth naming and neither is decided here -- the honest
-content of this paragraph is the count itself, fourteen releases running, not a conclusion drawn
-from it. **The readings themselves live in `docs/release-currency.md`**; this section holds the
-verdict and the marker. Re-derive at each release rather than editing this -- and re-derive it
-INSIDE the release commit, per this section's own stated exception, so a developer lane does not
-have to catch the gap a release later.
+**Cohort freeze: cohort-27 at 12.** Per #1122's rule this marker cites a cohort that has already
+finished freezing, never this release's own -- the freeze runs after the tag and this commit is
+written before it. The state file records `cohort-27` as `measured` at **12** on
+2026-09-09T13:18:41Z, with two independently-agreeing routes (`gh-issues: 12`, `gh-issues-label:
+12`). Cited cleanly, no discrepancy carried forward.
+
+**The reach probe was NOT re-derived at `v0.31.0`** -- it is still `v0.21.0`'s, measured at
+`c565488`, eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of
+the field readings were not either: the owned-files table, the two installs and the `doctor` run are
+still `v0.17.0`'s, measured at `ad38b93` and now carried through **fifteen** tags (`v0.18.0` through
+`v0.30.0`). `#1127` tracks re-deriving them. A fifteenth release disclosing the identical,
+unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low priority
+against everything else this loop spends a tick on, or the disclosure is not actually driving anyone
+to close it. Both are worth naming and neither is decided here -- the honest content of this
+paragraph is the count itself, fifteen releases running, not a conclusion drawn from it. **The
+readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
+marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release
+commit, per this section's own stated exception, so a developer lane does not have to catch the gap
+a release later.
+
 
 **The reach probe, re-derived at `c565488` for `v0.21.0`.** `gh repo list Digital-Process-Tools
 --limit 100` returns eleven repositories **in that one GitHub organisation**, four of which carry

@@ -7,6 +7,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-09-09
+
+### Added
+
+- `doctor` now reports how many live `claude ... oss:tick`-shaped processes are running with
+  their working directory inside this clone, warning when there is more than one (#1350). A tick
+  found the shared clone's `main` already checked out to a branch it had never created, with two
+  other live schedulers sharing the same clone and a green, unmerged pull request invisible to its
+  own board read -- nothing in the loop could tell a sibling scheduler's lane from one abandoned by
+  a dead session. This closes the cheapest of the three candidates the issue names: a live count,
+  derived fresh on every run rather than persisted, so a crashed session can never leave behind a
+  stale record that renders as a live sibling.
+
+- `/oss:doctor` reports whether the watch channel is actually delivering. Every channel check
+  before this one answered a question upstream of delivery -- which name resolves, whether a
+  registration exists, whether its file is present and current, whether two servers race one
+  socket -- so a machine delivering nothing could read `OK` twice and `WARN cosmetic` once, with
+  the consumer census counting a server the harness had already rejected. Two checks are added:
+  `channel MCP connection` reads the transport status `claude mcp list` already prints, and
+  `channel delivery` reports the `channel:health` reading on its own terms rather than only
+  comparing it against the census. A registration is not a consumer, and a consumer is not a
+  subscriber (#1361).
+
+### Fixed
+
+- Confirmed most of #1044's own bug shape -- a lane-fill adjacency check
+  pointed at sibling running lanes instead of the open board, so a
+  truthfully short lane read `no-adjacent` on the strength of a measurement
+  that never looked at the board -- no longer reproduces on the MECHANICAL
+  live dispatch path (`select_issues.py`'s `select()`/`select_fleet()`
+  compose the real, unmocked companion sweep over the open board rather
+  than over sibling lanes, and `group_short_reason` only ever derives
+  `"no-adjacent"` from a group whose state genuinely measured zero
+  candidates). Added a regression fixture (31 open issues, two genuinely
+  adjacent to a dispatched lane's claimed files) pinning that. **Not fully
+  closed**: a real, documented escape hatch remains -- `lane_setup.py
+  --claim --short-reason no-adjacent` never threads a measured candidate
+  count through, and `oss_state.py`'s `--lane-fill` CLI makes that count
+  optional, so a caller using `--short-reason` instead of the mechanical
+  path can still hand-compose and record an unverified `no-adjacent` claim
+  today. Pinned with its own reproduction test; the fix itself needs a
+  design decision in `oss_state.py` and is reported for filing rather than
+  made here.
+
+- `bin/oss-workspace`'s channel-arming block had four composition defects
+  sharing one file: the `plural` branch (two colliding installed-plugin
+  consumers) never initialised `channel_ready`, so `set -eu` killed the
+  launcher with "channel_ready: unbound variable" before it ever reached
+  `exec claude`, contradicting the launcher's own rule that a session with
+  no channel beats no session; the `single` branch armed a plugin-reported
+  server name without ever verifying it via `claude mcp get`, unlike every
+  other arm in the file; and `OSS_WORKSPACE_CHANNEL_ARM_TARGET` was exported
+  but never unset before the session started, so a launch-time reading could
+  keep short-circuiting `/oss:doctor`'s channel-registration check for the
+  life of the session. `scripts/doctor_check_mcp_channel_registration.py`'s
+  own check had a matching gap: any non-empty
+  `OSS_WORKSPACE_CHANNEL_ARM_TARGET` differing from the label under test was
+  rendered as a clean OK with nothing verifying the named server actually
+  resolves. All five are fixed together: `channel_ready` is initialised
+  once before the whole if/elif/else, the `single` arm now verifies its
+  target via `claude mcp get` and falls back to registering `oss-channel`
+  when it does not resolve, the arm-target export is unset before `exec`,
+  and the doctor check now verifies the relayed target the same way before
+  reporting OK (#1343, #1344).
+
+- `doctor_check_statusline_unknowns.py`'s two gate 3 findings (#1345): a
+  `.oss.json` with no `repo` key made the WARN for a missing statusline
+  channel or default-branch reading collapse onto "nobody has asked yet",
+  whose remedy (`--refresh`) cannot itself resolve without `repo` either --
+  now a distinct `repo-missing` cause naming the real fix. And the `/oss:doctor`
+  field (`dr`) had no cause reporting at all: five collapsed causes
+  (no `doctor.py` located, spawn failure, `DOCTOR_TIMEOUT` expiry, a non-zero
+  exit, no `VERDICT:` line) all rendered `dr?` with nothing explaining why --
+  a new check now names that fold honestly (`no-answer`) and distinguishes
+  it from "never asked", "stale" and "an unrecognised verdict shape".
+
+- `statusline.py --mark-stale` used to exit 0 and print nothing whether the board was
+  actually marked stale or `.oss.json`'s `repo` failed to resolve -- both looked identical
+  to a caller reading only the exit code. It now prints a one-line receipt naming which
+  happened. Also fixed: `--root` as the last token on the command line raised `IndexError`
+  for both `--mark-stale` and `--refresh`, now handled by one shared helper (#1346).
+
+- Fixed `scripts/lane_coupling.py`'s import-resolution loop having no
+  exception handling: an `OSError` during the underlying `.is_file()` stat
+  propagated uncaught, which would crash `extract_references` and
+  transitively `doctor.py`'s own exit-0-always contract. Wrapped the same
+  way the sibling literal-candidate loop already was (#1327) (#1347).
+- Fixed `tests/test_content_invariants.py`'s `DRAINABLE_MID_LANE_DIRS`
+  carve-out letting a genuinely drained `trap.d`/`changelog.d` and a broken
+  glob (one that would report zero matches forever, regardless of what is
+  really on disk) render identically. The vacuity check now confirms
+  emptiness independently, with its own `directory.glob(pattern)` call,
+  rather than trusting existence alone (#1347).
+- Documented (no behaviour change): the wrapper-detection sweep's
+  attribute-form blind spot (`module.wrapper([...])` calls are never
+  recognised, only a bare `wrapper([...])`) and the `release_ci_wait.py
+  --require-event` filter's inability to see a dispatched run's own input
+  values -- both confirmed to have no live gap or fix decided today, pinned
+  with a regression test and/or a docstring note so neither is silently
+  rediscovered by a future audit (#1347).
+
+- `trap.d/README.md` is no longer counted as a trap fragment whose name does not parse. `scaffold.py`
+  writes that README and replaces it on every run, so the directory's own instructions were reported
+  as a malformed fragment forever -- by `/oss:curate`'s own census, the status line's trap.d count and
+  `/oss:doctor` alike -- and nothing could clear it, since scaffold is what puts it there. Two guards
+  disagreed about one file: doctor warned it was missing and the fragment-name test refused it once
+  present. Every other unparseable name in the directory is still reported (#1348).
+
+- Fixed `commands/tick.md` step 7 treating a sub-manager's `work-started`
+  task-notification as proof the tick had ended, spawning a second
+  sub-manager over the same board while the first was still running
+  (#1349). A task-notification firing is not the same fact as an agent's
+  turn having ended permanently -- the same spawn can notify more than
+  once. Step 7 now says "keep working" can mean the same sub-manager
+  continuing, and gives the scheduler a concrete check (`ListAgents`, then
+  a `SendMessage` status probe carrying the spawn token) to tell that apart
+  from a genuinely finished sub-manager before spawning a fresh one.
+
+- `bin/oss-workspace` no longer opens a session with no channel consumer at all when an installed
+  plugin declares one that the harness does not start. It declined to register `oss-channel`
+  whenever a plugin *declared* a claude-channel consumer, which is right only while that consumer
+  actually starts; when it does not, the decline and the arming compose to zero consumers with
+  every check upstream still green. The decline is now conditional on a transport status
+  positively read as failed -- never on an answer that could not be obtained, which would recreate
+  the collision the decline exists to avoid (#1361).
+
+- The status line's channel marker no longer reads a repository's own channel as possibly another
+  project's fleet. Attribution required the exported `SUPERTOOL_WATCH_NAME`, which only
+  `bin/oss-workspace` sets, so any session started as a bare `claude` skipped the declaration
+  route entirely -- and `/oss:doctor` warned that the reading "does not attribute to this
+  repository", asking the maintainer to declare `ops.<name>.watch_name` in `.supertool.json` where
+  it was already declared. A single declared name now attributes when it matches either what the
+  process was handed or what the repository derives (#1365).
+
+- `/oss:doctor`'s `clone HEAD` warning says how to act on it. It named the branch and stopped,
+  alone among the report's warnings in offering nothing runnable. Both off-branch arms now name
+  `git checkout <default_branch>`; a branch whose remote ref is gone -- very likely already merged
+  -- also gets `git pull` and a `git branch -d`, which refuses on unmerged commits, while a branch
+  whose remote ref survives is told why returning may not be what you want yet and is never told
+  to discard anything (#1369).
+
+- Three defects that shipped in v0.30.0's own delta, found by the v0.31.0 release audit before the
+  tag moved. The status line counted `trap.d/README.md` as a waiting fragment while `/oss:curate`'s
+  own census did not, so a fully drained `trap.d/` rendered `trap 1` forever with no fragment left to
+  delete. The `OSS_WORKSPACE_MCP_LIST_OUTPUT` relay was read with no sentinel, so a stale or forged
+  environment variable reported the channel consumer `connected` on a machine with no `claude` binary
+  at all. And the channel consumer census counted a plugin-declared consumer the harness never
+  starts, so the launcher's own `declared-but-not-live` repair registered `oss-channel`, was then
+  reported as a collision, and disarmed the channel flag -- reproducing the zero-consumer state it
+  was written to fix (#1372).
+
 ## [0.30.0] - 2026-09-09
 
 ### Added
@@ -10297,7 +10448,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.31.0
 [0.30.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.30.0
 [0.29.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.29.1
 [0.29.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.29.0
