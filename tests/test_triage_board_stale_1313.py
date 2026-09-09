@@ -111,7 +111,7 @@ def test_refresh_alone_is_not_the_same_event_and_does_not_write_stale_after(
     monkeypatch.setattr(statusline, "cache_dir", lambda: cache_home)
     repo_dir = _repo(tmp_path / "repo")
 
-    def _fake_refresh(root, now=None):
+    def _fake_refresh(root, now=None, session_id=None):
         # stand in for the real network-hitting refresh -- writes a plain, non-stale
         # cache document the same shape `refresh()` itself would write.
         path = statusline.cache_path("owner/name")

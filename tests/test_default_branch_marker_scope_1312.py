@@ -131,7 +131,9 @@ def test_the_invariant_check_is_non_vacuous_a_branch_sensitive_variant_fails_it(
 
 
 def _stub_refresh_forge_calls(monkeypatch):
-    monkeypatch.setattr(statusline, "_fork_refresh", lambda root, repo: None)
+    monkeypatch.setattr(
+        statusline, "_fork_refresh", lambda root, repo, session_id=None: None
+    )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
     monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
     monkeypatch.setattr(statusline, "_gh_unlabelled_issue_counts", lambda *a, **k: {})

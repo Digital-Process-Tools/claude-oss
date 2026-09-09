@@ -400,7 +400,9 @@ def test_gather_populates_the_render_stamp_and_the_trap_count(tmp_path, monkeypa
     """
     # Not what this test is about, and a real fork here would launch a detached
     # `gh`-calling subprocess per test run.
-    monkeypatch.setattr(statusline, "_fork_refresh", lambda root, repo: None)
+    monkeypatch.setattr(
+        statusline, "_fork_refresh", lambda root, repo, session_id=None: None
+    )
     (tmp_path / ".oss.json").write_text(
         json.dumps({"repo": "owner/name"}), encoding="utf-8"
     )

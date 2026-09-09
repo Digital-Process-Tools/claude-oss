@@ -201,7 +201,9 @@ def _stub_common(monkeypatch, tmp_path, cache):
     monkeypatch.setattr(statusline, "read_cache", lambda path: cache)
     monkeypatch.setattr(statusline, "repo_config", lambda root: {"repo": "owner/repo"})
     monkeypatch.setattr(statusline, "board_is_due", lambda c, n: False)
-    monkeypatch.setattr(statusline, "_fork_refresh", lambda root, repo: None)
+    monkeypatch.setattr(
+        statusline, "_fork_refresh", lambda root, repo, session_id=None: None
+    )
     monkeypatch.setattr(statusline, "branch_name", lambda root: "main")
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})

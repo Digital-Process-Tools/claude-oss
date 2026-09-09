@@ -184,7 +184,7 @@ def test_mark_stale_root_as_last_argument_does_not_raise(monkeypatch):
 
 
 def test_refresh_root_as_last_argument_does_not_raise(monkeypatch, tmp_path):
-    monkeypatch.setattr(statusline, "refresh", lambda root: None)
+    monkeypatch.setattr(statusline, "refresh", lambda root, session_id=None: None)
     monkeypatch.setattr(statusline, "repo_config", lambda root: {})
     monkeypatch.setattr(
         statusline, "_lock_path", lambda repo: tmp_path / "does-not-exist.lock"
