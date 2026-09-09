@@ -2957,12 +2957,33 @@ def main(argv=None):
         # #1346: the caller reads only the exit code, and this always exited 0
         # whether the board was actually marked stale or `repo` failed to
         # resolve -- the same absence-vs-clean-pass shape this whole plugin is
-        # named after. Print a one-line receipt naming which happened.
+        # named after. Print a one-line receipt naming which happened, and read
+        # `mark_board_stale`'s own return rather than assuming success just
+        # because a repo resolved -- it is silent-on-failure by design (a
+        # cache write can lose a race or hit a read-only filesystem), and this
+        # receipt exists precisely so that silence stops being invisible here.
+        #
+        # `reconfigure` first: the receipt interpolates a repo slug or a
+        # `--root` path into a plain `print()`, and on Windows the console
+        # encodes stdout with its own codepage (typically cp1252) rather than
+        # the source encoding -- a non-ASCII path component would otherwise
+        # raise `UnicodeEncodeError` at the print, after the work it reports
+        # already happened. Same idiom `lane_setup.py`'s CLI entry point uses.
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(errors="backslashreplace")
+            except (AttributeError, ValueError):  # pragma: no cover - very old Python
+                pass
         root = _arg_value(argv, "--root", ".")
         repo = repo_config(root).get("repo")
-        if repo:
-            mark_board_stale(repo)
+        if repo and mark_board_stale(repo):
             print("mark-stale: marked {} stale".format(repo))
+        elif repo:
+            print(
+                "mark-stale: not marked -- writing the stale marker for {} failed".format(
+                    repo
+                )
+            )
         else:
             print(
                 "mark-stale: not marked -- no repo resolved for root {!r}".format(root)
