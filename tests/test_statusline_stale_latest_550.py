@@ -81,7 +81,9 @@ def _rig(monkeypatch, tmp_path, installed_version="0.13.0"):
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "board_is_due", lambda cache, now: False)
-    monkeypatch.setattr(statusline, "_fork_refresh", lambda root, repo: None)
+    monkeypatch.setattr(
+        statusline, "_fork_refresh", lambda root, repo, session_id=None: None
+    )
     monkeypatch.setattr(statusline, "branch_name", lambda root: "main")
     monkeypatch.setattr(statusline, "repo_version", lambda root: installed_version)
     monkeypatch.setattr(

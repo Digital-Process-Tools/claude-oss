@@ -199,7 +199,9 @@ def _rig(monkeypatch, tmp_path, watch_channel=None):
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(statusline, "repo_config", lambda root: config)
     monkeypatch.setattr(statusline, "board_is_due", lambda cache, now: False)
-    monkeypatch.setattr(statusline, "_fork_refresh", lambda root, repo: None)
+    monkeypatch.setattr(
+        statusline, "_fork_refresh", lambda root, repo, session_id=None: None
+    )
     monkeypatch.setattr(statusline, "branch_name", lambda root: "main")
     monkeypatch.setattr(statusline, "repo_version", lambda root: "0.13.0")
     monkeypatch.setattr(
