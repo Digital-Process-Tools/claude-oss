@@ -2927,6 +2927,22 @@ def _ascii_only(stream):
     return False
 
 
+def _arg_value(argv, flag, default):
+    """The token following ``flag`` in ``argv``, or ``default``.
+
+    ``flag`` as the last token on the command line used to raise
+    ``IndexError`` at both of this file's two call sites (#1346) -- each
+    hand-rolled the same broken ``argv[argv.index(flag) + 1]`` independently.
+    One helper, used by both, so a trailing flag with nothing after it falls
+    back to ``default`` instead of crashing.
+    """
+    if flag in argv:
+        i = argv.index(flag)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return default
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--mark-stale" in argv:
@@ -2937,17 +2953,44 @@ def main(argv=None):
         # single call an orchestrating session makes once, at the pass's own end
         # (#1313), rather than relying only on `board_touch.py`'s per-command
         # `PostToolUse` hook to catch every labelling route.
-        root = "."
-        if "--root" in argv:
-            root = argv[argv.index("--root") + 1]
+        #
+        # #1346: the caller reads only the exit code, and this always exited 0
+        # whether the board was actually marked stale or `repo` failed to
+        # resolve -- the same absence-vs-clean-pass shape this whole plugin is
+        # named after. Print a one-line receipt naming which happened, and read
+        # `mark_board_stale`'s own return rather than assuming success just
+        # because a repo resolved -- it is silent-on-failure by design (a
+        # cache write can lose a race or hit a read-only filesystem), and this
+        # receipt exists precisely so that silence stops being invisible here.
+        #
+        # `reconfigure` first: the receipt interpolates a repo slug or a
+        # `--root` path into a plain `print()`, and on Windows the console
+        # encodes stdout with its own codepage (typically cp1252) rather than
+        # the source encoding -- a non-ASCII path component would otherwise
+        # raise `UnicodeEncodeError` at the print, after the work it reports
+        # already happened. Same idiom `lane_setup.py`'s CLI entry point uses.
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(errors="backslashreplace")
+            except (AttributeError, ValueError):  # pragma: no cover - very old Python
+                pass
+        root = _arg_value(argv, "--root", ".")
         repo = repo_config(root).get("repo")
-        if repo:
-            mark_board_stale(repo)
+        if repo and mark_board_stale(repo):
+            print("mark-stale: marked {} stale".format(repo))
+        elif repo:
+            print(
+                "mark-stale: not marked -- writing the stale marker for {} failed".format(
+                    repo
+                )
+            )
+        else:
+            print(
+                "mark-stale: not marked -- no repo resolved for root {!r}".format(root)
+            )
         return 0
     if "--refresh" in argv:
-        root = "."
-        if "--root" in argv:
-            root = argv[argv.index("--root") + 1]
+        root = _arg_value(argv, "--root", ".")
         refresh(root)
         try:
             _lock_path(repo_config(root).get("repo")).unlink()
