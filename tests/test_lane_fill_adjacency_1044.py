@@ -27,6 +27,28 @@ existed on `main` before this issue was picked up. This is the confirming
 regression test #1044 itself allows for: "if your own reproduction shows the
 bug no longer reproduces on current code, say so plainly in the report rather
 than inventing a fix for a bug that is gone."
+
+**Narrower than the module docstring above first claimed (found by this
+lane's own self-review round): the closure is real only for the MECHANICAL
+`select()`/`select_fleet()` -> `group_short_reason` -> `compose_lane_fill`
+path this file exercises.** `check_lane`'s `adjacent=` truthfulness check
+(the third and fourth tests below) is opt-in, not enforced: `oss_state.py`'s
+own `--lane-fill PRIMARY:COUNT:REASON` CLI syntax makes the fourth
+`CANDIDATES` field optional (`_lane_fill_argument`, `scripts/oss_state.py`),
+and `lane_setup.py --claim --short-reason no-adjacent` (a real, documented,
+still-reachable escape hatch alongside `--group-state`, for a lane composed
+some other way than `select_issues.py`'s own grouping -- see
+`skills/manager/phases/dispatch.md`) never threads a measured candidate count
+through at all. A caller using `--short-reason` instead of `--group-state`
+can still hand-compose a `no-adjacent` claim with zero board verification and
+have it recorded as `ok` -- #1044's own bug shape, reproducible today through
+that one remaining path. This file's own tests below prove the guard works
+*when a count is supplied*; they do not, and cannot, prove every caller
+supplies one. See this lane's own pull request / report for the full finding,
+filed rather than fixed here because closing it means either the CLI or
+`oss_state.py`'s own `lane_fill()` (a file outside this lane's own claimed
+set) refusing an unfalsifiable `no-adjacent`/`board-exhausted` claim -- a
+design decision, not a one-line fix.
 """
 
 import sys
@@ -159,12 +181,11 @@ def test_1044_control_a_genuinely_isolated_lead_on_the_same_board_reports_none(
 
 
 def test_1044_no_adjacent_claim_is_refused_when_a_real_candidate_remains():
-    """End-to-end: the truthfulness check #918/#921 wired into
-    `oss_state.py --decision` (`select_issues_rank.check_lane(...,
-    adjacent=...)`) refuses a caller who claims `no-adjacent` while a real
-    adjacent candidate count is handed alongside it -- the exact
-    reproduction #1044 describes (a claimed `no-adjacent` nothing checked
-    against the board) is caught mechanically rather than trusted."""
+    """`select_issues_rank.check_lane(..., adjacent=...)`'s own truthfulness
+    check (#918/#921) refuses a caller who claims `no-adjacent` WHILE ALSO
+    HANDING IT a real adjacent candidate count -- when the caller supplies
+    one. See the two tests below for the gap this leaves: nothing requires
+    a caller to supply one in the first place."""
     check = select_issues_rank.check_lane(range(1), "no-adjacent", adjacent=2)
     assert check["state"] != "ok"
     assert check["state"] == "adjacent-candidate-exists"
@@ -176,3 +197,51 @@ def test_1044_control_no_adjacent_is_accepted_when_truthfully_zero():
     regardless of truth would be as wrong as accepting every one blindly."""
     check = select_issues_rank.check_lane(range(1), "no-adjacent", adjacent=0)
     assert check["state"] == "ok"
+
+
+def test_1044_the_short_reason_escape_hatch_still_reproduces_the_bug_shape(tmp_path):
+    """**Not closed** -- found by this lane's own self-review round (an
+    Explore reviewer spawn), independently confirmed here. The
+    truthfulness check above only fires when a caller supplies `adjacent=`.
+    `oss_state.py`'s own `--lane-fill PRIMARY:COUNT:REASON[:CANDIDATES]`
+    syntax makes the fourth field OPTIONAL (`_lane_fill_argument`), and
+    `lane_setup.py --claim --short-reason no-adjacent` -- a real,
+    documented, still-reachable path alongside `--group-state`, for a lane
+    composed some other way than `select_issues.py`'s own grouping
+    (`skills/manager/phases/dispatch.md`) -- never threads a measured
+    candidate count through `compose_lane_fill` at all (its own rendered
+    token is `PRIMARY:COUNT:REASON`, three fields, always). A caller using
+    that path can still hand-compose and record a `no-adjacent` claim with
+    ZERO board verification -- #1044's own bug shape, reproducible today.
+    This test pins the reproduction so a future fix has a red test to turn
+    green; it is not itself the fix, which needs a design decision (does
+    `--short-reason no-adjacent`/`board-exhausted` require an attached
+    count, or is the escape hatch removed entirely?) in `oss_state.py`, a
+    file outside this lane's own claimed set -- filed, not fixed, here."""
+    import oss_state
+
+    entries = [{"primary": 1, "count": 1, "reason": "no-adjacent"}]
+    result = oss_state.lane_fill(entries, window="demo")
+    # This SHOULD be refused (or at minimum should force the caller to
+    # measure something), the same way an unfalsifiable `board-exhausted`
+    # claim already is when a count contradicts it. Today it is silently
+    # accepted -- recorded exactly as if a real sweep had measured zero.
+    assert result["state"] == "recorded"
+    assert result["lanes"][0]["reason"] == "no-adjacent"
+
+
+def test_1044_control_the_mechanical_group_state_path_cannot_reproduce_it(tmp_path):
+    """Positive control for the test above: the MECHANICAL path this file's
+    first two tests exercise cannot manufacture the same false claim,
+    because `compose_lane_fill`'s `group_short_reason` only ever derives
+    `"no-adjacent"` from a group whose own `state` genuinely is
+    `select_issues_companions.STATE_NONE` -- a real, unmocked sweep result,
+    never an unverified assertion. The gap is specific to the
+    `--short-reason` override, not to the whole mechanism."""
+    assert (
+        lane_setup.group_short_reason(select_issues_companions.STATE_CANDIDATES) is None
+    )
+    assert (
+        lane_setup.group_short_reason(select_issues_companions.STATE_NONE)
+        == "no-adjacent"
+    )
