@@ -177,16 +177,21 @@ by the time step 7 would run. It stays here, unmoved.
    same spawn can notify more than once, and a sub-manager with more work left renders identically,
    at the notification layer, to one that is genuinely done. "Keep working" can mean **the same
    sub-manager continuing**, not always a new spawn: check which is true before spawning a second
-   one. `ListAgents` first — if the sub-manager spawned earlier this tick is still listed as live,
-   it is already continuing and no further action is needed here; do not spawn a second one over the
-   same board. Only when `ListAgents` shows it gone, confirm with one `SendMessage` status probe
-   carrying this tick's spawn token addressed to it and wait one turn for a refusal-to-deliver
-   before concluding it is actually finished and spawning a fresh `oss:sub-manager`. Observed
-   2026-09 (#1349): skipping this check let a `work-started` notification spawn a second
-   sub-manager while the first kept running — both ran concurrently over the same board for about
-   an hour, duplicating cost and nearly dispatching a fix for a pull request another live session
-   already owned, because the same task-id notified again ~50 minutes later with more work done in
-   between.
+   one, using the identical check the `could-not-classify` re-ask above already relies on to tell
+   "still there" from "genuinely gone" — a `SendMessage` refusal, not a separate listing call this
+   session has no tool for. Address one `SendMessage` status probe carrying this tick's spawn token
+   to the sub-manager that just reported `work-started`. Three outcomes, not two: a **refusal**
+   because the agent is genuinely gone means it is actually finished — only then spawn a fresh
+   `oss:sub-manager`, never on the notification alone. A **reply** (more work reported, a status
+   line, or a fresh handback) means it is still live — do nothing further here, it is already
+   continuing, and spawning a second one now would run two sub-managers over the same board at
+   once. Neither a refusal nor a reply arriving before this session must otherwise act is
+   **unresolved, not "gone"** — do not spawn on that silence; arm a short wakeup and re-probe next
+   turn rather than guessing either state. Observed 2026-09 (#1349): skipping this check let a
+   `work-started` notification spawn a second sub-manager while the first kept running — both ran
+   concurrently over the same board for about an hour, duplicating cost and nearly dispatching a
+   fix for a pull request another live session already owned, because the same task-id notified
+   again ~50 minutes later with more work done in between.
 
    **On `paused` (#818), this session does the waiting the sub-manager could not.** It holds the two
    things a `paused` handback names as missing — the channel connection and `ScheduleWakeup` — so wait

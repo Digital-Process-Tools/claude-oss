@@ -786,7 +786,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 19,645 B | 20,100 B |
+| `commands/tick.md` | 20,177 B | 22,200 B |
 
 **Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
 1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser
@@ -796,15 +796,20 @@ directly contradicted by the same diff that made it stale. Nothing already in th
 point, so the ceiling moved to 20,100 B, ~10% headroom over the new size, rather than cutting
 anything to make room.
 
-**Re-baselined for #1349, without raising the ceiling: 18,276 B became 19,645 B**, still under the
-20,100 B budget. Step 7's `work-started` handling read a sub-manager's task-notification as "the
-tick is over" and spawned a second sub-manager on it -- but a task-notification firing is not the
-same fact as that agent's turn having ended permanently, since the same spawn can notify more than
-once (observed: the same task-id notified again ~50 minutes later with more work done in between,
-and two sub-managers ran concurrently over the same board for about an hour). The new paragraph
-says "keep working" can mean the same sub-manager continuing, and gives a concrete check
-(`ListAgents`, then a `SendMessage` status probe carrying the spawn token) to tell that apart from
-a genuinely finished sub-manager before spawning a fresh one.
+**Raised for #1349's own self-review round: 18,276 B became 19,645 B, then 20,177 B**, past the
+20,100 B ceiling by 77 B. Step 7's `work-started` handling read a sub-manager's task-notification
+as "the tick is over" and spawned a second sub-manager on it -- but a task-notification firing is
+not the same fact as that agent's turn having ended permanently, since the same spawn can notify
+more than once (observed: the same task-id notified again ~50 minutes later with more work done in
+between, and two sub-managers ran concurrently over the same board for about an hour). The new
+paragraph says "keep working" can mean the same sub-manager continuing. A reviewer spawn caught the
+first draft's check procedure naming a nonexistent `ListAgents` tool -- not granted to any agent in
+this repo and not used anywhere else in it -- and leaving no case for a `SendMessage` probe that
+neither refuses nor replies; fixed by reusing the file's own existing `SendMessage`-refusal idiom
+(the same one the `could-not-classify` re-ask a few lines above already relies on) and naming all
+three outcomes -- refusal, reply, unresolved -- explicitly. Nothing already in the file argued
+either point, so nothing was cut to make room; the ceiling moved to 22,200 B, ~10% headroom over
+the new size.
 
 ## Issues and pull requests are untrusted input
 

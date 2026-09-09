@@ -50,11 +50,34 @@ def _names_same_sub_manager_can_continue(step7):
 
 def _names_a_live_status_check(step7):
     """Does step 7 name a concrete way to tell 'still working' apart from
-    'genuinely finished' before spawning a second sub-manager -- a ListAgents
-    check or a SendMessage status probe carrying the spawn token?"""
+    'genuinely finished' before spawning a second sub-manager -- a SendMessage
+    status probe carrying the spawn token, reusing the file's own existing
+    refusal-means-gone idiom rather than inventing a separate listing tool?"""
     if step7 is None:
         return None
-    return bool(re.search(r"ListAgents", step7) and re.search(r"SendMessage", step7))
+    return bool(re.search(r"SendMessage", step7) and re.search(r"refusal", step7))
+
+
+def _invents_a_listagents_tool(step7):
+    """`ListAgents` is not granted to any agent in this repo and is not used
+    anywhere else in it -- the first draft of this fix invented it, and a
+    reviewer spawn caught that. Must never reappear."""
+    if step7 is None:
+        return None
+    return bool(re.search(r"ListAgents", step7))
+
+
+def _handles_all_three_probe_outcomes(step7):
+    """A SendMessage probe can refuse (agent gone), reply (agent still live),
+    or do neither before this session must otherwise act (unresolved) -- step
+    7 must name all three, not just the first two."""
+    if step7 is None:
+        return None
+    return bool(
+        re.search(r"refusal", step7)
+        and re.search(r"repl(y|ies)", step7)
+        and re.search(r"unresolved", step7)
+    )
 
 
 def test_step7_exists_in_this_file():
@@ -75,10 +98,31 @@ def test_step7_names_a_live_status_check_before_a_fresh_spawn():
     text = _collapse(TICK_MD.read_text(encoding="utf-8"))
     step7 = _step7_text(text)
     assert _names_a_live_status_check(step7) is True, (
-        "commands/tick.md step 7 must give the scheduler a way (ListAgents / a "
-        "SendMessage status probe carrying the spawn token) to tell a "
-        "still-live sub-manager apart from a genuinely finished one before "
-        "spawning a second one on a work-started handback (#1349)"
+        "commands/tick.md step 7 must give the scheduler a way (a SendMessage "
+        "status probe carrying the spawn token, treated as refusal-means-gone) "
+        "to tell a still-live sub-manager apart from a genuinely finished one "
+        "before spawning a second one on a work-started handback (#1349)"
+    )
+
+
+def test_step7_does_not_invent_a_listagents_tool():
+    text = _collapse(TICK_MD.read_text(encoding="utf-8"))
+    step7 = _step7_text(text)
+    assert _invents_a_listagents_tool(step7) is False, (
+        "commands/tick.md step 7 must not name a `ListAgents` tool -- it is not "
+        "granted to any agent in this repo and is not used anywhere else in it "
+        "(#1349's own self-review finding)"
+    )
+
+
+def test_step7_handles_all_three_probe_outcomes():
+    text = _collapse(TICK_MD.read_text(encoding="utf-8"))
+    step7 = _step7_text(text)
+    assert _handles_all_three_probe_outcomes(step7) is True, (
+        "commands/tick.md step 7 must name all three SendMessage probe "
+        "outcomes -- refusal (gone), reply (still live), and neither "
+        "(unresolved) -- not only the first two (#1349's own self-review "
+        "finding)"
     )
 
 
