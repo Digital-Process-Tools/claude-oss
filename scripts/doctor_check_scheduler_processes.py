@@ -90,18 +90,48 @@ _NEEDLE_A = "claude"
 _NEEDLE_B = "oss:tick"
 
 
+def _decode(data):
+    """Decode subprocess output that may be `bytes` (a real spawn, captured
+    with no `universal_newlines=True`) or already `str` (a test's own fake
+    `run`, which never goes near a real pipe). Never raises: `errors=
+    "replace"` on a fixed `"utf-8"` codec accepts any byte sequence,
+    substituting U+FFFD for whatever it cannot decode, rather than raising
+    `UnicodeDecodeError` -- a `ValueError`, which `except (OSError,
+    subprocess.SubprocessError)` below does not catch.
+
+    #1350 self-review (CI, not the two spawned reviewers): this repository
+    already documents the identical defect class at `check_tool`'s own
+    docstring in `doctor.py` -- `universal_newlines=True` decodes with the
+    RUNNER's locale, and a `ps -eo pid,command` column can legitimately
+    contain a byte that locale cannot decode (an accented process name, a
+    non-ASCII argv value) on any platform, observed on Windows CI here.
+    `check_tool` fixed it by never decoding a probe's output at all, since
+    nothing there reads the text; this module has to read the text, so it
+    decodes itself, deliberately with the one mode that cannot raise.
+    """
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    return data
+
+
 def _run_ps(run, ps_bin):
+    """Returns ``(returncode, stdout_text, stderr_text, exc)`` -- the same
+    4-tuple shape `doctor_check_clone_head.py`'s own `_git_run` uses, for
+    the identical reason: a process that never started must not be
+    confused with an ordinary non-zero exit. ``returncode``/``stdout_text``/
+    ``stderr_text`` are all ``None`` when ``exc`` is set."""
     try:
         done = run(
             [ps_bin, "-eo", "pid,command"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            universal_newlines=True,
             timeout=15,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        return None, None, exc
-    return done.returncode, done, None
+        return None, None, None, exc
+    return done.returncode, _decode(done.stdout), _decode(done.stderr), None
 
 
 def _matching_processes(ps_output):
@@ -147,14 +177,17 @@ def _process_cwd(pid, run):
                 [lsof_bin, "-a", "-d", "cwd", "-p", str(pid), "-Fn"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                universal_newlines=True,
                 timeout=10,
             )
         except (OSError, subprocess.SubprocessError):
             return None
         if done.returncode != 0:
             return None
-        for line in done.stdout.splitlines():
+        # #1350 self-review (CI): same `_decode` reasoning as `_run_ps` above --
+        # no `universal_newlines=True`, so a byte `lsof` prints that the
+        # runner's locale cannot decode never raises `UnicodeDecodeError`
+        # (a `ValueError`, uncaught by the `except` two lines up).
+        for line in _decode(done.stdout).splitlines():
             if line.startswith("n"):
                 return line[1:]
         return None
@@ -172,14 +205,14 @@ def scheduler_process_state(project_dir, run=None):
     ps_bin = gh_which.safe_which("ps")
     if ps_bin is None:
         return "could-not-tell", "ps is not on PATH (expected on Windows)"
-    rc, done, exc = _run_ps(run, ps_bin)
+    rc, stdout_text, stderr_text, exc = _run_ps(run, ps_bin)
     if exc is not None:
         return "could-not-tell", "ps -eo pid,command did not run ({})".format(exc)
     if rc != 0:
         return "could-not-tell", "ps -eo pid,command exited {} -- {}".format(
-            rc, (done.stderr or "").strip()[:200]
+            rc, (stderr_text or "").strip()[:200]
         )
-    matches = _matching_processes(done.stdout or "")
+    matches = _matching_processes(stdout_text or "")
     if not matches:
         return "counted", {"count": 0, "candidates_seen": 0}
 

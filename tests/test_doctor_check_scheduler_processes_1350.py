@@ -162,6 +162,52 @@ def test_unresolvable_cwd_is_warn_could_not_tell_not_ok(tmp_path, monkeypatch):
     assert "could not" in line.lower()
 
 
+# --- CI regression: undecodable bytes in ps output must not crash main() ----
+
+
+def test_decode_never_raises_on_a_byte_the_locale_cannot_decode():
+    """#1350 self-review (CI, not the two spawned reviewers): PR #1356 was red
+    on windows-latest/3.12, one leg, in `test_verdict_says_ok_only_when_
+    nothing_warned` -- doctor.py's own VERDICT line never printed at all,
+    which is the shape of an unhandled exception mid-`main()`, not a WARN.
+    This repository already documents the identical defect class at
+    `check_tool`'s own docstring in doctor.py: `universal_newlines=True`
+    decodes subprocess output with the RUNNER's locale, and a `ps -eo
+    pid,command` column can legitimately contain a byte that locale cannot
+    decode -- raising `UnicodeDecodeError`, a `ValueError`, which `except
+    (OSError, subprocess.SubprocessError)` does not catch. `_decode` is the
+    fix: real spawns no longer pass `universal_newlines=True`, and decoding
+    happens here, with `errors="replace"`, which cannot raise for any byte
+    sequence."""
+    undecodable = b"\xff\xfe123 claude oss:tick\n"
+    result = dcsp._decode(undecodable)
+    assert isinstance(result, str)
+    assert "123 claude oss:tick" in result
+
+
+def test_ps_bytes_stdout_with_an_undecodable_byte_does_not_crash_the_doctor_line(
+    tmp_path, monkeypatch
+):
+    """The end-to-end regression: a real spawn returns `bytes` (no
+    `universal_newlines=True` any more), and one line ps prints is not
+    valid UTF-8. `check_scheduler_processes` -- and therefore `doctor.py`'s
+    whole `main()`, whose one-VERDICT-line contract this call sits inside
+    -- must not raise; it must still print a doctor line for a genuine
+    match sitting right next to the bad byte."""
+    monkeypatch.setattr(dcsp.gh_which, "safe_which", _fake_which_factory({"ps"}))
+    monkeypatch.setattr(dcsp, "_process_cwd", lambda pid, run: str(tmp_path))
+    header = b"  PID COMMAND\n"
+    bad_line = b"\xff\xfe999 some-undecodable-process\n"
+    good_line = "111 claude /oss:tick --foo\n".encode("utf-8")
+
+    def _run(*args, **kwargs):
+        return _FakeDone(0, stdout=header + bad_line + good_line)
+
+    line = _doctor_line(tmp_path, {"clone": str(tmp_path)}, run=_run)
+    assert line.startswith("OK "), line
+    assert "1" in line
+
+
 # --- mixed resolution: some attributed, some unresolvable --------------------
 
 
