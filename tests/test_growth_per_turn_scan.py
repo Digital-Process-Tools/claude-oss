@@ -99,6 +99,41 @@ def test_analyze_growth_is_none_for_a_single_turn_lane(tmp_path):
     assert result["growth_per_turn"] is None
 
 
+def test_analyze_growth_surfaces_unparsed_line_count_not_silently_dropped(tmp_path):
+    """#1327: `analyze_growth` counts `non_blank_lines` and `parsed_records`
+    internally, but before this fix only the "every line failed" branch
+    (`non_blank_lines and parsed_records == 0`) ever consumed that pair --
+    a transcript where MOST lines fail `json.loads` (but at least one
+    succeeds) still rendered `ok: True` with `growth_per_turn` computed
+    only from what parsed, and neither figure reached the returned dict.
+    Two of five lines here are garbage; the other three are valid records
+    forming a real 3-turn lane."""
+    path = tmp_path / "agent-5.jsonl"
+    lines = [
+        "not json at all",
+        json.dumps(_assistant(_usage(cache_read=1000), "2026-08-01T00:00:00Z")),
+        "{also not json",
+        json.dumps(_assistant(_usage(cache_read=2000), "2026-08-01T00:00:00Z")),
+        json.dumps(_assistant(_usage(cache_read=3000), "2026-08-01T00:00:00Z")),
+    ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    result = gp.analyze_growth(path)
+    assert result["ok"] is True
+    assert result["turns"] == 3
+    assert result["unparsed_lines"] == 2, result
+
+
+def test_analyze_growth_reports_zero_unparsed_lines_on_a_clean_transcript(tmp_path):
+    """Positive control for the test above: a transcript where every
+    non-blank line parses must report `unparsed_lines == 0`, not omit the
+    field or leave it ambiguous with the failure case."""
+    path = tmp_path / "agent-6.jsonl"
+    _write_jsonl(path, _lane(1000, 3000, 3, "2026-08-01T00:00:00Z"))
+    result = gp.analyze_growth(path)
+    assert result["ok"] is True
+    assert result["unparsed_lines"] == 0
+
+
 def test_analyze_growth_reports_unreadable_file_distinctly(tmp_path):
     """Must-fire: garbage bytes are a read failure, never a clean zero-growth
     reading -- CLAUDE.md's own defect class, applied to this scan."""
@@ -189,6 +224,22 @@ def test_run_is_could_not_read_when_agent_filter_matches_nothing(tmp_path):
     # Control: same fixture, no filter -> not could-not-read.
     unfiltered = gp.run(roots=[root], agent_filter=None, split_at=SPLIT_AT)
     assert unfiltered["state"] != gp.STATE_COULD_NOT_READ
+
+
+def test_run_sums_unparsed_lines_per_side(tmp_path, capsys):
+    """#1327: `_summarize_side` must sum `unparsed_lines` the same way it
+    already sums `turns_with_unusable_usage`, so a run's report surfaces a
+    side with lots of unparsable transcript lines rather than silently
+    discarding the count analyze_growth already computes per transcript."""
+    root = tmp_path / "root"
+    good = _lane(1000, 3000, 3, "2026-08-01T00:00:00Z")
+    lines = ["garbage line one"] + [json.dumps(r) for r in good] + ["garbage two"]
+    (root).mkdir()
+    (root / "before-1.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_jsonl(root / "after-1.jsonl", _lane(1000, 2000, 3, "2026-08-23T00:00:00Z"))
+    report = gp.run(roots=[root], split_at=SPLIT_AT)
+    assert report["before"]["unparsed_lines"] == 2, report
+    assert report["after"]["unparsed_lines"] == 0, report
 
 
 def test_agent_filter_excludes_other_agents_from_the_population(tmp_path):

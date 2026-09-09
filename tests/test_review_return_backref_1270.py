@@ -105,3 +105,24 @@ def test_found_already_at_a_clause_boundary_is_still_a_backref():
     only the case where a bare word or digit immediately follows it."""
     verdict = _classify("This was found already, in the earlier pass.")
     assert verdict["state"] == "referred-not-stated", verdict
+
+
+def test_reported_above_continuing_into_its_own_clause_is_still_a_backref():
+    """#1327: a genuine back-reference gesture followed by a continuing
+    clause ("reported above in section 2") was swallowed by the same
+    lookahead that correctly refuses "noted above 90%" -- both have a bare
+    word immediately after the direction word, but only one is ordinary
+    English continuing the SAME predicate. Every positive control above
+    ends its gesture on a comma, semicolon or period; none covers a
+    gesture that continues into its own clause. Losing this case is the
+    direction that silently DROPS a finding, which is worse than
+    over-signalling one (the issue's own stated priority)."""
+    verdict = _classify("This was reported above in section 2 of the review.")
+    assert verdict["state"] == "referred-not-stated", verdict
+
+
+def test_noted_previously_in_this_review_is_still_a_backref():
+    """The issue's second worked example of the same continuing-clause
+    shape, with a different verb/direction-word pair."""
+    verdict = _classify("This bug was noted previously in this review.")
+    assert verdict["state"] == "referred-not-stated", verdict

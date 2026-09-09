@@ -186,11 +186,27 @@ _NO_FINDINGS = re.compile(
 # other three words rather than special-casing "already" alone, since the
 # same adjacency-without-a-clause-boundary shape reaches all four, and to
 # digits (the "noted above 90%" shape) rather than letters alone.
+#
+# #1327: that same lookahead also swallowed a genuine gesture that
+# continues into its OWN clause -- "reported above in section 2", "noted
+# previously in this review" -- because a bare word ("in") follows the
+# direction word there too, indistinguishable by the #1270 rule alone from
+# "noted above 90%" continuing the same predicate. The distinguishing case
+# this repo has evidence for is specifically "in": a following locative
+# clause ("in section 2", "in this review") names WHERE the material sits,
+# which is still the back-reference gesture completing itself, not a new
+# predicate about the direction word. So the negative lookahead gets one
+# exception: a direction word followed by whitespace then "in" (word-
+# bounded, so "installed" does not qualify) still counts as closing the
+# gesture. Losing a real back-reference is the direction this repo's own
+# defect class treats as worse than over-signalling one (a finding that is
+# silently lost vs. one over-reported), so the exception is deliberately
+# narrow rather than open to any bare word.
 _BACKREF = re.compile(
     r"\b(?:reported|report|found|listed|list|described|detailed|noted|note|"
     r"mentioned|stated|outlined|flagged|identified|documented|given|shown)"
     r"[ \t]+(?:[\w,'-]+[ \t]+){0,3}(?:above|earlier|previously|already)\b"
-    r"(?![ \t]*[A-Za-z0-9])"
+    r"(?:(?![ \t]*[A-Za-z0-9])|(?=[ \t]+in\b))"
     r"|\bas[ \t]+(?:noted|described|stated|mentioned)\b"
     r"|\b(?:see|per)[ \t]+(?:above|earlier|my[ \t]+\w+[ \t]+above)\b"
     r"|\b(?:above|earlier)[ \t]+(?:findings|analysis|review)\b",

@@ -381,11 +381,13 @@ def extract_references(repo, source_text):
     """``(files, problem)`` -- the sorted, deduplicated repo-relative POSIX
     paths that `source_text` (one test file's own source) statically
     references and that exist on disk under `repo`; `problem` is a
-    `SyntaxError` detail string when the source could not even be parsed,
-    or `None`. A parse failure returns `([], "SyntaxError: ...")`, never a
-    bare `[]` a caller could mistake for "this file references nothing" --
-    the same distinction this module's own docstring names as load-bearing
-    one level up.
+    `SyntaxError` detail string when the source could not even be parsed, an
+    `OSError` detail string (or several, joined) when a glob walk hit one
+    mid-scan (#1327 -- unreadable directory, permission problem, a race),
+    or `None`. A parse failure or a glob-walk `OSError` returns a non-`None`
+    `problem`, never a bare `[]` a caller could mistake for "this file
+    references nothing" -- the same distinction this module's own docstring
+    names as load-bearing one level up.
     """
     try:
         tree = ast.parse(source_text)
@@ -393,6 +395,25 @@ def extract_references(repo, source_text):
         return [], "SyntaxError: {}".format(exc)
     repo = Path(repo)
     found = set()
+    # #1327: an `OSError` mid-glob-walk (an unreadable directory, a
+    # permission problem, a race during a `doctor_check_lane_coupling.py`
+    # scan) used to be indistinguishable from a legitimately empty match --
+    # the catch below folded `OSError` into the same silent `continue` as a
+    # genuine "nothing here" `ValueError`/`NotImplementedError`, so
+    # `problem` was only ever set for a `SyntaxError`. `OSError` is now
+    # collected into `problems` and surfaced through the return value
+    # instead of swallowed; `ValueError`/`NotImplementedError` stay silent,
+    # since those mean the base or pattern was well-formed and simply
+    # matched nothing (a legitimate empty result, not a failed walk). The
+    # literal-candidate and import-resolution loops below deliberately keep
+    # their original broad `(OSError, ValueError)` catch: an over-long or
+    # otherwise unstat-able string is a routine outcome of stray sentence-
+    # shaped literals that are not paths at all (confirmed on this repo's
+    # own suite -- a docstring sentence can raise `OSError: [Errno 63] File
+    # name too long` when stat'd, deep worktree paths make this worse, and
+    # is-this-a-path is exactly what `.is_file()` is being asked here, not
+    # "did a directory walk succeed").
+    problems = []
     literals = _string_literal_candidates(tree) + _joined_path_candidates(tree)
     for literal in literals:
         try:
@@ -420,7 +441,10 @@ def extract_references(repo, source_text):
                 except (OSError, ValueError):
                     continue
                 found.add(rel.as_posix())
-        except (OSError, ValueError, NotImplementedError):
+        except OSError as exc:
+            problems.append("{}: {}".format(type(exc).__name__, exc))
+            continue
+        except (ValueError, NotImplementedError):
             # `NotImplementedError` is `pathlib.Path.glob`/`rglob`'s own
             # reaction to a non-relative pattern (self-review finding,
             # #1245) -- `_glob_call_targets` already refuses a leading `/`
@@ -429,6 +453,8 @@ def extract_references(repo, source_text):
             # this module has not enumerated, so one unresolvable glob in
             # one test file cannot take the whole scan down with it.
             continue
+    if problems:
+        return sorted(found), "; ".join(problems)
     return sorted(found), None
 
 

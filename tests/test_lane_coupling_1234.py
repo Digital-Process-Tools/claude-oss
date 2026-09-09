@@ -260,6 +260,54 @@ def test_extract_references_reports_syntax_error_not_silently_empty(tmp_path):
     assert problem is not None
 
 
+def test_extract_references_reports_oserror_mid_glob_walk_not_silently_empty(
+    tmp_path, monkeypatch
+):
+    """#1327: an `OSError` raised mid-glob-walk (an unreadable directory, a
+    permission problem, a race during a `doctor_check_lane_coupling.py`
+    scan) used to be swallowed by the same `except (OSError, ...)` that
+    correctly refuses a non-relative pattern -- `problem` was only ever
+    set for a `SyntaxError`, so a failed walk was indistinguishable from a
+    glob that legitimately matched nothing. `Path.rglob` is monkeypatched
+    to raise `PermissionError` (an `OSError` subclass) to reproduce this
+    without needing a real unreadable directory, which is not reliably
+    constructible across every CI platform."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "one.py").write_text("x = 1\n", encoding="utf-8")
+    source = (
+        'from pathlib import Path\nfor p in Path("scripts").rglob("*.py"):\n    pass\n'
+    )
+
+    from pathlib import Path as RealPath
+
+    def _boom(self, pattern):
+        raise PermissionError("[Errno 13] Permission denied: 'scripts'")
+
+    monkeypatch.setattr(RealPath, "rglob", _boom)
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert problem is not None, (
+        "an OSError mid-glob-walk must be reported, not indistinguishable "
+        "from a legitimately empty match"
+    )
+    assert "permission" in problem.lower()
+
+
+def test_extract_references_glob_matching_nothing_is_still_the_must_not_fire_control(
+    tmp_path,
+):
+    """Positive control for the test above: a glob that legitimately
+    matches nothing (no OSError, no SyntaxError) must still report
+    `problem is None` -- the fix for the OSError case must not start
+    reporting a problem for an ordinary, clean, empty match."""
+    (tmp_path / "scripts").mkdir()
+    source = (
+        'from pathlib import Path\nfor p in Path("scripts").rglob("*.py"):\n    pass\n'
+    )
+    refs, problem = lane_coupling.extract_references(tmp_path, source)
+    assert refs == []
+    assert problem is None
+
+
 def test_single_lane_test_does_not_span_the_must_not_fire_control(tmp_path):
     _scaffold_two_lane_repo(tmp_path)
     (tmp_path / "tests" / "test_ok.py").write_text(
