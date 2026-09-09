@@ -812,6 +812,53 @@ def _mcp_list_consumer_names(run=None, which=None, env=None):
     return channel_consumer_names(text), None
 
 
+def _drop_dead_plugin_consumers(names, liveness=None):
+    """Drop any `plugin:`-declared consumer the harness positively reports as
+    a FAILED transport (#1372, gate 3 round one for v0.31.0).
+
+    The plugin half of this census reads `.mcp.json` declarations and nothing
+    else, so a consumer a plugin declares and the harness never starts is
+    counted exactly like a live one. #1361's `declared-but-not-live` arm in
+    `bin/oss-workspace` exists precisely for that case: it registers
+    `oss-channel` BECAUSE the declared consumer is dead -- and this census then
+    counted both, answered `collision`, and disarmed the channel flag. That is
+    the zero-consumer state #1361 was filed from, reproduced one layer inside
+    the fix for it, plus an `oss-channel` registration left colliding on every
+    launch afterwards.
+
+    **Only a transport positively read as `failed` is dropped**, the same
+    narrow rule `arm_target_liveness` itself uses and for the same reason: an
+    answer that could not be obtained is not evidence a consumer is dead, and
+    dropping one on that basis would hide a real collision -- the opposite
+    failure, and the worse of the two, since this census is what stops two
+    servers racing one socket. `could-not-ask`, `not-listed` and `connected`
+    all keep the server counted.
+
+    Only `plugin:`-prefixed names are candidates. A `claude mcp list`-visible
+    server is on a `claude mcp` surface and already carries its own status
+    there; this function is about the population that appears on no such
+    surface at all.
+
+    `liveness` is injected for testing and defaults to
+    `arm_target_liveness`, imported inside the function rather than at module
+    scope: `doctor_check_mcp_channel_connection` imports names back out of
+    THIS module, so a module-scope import here is a circular one.
+    """
+    if liveness is None:
+        from doctor_check_mcp_channel_connection import arm_target_liveness
+
+        liveness = arm_target_liveness
+    kept = []
+    for name in names:
+        if not name.startswith("plugin:"):
+            kept.append(name)
+            continue
+        state, _detail = liveness(resolvable_plugin_server_name(name))
+        if state != "failed":
+            kept.append(name)
+    return kept
+
+
 def channel_consumer_census_state(
     run=None, which=None, env=None, plugin_registry_path=None, project_dir=None
 ):
@@ -886,7 +933,7 @@ def channel_consumer_census_state(
                 len(mcp_names), plugin_reason
             )
         )
-    names = list(mcp_names) + list(plugin_names)
+    names = _drop_dead_plugin_consumers(list(mcp_names) + list(plugin_names))
     if len(names) >= 2:
         return "collision", names
     if len(names) == 1:

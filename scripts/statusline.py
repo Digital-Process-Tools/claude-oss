@@ -804,7 +804,20 @@ def _trap_count(root):
 
     Counts `*.md` files not starting with `.`, matching `trap_curate.waiting`'s own
     filter -- `.gitkeep` (and any other dotfile) is excluded by the leading-dot
-    check alone, with no separate name check needed.
+    check alone, with no separate name check needed -- **and excluding the one
+    file `scaffold.py` owns inside that directory**, its README (#1348/#1372).
+
+    That exclusion is a duplicated literal and it is duplicated knowingly, for
+    the reason the paragraph above gives: this module is vendored standalone and
+    cannot import `trap_curate`. So the parity this docstring claims is not
+    enforced by construction, and #1372 is what happens when it is left to the
+    claim alone -- #1348 excluded the README from `trap_curate.waiting` and not
+    from here, and the two counters read 16 and 17 on this repository until a
+    release audit reproduced it. What a maintainer saw: `trap 1` on a fully
+    drained `trap.d/`, with no fragment left to delete that would clear it,
+    while doctor's own trap-queue check said `none waiting` in the same run.
+    `tests/test_gate3_round1_findings_1372.py` compares the two counters
+    directly rather than trusting either docstring.
     """
     path = Path(root) / "trap.d"
     try:
@@ -813,7 +826,11 @@ def _trap_count(root):
         return 0
     except OSError:
         return None
-    return sum(1 for name in names if name.endswith(".md") and not name.startswith("."))
+    return sum(
+        1
+        for name in names
+        if name.endswith(".md") and not name.startswith(".") and name != "README.md"
+    )
 
 
 def _render_stamp(now):

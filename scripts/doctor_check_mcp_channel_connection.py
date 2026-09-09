@@ -138,8 +138,19 @@ def mcp_channel_connection_state(run=None, which=None, env=None):
     # that is absent or empty is not read as an empty listing: this falls
     # through to a real ask, so a launcher that could not run the command and a
     # machine with no consumer never render alike.
+    # #1372 (gate 3 round one, v0.31.0): the sentinel is the guard, not the
+    # value. A first version read OSS_WORKSPACE_MCP_LIST_OUTPUT on its own, so
+    # a stale export left by an earlier session -- or one inherited from an
+    # unrelated parent shell, or forged outright -- answered `connected` on a
+    # machine with no `claude` binary at all. #1344 had already hardened the
+    # sibling relay against exactly that, in those words, one check over; this
+    # one shipped in the same delta without any of the three guards its two
+    # siblings carry. `_CHECKED == "1"` mirrors OSS_WORKSPACE_MCP_CHECKED and
+    # OSS_WORKSPACE_CENSUS_CHECKED; an unset or unrecognised sentinel falls
+    # through to a real ask rather than being trusted or read as an empty
+    # listing.
     relayed = env.get("OSS_WORKSPACE_MCP_LIST_OUTPUT", "")
-    if relayed.strip():
+    if env.get("OSS_WORKSPACE_MCP_LIST_CHECKED") == "1" and relayed.strip():
         return _classify_listing(relayed)
 
     claude_bin = which("claude")
