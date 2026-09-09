@@ -198,21 +198,33 @@ def check_clone_head(project_dir, config, run=None):
         return
     if state == "on-other":
         branch, remote = detail["branch"], detail["remote"]
+        default = config.get("default_branch")
+        # #1367: both arms below used to name the branch and stop. Every other
+        # WARN in the same report carries something the reading agent can
+        # execute, and this repository's own doctor rule says the remedy has to
+        # be runnable rather than only clickable -- a bare statement of which
+        # branch you are on is not even that. The two arms get DIFFERENT
+        # remedies, which is why they stay separate: one branch is finished and
+        # one may not be.
         if remote == "gone":
             doctor.report(
                 "WARN",
                 "clone HEAD: on {} (not {}) -- its remote ref is gone, which very "
                 "likely means the branch's pull request already merged and this "
-                "clone was never moved back".format(
-                    branch, config.get("default_branch")
-                ),
+                "clone was never moved back. Go back: `git checkout {}` then "
+                "`git pull`; the local branch is then deletable with `git branch "
+                "-d {}`, which refuses if it turns out to hold anything "
+                "unmerged.".format(branch, default, default, branch),
             )
             return
         doctor.report(
             "WARN",
-            "clone HEAD: on {} (not {}), remote ref {}".format(
-                branch, config.get("default_branch"), remote
-            ),
+            "clone HEAD: on {} (not {}), remote ref {}. Go back with `git "
+            "checkout {}` once this branch's work is pushed -- its remote ref is "
+            "still there, so it may be a still open pull request or carry "
+            "unmerged commits, and this diagnostic performs no writes and does "
+            "not decide that for you. Nothing here is a reason to discard the "
+            "branch.".format(branch, default, remote, default),
         )
         return
     doctor.report("WARN", "clone HEAD: could not tell -- {}".format(detail))

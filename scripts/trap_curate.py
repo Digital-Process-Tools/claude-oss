@@ -33,6 +33,19 @@ FRAGMENT_RE = re.compile(
 
 DIRNAME = "trap.d"
 
+#: `scaffold.py` owns exactly one file inside `trap.d/` -- the README documenting
+#: what the directory is for -- and replaces it on every run. It is documentation
+#: ABOUT the fragments, never a fragment, so counting it as one reports the
+#: directory's own instructions as a malformed trap forever: a finding no manual
+#: op and no scaffold run can clear, since scaffold is what writes it (#1348).
+#:
+#: Excluded by name deliberately, and the name is the whole exclusion: this is
+#: NOT the "exclude the class, not the instance" case, because the class here is
+#: already `FRAGMENT_RE` and everything outside it is still reported. A second
+#: non-fragment file appearing in this directory should be reported as one, which
+#: is what happens with no further change.
+OWNED_README = "README.md"
+
 
 def _classify(name):
     m = FRAGMENT_RE.match(name)
@@ -78,7 +91,7 @@ def waiting(root):
     fragments = [
         _classify(n)
         for n in sorted(names)
-        if n.endswith(".md") and not n.startswith(".")
+        if n.endswith(".md") and not n.startswith(".") and n != OWNED_README
     ]
     if not fragments:
         return {
