@@ -1,7 +1,8 @@
-"""#1389's own addendum -- `scripts/next_action.py`: one call answering "what
-does this repo need now", composing `oss_config`, `release_trigger` and
-`workspace_routes` rather than leaving the decision to prose a session
-re-derives every time.
+"""#1389's own addendum, ranked rather than arbitrated by #1405 --
+`scripts/next_action.py`: `rank()` composes `oss_config`, `release_trigger`,
+`workspace_routes`, `triage_trigger` and (#1405/#1406) `statusline.
+inbound_reading`, and returns every source's own reading, ordered, rather
+than stopping at the first one.
 
 Every "must not fire" case below is paired with a "must fire" case in the
 same fixture family, per this repo's own rule for a negative assertion.
@@ -75,12 +76,52 @@ def _write_config(root, extra=None):
     return config
 
 
+def _quiet_inbound(monkeypatch, unruled=0, unreviewed=0, measured=True):
+    """The default double for every test below that is not itself testing
+    the inbound candidate: a clean, `not-due` reading, so `rank()`'s other
+    three sources can be exercised in isolation without this call actually
+    shelling out to `gh` (`_inbound_candidate` would otherwise try a real
+    network round trip for every fixture's `"example/example"` repo)."""
+    monkeypatch.setattr(
+        next_action,
+        "_fresh_inbound_reading",
+        lambda repo: {
+            "state": "measured" if measured else "could-not-tell",
+            "unruled_issues": unruled,
+            "unreviewed_prs": unreviewed,
+            "unanswered_comments": None,
+        },
+    )
+
+
+def _not_fired_release(monkeypatch):
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_NOT_FIRED,
+            "fired": [],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+
+
+def _candidate(result, source):
+    """The one candidate named `source` in a `RANKED` result's `candidates`
+    list, or `None` -- test-only convenience, not part of the module."""
+    for entry in result.get("candidates", []):
+        if entry["source"] == source:
+            return entry
+    return None
+
+
 # --- no config -------------------------------------------------------------
 
 
 def test_no_config_and_probeable_repo_is_due_setup(tmp_path):
     root = _git_repo(tmp_path, with_origin=True)
-    result = next_action.decide(root)
+    result = next_action.rank(root)
     assert result["state"] == next_action.DUE
     assert result["next"] == "setup"
 
@@ -89,7 +130,7 @@ def test_no_config_and_no_origin_is_unsafe_not_due_setup(tmp_path):
     """Positive control for the case directly above: the ONLY thing that
     differs is the missing remote, and that alone must flip the verdict."""
     root = _git_repo(tmp_path, with_origin=False)
-    result = next_action.decide(root)
+    result = next_action.rank(root)
     assert result["state"] == next_action.UNSAFE
     assert "remote" in result["reason"]
     assert result["remedy"]
@@ -98,7 +139,7 @@ def test_no_config_and_no_origin_is_unsafe_not_due_setup(tmp_path):
 def test_no_config_and_not_a_git_repo_is_unsafe(tmp_path):
     root = tmp_path / "not-a-repo"
     root.mkdir()
-    result = next_action.decide(root)
+    result = next_action.rank(root)
     assert result["state"] == next_action.UNSAFE
     assert result["remedy"]
 
@@ -109,26 +150,42 @@ def test_no_config_and_not_a_git_repo_is_unsafe(tmp_path):
 def test_unresolvable_default_branch_is_unsafe(tmp_path):
     root = _git_repo(tmp_path)
     _write_config(root, {"default_branch": "does-not-exist"})
-    result = next_action.decide(root)
+    result = next_action.rank(root)
     assert result["state"] == next_action.UNSAFE
     assert "does-not-exist" in result["reason"]
 
 
-def test_resolvable_default_branch_is_not_unsafe(tmp_path):
+def test_resolvable_default_branch_is_not_unsafe(tmp_path, monkeypatch):
     """Positive control: same repo, a real branch name, no other change --
     must not report unsafe."""
     root = _git_repo(tmp_path)
     _write_config(root)
-    result = next_action.decide(root)
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
     assert result["state"] != next_action.UNSAFE
+
+
+# --- unsafe is a refusal, never a candidate ---------------------------------
+
+
+def test_unsafe_never_appears_inside_a_candidates_list(tmp_path):
+    """#1405's own instruction: `unsafe` is a refusal, not a candidate --
+    it must never show up nested inside a `RANKED` payload's own list."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"default_branch": "does-not-exist"})
+    result = next_action.rank(root)
+    assert result["state"] == next_action.UNSAFE
+    assert "candidates" not in result
 
 
 # --- release trigger ------------------------------------------------------
 
 
-def test_release_trigger_fired_is_due_release(tmp_path, monkeypatch):
+def test_release_trigger_fired_is_ranked_due(tmp_path, monkeypatch):
     root = _git_repo(tmp_path)
     _write_config(root)
+    _quiet_inbound(monkeypatch)
     monkeypatch.setattr(
         next_action.release_trigger,
         "compute",
@@ -139,21 +196,24 @@ def test_release_trigger_fired_is_due_release(tmp_path, monkeypatch):
             "conditions": [],
         },
     )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.DUE
-    assert result["next"] == "release"
+    result = next_action.rank(root)
+    assert result["state"] == next_action.RANKED
+    release = _candidate(result, "release")
+    assert release["state"] == next_action.CANDIDATE_DUE
+    assert release["rank"] == 1
 
 
-def test_release_trigger_could_not_tell_blocks_a_lower_priority_curate(
-    tmp_path, monkeypatch
-):
-    """A release trigger that could not be evaluated must block the verdict
-    even though curate would otherwise clearly fire -- the unresolved,
-    higher-precedence check might have been the real answer."""
+def test_release_trigger_could_not_tell_is_listed_never_dropped(tmp_path, monkeypatch):
+    """#1405's second requirement, and the direct replacement for the old
+    blocking behaviour: a release trigger that could not be evaluated must
+    still be LISTED as `could-not-tell` -- and it must NOT prevent curate,
+    which resolves cleanly to `due`, from also appearing. Both are real
+    candidates an agent can see at once."""
     root = _git_repo(tmp_path)
     _write_config(root, {"curate_route_threshold": 0})
     (root / "trap.d").mkdir()
     (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
     monkeypatch.setattr(
         next_action.release_trigger,
         "compute",
@@ -164,131 +224,102 @@ def test_release_trigger_could_not_tell_blocks_a_lower_priority_curate(
             "conditions": [],
         },
     )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.COULD_NOT_DECIDE
-    assert result["blocked_on"] == "release"
+    result = next_action.rank(root)
+    assert result["state"] == next_action.RANKED
+    release = _candidate(result, "release")
+    assert release["state"] == next_action.CANDIDATE_COULD_NOT_TELL
+    curate = _candidate(result, "curate")
+    assert curate is not None
+    assert curate["state"] == next_action.CANDIDATE_DUE
 
 
 def test_release_trigger_not_fired_lets_curate_through(tmp_path, monkeypatch):
     """Positive control for the test above: the only change is the release
-    trigger resolving cleanly to not-fired -- curate must now fire."""
+    trigger resolving cleanly to not-fired -- curate must still fire, and
+    release itself must not be in `candidates` at all (it is `not_due`)."""
     root = _git_repo(tmp_path)
     _write_config(root, {"curate_route_threshold": 0})
     (root / "trap.d").mkdir()
     (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.DUE
-    assert result["next"] == "curate"
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    assert result["state"] == next_action.RANKED
+    assert _candidate(result, "release") is None
+    curate = _candidate(result, "curate")
+    assert curate["state"] == next_action.CANDIDATE_DUE
 
 
 # --- self-review: a broken changelog_dir must not silently substitute the ---
 # --- default fragment directory for the release trigger's own soak check ----
 
 
-def test_bad_changelog_dir_blocks_the_release_trigger(tmp_path):
+def test_bad_changelog_dir_makes_release_could_not_tell(tmp_path, monkeypatch):
     """A `changelog_dir` `oss_config.changelog_dir_problem` refuses (a `..`
     segment, here) must not be silently swapped for the ordinary default
     directory -- that would let the release trigger's soak condition read
     fragments from the wrong place with nobody told."""
     root = _git_repo(tmp_path)
     _write_config(root, {"changelog_dir": "../escape"})
-    result = next_action.decide(root)
-    assert result["state"] == next_action.COULD_NOT_DECIDE
-    assert result["blocked_on"] == "release"
-    assert "changelog_dir" in result["reason"]
+    _quiet_inbound(monkeypatch)
+    result = next_action.rank(root)
+    assert result["state"] == next_action.RANKED
+    release = _candidate(result, "release")
+    assert release["state"] == next_action.CANDIDATE_COULD_NOT_TELL
+    assert "changelog_dir" in release["reason"]
 
 
 def test_no_changelog_dir_is_the_ordinary_case_and_does_not_block(
     tmp_path, monkeypatch
 ):
     """Positive control: the same repo with no `changelog_dir` at all is the
-    documented, ordinary "no fragment practice" state -- it must reach the
-    release trigger, not `could-not-decide`."""
+    documented, ordinary "no fragment practice" state -- it must not become
+    a `could-not-tell` release candidate."""
     root = _git_repo(tmp_path)
     _write_config(root)
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
-    result = next_action.decide(root)
-    assert result["state"] != next_action.COULD_NOT_DECIDE
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    release = _candidate(result, "release")
+    assert release is None  # not-fired, resolved cleanly -> not_due, not a candidate
 
 
 # --- curate / triage --------------------------------------------------------
 
 
-def test_curate_over_threshold_is_due_curate(tmp_path, monkeypatch):
+def test_curate_over_threshold_is_ranked_due(tmp_path, monkeypatch):
     root = _git_repo(tmp_path)
     _write_config(root, {"curate_route_threshold": 0})
     (root / "trap.d").mkdir()
     (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.DUE
-    assert result["next"] == "curate"
-    assert result["evidence"]["count"] == 1
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    curate = _candidate(result, "curate")
+    assert curate["state"] == next_action.CANDIDATE_DUE
+    assert curate["evidence"]["count"] == 1
 
 
 def test_curate_under_threshold_is_not_due(tmp_path, monkeypatch):
     """Positive control: raise the threshold above the same one fragment,
-    nothing else changes -- curate must not fire."""
+    nothing else changes -- curate must not be a candidate and everything
+    resolving cleanly with nothing due is `NOTHING_DUE`."""
     root = _git_repo(tmp_path)
     _write_config(root, {"curate_route_threshold": 100})
     (root / "trap.d").mkdir()
     (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
-    result = next_action.decide(root)
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
     assert result["state"] == next_action.NOTHING_DUE
     assert result["next"] == "dispatch"
 
 
-def test_curate_could_not_count_is_could_not_decide(tmp_path, monkeypatch):
+def test_curate_could_not_count_is_ranked_could_not_tell(tmp_path, monkeypatch):
     root = _git_repo(tmp_path)
     _write_config(root, {"curate_route_threshold": 0})
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
     monkeypatch.setattr(
         next_action.workspace_routes,
         "decide",
@@ -307,24 +338,16 @@ def test_curate_could_not_count_is_could_not_decide(tmp_path, monkeypatch):
             },
         ),
     )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.COULD_NOT_DECIDE
-    assert result["blocked_on"] == "curate"
+    result = next_action.rank(root)
+    curate = _candidate(result, "curate")
+    assert curate["state"] == next_action.CANDIDATE_COULD_NOT_TELL
 
 
-def test_triage_over_threshold_is_due_triage(tmp_path, monkeypatch):
+def test_triage_over_threshold_is_ranked_due(tmp_path, monkeypatch):
     root = _git_repo(tmp_path)
     _write_config(root, {"triage_route_threshold": 0})
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
     monkeypatch.setattr(
         next_action.workspace_routes,
         "decide",
@@ -343,49 +366,33 @@ def test_triage_over_threshold_is_due_triage(tmp_path, monkeypatch):
             },
         ),
     )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.DUE
-    assert result["next"] == "triage"
+    result = next_action.rank(root)
+    triage = _candidate(result, "triage")
+    assert triage["state"] == next_action.CANDIDATE_DUE
 
 
 def test_nothing_configured_and_nothing_fired_is_nothing_due(tmp_path, monkeypatch):
     root = _git_repo(tmp_path)
     _write_config(root)
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
-    result = next_action.decide(root)
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
     assert result["state"] == next_action.NOTHING_DUE
     assert result["next"] == "dispatch"
+    sources = {entry["source"] for entry in result["not_due"]}
+    assert sources == {"inbound", "release", "curate", "triage"}
 
 
 # --- the #1386 triage trigger, landed after this module's own first cut ----
 
 
-def test_triage_trigger_due_is_due_triage_ahead_of_label_coverage(
-    tmp_path, monkeypatch
-):
+def test_triage_trigger_due_is_ranked_ahead_of_label_coverage(tmp_path, monkeypatch):
     """The post-release trigger is checked first: a repo where it fires must
-    route to triage even if the label-coverage route is not even configured."""
+    rank triage as due even if the label-coverage route is not configured."""
     root = _git_repo(tmp_path)
     _write_config(root, {"curate_route_threshold": 100})
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
     monkeypatch.setattr(
         next_action.triage_trigger,
         "compute",
@@ -394,9 +401,9 @@ def test_triage_trigger_due_is_due_triage_ahead_of_label_coverage(
             "detail": "the last recorded triage sweep predates the tag",
         },
     )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.DUE
-    assert result["next"] == "triage"
+    result = next_action.rank(root)
+    triage = _candidate(result, "triage")
+    assert triage["state"] == next_action.CANDIDATE_DUE
 
 
 def test_triage_trigger_not_due_falls_back_to_label_coverage(tmp_path, monkeypatch):
@@ -404,16 +411,8 @@ def test_triage_trigger_not_due_falls_back_to_label_coverage(tmp_path, monkeypat
     instead -- the label-coverage route must still get its turn."""
     root = _git_repo(tmp_path)
     _write_config(root, {"curate_route_threshold": 100, "triage_route_threshold": 0})
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
     monkeypatch.setattr(
         next_action.triage_trigger,
         "compute",
@@ -440,24 +439,16 @@ def test_triage_trigger_not_due_falls_back_to_label_coverage(tmp_path, monkeypat
             },
         ),
     )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.DUE
-    assert result["next"] == "triage"
+    result = next_action.rank(root)
+    triage = _candidate(result, "triage")
+    assert triage["state"] == next_action.CANDIDATE_DUE
 
 
-def test_triage_trigger_could_not_tell_is_could_not_decide(tmp_path, monkeypatch):
+def test_triage_trigger_could_not_tell_is_ranked_could_not_tell(tmp_path, monkeypatch):
     root = _git_repo(tmp_path)
     _write_config(root)
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
     monkeypatch.setattr(
         next_action.triage_trigger,
         "compute",
@@ -466,25 +457,15 @@ def test_triage_trigger_could_not_tell_is_could_not_decide(tmp_path, monkeypatch
             "detail": "could not read the commit date of tag",
         },
     )
-    result = next_action.decide(root)
-    assert result["state"] == next_action.COULD_NOT_DECIDE
-    assert result["blocked_on"] == "triage"
+    result = next_action.rank(root)
+    triage = _candidate(result, "triage")
+    assert triage["state"] == next_action.CANDIDATE_COULD_NOT_TELL
 
 
 # --- self-review: an unresolved curate/triage backlog must not loop forever -
 
 
-def _quiet_release_and_triage_trigger(monkeypatch):
-    monkeypatch.setattr(
-        next_action.release_trigger,
-        "compute",
-        lambda *a, **k: {
-            "state": release_trigger.STATE_NOT_FIRED,
-            "fired": [],
-            "unevaluated": [],
-            "conditions": [],
-        },
-    )
+def _quiet_triage_trigger(monkeypatch):
     monkeypatch.setattr(
         next_action.triage_trigger,
         "compute",
@@ -496,23 +477,24 @@ def _quiet_release_and_triage_trigger(monkeypatch):
 
 
 def test_an_unchanged_curate_backlog_does_not_repeat_due_forever(tmp_path, monkeypatch):
-    """The must-not-fire-again half: calling `decide()` twice in a row against
-    the identical, unresolved backlog must report `due: curate` only once --
-    the second call must fall through rather than looping."""
+    """The must-not-fire-again half: calling `rank()` twice in a row against
+    the identical, unresolved backlog must report curate as `due` only
+    once -- the second call must fall through rather than looping."""
     root = _git_repo(tmp_path)
     _write_config(
         root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
     )
     (root / "trap.d").mkdir()
     (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
-    _quiet_release_and_triage_trigger(monkeypatch)
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
 
-    first = next_action.decide(root)
-    assert first["state"] == next_action.DUE
-    assert first["next"] == "curate"
+    first = next_action.rank(root)
+    assert _candidate(first, "curate")["state"] == next_action.CANDIDATE_DUE
 
-    second = next_action.decide(root)
-    assert second["next"] != "curate", second
+    second = next_action.rank(root)
+    assert _candidate(second, "curate") is None, second
 
 
 def test_a_changed_curate_count_re_arms(tmp_path, monkeypatch):
@@ -525,25 +507,22 @@ def test_a_changed_curate_count_re_arms(tmp_path, monkeypatch):
     )
     (root / "trap.d").mkdir()
     (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
-    _quiet_release_and_triage_trigger(monkeypatch)
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
 
-    first = next_action.decide(root)
-    assert first["next"] == "curate"
+    first = next_action.rank(root)
+    assert _candidate(first, "curate")["state"] == next_action.CANDIDATE_DUE
 
     (root / "trap.d" / "2.another-lesson.md").write_text("a second lesson\n")
-    second = next_action.decide(root)
-    assert second["state"] == next_action.DUE
-    assert second["next"] == "curate"
+    second = next_action.rank(root)
+    assert _candidate(second, "curate")["state"] == next_action.CANDIDATE_DUE
 
 
 def test_no_state_file_configured_never_suppresses_curate(tmp_path):
     """No `state_file` means no receipt can be read or written -- this must
     fail OPEN (armed, as though never seen), the same direction every other
-    unknown in this module fails, not silently treated as already-handled.
-    Unit-level, at `_route_already_seen` itself: `oss_config.load` derives a
-    `state_file` for almost any real repo (#608), so exercising this through
-    `decide()` end to end would need a repo where derivation itself fails
-    rather than one that simply never set the key."""
+    unknown in this module fails, not silently treated as already-handled."""
     root = _git_repo(tmp_path)
     seen, detail = next_action._route_already_seen(root, {}, "curate", "over:1")
     assert seen is False, detail
@@ -561,6 +540,122 @@ def test_a_broken_receipt_read_also_fails_open(tmp_path):
         root, {"state_file": "oss-watch.json"}, "curate", "over:1"
     )
     assert seen is False, detail
+
+
+# --- inbound (#1405/#1406) ---------------------------------------------------
+
+
+def test_inbound_pending_is_ranked_first_by_default(tmp_path, monkeypatch):
+    """The composition gap #1405 names: an outside issue or pull request
+    still open must appear as a real candidate, and `DEFAULT_ORDER` puts it
+    ahead of the other three."""
+    root = _git_repo(tmp_path)
+    _write_config(root)
+    _quiet_inbound(monkeypatch, unruled=2, unreviewed=1)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    assert result["state"] == next_action.RANKED
+    inbound = _candidate(result, "inbound")
+    assert inbound["state"] == next_action.CANDIDATE_DUE
+    assert inbound["rank"] == 1
+    assert "2 outside issue" in inbound["reason"]
+    assert "1 outside pull request" in inbound["reason"]
+
+
+def test_no_outside_work_is_not_due_positive_control(tmp_path, monkeypatch):
+    """Positive control for the test above: zero and zero, everything else
+    identical -- inbound must not be a candidate."""
+    root = _git_repo(tmp_path)
+    _write_config(root)
+    _quiet_inbound(monkeypatch, unruled=0, unreviewed=0)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    assert _candidate(result, "inbound") is None
+
+
+def test_inbound_could_not_tell_is_listed_never_read_as_nothing_pending(
+    tmp_path, monkeypatch
+):
+    """#1405's second requirement, applied to the fourth source: a reading
+    that could not be taken must be `could-not-tell`, never dropped and
+    never folded into a false `not-due`."""
+    root = _git_repo(tmp_path)
+    _write_config(root)
+    _quiet_inbound(monkeypatch, measured=False)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    inbound = _candidate(result, "inbound")
+    assert inbound is not None
+    assert inbound["state"] == next_action.CANDIDATE_COULD_NOT_TELL
+
+
+def test_inbound_with_no_repo_configured_is_could_not_tell(tmp_path, monkeypatch):
+    root = _git_repo(tmp_path)
+    _write_config(root, {"repo": None})
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    inbound = _candidate(result, "inbound")
+    assert inbound["state"] == next_action.CANDIDATE_COULD_NOT_TELL
+    assert "no repo configured" in inbound["reason"]
+
+
+# --- ranking order, several due at once -------------------------------------
+
+
+def test_several_due_candidates_keep_default_order_and_sequential_ranks(
+    tmp_path, monkeypatch
+):
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 0})
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch, unruled=1)
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_FIRED,
+            "fired": ["merged_prs"],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    result = next_action.rank(root)
+    sources_in_order = [entry["source"] for entry in result["candidates"]]
+    assert sources_in_order == ["inbound", "release", "curate"]
+    assert [entry["rank"] for entry in result["candidates"]] == [1, 2, 3]
+
+
+# --- record_skip (#1405's third requirement) --------------------------------
+
+
+def test_record_skip_writes_a_decision_naming_both_sources(tmp_path):
+    state_path = tmp_path / "oss-watch.json"
+    candidates = [
+        {"source": "inbound", "state": next_action.CANDIDATE_DUE},
+        {"source": "release", "state": next_action.CANDIDATE_DUE},
+    ]
+    entry = next_action.record_skip(
+        str(state_path), candidates, "release", "release audit wants a quiet board"
+    )
+    assert "took release over inbound" in entry["decision"]
+    assert "release audit wants a quiet board" in entry["decision"]
+
+
+def test_record_skip_refuses_when_taken_matches_the_top_candidate(tmp_path):
+    """Positive control: calling `record_skip` when nothing was actually
+    skipped must fail loudly rather than write a no-op entry that would
+    later look identical to a real deviation."""
+    state_path = tmp_path / "oss-watch.json"
+    candidates = [{"source": "release", "state": next_action.CANDIDATE_DUE}]
+    with pytest.raises(ValueError):
+        next_action.record_skip(str(state_path), candidates, "release", "no reason")
+
+
+def test_record_skip_refuses_on_an_empty_candidate_list(tmp_path):
+    state_path = tmp_path / "oss-watch.json"
+    with pytest.raises(ValueError):
+        next_action.record_skip(str(state_path), [], "release", "no reason")
 
 
 # --- CLI --------------------------------------------------------------------
@@ -583,3 +678,16 @@ def test_receipt_never_prints_next_for_unsafe():
     text = next_action.receipt(payload)
     assert "next:" not in text
     assert "remedy: add one" in text
+
+
+def test_receipt_names_could_not_tell_candidates_by_that_word(tmp_path, monkeypatch):
+    root = _git_repo(
+        tmp_path,
+    )
+    _write_config(root)
+    _quiet_inbound(monkeypatch, measured=False)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    text = next_action.receipt(result)
+    assert "could-not-tell" in text
+    assert "inbound" in text

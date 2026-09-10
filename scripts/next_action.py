@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""What does this repo need now? -- #1389's own addendum.
+"""What does this repo need now? -- #1389's own addendum, ranked rather than
+arbitrated by #1405.
 
 `/oss:run` answers one question -- what does this repo need now -- from state and
 config, never from an argument. This module is that answer, as a call rather than
@@ -7,80 +8,79 @@ prose a session re-derives every time: the same shape `select_issues.py` already
 gave dispatch (#970), composing scripts that already existed rather than
 re-implementing any of them.
 
-## What this composes, and does not re-implement
+## Rank, do not arbitrate (#1405)
 
-- **Config presence** -- `oss_config.load`. `None` back means no `.oss.json`, which
-  is not a failure to route around; it is the first, most specific answer.
-- **The release trigger** -- `release_trigger.compute`, the one this repository's
-  own release gate reads (`skills/manager/phases/release.md`): merged PR count,
-  soak hours, a blocking finding. This module never passes `findings`, the same
-  restraint `release_trigger` itself documents: a tick that ran no audit has
-  nothing to say about a blocking finding, and `not-supplied` is not `not-met`.
-- **The curate and triage backlog routes** -- `workspace_routes.decide`, built for
-  the sibling question `bin/oss-workspace` already asks at launch (#1155). Its own
-  `release` sub-route (a changelog-fragment count) is deliberately NOT read here --
-  `release_trigger.compute` is the trigger this loop actually gates a release on,
-  and reading both would let two different notions of "release is due" disagree
-  with each other inside one answer.
+The first cut of this module (#1389/#1390/#1392, PR #1404) returned one verdict,
+picked by a fixed precedence order that stopped at the first fired or unresolved
+check. That forces the script to arbitrate between things it has no basis to
+compare -- is an unanswered external pull request more urgent than a release
+that is due? That is a judgement about this repository at this moment, and a
+threshold comparison cannot make it.
 
-## Four states, not three, and the fourth is #1390's own vocabulary
+So `rank()` composes every source every time and returns them **ordered**,
+never stopping early: `select_issues.py` is the precedent this repository
+already has for the split -- the script measures, the agent decides, including
+taking the second candidate over the first when it can see something this
+script cannot.
 
-  due               something specific is needed now, named in `next`: `setup`,
-                    `release`, `curate` or `triage`.
-  nothing-due       every check that could run, ran, resolved cleanly, and none
-                    of them fired. `next` is `dispatch` -- the ordinary cadence
-                    applies, board work has not been ruled in or out at this
-                    layer.
-  could-not-decide  a check that outranks the point reached could not be
-                    evaluated, so a lower-ranked "nothing fired" cannot be
-                    trusted -- the unresolved check might have been the real
-                    answer. **Never collapses into `nothing-due`.**
-  unsafe            #1390's own gap: no config and the probe itself could not
-                    run, or a `default_branch` that does not resolve to a real
-                    ref. Named with a `remedy` -- what would clear it -- because
-                    "the loop refused to start" must never be a dead end.
+Three requirements, from #1405's own issue text, and the third is what keeps a
+deviation honest:
 
-## Precedence, and why an unresolved check blocks rather than being skipped
+1. **Every candidate carries its own evidence** -- the threshold, the reading,
+   the value compared against -- in its `evidence` field, so skipping the top
+   entry is a decision against stated evidence rather than a whim.
+2. **A candidate whose reading could not be taken is listed as
+   `could-not-tell`, never dropped.** It still occupies a rank slot, ordered
+   the same way a `due` one would be -- a short candidate list and one that
+   could not be fully built must not render alike.
+3. **A skip is recorded.** `record_skip()` below composes the one-line
+   decision `oss_state.append` already takes per tick, naming which candidate
+   was taken and which higher-ranked one was not, so a loop skipping the top
+   candidate six ticks running is distinguishable from one that never had a
+   top candidate.
 
-Evaluated strictly in this order, stopping at the first `due` or the first
-check this call could not read: release trigger, curate backlog, triage
-backlog, then `nothing-due`. A `could-not-tell` release trigger blocks a
-verdict on curate or triage even when both of those DID resolve cleanly --
-the point of the exercise is naming the single most urgent action, and an
-unresolved higher-precedence signal might have been that action. An
-unresolved LOWER-precedence signal never reaches this problem, because the
-walk stops before it is read.
+## Four sources, not three (#1405 closes the composition gap)
+
+`inbound` -- external issues still open (unruled) and external pull requests
+still open (unreviewed), a fresh reading of `statusline.inbound_reading` --
+`release`, `curate` and `triage`, the same three the first cut composed.
+Evaluated in that order when more than one is due or unresolved; see
+`DEFAULT_ORDER` below. Before #1405, `inbound_triage.py` (#1394) classified
+exactly this kind of thing and nothing composed it with the rest -- a
+repository with an unanswered external pull request and no release due got
+`nothing-due`, while `skills/manager/phases/inbound.md`'s own step, reached
+later in the tick, had real work waiting. Ranking closes that without an
+arbitration rule: inbound is a candidate alongside the others, and where it
+sits relative to them is the agent's call.
+
+## `unsafe` is a refusal, not a candidate
+
+#1390's own gap -- no config and the probe itself could not run, or a
+`default_branch` that does not resolve to a real ref -- stays a distinct,
+early top-level state, exactly as before. None of the four sources above can
+be evaluated at all without a readable config and a resolvable default
+branch, so this is a precondition for ranking, not one more thing to rank.
+Named with a `remedy`, because "the loop refused to start" must never be a
+dead end. `due: setup` (no `.oss.json` at all, but a probe is safe) is the
+other early state that stays outside ranking for the identical reason.
 
 ## What this deliberately does not do
 
-**Two independent triage signals, not one.** `scripts/triage_trigger.py`
-(#1386, landed after this module's own first cut) reads exactly the "last
-sweep older than the last tag" signal #1389's own issue text describes, and
-is checked first; `workspace_routes`'s label-coverage route (missing
-`lane-*`/`priority-*`) is checked second, only once the first cleanly reports
-`not-due`. Neither displaces the other -- a repo can decline
-`triage_after_release` and still be routed to triage on label coverage alone.
+**No dispatch.** `nothing-due`'s `next: dispatch` is unchanged: this call
+never runs `select_issues.py` to ask whether the board has a claimable
+candidate. That question has its own three states already and belongs to the
+phase that acts on this answer, not to the one naming it.
 
-**No dispatch.** `next: dispatch` names the residual state; it never runs
-`select_issues.py` to ask whether the board actually has a claimable
-candidate. That question has its own three states already (`candidates` /
-`none-available` / `could-not-select`) and belongs to the phase that acts on
-this answer, not to the one naming it.
+**No writes except one, narrow receipt**, the same `workspace_route_check`
+mechanism the first cut used for curate and triage's own repeat-suppression
+(see `_route_already_seen`) -- unchanged by this rewrite. `release_trigger`
+and `triage_trigger` still need no such receipt: completing either action
+moves the underlying signal itself.
 
-**No writes except one, narrow receipt.** This call never writes `.oss.json`
-and never runs `oss_config.py --probe` -- that stays the caller's job, taken
-only once `due: setup` has actually been acted on. It DOES record a
-`workspace_route_check`-shaped receipt (#1064/#1155's own mechanism,
-relocated here) for the label-coverage curate and triage routes only, the
-first time each exact `over` reading is reported due -- self-review found
-that without it, `/oss:run`'s own decide-act-decide-again loop would report
-the identical unresolved backlog `due` forever, which is exactly the
-permanent-divert defect #1390 exists to close, one layer in from where #1064
-originally fixed it for the launcher. `release_trigger` and `triage_trigger`
-need no such receipt: completing either action moves the underlying signal
-itself (a merged-PR delta resets after a real release; a recorded triage
-sweep moves `oss_state.last_triage` past the tag), so both are naturally
-self-resolving without this module remembering anything.
+**`unanswered_comments` is not computed.** `statusline.inbound_reading`'s own
+docstring states why: a real count needs a per-thread walk this change does
+not build. It reports `None` rather than a guessed `0` -- never silently
+included in the inbound candidate's own due/not-due decision.
 
 Python 3.9 compatible.
 """
@@ -101,13 +101,30 @@ import oss_config  # noqa: E402
 import oss_state  # noqa: E402
 import release_trigger  # noqa: E402
 import release_version  # noqa: E402
+import statusline  # noqa: E402
 import triage_trigger  # noqa: E402
 import workspace_routes  # noqa: E402
 
-DUE = "due"
+# --- top-level states (about the call as a whole) --------------------------
+DUE = "due"  # only ever `next: setup`, the pre-ranking case
+RANKED = "ranked"
 NOTHING_DUE = "nothing-due"
-COULD_NOT_DECIDE = "could-not-decide"
 UNSAFE = "unsafe"
+
+# --- per-candidate states (about one source) --------------------------------
+CANDIDATE_DUE = "due"
+CANDIDATE_COULD_NOT_TELL = "could-not-tell"
+CANDIDATE_NOT_DUE = "not-due"
+
+#: The order sources are placed in when more than one is `due` or
+#: `could-not-tell` -- a default the ranking itself does not enforce as a
+#: rule about urgency, only as a stable, documented tie-break so the same
+#: board produces the same order every time. #1405's own worked example
+#: ranks inbound first; the composition gap it names (an unanswered outside
+#: pull request rendering identically to nothing pending at all) is the
+#: reason this module puts it ahead of the other three by default rather
+#: than leaving the order to insertion accident.
+DEFAULT_ORDER = ("inbound", "release", "curate", "triage")
 
 
 def _decode(raw):
@@ -150,24 +167,6 @@ def _due(next_step, reason, evidence=None):
         "state": DUE,
         "next": next_step,
         "reason": reason,
-        "evidence": evidence or {},
-    }
-
-
-def _nothing_due(reason, evidence=None):
-    return {
-        "state": NOTHING_DUE,
-        "next": "dispatch",
-        "reason": reason,
-        "evidence": evidence or {},
-    }
-
-
-def _could_not_decide(reason, blocked_on, evidence=None):
-    return {
-        "state": COULD_NOT_DECIDE,
-        "reason": reason,
-        "blocked_on": blocked_on,
         "evidence": evidence or {},
     }
 
@@ -220,16 +219,15 @@ def _default_branch_unreadable(repo_root, config, run=subprocess.run, git_bin=No
 
 
 def _route_already_seen(repo_root, config, route, signature):
-    """Self-review finding (Explore reviewer): the label-coverage curate and
-    triage routes have no completion signal of their own the way
+    """Self-review finding (Explore reviewer, #1389): the label-coverage curate
+    and triage routes have no completion signal of their own the way
     `triage_trigger`'s tag-vs-last-sweep comparison does -- an interactive
     curate pass that does not fully drain `trap.d/` in one sitting, or a
     triage sweep that does not clear every missing label, leaves the exact
-    same `over` reading behind. Without this check, `/oss:run`'s own loop
-    (decide -> take the step -> decide again) would report `due` on that
-    unchanged reading forever, reintroducing the permanent-divert defect
-    #1390 exists to close, just one layer in from where #1064 originally
-    fixed it for the launcher.
+    same `over` reading behind. Without this check, a candidate would report
+    `due` on that unchanged reading every single tick, reintroducing the
+    permanent-divert defect #1390 exists to close, just one layer in from
+    where #1064 originally fixed it for the launcher.
 
     Same shape as `workspace_routes.main`'s own receipt (#1064/#1155),
     relocated here because `next_action.py`, not the launcher, is what now
@@ -276,18 +274,238 @@ def _routes(repo_root, config, gh=None, run=subprocess.run):
     """One `workspace_routes.decide` call, shared by the curate and triage
     checks below -- each reads its own repo-declared threshold-vs-count
     result out of it. Calling `decide` twice would cost a second `gh issue
-    list` round trip for a fact the first call already has.
-
-    The triage slot is the one #1386 is expected to widen: today this reads
-    `workspace_routes`'s label-coverage route (missing `lane-*`/`priority-*`);
-    a second signal (staleness against the last tag) can be folded in by
-    combining it with this result before returning, without the precedence
-    walk in `decide()` above changing at all."""
+    list` round trip for a fact the first call already has."""
     _armed, results = workspace_routes.decide(repo_root, config, gh=gh, run=run)
     return results
 
 
-def decide(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
+def _fresh_inbound_reading(repo):
+    """The one place `next_action.py` reaches into `statusline.py` for its
+    fresh, uncached reading (#1405's design note: one module, two
+    consumers). `statusline.refresh()` calls `statusline.inbound_reading`
+    for its own cached, throttled copy; this wrapper takes the two totals
+    fresh and calls the identical function for a reading the loop can act on
+    right now. A single injection point so a test can replace the whole
+    reading without needing to fake two subprocess calls into `gh`."""
+    issues_total = statusline._gh_count(repo, "issue")
+    prs_total = statusline._gh_count(repo, "pr")
+    return statusline.inbound_reading(repo, issues_total, prs_total)
+
+
+def _inbound_candidate(repo_root, config):
+    """#1405's fourth source, and the composition gap it names: an
+    unanswered outside pull request or an unruled outside issue used to
+    render identically to nothing pending at all. `unanswered_comments` is
+    never part of this decision -- `statusline.inbound_reading` always
+    reports it as `None`, and folding a `None` into `0` here would be
+    exactly the false-zero this module is named after avoiding."""
+    repo = config.get("repo")
+    if not repo:
+        return {
+            "source": "inbound",
+            "state": CANDIDATE_COULD_NOT_TELL,
+            "reason": "no repo configured, so outside issues/pull requests cannot be counted",
+            "evidence": {},
+        }
+    reading = _fresh_inbound_reading(repo)
+    if reading.get("state") != "measured":
+        return {
+            "source": "inbound",
+            "state": CANDIDATE_COULD_NOT_TELL,
+            "reason": "the outside issue/pull-request count could not be taken",
+            "evidence": reading,
+        }
+    unruled = reading.get("unruled_issues") or 0
+    unreviewed = reading.get("unreviewed_prs") or 0
+    if unruled + unreviewed > 0:
+        return {
+            "source": "inbound",
+            "state": CANDIDATE_DUE,
+            "reason": "{0} outside issue(s) unruled, {1} outside pull request(s) unreviewed".format(
+                unruled, unreviewed
+            ),
+            "evidence": reading,
+        }
+    return {
+        "source": "inbound",
+        "state": CANDIDATE_NOT_DUE,
+        "reason": "no outside issues or pull requests waiting (comments are not checked yet)",
+        "evidence": reading,
+    }
+
+
+def _release_candidate(repo_root, config, now=None):
+    """Self-review finding from the first cut (#1389): a genuinely
+    misconfigured `changelog_dir` (refused, unrecognised, a bare `--dir` on
+    a scaffolded gate) must not fall through to `release_trigger.compute`'s
+    own default-directory fallback exactly like the ordinary, no-fragment-
+    practice repo does -- two different facts must not render as one silent
+    substitution. `release_version.NO_DIRECTORY` alone is the ordinary case;
+    every other named problem is a `could-not-tell` reading for this source."""
+    fragment_dir, fragment_dir_problem = release_version._fragment_dir(
+        str(repo_root), None, config
+    )
+    if fragment_dir is None and fragment_dir_problem != release_version.NO_DIRECTORY:
+        return {
+            "source": "release",
+            "state": CANDIDATE_COULD_NOT_TELL,
+            "reason": (
+                "changelog_dir could not be resolved ({0}), so whether the "
+                "release trigger's user-visible-soak condition holds is "
+                "unknown".format(fragment_dir_problem)
+            ),
+            "evidence": {"fragment_dir_problem": fragment_dir_problem},
+        }
+    rel = release_trigger.compute(
+        str(repo_root),
+        config=config,
+        findings=None,
+        fragment_dir=fragment_dir,
+        now=now,
+    )
+    if rel["state"] == release_trigger.STATE_FIRED:
+        return {
+            "source": "release",
+            "state": CANDIDATE_DUE,
+            "reason": "release trigger fired on {0}".format(", ".join(rel["fired"])),
+            "evidence": rel,
+        }
+    if rel["state"] == release_trigger.STATE_COULD_NOT_TELL:
+        return {
+            "source": "release",
+            "state": CANDIDATE_COULD_NOT_TELL,
+            "reason": (
+                "the release trigger could not be evaluated ({0} unread), so "
+                "whether a release is the most urgent action is unknown".format(
+                    ", ".join(rel["unevaluated"])
+                )
+            ),
+            "evidence": rel,
+        }
+    return {
+        "source": "release",
+        "state": CANDIDATE_NOT_DUE,
+        "reason": "release trigger not fired",
+        "evidence": rel,
+    }
+
+
+def _curate_candidate(repo_root, config, routes):
+    curate = routes.get("curate", {"configured": False})
+    if curate.get("configured"):
+        if curate.get("state") == workspace_routes.OVER:
+            signature = "{0}:{1}".format(curate.get("state"), curate.get("count"))
+            seen, seen_detail = _route_already_seen(
+                repo_root, config, "curate", signature
+            )
+            if not seen:
+                return {
+                    "source": "curate",
+                    "state": CANDIDATE_DUE,
+                    "reason": (
+                        "trap.d/ has {0} fragment(s), over curate_route_threshold "
+                        "({1})".format(curate.get("count"), curate.get("threshold"))
+                    ),
+                    "evidence": dict(curate, receipt=seen_detail),
+                }
+            return {
+                "source": "curate",
+                "state": CANDIDATE_NOT_DUE,
+                "reason": "unchanged since the last time this reading was routed ({0})".format(
+                    seen_detail
+                ),
+                "evidence": dict(curate, receipt=seen_detail),
+            }
+        if curate.get("state") == workspace_routes.COULD_NOT_COUNT:
+            return {
+                "source": "curate",
+                "state": CANDIDATE_COULD_NOT_TELL,
+                "reason": "the trap.d/ backlog could not be counted ({0})".format(
+                    curate.get("why")
+                ),
+                "evidence": curate,
+            }
+    return {
+        "source": "curate",
+        "state": CANDIDATE_NOT_DUE,
+        "reason": "trap.d/ is not over curate_route_threshold (or curate is not configured)",
+        "evidence": curate,
+    }
+
+
+def _triage_candidate(repo_root, config, routes):
+    """Two independent triage signals, not one -- unchanged from the first
+    cut. `triage_trigger.py` (#1386) reads "last sweep older than the last
+    tag"; `workspace_routes`'s label-coverage route (missing
+    `lane-*`/`priority-*`) is checked only once the first cleanly reports
+    `not-due`. Neither displaces the other."""
+    state_file = config.get("state_file")
+    state_path = (
+        str(Path(repo_root) / state_file)
+        if isinstance(state_file, str) and state_file.strip()
+        else None
+    )
+    tt = triage_trigger.compute(str(repo_root), config=config, state_path=state_path)
+    if tt["state"] == triage_trigger.STATE_DUE:
+        return {
+            "source": "triage",
+            "state": CANDIDATE_DUE,
+            "reason": tt.get("detail", "triage_trigger: due"),
+            "evidence": tt,
+        }
+    if tt["state"] == triage_trigger.STATE_COULD_NOT_TELL:
+        return {
+            "source": "triage",
+            "state": CANDIDATE_COULD_NOT_TELL,
+            "reason": "the post-release triage trigger could not be evaluated ({0})".format(
+                tt.get("detail")
+            ),
+            "evidence": tt,
+        }
+
+    triage = routes.get("triage", {"configured": False})
+    if triage.get("configured"):
+        if triage.get("state") == workspace_routes.OVER:
+            signature = "{0}:{1}".format(triage.get("state"), triage.get("count"))
+            seen, seen_detail = _route_already_seen(
+                repo_root, config, "triage", signature
+            )
+            if not seen:
+                return {
+                    "source": "triage",
+                    "state": CANDIDATE_DUE,
+                    "reason": "{0}".format(triage.get("why")),
+                    "evidence": dict(triage, receipt=seen_detail),
+                }
+            return {
+                "source": "triage",
+                "state": CANDIDATE_NOT_DUE,
+                "reason": "unchanged since the last time this reading was routed ({0})".format(
+                    seen_detail
+                ),
+                "evidence": dict(triage, receipt=seen_detail),
+            }
+        if triage.get("state") == workspace_routes.COULD_NOT_COUNT:
+            return {
+                "source": "triage",
+                "state": CANDIDATE_COULD_NOT_TELL,
+                "reason": "the triage backlog could not be counted ({0})".format(
+                    triage.get("why")
+                ),
+                "evidence": triage,
+            }
+    return {
+        "source": "triage",
+        "state": CANDIDATE_NOT_DUE,
+        "reason": (
+            "post-release triage trigger not due and the label-coverage "
+            "triage route is not over its threshold (or not configured)"
+        ),
+        "evidence": {"triage_trigger": tt, "triage_route": triage},
+    }
+
+
+def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
     """The whole answer, in one call. Never raises.
 
     `git_bin` is resolved through `gh_which.safe_which` once here, the same
@@ -317,144 +535,72 @@ def decide(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
         )
 
     gh = gh if gh is not None else gh_which.safe_which("gh")
-
-    # Self-review finding: the first cut of this call discarded `_fragment_dir`'s
-    # own `problem` half, so a genuinely misconfigured `changelog_dir` (refused,
-    # unrecognised, a bare `--dir` on a scaffolded gate) fell through to
-    # `release_trigger.compute`'s own default-directory fallback exactly like the
-    # ordinary, no-fragment-practice repo does -- two different facts rendered as
-    # one silent substitution. `release_version.NO_DIRECTORY` alone is the
-    # ordinary case (`commands/setup.md` calls it "not a finding on its own");
-    # every other named problem is real and blocks the same way an unresolved
-    # release-trigger condition already does, a few lines below.
-    fragment_dir, fragment_dir_problem = release_version._fragment_dir(
-        str(repo_root), None, config
-    )
-    if fragment_dir is None and fragment_dir_problem != release_version.NO_DIRECTORY:
-        return _could_not_decide(
-            "changelog_dir could not be resolved ({0}), so whether the release "
-            "trigger's user-visible-soak condition holds is unknown".format(
-                fragment_dir_problem
-            ),
-            "release",
-            evidence={"fragment_dir_problem": fragment_dir_problem},
-        )
-
-    rel = release_trigger.compute(
-        str(repo_root),
-        config=config,
-        findings=None,
-        fragment_dir=fragment_dir,
-        now=now,
-    )
-    if rel["state"] == release_trigger.STATE_FIRED:
-        return _due(
-            "release",
-            "release trigger fired on {0}".format(", ".join(rel["fired"])),
-            evidence=rel,
-        )
-    if rel["state"] == release_trigger.STATE_COULD_NOT_TELL:
-        return _could_not_decide(
-            "the release trigger could not be evaluated ({0} unread), so whether a "
-            "release is the most urgent action is unknown".format(
-                ", ".join(rel["unevaluated"])
-            ),
-            "release",
-            evidence=rel,
-        )
-
     routes = _routes(repo_root, config, gh=gh, run=run)
-    curate = routes.get("curate", {"configured": False})
-    if curate.get("configured"):
-        if curate.get("state") == workspace_routes.OVER:
-            curate_signature = "{0}:{1}".format(
-                curate.get("state"), curate.get("count")
-            )
-            seen, seen_detail = _route_already_seen(
-                repo_root, config, "curate", curate_signature
-            )
-            if not seen:
-                return _due(
-                    "curate",
-                    "trap.d/ has {0} fragment(s), over curate_route_threshold ({1})".format(
-                        curate.get("count"), curate.get("threshold")
-                    ),
-                    evidence=dict(curate, receipt=seen_detail),
-                )
-            # Unchanged since the last time this exact reading was routed --
-            # fall through rather than re-arming forever on a backlog nobody
-            # has cleared yet (self-review finding, see `_route_already_seen`).
-        if curate.get("state") == workspace_routes.COULD_NOT_COUNT:
-            return _could_not_decide(
-                "the trap.d/ backlog could not be counted ({0})".format(
-                    curate.get("why")
-                ),
-                "curate",
-                evidence=curate,
-            )
 
-    # #1386 landed `scripts/triage_trigger.py` after this module's own first
-    # cut, which reads exactly the "last sweep older than the last tag" signal
-    # #1389's own issue text describes -- checked first, ahead of the
-    # label-coverage route below, because it is the more specific of the two:
-    # `triggers.triage_after_release` absent means the repo declined it, in
-    # which case this call is a clean `not-due` and the label-coverage route
-    # still gets its turn.
-    state_file = config.get("state_file")
-    state_path = (
-        str(Path(repo_root) / state_file)
-        if isinstance(state_file, str) and state_file.strip()
-        else None
-    )
-    tt = triage_trigger.compute(str(repo_root), config=config, state_path=state_path)
-    if tt["state"] == triage_trigger.STATE_DUE:
-        return _due("triage", tt.get("detail", "triage_trigger: due"), evidence=tt)
-    if tt["state"] == triage_trigger.STATE_COULD_NOT_TELL:
-        return _could_not_decide(
-            "the post-release triage trigger could not be evaluated ({0})".format(
-                tt.get("detail")
+    by_source = {
+        "inbound": _inbound_candidate(repo_root, config),
+        "release": _release_candidate(repo_root, config, now=now),
+        "curate": _curate_candidate(repo_root, config, routes),
+        "triage": _triage_candidate(repo_root, config, routes),
+    }
+
+    candidates = []
+    not_due = []
+    for source in DEFAULT_ORDER:
+        entry = by_source[source]
+        if entry["state"] in (CANDIDATE_DUE, CANDIDATE_COULD_NOT_TELL):
+            candidates.append(entry)
+        else:
+            not_due.append(entry)
+
+    for index, entry in enumerate(candidates, start=1):
+        entry["rank"] = index
+
+    if not candidates:
+        return {
+            "state": NOTHING_DUE,
+            "next": "dispatch",
+            "reason": (
+                "every source resolved cleanly (inbound, release, curate, "
+                "triage) and none of them is due"
             ),
-            "triage",
-            evidence=tt,
+            "not_due": not_due,
+        }
+    return {
+        "state": RANKED,
+        "candidates": candidates,
+        "not_due": not_due,
+    }
+
+
+def record_skip(state_path, candidates, taken_source, reason, at=None):
+    """#1405's third requirement: a skip is recorded, mechanically, so a
+    loop skipping the top candidate six ticks running is distinguishable
+    from one that never had a top candidate.
+
+    Only for a genuine deviation -- `candidates` is `rank()`'s own ordered
+    list, and this raises `ValueError` rather than silently writing a
+    no-op entry when `taken_source` already matches `candidates[0]`
+    (nothing was skipped) or when `candidates` is empty (there was no top
+    candidate to skip past). Composes `oss_state.append`'s one decision
+    line rather than leaving callers to hand-write a sentence each time,
+    which is exactly the drift #1405's own issue text warns against.
+    """
+    if not candidates:
+        raise ValueError(
+            "record_skip needs a non-empty candidate list to skip past -- "
+            "there was no top candidate here"
         )
-
-    triage = routes.get("triage", {"configured": False})
-    if triage.get("configured"):
-        if triage.get("state") == workspace_routes.OVER:
-            triage_signature = "{0}:{1}".format(
-                triage.get("state"), triage.get("count")
-            )
-            seen, seen_detail = _route_already_seen(
-                repo_root, config, "triage", triage_signature
-            )
-            if not seen:
-                return _due(
-                    "triage",
-                    "{0}".format(triage.get("why")),
-                    evidence=dict(triage, receipt=seen_detail),
-                )
-            # Unchanged since the last time this exact reading was routed --
-            # see the identical comment on the curate branch above.
-        if triage.get("state") == workspace_routes.COULD_NOT_COUNT:
-            return _could_not_decide(
-                "the triage backlog could not be counted ({0})".format(
-                    triage.get("why")
-                ),
-                "triage",
-                evidence=triage,
-            )
-
-    return _nothing_due(
-        "release trigger not fired, the post-release triage trigger is not due, "
-        "and neither curate nor the label-coverage triage route is over its "
-        "configured threshold (or neither is configured)",
-        evidence={
-            "release": rel,
-            "curate": curate,
-            "triage_trigger": tt,
-            "triage": triage,
-        },
-    )
+    top = candidates[0]
+    if top.get("source") == taken_source:
+        raise ValueError(
+            "record_skip is for a deviation only -- the top candidate is "
+            "already {0!r}, matching taken_source; there is nothing to "
+            "record".format(top.get("source"))
+        )
+    at = at if at is not None else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    decision = "took {0} over {1} ({2})".format(taken_source, top.get("source"), reason)
+    return oss_state.append(state_path, at, decision)
 
 
 def receipt(payload):
@@ -466,12 +612,28 @@ def receipt(payload):
     if state == UNSAFE:
         lines.append("  reason: {0}".format(payload["reason"]))
         lines.append("  remedy: {0}".format(payload["remedy"]))
-    elif state == COULD_NOT_DECIDE:
-        lines.append("  blocked-on: {0}".format(payload["blocked_on"]))
-        lines.append("  reason: {0}".format(payload["reason"]))
-    else:
+    elif state == DUE:
         lines.append("  next: {0}".format(payload["next"]))
         lines.append("  reason: {0}".format(payload["reason"]))
+    elif state == NOTHING_DUE:
+        lines.append("  next: dispatch")
+        lines.append("  reason: {0}".format(payload["reason"]))
+        for entry in payload.get("not_due", []):
+            lines.append(
+                "  -- not due: {0} ({1})".format(entry["source"], entry["reason"])
+            )
+    elif state == RANKED:
+        for entry in payload["candidates"]:
+            marker = (
+                entry["rank"] if entry["state"] == CANDIDATE_DUE else "could-not-tell"
+            )
+            lines.append(
+                "  {0}. {1}  -- {2}".format(marker, entry["source"], entry["reason"])
+            )
+        for entry in payload.get("not_due", []):
+            lines.append(
+                "  -- not ranked: {0} ({1})".format(entry["source"], entry["reason"])
+            )
     return "\n".join(lines)
 
 
@@ -484,7 +646,7 @@ def _build_parser():
 
 def main(argv=None):
     args = _build_parser().parse_args(argv)
-    payload = decide(args.root)
+    payload = rank(args.root)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:

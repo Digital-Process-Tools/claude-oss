@@ -497,6 +497,7 @@ def board_from_cache(cache, now=None):
             "issues_external": None,
             "issues_no_priority": None,
             "issues_no_lane": None,
+            "inbound": None,
             "age": None,
         }
     prs = cache.get("prs")
@@ -522,6 +523,8 @@ def board_from_cache(cache, now=None):
         # A cache written before this field existed, or by a refresh whose rollup call did
         # not answer. Neither is "every pull request is green".
         checks = None
+    inbound = cache.get("inbound")
+    inbound = inbound if isinstance(inbound, dict) else None
     fetched = cache.get("fetched_at")
     age = None
     if isinstance(fetched, (int, float)):
@@ -533,6 +536,7 @@ def board_from_cache(cache, now=None):
         "issues_no_priority": issues_no_priority,
         "issues_no_lane": issues_no_lane,
         "checks": checks,
+        "inbound": inbound,
         "age": age,
     }
 
@@ -969,6 +973,33 @@ def _trap_field(traps):
     return "trap " + ("?" if not isinstance(traps, int) else str(traps))
 
 
+def _inbound_field(inbound):
+    """`inb 2is 1pr` / `inb ?is ?pr` -- outside issues unruled and outside
+    pull requests unreviewed, beside the `trap.d/` backlog above (#1406).
+
+    `inbound` is `board.get("inbound")` -- the cached `inbound_reading()`
+    document, or `None` for a cache written before this field existed. Each
+    count renders `?`, never `0`, exactly the rule `_trap_field` and
+    `_board_field`'s own `eis` group already follow: a zero from a read that
+    never happened and a zero from one that happened and found nothing must
+    not be the same pixels, which is the whole reason #1406 exists.
+
+    `unanswered_comments` is deliberately not a third number here.
+    `inbound_reading` always reports it as `None` (see that function's own
+    docstring for why the walk is not built yet) -- a field that always
+    renders `?` teaches the eye to stop reading it, which is worse than not
+    showing it at all, so it stays off this line rather than being padded
+    in as a permanent unknown.
+    """
+    inbound = inbound if isinstance(inbound, dict) else {}
+    unruled = inbound.get("unruled_issues")
+    unreviewed = inbound.get("unreviewed_prs")
+    return "inb {}is {}pr".format(
+        "?" if not isinstance(unruled, int) else unruled,
+        "?" if not isinstance(unreviewed, int) else unreviewed,
+    )
+
+
 def _last_field(stamp):
     """A wall-clock reading of when this line was last rendered, or `?` (#504).
 
@@ -1368,6 +1399,7 @@ def render(facts, ascii_only=False, color=False):
     blocks.append(_unlabelled_field(board))
     blocks.append(_release_field(facts.get("release")))
     blocks.append(_trap_field(facts.get("traps")))
+    blocks.append(_inbound_field(board.get("inbound")))
     blocks.append(_last_field(facts.get("last")))
 
     blocks.append(_plugins_field(facts.get("plugins") or [], symbols, color))
@@ -1779,6 +1811,102 @@ def _gh_external_issue_count(repo, total):
         if assoc.upper() not in _INSIDE_ASSOCIATIONS:
             external += 1
     return external
+
+
+def _gh_external_pr_count(repo, total):
+    """Mirrors `_gh_external_issue_count` exactly, against the pull-request
+    listing instead of the issue one (#1406).
+
+    `repos/{owner}/{repo}/pulls` never mixes issues in the way
+    `repos/{owner}/{repo}/issues` does, so there is no `pull_request == null`
+    filter to apply here -- every row already is a pull request. Same
+    row-count cross-check against `total` (`_gh_count`'s own answer, "is:pr"),
+    same `None`-on-any-doubt rule: a count smaller than the truth must never
+    render as a real one.
+    """
+    if not isinstance(total, int):
+        return None
+    if _malformed_repo(repo):
+        return None
+    out = _run(
+        [
+            "gh",
+            "api",
+            "--paginate",
+            "-X",
+            "GET",
+            "repos/{}/pulls".format(repo),
+            "-f",
+            "state=open",
+            "-f",
+            "per_page=100",
+            "--jq",
+            ".[] | .author_association",
+        ],
+        timeout=25,
+    )
+    if out is None:
+        return None
+    lines = out.split("\n") if out else []
+    if len(lines) != total:
+        return None
+    external = 0
+    for line in lines:
+        assoc = line.strip()
+        if not assoc or assoc.upper() == "NULL":
+            return None
+        if assoc.upper() not in _INSIDE_ASSOCIATIONS:
+            external += 1
+    return external
+
+
+def inbound_reading(repo, issues_total, prs_total):
+    """How much of what arrived from outside is still waiting -- #1405/#1406.
+
+    **One module, two consumers**, per the design note on #1405: `refresh()`
+    below calls this on the board's own clock and caches the result, because
+    the statusline must never block a prompt on a fresh forge round trip.
+    `scripts/next_action.py`'s own `_fresh_inbound_reading` calls this
+    function directly, with totals it took a moment ago, because the loop is
+    about to act on the answer and can afford the two calls. Neither is a
+    second opinion about the other; both call this.
+
+    `unruled_issues` -- open issues authored by someone outside repository
+    membership (`_gh_external_issue_count`'s own reading against `issues_
+    total`). The loop rules on an issue by closing it with a reason
+    (`inbound_triage.REFUSAL_REASONS`), so any still-open one is, by
+    construction, not yet ruled on -- no second read needed to establish
+    that. `unreviewed_prs` -- the identical reading for open pull requests
+    (`_gh_external_pr_count` against `prs_total`): the loop's own review has
+    not landed a merge or a close on it yet.
+
+    `unanswered_comments` is always `None` here. Counting it for real means
+    walking every open issue and pull request's own comment thread -- one
+    forge call each -- which is a materially larger cost than the two reads
+    above (#1406's own "which fields, and what that costs" question). #1406
+    asked for the field to fail honestly rather than render a guessed zero;
+    it did not ask for that walk to be built in the same change that decides
+    the shape, so this is a deliberate scope line, not an oversight, and it
+    is on record as a follow-up rather than guessed at here.
+
+    `state` is `"measured"` only when both counts actually resolved;
+    `"could-not-tell"` the moment either one comes back `None` -- never
+    quietly reads as `0`, the same discipline `_gh_external_issue_count`
+    already applies to its own row-count cross-check.
+    """
+    unruled = _gh_external_issue_count(repo, issues_total)
+    unreviewed = _gh_external_pr_count(repo, prs_total)
+    state = (
+        "measured"
+        if unruled is not None and unreviewed is not None
+        else "could-not-tell"
+    )
+    return {
+        "state": state,
+        "unruled_issues": unruled,
+        "unreviewed_prs": unreviewed,
+        "unanswered_comments": None,
+    }
 
 
 def _effective_lane_labels(labels_config):
@@ -2615,6 +2743,13 @@ def refresh(root, now=None, session_id=None):
         document["issues_no_priority"] = (unlabelled or {}).get("no_priority")
         document["issues_no_lane"] = (unlabelled or {}).get("no_lane")
         document["pr_checks"] = check_rollup_counts(_gh_rollups(repo), document["prs"])
+        # Same board clock as everything above (#1406): two more calls of the
+        # identical shape `issues_external` already makes, so folding this
+        # into the existing REFRESH_AFTER cadence rather than inventing a
+        # separate clock is a deliberate choice, not an oversight -- see
+        # `inbound_reading`'s own docstring for the "one module, two
+        # consumers" design this composes into.
+        document["inbound"] = inbound_reading(repo, document["issues"], document["prs"])
         # Same call group, same `fetched_at`, same `stale_after` (#856): the default
         # branch's own CI state is exactly as time-sensitive as the pull-request board
         # it sits beside, and it shares the moment (a merge or an issue close in this
