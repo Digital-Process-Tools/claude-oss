@@ -519,6 +519,51 @@ def test_a_changed_curate_count_re_arms(tmp_path, monkeypatch):
     assert _candidate(second, "curate")["state"] == next_action.CANDIDATE_DUE
 
 
+def test_a_lower_ranked_curate_candidate_is_not_falsely_suppressed(
+    tmp_path, monkeypatch
+):
+    """Self-review finding (Explore reviewer, #1405): the repeat-suppression
+    receipt used to be armed the moment `_curate_candidate`/`_triage_candidate`
+    were merely EVALUATED, regardless of whether that candidate ended up being
+    the one actually surfaced as the answer. Under full composition every
+    source is evaluated every call, so a curate backlog ranked BELOW release
+    (which the caller takes instead) used to get silently marked "already
+    routed" on the very first tick it appeared -- reintroducing the exact
+    permanent-divert defect #1390/#1064/#1155 exist to close, one call later.
+    Only the entry that ends up at `candidates[0]` may be armed."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+
+    # Tick 1: release fires and ranks first; curate is due too, ranked second.
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_FIRED,
+            "fired": ["merged_prs"],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    first = next_action.rank(root)
+    assert _candidate(first, "release")["state"] == next_action.CANDIDATE_DUE
+    assert _candidate(first, "curate")["state"] == next_action.CANDIDATE_DUE
+
+    # Tick 2: release no longer fires, and the curate backlog is UNCHANGED --
+    # nobody curated anything. Curate must still be due: it was never the
+    # candidate actually taken, so it must not have been armed on tick 1.
+    _not_fired_release(monkeypatch)
+    second = next_action.rank(root)
+    curate_second = _candidate(second, "curate")
+    assert curate_second is not None, second
+    assert curate_second["state"] == next_action.CANDIDATE_DUE
+
+
 def test_no_state_file_configured_never_suppresses_curate(tmp_path):
     """No `state_file` means no receipt can be read or written -- this must
     fail OPEN (armed, as though never seen), the same direction every other

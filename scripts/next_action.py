@@ -218,7 +218,7 @@ def _default_branch_unreadable(repo_root, config, run=subprocess.run, git_bin=No
     )
 
 
-def _route_already_seen(repo_root, config, route, signature):
+def _route_already_seen(repo_root, config, route, signature, arm=True):
     """Self-review finding (Explore reviewer, #1389): the label-coverage curate
     and triage routes have no completion signal of their own the way
     `triage_trigger`'s tag-vs-last-sweep comparison does -- an interactive
@@ -234,7 +234,20 @@ def _route_already_seen(repo_root, config, route, signature):
     makes this decision. Never raises -- any failure to read or write a
     receipt is announced by returning `False` (never "already seen", the
     same fail-open direction every other unknown in this module takes) and
-    named in the returned detail rather than silently swallowed."""
+    named in the returned detail rather than silently swallowed.
+
+    `arm=False` (self-review finding, Explore reviewer, #1405): reads the
+    receipt to decide `seen`/not-seen exactly as before, but never WRITES
+    one. `rank()` composes every source every call now, so `_curate_candidate`
+    and `_triage_candidate` are evaluated even when a higher-ranked source
+    (say, `release`) is the one actually taken -- writing the receipt at mere
+    evaluation time reintroduces the exact permanent-divert defect this
+    function exists to close, one call later: a curate backlog nobody has
+    touched would be marked "already routed" the moment it merely showed up
+    ranked below something else. `rank()` calls this with `arm=False` for
+    every candidate, then re-calls only `candidates[0]` (if it is `curate` or
+    `triage`) with `arm=True` once ranking is settled, so only the entry that
+    ends up as the answer actually gets recorded."""
     state_file = config.get("state_file")
     if not isinstance(state_file, str) or not state_file.strip():
         return False, "no state_file configured, so no receipt could be read or written"
@@ -249,6 +262,11 @@ def _route_already_seen(repo_root, config, route, signature):
     if not check["armed"]:
         return True, "unchanged since the receipt already recorded ({0})".format(
             signature
+        )
+    if not arm:
+        return False, (
+            "armed ({0}), not yet recorded -- this candidate is not (or not "
+            "yet known to be) the one this call is taking".format(check["state"])
         )
     try:
         oss_state.append(
@@ -390,13 +408,18 @@ def _release_candidate(repo_root, config, now=None):
     }
 
 
-def _curate_candidate(repo_root, config, routes):
+def _curate_candidate(repo_root, config, routes, arm=False):
+    """`arm=False` by default (self-review finding, Explore reviewer, #1405):
+    `rank()` evaluates every source every call, so this candidate's own
+    signature must not be recorded as "already routed" just for having been
+    looked at -- only `rank()`'s own re-call, once it knows this candidate is
+    the one at `candidates[0]`, passes `arm=True`."""
     curate = routes.get("curate", {"configured": False})
     if curate.get("configured"):
         if curate.get("state") == workspace_routes.OVER:
             signature = "{0}:{1}".format(curate.get("state"), curate.get("count"))
             seen, seen_detail = _route_already_seen(
-                repo_root, config, "curate", signature
+                repo_root, config, "curate", signature, arm=arm
             )
             if not seen:
                 return {
@@ -433,12 +456,16 @@ def _curate_candidate(repo_root, config, routes):
     }
 
 
-def _triage_candidate(repo_root, config, routes):
+def _triage_candidate(repo_root, config, routes, arm=False):
     """Two independent triage signals, not one -- unchanged from the first
     cut. `triage_trigger.py` (#1386) reads "last sweep older than the last
     tag"; `workspace_routes`'s label-coverage route (missing
     `lane-*`/`priority-*`) is checked only once the first cleanly reports
-    `not-due`. Neither displaces the other."""
+    `not-due`. Neither displaces the other.
+
+    `arm=False` by default, same reasoning as `_curate_candidate`'s own
+    (self-review finding, Explore reviewer, #1405): only `rank()`'s re-call
+    of `candidates[0]` passes `arm=True`."""
     state_file = config.get("state_file")
     state_path = (
         str(Path(repo_root) / state_file)
@@ -468,7 +495,7 @@ def _triage_candidate(repo_root, config, routes):
         if triage.get("state") == workspace_routes.OVER:
             signature = "{0}:{1}".format(triage.get("state"), triage.get("count"))
             seen, seen_detail = _route_already_seen(
-                repo_root, config, "triage", signature
+                repo_root, config, "triage", signature, arm=arm
             )
             if not seen:
                 return {
@@ -556,6 +583,25 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
     for index, entry in enumerate(candidates, start=1):
         entry["rank"] = index
 
+    # Self-review finding (Explore reviewer, #1405): now that every source is
+    # evaluated every call, only the entry that actually ends up as the
+    # answer -- `candidates[0]` -- may have its curate/triage repeat-
+    # suppression receipt armed. Arming at mere evaluation time would mark a
+    # lower-ranked, un-acted-on backlog as "already routed" the moment it
+    # merely showed up next to something ranked higher, reintroducing the
+    # permanent-divert defect #1390/#1064/#1155 exist to close. Re-running the
+    # candidate function costs no extra forge call -- both read the already-
+    # fetched `routes` dict -- so this is a second, narrow re-evaluation, not
+    # a second network round trip.
+    if candidates:
+        top_source = candidates[0]["source"]
+        if top_source == "curate":
+            candidates[0] = _curate_candidate(repo_root, config, routes, arm=True)
+            candidates[0]["rank"] = 1
+        elif top_source == "triage":
+            candidates[0] = _triage_candidate(repo_root, config, routes, arm=True)
+            candidates[0]["rank"] = 1
+
     if not candidates:
         return {
             "state": NOTHING_DUE,
@@ -585,6 +631,15 @@ def record_skip(state_path, candidates, taken_source, reason, at=None):
     candidate to skip past). Composes `oss_state.append`'s one decision
     line rather than leaving callers to hand-write a sentence each time,
     which is exactly the drift #1405's own issue text warns against.
+
+    **Caller contract, stated here because nothing else states it
+    (self-review, oss:auditor spawn, #1405):** check
+    `taken_source != candidates[0]["source"]` before calling this at all.
+    The two `ValueError`s above exist to catch a programming mistake in a
+    caller that got that check wrong, not as an ordinary control-flow
+    branch a tick is expected to hit -- a caller taking the top candidate
+    (the common case) should simply not call `record_skip` in the first
+    place.
     """
     if not candidates:
         raise ValueError(
