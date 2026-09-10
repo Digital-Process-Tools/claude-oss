@@ -493,7 +493,7 @@ COLLAPSE_RE = re.compile(
 
 #: Every surface that could build the declaration into a command.
 COLLAPSE_SURFACES = (
-    REPO_ROOT / "commands" / "changelog.md",
+    REPO_ROOT / "commands" / "run" / "changelog.md",
     REPO_ROOT / "changelog.d" / "README.md",
     REPO_ROOT / "scripts" / "scaffold.py",
     REPO_ROOT / "scripts" / "oss_rules.py",

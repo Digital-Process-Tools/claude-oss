@@ -167,7 +167,12 @@ def shipped_documents():
         documents.append(
             (path.relative_to(REPO_ROOT).as_posix(), path.read_text(encoding="utf-8"))
         )
-    for pattern in ("agents/*.md", "commands/*.md", ".claude/jit-context/*/*/*.md"):
+    for pattern in (
+        "agents/*.md",
+        "commands/*.md",
+        "commands/run/*.md",
+        ".claude/jit-context/*/*/*.md",
+    ):
         for path in sorted(REPO_ROOT.glob(pattern)):
             documents.append(
                 (

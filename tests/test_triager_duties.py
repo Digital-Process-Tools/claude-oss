@@ -22,6 +22,7 @@ EXECUTABLE_PROSE = sorted(
     list((REPO_ROOT / "skills").rglob("SKILL.md"))
     + list((REPO_ROOT / "agents").glob("*.md"))
     + list((REPO_ROOT / "commands").glob("*.md"))
+    + list((REPO_ROOT / "commands" / "run").glob("*.md"))
 )
 
 
@@ -418,7 +419,7 @@ def test_every_anchor_matches_exactly_one_place_in_the_document():
 # report shape the agent no longer produces -- and a `Clusters` row the reader was
 # never told to look for reads exactly like a row the agent forgot.
 
-TRIAGE_COMMAND = REPO_ROOT / "commands" / "triage.md"
+TRIAGE_COMMAND = REPO_ROOT / "commands" / "run" / "triage.md"
 
 
 def test_the_command_doc_tells_the_maintainer_the_clusters_row_exists():

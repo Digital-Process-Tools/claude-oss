@@ -93,7 +93,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # same "read the phase file when you reach it" shape `agents/developer.md`
     # already uses for its own late phases. Budgeted from the day it was
     # added, unlike `tick.md`, which grew unbudgeted for years first (#940).
-    "commands/run.md": (4365, 4800),
+    # Re-baselined by #1389's own follow-up (the picker consolidation): 4365 B
+    # became 4784 B naming the six commands moved to `commands/run/*.md` and
+    # why `commands/release.md` did not move with them. Ceiling unchanged.
+    "commands/run.md": (4784, 4800),
 }
 
 
