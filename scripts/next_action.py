@@ -590,9 +590,12 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
     # lower-ranked, un-acted-on backlog as "already routed" the moment it
     # merely showed up next to something ranked higher, reintroducing the
     # permanent-divert defect #1390/#1064/#1155 exist to close. Re-running the
-    # candidate function costs no extra forge call -- both read the already-
-    # fetched `routes` dict -- so this is a second, narrow re-evaluation, not
-    # a second network round trip.
+    # candidate function costs no extra network round trip -- `curate` reads
+    # the already-fetched `routes` dict, and `triage` re-runs only local
+    # `git`/state-file reads via `triage_trigger.compute` -- so this is a
+    # second, narrow, read-only re-evaluation (self-review finding, follow-up
+    # Explore spawn on this same fix: the comment previously said "no extra
+    # forge call" for both, which is only precisely true for `curate`).
     if candidates:
         top_source = candidates[0]["source"]
         if top_source == "curate":
