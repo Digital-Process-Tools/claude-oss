@@ -1,7 +1,6 @@
 # claude-oss
 
-Runs an open-source repo as its maintainer: triage the tracker, delegate the work, review hard,
-merge on green.
+Runs an open-source repo as its maintainer: triage, delegate, review, merge on green.
 
 ![claude-oss — triage, build, review, merge, ship](docs/oss.png)
 
@@ -26,16 +25,18 @@ up `oss-workspace` in a repo you maintain.
 
 ## Type it once
 
-`/oss:run` is what a session opens on, and the only thing a person types. It asks one
-question — what does this repo need now — and answers it from state and config, never
-from an argument. Everything repo-specific lives in `.oss.json`: a cadence step written
-only in prose is one somebody has to remember, which is why they are thresholds instead.
+`/oss:run` is what a session opens on, and the only thing a person normally types. It
+asks one question — what does this repo need now — and answers it from state and config,
+never from an argument. Everything repo-specific lives in `.oss.json`.
 
 ```mermaid
 flowchart TD
     YOU([you, once]) --> W["oss-workspace<br/>update plugin · wire channel · open session"]
     W -->|injects| RUN["/oss:run"]
-    RUN --> Q{"what does this<br/>repo need now?"}
+    RUN --> DIAG["check the install and this repo<br/>repair what is ours, carry on"]
+    DIAG -->|a gap that makes the loop unsafe| STOP([stop, and name what clears it])
+    DIAG --> Q{"what does this<br/>repo need now?"}
+    YOU -.->|when something looks wrong| DOC["/oss:doctor<br/>say what is wrong, start nothing"]
     Q -->|no config yet| CFG["probe the repo, write .oss.json"]
     Q -->|someone wrote to us| IN["inbound: issue · PR · comment"]
     Q -->|its trigger fired| REL["release: gates · audit · tag · publish"]
@@ -54,9 +55,8 @@ The loop arms its own next turn and stops only on a direct instruction to stop.
 
 ## The launcher
 
-Once installed and set up in a repo you maintain, `/oss:doctor` prints the exact, paste-ready
-command to wire up `oss-workspace` for the version you have installed. Run it from that repo, and
-`oss-workspace` opens a session there with the maintainer loop already running.
+`/oss:doctor` prints the exact, paste-ready command to wire up `oss-workspace` for
+the version you have installed. Run it from the repo you maintain.
 
 ## More
 
