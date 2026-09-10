@@ -188,22 +188,28 @@ def _run_with_stub(
 
 
 def test_an_updated_version_switches_the_opening_prompt_to_doctor(tmp_path):
-    """The must-fire half: a genuine version change before `exec claude` opens
-    with /oss:doctor instead of the ordinary /oss:tick, and says why."""
+    """#1392: a genuine version change before `exec claude` used to switch the
+    opening prompt from /oss:tick to /oss:doctor. The launcher no longer picks
+    a prompt at all -- it always opens /oss:run, which diagnoses on its own
+    first turn regardless of whether the plugin just moved (#1390) -- so the
+    only thing left to assert here is that the version-change fact itself is
+    still said out loud, not that it changes what argv carries."""
     repo = _repo(tmp_path)
     done, argv = _run_with_stub(repo, before="0.1.0", after="0.2.0")
-    assert "/oss:doctor" in argv, (argv, done.stderr)
-    assert "/oss:tick" not in argv, argv
+    assert "/oss:run" in argv, (argv, done.stderr)
     assert "0.1.0" in done.stderr and "0.2.0" in done.stderr
 
 
 def test_no_version_change_keeps_the_ordinary_prompt(tmp_path):
-    """The must-not-fire control: current-and-unchanged must never override the
-    prompt `.oss.json`'s presence already chose."""
+    """The must-not-fire control: current-and-unchanged must never change what
+    the launcher opens with, and must not print a version-change claim either
+    -- self-review found the prompt-only assertion here would pass just as
+    well if the whole version-comparison block were deleted, since `/oss:run`
+    is now unconditional (#1392)."""
     repo = _repo(tmp_path)
     done, argv = _run_with_stub(repo, before="0.1.0", after="0.1.0")
-    assert "/oss:tick" in argv, (argv, done.stderr)
-    assert "/oss:doctor" not in argv, argv
+    assert "/oss:run" in argv, (argv, done.stderr)
+    assert "was updated from" not in done.stderr, done.stderr
 
 
 def test_a_failed_marketplace_refresh_keeps_the_ordinary_prompt_and_says_so(tmp_path):
@@ -211,15 +217,17 @@ def test_a_failed_marketplace_refresh_keeps_the_ordinary_prompt_and_says_so(tmp_
     the ordinary prompt stays, and the reason reaches stderr."""
     repo = _repo(tmp_path)
     done, argv = _run_with_stub(repo, marketplace_exit=1)
-    assert "/oss:tick" in argv, (argv, done.stderr)
-    assert "/oss:doctor" not in argv, argv
+    assert "/oss:run" in argv, (argv, done.stderr)
     assert "could not check" in done.stderr.lower()
 
 
 def test_the_existing_opt_out_makes_this_whole_path_a_no_op(tmp_path):
     """OSS_NO_AUTO_UPDATE=1 -- the pre-existing opt-out -- must reach this
     synchronous call exactly as it reaches the SessionStart hook: no version
-    comparison, ordinary prompt, no claim about currency printed."""
+    comparison, ordinary prompt, no claim about currency printed. The version
+    inputs here (`0.1.0` -> `0.2.0`) are a genuine change on purpose: without
+    the negative stderr assertion, this test could not tell "the opt-out
+    suppressed a real change" from "there was nothing to suppress"."""
     repo = _repo(tmp_path)
     done, argv = _run_with_stub(
         repo,
@@ -227,5 +235,5 @@ def test_the_existing_opt_out_makes_this_whole_path_a_no_op(tmp_path):
         after="0.2.0",
         no_auto_update=True,
     )
-    assert "/oss:tick" in argv, (argv, done.stderr)
-    assert "/oss:doctor" not in argv, argv
+    assert "/oss:run" in argv, (argv, done.stderr)
+    assert "0.2.0" not in done.stderr, done.stderr

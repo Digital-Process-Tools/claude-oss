@@ -370,19 +370,10 @@ def run(
     # means off" and `env.update` below runs AFTER this default, so an explicit empty
     # value is what overrides it rather than merely failing to set it.
     env.setdefault("OSS_NO_AUTO_UPDATE", "1")
-    # Off by default (#1214): the launcher also shells out to the REAL setup
-    # diagnostic (`scripts/doctor.py`) before every launch unless told not to.
-    # It reaches the network, its own warning count is not stable run to run
-    # (measured: 35 warnings locally, 36 on one observed CI run of the identical
-    # fixture), and a substring assertion against `done.stderr` -- which is what
-    # nearly every test in this file makes -- can collide with whatever the
-    # diagnostic happened to print that run rather than with the behaviour the
-    # test is actually about. That collision is what #1214 traced behind
-    # `test_a_healthy_channel_says_nothing_at_all`'s intermittent CI failures.
-    # Opt back in with `env_extra={"OSS_WORKSPACE_SKIP_DOCTOR": ""}`, the same
-    # empty-string convention `OSS_NO_AUTO_UPDATE`'s own opt-back-in uses two
-    # tests below.
-    env.setdefault("OSS_WORKSPACE_SKIP_DOCTOR", "1")
+    # #1392 removed the launcher's own pre-launch setup diagnostic entirely (it
+    # moved into `/oss:run` itself, #1390), along with `OSS_WORKSPACE_SKIP_
+    # DOCTOR`, the env var #1214 added to silence it in tests -- both are gone
+    # from `bin/oss-workspace` now, so there is nothing left here to default.
     # `env_extra` is deliberately narrow rather than a general escape hatch: #271 is
     # about what a STRICT stdout does to a declared name, and PYTHONIOENCODING is the
     # only lever that establishes a strict stdout in a child interpreter. A test that
@@ -429,80 +420,28 @@ def test_opens_the_repo_you_are_standing_in(tmp_path):
     assert argv, done.stderr
 
 
-def test_a_repo_with_config_starts_a_tick(tmp_path):
-    # #764: the real setup diagnostic routes the prompt to /oss:doctor on any
-    # real WARN it finds, and a bare `.oss.json`-only fixture genuinely carries
-    # some (no settings rule names gh-pr-merge, and the like) -- a fact about
-    # this fixture's tree, not about which prompt config presence alone
-    # chooses. Skipped so this test stays about the latter -- via `run()`'s
-    # own #1214 default now, not an explicit override.
+def test_a_repo_with_config_opens_oss_run(tmp_path):
+    # #1389/#1390/#1392: the launcher no longer picks between /oss:tick,
+    # /oss:setup and /oss:doctor -- it always opens /oss:run, which decides
+    # for itself, in-session, what this repository needs now.
     _, argv = run(_repo(tmp_path))
-    assert "/oss:tick" in argv
+    assert "/oss:run" in argv
 
 
-def test_a_repo_without_config_starts_setup_instead(tmp_path):
-    """Ticking against a repo with no config would run on guessed values. Sending the
-    first session to setup is the difference between "works after clone" and "works
-    after clone, wrongly".
-
-    #764: deliberately runs the REAL diagnostic (unlike the sibling test above) --
-    a repo with no `.oss.json` reports `VERDICT: not usable` too (missing config is
-    a FAIL), and this is the end-to-end coverage that the #764 route does not
-    clobber `/oss:setup` with `/oss:doctor` for it (self-review finding; the
-    targeted regression test is `tests/test_workspace_doctor_gate.py::
-    test_a_bad_verdict_on_a_repo_with_no_config_does_not_clobber_setup`).
-    Opts back into the diagnostic explicitly (#1214 made skipping it `run()`'s
-    own default) via the same empty-string convention `OSS_NO_AUTO_UPDATE`'s
-    opt-back-in already uses.
+def test_a_repo_without_config_also_opens_oss_run(tmp_path):
+    """A missing `.oss.json` used to send the launcher to `/oss:setup` instead
+    of a tick, so a fresh clone would not run on guessed values. That decision
+    now lives inside `/oss:run` itself (`scripts/next_action.py`'s `due:
+    setup` state): the launcher has nothing left to branch on, so it opens the
+    identical prompt whether or not `.oss.json` exists -- this is the positive
+    control for the test above, changing only the one fact that used to flip
+    the launcher's own choice.
     """
-    done, argv = run(
-        _repo(tmp_path, with_config=False),
-        env_extra={"OSS_WORKSPACE_SKIP_DOCTOR": ""},
-    )
-    assert "/oss:setup" in argv, (argv, done.stderr)
+    done, argv = run(_repo(tmp_path, with_config=False))
+    assert "/oss:run" in argv, (argv, done.stderr)
     assert "/oss:tick" not in argv, argv
+    assert "/oss:setup" not in argv, argv
     assert "/oss:doctor" not in argv, argv
-    assert "no .oss.json" in done.stderr
-
-
-def test_the_setup_diagnostic_is_skipped_by_default(tmp_path):
-    """#1214: nearly every test in this file calls `run()` to ask about something
-    entirely unrelated to the setup diagnostic -- consumer registration, watch-name
-    derivation, radar-tier warnings -- and until now none of them skipped it. The
-    diagnostic reaches the network, and its own warning count is not even stable
-    between two runs on the same fixture (7 failure(s), 35 warning(s) measured
-    locally against 7 failure(s), 36 warning(s) on one observed CI run of the
-    identical test), so a substring assertion against `done.stderr` can collide
-    with whatever the diagnostic happened to print that run -- this is the
-    mechanism #1214 traced behind `test_a_healthy_channel_says_nothing_at_all`'s
-    intermittent CI failures, where its `"could not be checked" not in
-    done.stderr` assertion tripped on `doctor_check_auto_update.py`'s own
-    unrelated, network-dependent warning text.
-
-    `run()` now defaults `OSS_WORKSPACE_SKIP_DOCTOR=1` the same way it already
-    defaults `OSS_NO_AUTO_UPDATE=1` a few lines above it, for the identical
-    reason: a behaviour the other ~100 tests in this file are not about should
-    not run, unasked, on every one of them.
-    """
-    done, argv = run(_repo(tmp_path))
-    assert argv, done.stderr
-    assert "running the setup diagnostic" not in done.stderr, done.stderr
-    assert "OSS_WORKSPACE_SKIP_DOCTOR is set" in done.stderr, done.stderr
-
-
-def test_the_setup_diagnostic_still_runs_for_real_when_asked(tmp_path):
-    """The must-fire pair's own control: an EXPLICIT empty override is what turns
-    the new default back off, because `env.update(env_extra)` runs after
-    `env.setdefault(...)` -- the same convention `OSS_NO_AUTO_UPDATE`'s own
-    opt-back-in already uses, and for the same reason: an absent key would only
-    ever hit the default, so the override has to be a real, if empty, value.
-    Without this control, a `run()` that dropped the diagnostic call outright --
-    rather than merely defaulting it off -- would satisfy the test above just as
-    well.
-    """
-    done, argv = run(_repo(tmp_path), env_extra={"OSS_WORKSPACE_SKIP_DOCTOR": ""})
-    assert argv, done.stderr
-    assert "running the setup diagnostic" in done.stderr, done.stderr
 
 
 def test_arguments_are_passed_through_and_the_prompt_is_not_appended(tmp_path):
@@ -536,15 +475,12 @@ def test_the_prompt_precedes_the_channel_flag(tmp_path):
     """The flag is variadic, so a positional written after it is read as one of its
     values and the launch is REFUSED, not degraded:
 
-        --dangerously-load-development-channels entries must be tagged: /oss:tick
+        --dangerously-load-development-channels entries must be tagged: /oss:run
 
     which is how this script failed the first time it was run for real.
     """
-    # #764/#1214: this test is about ordering, not about which prompt the
-    # diagnostic would pick on a bare fixture -- and `run()`'s own default now
-    # skips it, so no explicit override is needed here any more.
     _, argv = run(_repo(tmp_path), with_channel=True)
-    assert argv.index("/oss:tick") < argv.index(
+    assert argv.index("/oss:run") < argv.index(
         "--dangerously-load-development-channels"
     )
 
@@ -731,17 +667,29 @@ def test_unknown_radar_declaration_skips_the_never_spawned_check_loudly(tmp_path
     """The composition #652 is actually about: an unreadable .supertool.json used
     to leave `radar_tiers_declared` at its 0 default, which silently switched off
     #627's never-spawned-board check with no receipt that it had been skipped.
-    Now it must say so, and it must not claim "never existed" -- that would be a
+    It must say so, and it must not claim "never existed" -- that would be a
     fact about a board this script never confirmed was declared at all.
 
-    Opts back into the real diagnostic (#1214 made skipping it `run()`'s own
-    default) purely to hold this test's own pre-existing shape unchanged --
-    #1214 found, but does not fix, that `"skipped" in done.stderr` is satisfied
-    here by the REAL diagnostic's own unrelated "supertool: not on PATH;
-    anything needing it will be skipped" line rather than by the launcher's own
-    ASK_CONSUMER message this test is named for. Not yet filed as its own
-    issue -- reported to the maintainer alongside #1214 rather than filed by
-    this lane, whose own publishing clause is unconditional.
+    #1214 found, but did not fix, that `"skipped" in done.stderr` used to be
+    satisfied by the REAL setup diagnostic's own unrelated "supertool: not on
+    PATH; anything needing it will be skipped" line rather than by the
+    launcher's own ASK_CONSUMER message this test is named for -- and #1392
+    removed that diagnostic from the launcher entirely (it moved into
+    `/oss:run` itself, #1390), which is what surfaced this: with the
+    confounding line gone, `"skipped"` no longer appears in this fixture's
+    stderr at all. Tracing why shows the ASK_CONSUMER heredoc's own
+    `tiers_unknown` branch (which does print "skipped, not healthy") is never
+    reached here -- an unreadable `.supertool.json` also fails channel-name
+    derivation, so this fixture lands on the earlier "no channel name was
+    exported ... SHARED DEFAULT socket" branch instead, before ASK_CONSUMER
+    ever runs. This test's own two real assertions (no false "never existed"
+    claim, and "UNKNOWN" said plainly) hold either way and stay; the
+    `"skipped"` assertion never actually exercised the #652 codepath it was
+    named for, on this fixture, so it is dropped rather than left as
+    unearned coverage. A fixture that reaches ASK_CONSUMER's `tiers_unknown`
+    branch -- one where channel-name derivation succeeds despite the tiers
+    question going unanswered -- is real, missing coverage; reported rather
+    than invented here.
     """
     repo = _repo(tmp_path)
     (repo / ".supertool.json").write_text("{not json at all", encoding="utf-8")
@@ -750,12 +698,10 @@ def test_unknown_radar_declaration_skips_the_never_spawned_check_loudly(tmp_path
         repo,
         with_channel=True,
         naming=_naming_with_resolve(never_existed),
-        env_extra={"OSS_WORKSPACE_SKIP_DOCTOR": ""},
     )
     assert argv, done.stderr
     assert "has never existed" not in done.stderr, done.stderr
     assert "UNKNOWN" in done.stderr, done.stderr
-    assert "skipped" in done.stderr, done.stderr
 
 
 def test_a_missing_claude_is_a_named_failure(tmp_path):

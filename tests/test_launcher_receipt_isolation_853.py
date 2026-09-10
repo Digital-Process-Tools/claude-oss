@@ -46,26 +46,34 @@ from test_workspace_auto_update_753 import _run_with_stub  # noqa: E402
 def test_ambient_xdg_cache_home_does_not_leak_a_receipt_across_invocations(
     tmp_path, monkeypatch
 ):
-    """The must-fire half: repo1's genuine update must still switch its own
-    prompt to /oss:doctor -- the isolation fix must not have broken that."""
+    """The must-fire half: repo1's genuine update must still be said out loud on
+    stderr -- the isolation fix must not have broken that. #1392 removed the
+    prompt-switching behaviour this test used to assert on (the launcher no
+    longer picks between /oss:tick and /oss:doctor at all, see
+    `tests/test_workspace_auto_update_753.py`), so what is left to assert is
+    the fact this module is actually about: the version-change line itself,
+    not a prompt derived from it.
+    """
     ambient = tmp_path / "ambient_machine_cache"
     monkeypatch.setenv("XDG_CACHE_HOME", str(ambient))
 
     repo1 = _repo(tmp_path / "repo1")
     done1, argv1 = _run_with_stub(repo1, before="0.1.0", after="0.2.0")
-    assert "/oss:doctor" in argv1, (argv1, done1.stderr)
+    assert "/oss:run" in argv1, (argv1, done1.stderr)
+    assert "0.1.0" in done1.stderr and "0.2.0" in done1.stderr
 
 
 def test_a_second_unrelated_invocation_is_not_contaminated(tmp_path, monkeypatch):
     """The must-not-fire control, in the SAME ambient-cache fixture as above: a
-    second, unrelated repo whose own stub reports no change at all must keep the
-    ordinary prompt, even though it launches inside the first call's debounce
-    window and even though both processes inherit the identical ambient
-    XDG_CACHE_HOME. Before LOCALAPPDATA/XDG_CACHE_HOME were pinned per-call in
-    `_run_with_stub`, this failed: repo2 read repo1's real receipt (state
-    "updated", to "0.2.0") off the shared ambient cache path and reported
-    /oss:doctor for a repo whose own fixture asked for nothing to change --
-    exactly the shape of the six Windows CI failures in #853.
+    second, unrelated repo whose own stub reports no change at all must not
+    print a version-change line at all, even though it launches inside the
+    first call's debounce window and even though both processes inherit the
+    identical ambient XDG_CACHE_HOME. Before LOCALAPPDATA/XDG_CACHE_HOME were
+    pinned per-call in `_run_with_stub`, this failed: repo2 read repo1's real
+    receipt (state "updated", to "0.2.0") off the shared ambient cache path
+    and reported a version change for a repo whose own fixture asked for
+    nothing to change -- exactly the shape of the six Windows CI failures in
+    #853.
     """
     ambient = tmp_path / "ambient_machine_cache"
     monkeypatch.setenv("XDG_CACHE_HOME", str(ambient))
@@ -75,5 +83,5 @@ def test_a_second_unrelated_invocation_is_not_contaminated(tmp_path, monkeypatch
 
     repo2 = _repo(tmp_path / "repo2")
     done2, argv2 = _run_with_stub(repo2, before="0.1.0", after="0.1.0")
-    assert "/oss:tick" in argv2, (argv2, done2.stderr)
-    assert "/oss:doctor" not in argv2, argv2
+    assert "/oss:run" in argv2, (argv2, done2.stderr)
+    assert "0.2.0" not in done2.stderr, done2.stderr

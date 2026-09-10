@@ -112,20 +112,29 @@ def test_a_failed_census_disarms_the_flag_and_says_unknown(tmp_path):
 def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twice(
     tmp_path,
 ):
-    """Review finding on #810: `bin/oss-workspace` runs the census, then shells
-    out to `doctor.sh`, which runs `check_channel_consumer_census()` again --
-    the identical shape #629 already fixed once for the registration check.
-    `claude mcp list` must be called exactly ONCE across the whole launch, not
-    once per checker.
+    """Review finding on #810, historical: `bin/oss-workspace` used to run the
+    census, then shell out to `doctor.sh`, which ran
+    `check_channel_consumer_census()` again -- the identical shape #629 fixed
+    once for the registration check. `claude mcp list` had to be called
+    exactly ONCE across the whole launch, not once per checker, and the relay
+    (`OSS_WORKSPACE_CENSUS_CHECKED`/`_REPORT`) is what made that true.
 
-    Opts INTO the real diagnostic explicitly (#1214 made skipping it `run()`'s
-    own default, and this file's other tests never needed doctor.sh to run for
-    real at all): without `doctor.sh` genuinely running, this assertion is
-    trivially satisfied by the launcher's own single `claude mcp list` call
-    regardless of whether the relay this test exists to guard against still
-    works -- a real, unfiled regression an #1214 review round caught by
-    reintroducing the #810 double-ask bug and confirming this test stayed
-    green.
+    #1392 removed `bin/oss-workspace`'s own `doctor.sh` invocation entirely --
+    it now runs from inside the session's own `/oss:run` (#1390), a separate
+    process this launcher's own `claude mcp list` count cannot see at all.
+    Self-review (auditor spawn) found that the double-ask scenario this test
+    was written for is therefore now structurally impossible within this
+    file: there is only ever one `claude mcp list` call here regardless of
+    whether the relay still functions, so `len(list_calls) == 1` below is
+    true by construction rather than by the mechanism this test's own name
+    still claims to guard. `OSS_WORKSPACE_SKIP_DOCTOR` is dropped from the
+    call below -- it no longer does anything (nothing left to skip) -- and
+    this test is kept only as a regression guard against a THIRD `claude mcp
+    list` call being added somewhere in this file, not as coverage of the
+    original relay-to-doctor.sh mechanism, which has no reachable caller left
+    to test. Whether the relay is still worth keeping for a future in-session
+    consumer is a separate, unresolved question, reported rather than decided
+    here.
     """
     repo = _repo(tmp_path)
     consumer = _consumer_path(repo)
@@ -134,7 +143,7 @@ def test_the_launcher_relays_its_own_census_to_doctor_sh_rather_than_asking_twic
         with_channel=True,
         mcp_get=_mcp_get_output(str(consumer)),
         mcp_list=_own_row(repo),
-        env_extra=dict(_NO_AUTO_UPDATE, OSS_WORKSPACE_SKIP_DOCTOR=""),
+        env_extra=dict(_NO_AUTO_UPDATE),
     )
     assert any("development-channels" in a for a in argv), (argv, done.stderr)
     list_calls = [
