@@ -536,7 +536,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # trigger fires. Nothing already in the file argued that point, so
         # nothing was cut to make room; ceiling moved to 25900 B, ~10%
         # headroom over the new size.
-        23564,
+        # Re-baselined for #1410: 23564 B became 25243 B -- the cohort freeze
+        # is now a script the release runs (scripts/cohort_freeze_record.py),
+        # not a maintainer's hand; this section states the new call and its
+        # three states in place of the old by-hand instruction and the manual
+        # oss_state.py two-route CLI example. Comfortably under the 25900 B
+        # ceiling; ceiling unchanged.
+        25243,
         25900,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
