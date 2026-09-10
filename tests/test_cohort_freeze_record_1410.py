@@ -332,3 +332,148 @@ def test_ensure_label_description_updates_stale_text(monkeypatch):
         calls[1][idx + 1]
         == "Open at the v0.24.0 tag, 2026-08-01. Frozen: nothing joins a cohort."
     )
+
+
+# ----------------------------------------------------------- self-review fixes (#1410)
+
+
+def test_record_freeze_preview_reports_could_not_freeze_on_a_real_failure(
+    monkeypatch, tmp_path
+):
+    """Must-fire half: a preview run must not hide a real `cohort_freeze.freeze`
+    failure (an unresolvable tag, a missing label) behind the informational
+    `preview` state -- that state is not in `RECORD_STATES` and always exits 0,
+    which would mask a genuine pre-flight problem from any caller scripting on
+    the exit code."""
+    state_path = tmp_path / "state.json"
+    monkeypatch.setattr(
+        cohort_freeze,
+        "freeze",
+        lambda *a, **kw: {
+            "state": cohort_freeze.STATE_COULD_NOT_READ,
+            "reason": "could not resolve the timestamp of tag v0.31.0",
+            "label": LABEL,
+            "tag": TAG,
+            "cutoff": None,
+            "count": None,
+            "members": None,
+            "added": None,
+            "dry_run": True,
+        },
+    )
+
+    result = cfr.record_freeze(
+        REPO, TAG, COHORT, _fake_gh(), _fake_run, str(state_path), AT, execute=False
+    )
+
+    assert result["mode"] == cfr.MODE_PREVIEW
+    assert result["state"] == cfr.STATE_COULD_NOT_FREEZE
+    assert cfr._exit_code(result["state"]) == cfr.EXIT_COULD_NOT_FREEZE
+
+
+def test_record_freeze_preview_clean_dry_run_still_exits_ok(monkeypatch, tmp_path):
+    """Must-not-fire control for the test above: a preview that resolved
+    cleanly must keep exiting 0 -- otherwise the fix above would just be
+    trading one silent failure mode for the opposite one."""
+    state_path = tmp_path / "state.json"
+    _patch_freeze(monkeypatch, dict(_frozen_freeze_result(count=12), dry_run=True))
+
+    result = cfr.record_freeze(
+        REPO, TAG, COHORT, _fake_gh(), _fake_run, str(state_path), AT, execute=False
+    )
+
+    assert result["mode"] == cfr.MODE_PREVIEW
+    assert result["state"] not in cfr.RECORD_STATES
+    assert cfr._exit_code(result["state"]) == cfr.EXIT_OK
+
+
+def test_record_freeze_rerun_under_a_different_tag_is_not_treated_as_already_recorded(
+    tmp_path, monkeypatch
+):
+    """Must-fire half: idempotency is keyed on cohort AND tag, never on the
+    route-check record alone. A second call for the same cohort number under a
+    different (e.g. mistyped) tag that happens to produce the identical
+    two-route count must still append a fresh state entry -- collapsing it
+    into "already recorded, nothing changed" would leave the state file
+    silently disagreeing with whatever tag the label's own description was
+    just rewritten to name (#1122's own failure mode, one layer up)."""
+    state_path = tmp_path / "state.json"
+    _patch_freeze(monkeypatch, _frozen_freeze_result(count=12))
+    _patch_label_members(monkeypatch, count=12)
+    _patch_description_already_set(monkeypatch)
+
+    first = cfr.record_freeze(
+        REPO, TAG, COHORT, _fake_gh(), _fake_run, str(state_path), AT, execute=True
+    )
+    assert first["state"] == cfr.STATE_FROZEN
+    entries_after_first = oss_state.read(str(state_path))
+    assert len(entries_after_first) == 1
+    assert entries_after_first[0]["detail"]["cohort_freeze_tag"] == TAG
+
+    other_tag = "v0.32.0-mistyped"
+    second = cfr.record_freeze(
+        REPO,
+        other_tag,
+        COHORT,
+        _fake_gh(),
+        _fake_run,
+        str(state_path),
+        "2026-09-09T15:00:00Z",
+        execute=True,
+    )
+    assert "already recorded" not in second["reason"]
+
+    entries_after_second = oss_state.read(str(state_path))
+    assert len(entries_after_second) == 2
+    assert entries_after_second[1]["detail"]["cohort_freeze_tag"] == other_tag
+
+
+def test_main_preflight_bad_repo_reports_preview_mode_without_execute(
+    monkeypatch, capsys
+):
+    """Must-fire half: `main()`'s two pre-flight checks (bad `--repo`, missing
+    `gh`) run before `--execute` is even considered, and must still report
+    which mode was actually requested rather than hardcoding `mode: "execute"`
+    regardless."""
+    exit_code = cfr.main(
+        [
+            "--repo",
+            "not-a-slug-and-not-a-directory-either",
+            "--tag",
+            TAG,
+            "--cohort",
+            str(COHORT),
+            "--state",
+            "/tmp/does-not-matter-1410.json",
+            "--at",
+            AT,
+            "--json",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert exit_code == cfr.EXIT_COULD_NOT_FREEZE
+    assert '"mode": "preview"' in out
+
+
+def test_main_preflight_bad_repo_reports_execute_mode_with_execute(monkeypatch, capsys):
+    """Must-not-fire control for the test above: the same pre-flight failure
+    with `--execute` passed must report `mode: "execute"`, not `preview`."""
+    exit_code = cfr.main(
+        [
+            "--repo",
+            "not-a-slug-and-not-a-directory-either",
+            "--tag",
+            TAG,
+            "--cohort",
+            str(COHORT),
+            "--state",
+            "/tmp/does-not-matter-1410.json",
+            "--at",
+            AT,
+            "--execute",
+            "--json",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert exit_code == cfr.EXIT_COULD_NOT_FREEZE
+    assert '"mode": "execute"' in out

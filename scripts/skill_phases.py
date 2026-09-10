@@ -146,7 +146,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # before anything new" directive block and its table row point a tick
         # at skills/manager/phases/inbound.md before dispatch. Budget
         # unchanged; comfortably under it.
-        42837,
+        # Re-baselined for #1410 self-review: 42837 B became 42893 B -- the
+        # cohort-freeze sentence in "Closing a tick" now says the freeze is
+        # the release's own script rather than a maintainer's hand, closing a
+        # stale-prose finding a self-review spawn caught. Budget unchanged;
+        # comfortably under it.
+        42893,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),

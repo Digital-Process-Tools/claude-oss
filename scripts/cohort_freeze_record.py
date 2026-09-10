@@ -184,22 +184,33 @@ def ensure_label_description(repo, label, tag, cutoff, gh, run, timeout=25):
 
 def _last_cohort_entry(state_path, label):
     """The most recent state entry recording a freeze decision for `label`, or
-    ``None``. Returns ``(record_or_None, reason)`` -- never raises; a read
-    failure returns ``(None, reason)``, indistinguishable in shape from "no
-    prior entry" only by the caller checking `reason`.
+    ``(None, None, "ok")``. Returns ``(record_or_None, tag_or_None, reason)`` --
+    never raises; a read failure returns ``(None, None, reason)``,
+    indistinguishable in shape from "no prior entry" only by the caller
+    checking `reason`.
+
+    The tag travels alongside the route-check record rather than inside it
+    (`oss_state.cohort_freeze` itself carries no tag or cutoff at all -- #1410
+    self-review) because `record_freeze`'s idempotency check must not treat a
+    re-run under a *different* tag for the same cohort number as "already
+    recorded, nothing changed" merely because the two-route count happened to
+    come out the same. Without the tag, that coincidence would both skip the
+    state-file write and still let `ensure_label_description` overwrite the
+    label's description with the new tag -- exactly the label/state-file
+    drift #1122 is cited elsewhere in this module to justify preventing.
     """
     try:
         entries = oss_state.read(state_path)
     except oss_state.StateError as exc:
-        return None, "could not read {}: {}".format(state_path, exc)
+        return None, None, "could not read {}: {}".format(state_path, exc)
     for entry in reversed(entries):
         detail = entry.get("detail") if isinstance(entry, dict) else None
         if not isinstance(detail, dict):
             continue
         record = detail.get("cohort_freeze")
         if isinstance(record, dict) and record.get("cohort") == label:
-            return record, "ok"
-    return None, "ok"
+            return record, detail.get("cohort_freeze_tag"), "ok"
+    return None, None, "ok"
 
 
 def _decision_for(record):
@@ -213,8 +224,25 @@ def _decision_for(record):
 
 
 def _preview(freeze_result, label, tag, cohort):
+    """A preview never writes, but it must not hide a real failure behind a
+    clean-looking exit code either (#1410 self-review). `mode` always reads
+    `MODE_PREVIEW` -- nothing was ever going to be written -- but the
+    top-level `state` reports `STATE_COULD_NOT_FREEZE` when the underlying
+    `cohort_freeze.freeze` dry run itself could not even resolve the tag or
+    found the label missing, so `_exit_code` still returns non-zero for a
+    preview that hit a real problem. A dry run that resolved cleanly (it
+    "would" freeze, or is already frozen) keeps the informational `preview`
+    state, which is not one of `RECORD_STATES` and always exits 0.
+    """
+    if freeze_result["state"] in (
+        cohort_freeze.STATE_COULD_NOT_READ,
+        cohort_freeze.STATE_LABEL_MISSING,
+    ):
+        state = STATE_COULD_NOT_FREEZE
+    else:
+        state = MODE_PREVIEW
     return _result(
-        MODE_PREVIEW,
+        state,
         freeze_result["reason"] or "dry run",
         label,
         tag,
@@ -287,8 +315,8 @@ def record_freeze(repo, tag, cohort, gh, run, state_path, at, execute=False):
             [("cutoff_scan", cutoff_scan), ("label_filter", len(read_back["numbers"]))],
         )
 
-    existing, _existing_reason = _last_cohort_entry(state_path, label)
-    if existing == route_record:
+    existing, existing_tag, _existing_reason = _last_cohort_entry(state_path, label)
+    if existing == route_record and existing_tag == tag:
         state_written = True
         reason = "already recorded ({}): nothing changed".format(
             oss_state.cohort_freeze_line(route_record)
@@ -299,7 +327,7 @@ def record_freeze(repo, tag, cohort, gh, run, state_path, at, execute=False):
                 state_path,
                 at,
                 _decision_for(route_record),
-                detail={"cohort_freeze": route_record},
+                detail={"cohort_freeze": route_record, "cohort_freeze_tag": tag},
             )
             state_written = True
             reason = oss_state.cohort_freeze_line(route_record)
@@ -393,16 +421,30 @@ def main(argv=None):
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args(argv)
 
+    # These two pre-flight checks run before `record_freeze` is ever called, so
+    # they answer independently of `--execute` -- but the mode they report must
+    # still say which one was asked for (#1410 self-review), or a caller reading
+    # `mode` back cannot tell a preview's pre-flight failure from an execute run
+    # that never got past its own pre-flight check.
+    mode = "execute" if args.execute else MODE_PREVIEW
+
     slug, problem = cohort_freeze._resolve_repo_slug(args.repo)
     if problem:
-        payload = _result(STATE_COULD_NOT_FREEZE, problem, None, args.tag, args.cohort)
+        payload = _result(
+            STATE_COULD_NOT_FREEZE, problem, None, args.tag, args.cohort, mode=mode
+        )
         _emit(payload, args.as_json)
         return _exit_code(payload["state"])
 
     gh = args.gh or gh_which.safe_which("gh")
     if not gh:
         payload = _result(
-            STATE_COULD_NOT_FREEZE, "gh is not on PATH", None, args.tag, args.cohort
+            STATE_COULD_NOT_FREEZE,
+            "gh is not on PATH",
+            None,
+            args.tag,
+            args.cohort,
+            mode=mode,
         )
         _emit(payload, args.as_json)
         return _exit_code(payload["state"])
