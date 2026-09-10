@@ -26,12 +26,31 @@ up `oss-workspace` in a repo you maintain.
 
 ## Type it once
 
-`/oss:run` is what a session opens on. It asks one question — what does this repo need now — from
-state and config: probes and writes `.oss.json` on a fresh clone, releases when its own trigger has
-fired, curates or triages when a backlog crosses its configured threshold, and otherwise reads the
-board, decides what is worth building, delegates it, reviews the result, and merges on green.
-Everything repo-specific — default branch, labels, test command, version sites — lives in
-`.oss.json`, written once rather than assumed.
+`/oss:run` is what a session opens on, and the only thing a person types. It asks one
+question — what does this repo need now — and answers it from state and config, never
+from an argument. Everything repo-specific lives in `.oss.json`: a cadence step written
+only in prose is one somebody has to remember, which is why they are thresholds instead.
+
+```mermaid
+flowchart TD
+    YOU([you, once]) --> W["oss-workspace<br/>update plugin · wire channel · open session"]
+    W -->|injects| RUN["/oss:run"]
+    RUN --> Q{"what does this<br/>repo need now?"}
+    Q -->|no config yet| CFG["probe the repo, write .oss.json"]
+    Q -->|someone wrote to us| IN["inbound: issue · PR · comment"]
+    Q -->|its trigger fired| REL["release: gates · audit · tag · publish"]
+    Q -->|a backlog crossed its threshold| CUR["curate trap.d"]
+    Q -->|a release just landed| TRI["triage the board"]
+    Q -->|otherwise| BOARD["read the board,<br/>decide what is worth building"]
+    BOARD --> LANE["developer lane<br/>worktree · test first · stops at a commit"]
+    LANE --> PR["pull request"] --> AUD["audit the diff for<br/>what CI cannot fail on"]
+    AUD --> GREEN{"green?"}
+    GREEN -->|no| LANE
+    GREEN -->|yes| MERGE["merge"]
+    CFG & IN & CUR & TRI & REL & MERGE --> RUN
+```
+
+The loop arms its own next turn and stops only on a direct instruction to stop.
 
 ## The launcher
 
@@ -41,21 +60,15 @@ command to wire up `oss-workspace` for the version you have installed. Run it fr
 
 ## More
 
-- [docs/overview.md](docs/overview.md) — what each piece is, what a tick does, what the loop
-  refuses to do, and where the project stands.
-- [docs/install.md](docs/install.md) — installing, developing this plugin, the launcher and its
-  symlink.
+- [docs/overview.md](docs/overview.md) — what it is for, and how to tell if work is inside that.
+- [docs/install.md](docs/install.md) — installing, developing it, the launcher and its symlink.
 - [docs/commands.md](docs/commands.md) — every slash command.
 - [docs/status-line.md](docs/status-line.md) — every status-line field.
-- [docs/development.md](docs/development.md) — running the test suite, and the scripts and hooks
-  that check this repo's own conventions.
-- [docs/status.md](docs/status.md) — what installing this plugin does and does not put in motion.
-- [docs/pick-the-work.md](docs/pick-the-work.md) — how the loop decides what to build next: the
-  five steps, who runs each, and what each one takes and returns.
-- [docs/open-the-workspace.md](docs/open-the-workspace.md) — how a maintainer session
-  starts: what the launcher sets up, and how it picks the opening command.
-- [docs/autonomy.md](docs/autonomy.md) — what "autonomous in somebody else's repo" would take, and
-  does not.
+- [docs/development.md](docs/development.md) — the test suite and this repo's own guards.
+- [docs/status.md](docs/status.md) — what installing this does and does not put in motion.
+- [docs/pick-the-work.md](docs/pick-the-work.md) — how the loop decides what to build next.
+- [docs/open-the-workspace.md](docs/open-the-workspace.md) — what the launcher sets up.
+- [docs/autonomy.md](docs/autonomy.md) — what "autonomous in someone else's repo" would take.
 - [CLAUDE.md](CLAUDE.md) — what is not proven yet, measured and dated at each release.
 
 ## License
