@@ -477,3 +477,33 @@ def test_main_preflight_bad_repo_reports_execute_mode_with_execute(monkeypatch, 
     out = capsys.readouterr().out
     assert exit_code == cfr.EXIT_COULD_NOT_FREEZE
     assert '"mode": "execute"' in out
+
+
+def test_main_preflight_missing_gh_also_reports_preview_mode_without_execute(
+    monkeypatch, capsys
+):
+    """The same `mode=mode` fix applies to `main()`'s *other* pre-flight branch
+    (`gh` not on PATH), not only the bad-`--repo` one -- both share one
+    `mode` computed once at the top of `main()`, but only the `--repo` branch
+    had a test until now."""
+    monkeypatch.setattr(cfr.gh_which, "safe_which", lambda *a, **kw: None)
+
+    exit_code = cfr.main(
+        [
+            "--repo",
+            REPO,
+            "--tag",
+            TAG,
+            "--cohort",
+            str(COHORT),
+            "--state",
+            "/tmp/does-not-matter-1410.json",
+            "--at",
+            AT,
+            "--json",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert exit_code == cfr.EXIT_COULD_NOT_FREEZE
+    assert '"mode": "preview"' in out
+    assert "gh is not on PATH" in out
