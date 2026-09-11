@@ -114,7 +114,23 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # every one of the six demoted files' literal paths to appear, not the
     # `<name>` placeholder the first draft used in the shared spawn example.
     # Ceiling unchanged; still comfortably under it.
-    "commands/run.md": (6810, 7300),
+    # Re-baselined once more in the same lane's own second self-review round:
+    # 6810 B became 7162 B, making each of the five remaining generic
+    # sub-steps (scaffold, install-audit, triage, curate, changelog) its own
+    # literal `Agent(...)` line rather than one shared example a reader had
+    # to adapt by hand -- an Explore reviewer found the shared form let the
+    # file drift back to "read and follow" prose for four of the five while
+    # the required literal paths stayed present, with nothing to notice.
+    # Ceiling unchanged; still comfortably under it.
+    # Raised once more, same self-review round: 7162 B became 8041 B. The
+    # `--take` CLI (#1414's own follow-up finding: `rank()` must never arm a
+    # receipt merely for being read, only an explicit commitment may) needed
+    # documenting in step 2 alongside `--record-skip`, since the ordinary
+    # case -- taking `candidates[0]` -- now needs a `--take` call before the
+    # corresponding spawn, not only the deviation case. Nothing already in
+    # the file argued that point, so nothing was cut to make room; the
+    # ceiling moves to 8900 B, ~10% headroom over the new size.
+    "commands/run.md": (8041, 8900),
 }
 
 

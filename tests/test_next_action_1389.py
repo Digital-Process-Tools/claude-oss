@@ -476,10 +476,13 @@ def _quiet_triage_trigger(monkeypatch):
     )
 
 
-def test_an_unchanged_curate_backlog_does_not_repeat_due_forever(tmp_path, monkeypatch):
-    """The must-not-fire-again half: calling `rank()` twice in a row against
-    the identical, unresolved backlog must report curate as `due` only
-    once -- the second call must fall through rather than looping."""
+def test_rank_alone_never_arms_the_curate_receipt(tmp_path, monkeypatch):
+    """#1414's own follow-up self-review finding (Explore reviewer): `rank()`
+    is a read. Calling it any number of times, on its own, must never arm
+    curate's repeat-suppression receipt -- only an explicit `--take`/
+    `--record-skip` commitment may. A plain, repeated `--json` read (what
+    step 2 of `commands/run.md` does every single loop) must keep reporting
+    the identical, unresolved backlog as due forever."""
     root = _git_repo(tmp_path)
     _write_config(
         root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
@@ -494,13 +497,18 @@ def test_an_unchanged_curate_backlog_does_not_repeat_due_forever(tmp_path, monke
     assert _candidate(first, "curate")["state"] == next_action.CANDIDATE_DUE
 
     second = next_action.rank(root)
-    assert _candidate(second, "curate") is None, second
+    assert _candidate(second, "curate")["state"] == next_action.CANDIDATE_DUE
+
+    third = next_action.rank(root)
+    assert _candidate(third, "curate")["state"] == next_action.CANDIDATE_DUE
 
 
-def test_a_changed_curate_count_re_arms(tmp_path, monkeypatch):
-    """Positive control: the same repo, but the backlog actually grows between
-    the two calls -- the second call must still fire, proving the fall-through
-    above is keyed to the reading, not to a route that never fires twice."""
+def test_taking_curate_arms_it_so_the_next_read_does_not_repeat_due_forever(
+    tmp_path, monkeypatch
+):
+    """The must-not-fire-again half now lives one layer up: `--take curate`
+    is the commitment that arms the receipt, and only a call that actually
+    commits may suppress a later, identical reading."""
     root = _git_repo(tmp_path)
     _write_config(
         root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
@@ -513,6 +521,32 @@ def test_a_changed_curate_count_re_arms(tmp_path, monkeypatch):
 
     first = next_action.rank(root)
     assert _candidate(first, "curate")["state"] == next_action.CANDIDATE_DUE
+
+    rc = next_action.main(["--root", str(root), "--take", "curate"])
+    assert rc == 0
+
+    second = next_action.rank(root)
+    assert _candidate(second, "curate") is None, second
+
+
+def test_a_changed_curate_count_re_arms(tmp_path, monkeypatch):
+    """Positive control: the same repo, taken once, but the backlog actually
+    grows before the next read -- it must fire again, proving the
+    suppression above is keyed to the reading, not to a route that never
+    fires twice."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+
+    first = next_action.rank(root)
+    assert _candidate(first, "curate")["state"] == next_action.CANDIDATE_DUE
+    assert next_action.main(["--root", str(root), "--take", "curate"]) == 0
 
     (root / "trap.d" / "2.another-lesson.md").write_text("a second lesson\n")
     second = next_action.rank(root)
@@ -701,6 +735,122 @@ def test_record_skip_refuses_on_an_empty_candidate_list(tmp_path):
     state_path = tmp_path / "oss-watch.json"
     with pytest.raises(ValueError):
         next_action.record_skip(str(state_path), [], "release", "no reason")
+
+
+def test_record_skip_refuses_an_unknown_taken_source(tmp_path):
+    """#1414's own follow-up self-review finding (Explore reviewer and
+    oss:auditor, independently): neither existing check catches a typo or a
+    hallucinated source name -- it is not the top candidate, and the list is
+    not empty. Without this, `--record-skip relaese --reason "..."` would be
+    written into the state file's permanent decision log exactly as
+    confidently as a real deviation."""
+    state_path = tmp_path / "oss-watch.json"
+    candidates = [
+        {"source": "release", "state": next_action.CANDIDATE_DUE},
+        {"source": "curate", "state": next_action.CANDIDATE_DUE},
+    ]
+    with pytest.raises(ValueError):
+        next_action.record_skip(str(state_path), candidates, "relaese", "typo")
+
+
+def test_skipping_curate_over_triage_does_not_arm_curates_receipt(
+    tmp_path, monkeypatch
+):
+    """The exact scenario the Explore reviewer's own repro used, pinned as a
+    regression test (#1414's follow-up self-review, finding 1): curate is
+    ranked first (`DEFAULT_ORDER` puts it ahead of triage); the scheduler
+    deliberately takes triage instead via `--record-skip`. Curate was never
+    acted on -- its backlog is completely unchanged -- so it must still
+    report `due` on the very next read, not silently fall to `not-due` for
+    having merely been passed over."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 0, "triage_route_threshold": 0})
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        lambda *a, **k: (
+            None,
+            {
+                "release": {"configured": False},
+                "curate": {
+                    "configured": True,
+                    "state": workspace_routes.OVER,
+                    "count": 1,
+                    "threshold": 0,
+                    "why": "1 of 1 fragment(s) waiting",
+                },
+                "triage": {
+                    "configured": True,
+                    "state": workspace_routes.OVER,
+                    "count": 3,
+                    "threshold": 0,
+                    "why": "3 of 5 open issue(s) missing lane-* or priority-*",
+                },
+            },
+        ),
+    )
+    _write_config(
+        root,
+        {
+            "curate_route_threshold": 0,
+            "triage_route_threshold": 0,
+            "state_file": ".max/oss-watch.json",
+        },
+    )
+
+    first = next_action.rank(root)
+    assert _candidate(first, "curate")["rank"] == 1
+    assert _candidate(first, "triage")["rank"] == 2
+
+    rc = next_action.main(
+        [
+            "--root",
+            str(root),
+            "--record-skip",
+            "triage",
+            "--reason",
+            "label coverage matters more this tick",
+        ]
+    )
+    assert rc == 0
+
+    second = next_action.rank(root)
+    curate_second = _candidate(second, "curate")
+    assert curate_second is not None, second
+    assert curate_second["state"] == next_action.CANDIDATE_DUE
+
+
+def test_take_cli_refuses_a_source_that_is_not_the_top_candidate(tmp_path, monkeypatch):
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+
+    rc = next_action.main(["--root", str(root), "--take", "release"])
+    assert rc != 0
+
+
+def test_take_cli_on_an_inbound_or_release_top_candidate_is_a_harmless_no_op(
+    tmp_path, monkeypatch
+):
+    """Positive control: `--take` on a source with no receipt of its own
+    (inbound, release) must still succeed -- it is a uniform commitment
+    step, not one that only makes sense for curate/triage."""
+    root = _git_repo(tmp_path)
+    _write_config(root)
+    _quiet_inbound(monkeypatch, unruled=1)
+    _not_fired_release(monkeypatch)
+    rc = next_action.main(["--root", str(root), "--take", "inbound"])
+    assert rc == 0
 
 
 # --- CLI --------------------------------------------------------------------

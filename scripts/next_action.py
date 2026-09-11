@@ -583,28 +583,22 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
     for index, entry in enumerate(candidates, start=1):
         entry["rank"] = index
 
-    # Self-review finding (Explore reviewer, #1405): now that every source is
-    # evaluated every call, only the entry that actually ends up as the
-    # answer -- `candidates[0]` -- may have its curate/triage repeat-
-    # suppression receipt armed. Arming at mere evaluation time would mark a
-    # lower-ranked, un-acted-on backlog as "already routed" the moment it
-    # merely showed up next to something ranked higher, reintroducing the
-    # permanent-divert defect #1390/#1064/#1155 exist to close. Re-running the
-    # candidate function costs no extra network round trip -- `curate` reads
-    # the already-fetched `routes` dict, and `triage` re-runs only local
-    # `git`/state-file reads via `triage_trigger.compute` -- so this is a
-    # second, narrow, read-only re-evaluation (self-review finding, follow-up
-    # Explore spawn on this same fix: the comment previously said "no extra
-    # forge call" for both, which is only precisely true for `curate`).
-    if candidates:
-        top_source = candidates[0]["source"]
-        if top_source == "curate":
-            candidates[0] = _curate_candidate(repo_root, config, routes, arm=True)
-            candidates[0]["rank"] = 1
-        elif top_source == "triage":
-            candidates[0] = _triage_candidate(repo_root, config, routes, arm=True)
-            candidates[0]["rank"] = 1
-
+    # Self-review finding (Explore reviewer, #1414's own follow-up review):
+    # `rank()` must never write anything, not even for `candidates[0]`. An
+    # earlier fix (#1405's own self-review) armed the top candidate's
+    # curate/triage receipt right here, reasoning that only the entry
+    # actually surfaced as the answer should ever be armed -- true, but
+    # "surfaced by this call" and "acted on by the caller" are still two
+    # different events, and #1414 gave a caller a real reason to call
+    # `rank()` (or `--record-skip`, which re-derives candidates via this
+    # same function) without ever taking `candidates[0]` at all. That
+    # collapsed the two events back together and reintroduced exactly the
+    # permanent-divert defect the arm=False/arm=True split was meant to
+    # close: a plain, read-only `--json` call -- or a `--record-skip` call
+    # that deliberately passes the top candidate OVER -- would arm it
+    # anyway, purely from being read. Arming now happens only in `_take_cli`
+    # and `_record_skip_cli`, at the moment a caller actually commits to a
+    # source, via `_arm_route_source` below -- never inside this function.
     if not candidates:
         return {
             "state": NOTHING_DUE,
@@ -656,9 +650,50 @@ def record_skip(state_path, candidates, taken_source, reason, at=None):
             "already {0!r}, matching taken_source; there is nothing to "
             "record".format(top.get("source"))
         )
+    known_sources = {entry.get("source") for entry in candidates}
+    if taken_source not in known_sources:
+        # Self-review finding (Explore reviewer + oss:auditor, independently,
+        # #1414's own follow-up review): a typo or a hallucinated source name
+        # used to sail straight through -- neither check above catches it,
+        # since it is not the top candidate and "not empty" says nothing
+        # about its own value -- and land in the state file's permanent
+        # decision log exactly as confidently as a real deviation. There is
+        # no way to tell the two apart later from the receipt alone.
+        raise ValueError(
+            "taken_source {0!r} is not one of this call's own ranked "
+            "sources ({1}) -- a typo here would otherwise be recorded as a "
+            "real, permanent decision nobody can act on".format(
+                taken_source, sorted(s for s in known_sources if s is not None)
+            )
+        )
     at = at if at is not None else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     decision = "took {0} over {1} ({2})".format(taken_source, top.get("source"), reason)
     return oss_state.append(state_path, at, decision)
+
+
+def _arm_route_source(repo_root, config, routes, source):
+    """Persist `source`'s own repeat-suppression receipt now -- the one and
+    only place this happens (#1414's own follow-up self-review finding).
+
+    `rank()` never writes anything, including for `candidates[0]`: a plain,
+    read-only call must not be indistinguishable from a caller actually
+    committing to act on what it read. This function is that commitment,
+    called only from `_take_cli` and `_record_skip_cli`, at the moment a
+    caller has decided -- ordinarily or by a deliberate skip -- which source
+    it is about to act on.
+
+    A no-op, returning `None`, for `inbound` and `release`: neither has a
+    receipt of this kind (`inbound` has none at all; `release`'s own
+    self-resolving signal is the merged-PR count itself, per `rank()`'s own
+    module docstring). Never raises -- a receipt write failing here is
+    exactly as fail-open as every other `_route_already_seen` call in this
+    module, named in the returned candidate's own `evidence.receipt` field
+    rather than propagated."""
+    if source == "curate":
+        return _curate_candidate(repo_root, config, routes, arm=True)
+    if source == "triage":
+        return _triage_candidate(repo_root, config, routes, arm=True)
+    return None
 
 
 def receipt(payload):
@@ -715,7 +750,64 @@ def _build_parser():
         default=None,
         help="required with --record-skip -- the one-line reason for the deviation",
     )
+    parser.add_argument(
+        "--take",
+        metavar="SOURCE",
+        default=None,
+        help=(
+            "commit to SOURCE now -- the ordinary case, where SOURCE is "
+            "rank()'s own candidates[0]. Arms curate/triage's repeat-"
+            "suppression receipt if SOURCE is one of them; a no-op receipt-"
+            "wise for inbound/release. Refuses if SOURCE is not the top "
+            "candidate -- use --record-skip for a deliberate deviation."
+        ),
+    )
     return parser
+
+
+def _resolve_ranked(root):
+    """`rank(root)`, refusing anything but a `RANKED` payload with a printed
+    `FAIL:` and `None` -- the one check both `_take_cli` and
+    `_record_skip_cli` need before they can look at `candidates` at all."""
+    payload = rank(root)
+    if payload.get("state") != RANKED:
+        print(
+            "FAIL: rank() is not currently {0!r} (state={1!r}), so there is no "
+            "top candidate to act on".format(RANKED, payload.get("state"))
+        )
+        return None
+    return payload
+
+
+def _load_config_and_routes(root, config=None):
+    """The `(config, routes)` pair `_arm_route_source` needs -- resolved
+    once here rather than duplicated across the two CLI functions below."""
+    if config is None:
+        config, _problems = oss_config.load(Path(root) / ".oss.json")
+        config = config or {}
+    routes = _routes(root, config)
+    return config, routes
+
+
+def _take_cli(root, source):
+    """The ordinary case: commit to `source`, which must be `rank()`'s own
+    `candidates[0]` -- never raises past this point, the same `FAIL:`/exit
+    convention `_record_skip_cli` already uses."""
+    payload = _resolve_ranked(root)
+    if payload is None:
+        return 1
+    candidates = payload["candidates"]
+    top_source = candidates[0].get("source") if candidates else None
+    if top_source != source:
+        print(
+            "FAIL: {0!r} is not the top candidate ({1!r}) -- use "
+            "--record-skip if this is a deliberate deviation".format(source, top_source)
+        )
+        return 1
+    config, routes = _load_config_and_routes(root)
+    _arm_route_source(root, config, routes, source)
+    print("OK: took {0}".format(source))
+    return 0
 
 
 def _record_skip_cli(root, taken_source, reason):
@@ -724,16 +816,19 @@ def _record_skip_cli(root, taken_source, reason):
     back in) and the `state_file` path from `.oss.json`, then delegates.
     Never raises past this point: every failure is a printed `FAIL:` and a
     non-zero exit, the same convention `main()`'s own JSON/receipt branches
-    use for a payload rather than an exception a shell caller has to catch."""
-    payload = rank(root)
-    if payload.get("state") != RANKED:
-        print(
-            "FAIL: rank() is not currently {0!r} (state={1!r}), so there is no "
-            "top candidate to have skipped".format(RANKED, payload.get("state"))
-        )
+    use for a payload rather than an exception a shell caller has to catch.
+
+    Arms `taken_source`'s own receipt (a no-op for inbound/release) once the
+    skip itself is recorded successfully -- the deviation is the decision to
+    act on `taken_source` instead of the top candidate, so the moment that
+    decision is on record is also the moment `taken_source` counts as
+    committed to, the same as `_take_cli`'s own ordinary case."""
+    payload = _resolve_ranked(root)
+    if payload is None:
         return 1
     config, _problems = oss_config.load(Path(root) / ".oss.json")
-    state_file = (config or {}).get("state_file")
+    config = config or {}
+    state_file = config.get("state_file")
     if not isinstance(state_file, str) or not state_file.strip():
         print("FAIL: no state_file configured, so the skip could not be recorded")
         return 1
@@ -743,6 +838,8 @@ def _record_skip_cli(root, taken_source, reason):
     except ValueError as exc:
         print("FAIL: {0}".format(exc))
         return 1
+    _config, routes = _load_config_and_routes(root, config=config)
+    _arm_route_source(root, config, routes, taken_source)
     print("OK: recorded ({0})".format(entry["decision"]))
     return 0
 
@@ -754,6 +851,8 @@ def main(argv=None):
             print("FAIL: --record-skip needs --reason")
             return 1
         return _record_skip_cli(args.root, args.record_skip, args.reason)
+    if args.take is not None:
+        return _take_cli(args.root, args.take)
     payload = rank(args.root)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))

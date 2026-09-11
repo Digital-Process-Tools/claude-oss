@@ -849,7 +849,7 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 21,917 B | 22,200 B |
-| `commands/run.md` | 6,810 B | 7,300 B |
+| `commands/run.md` | 8,041 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
@@ -889,9 +889,30 @@ shape (`due`/`nothing-due`/`could-not-decide`/`unsafe`) this file used to parse 
 candidate list, and this file now documents both that shape and the `--record-skip` CLI for a
 caller that deliberately takes a lower-ranked candidate. Nothing already in the file argued either
 point, so nothing was cut to make room; the ceiling moves to 7,300 B, ~10% headroom over the new
-size. Re-baselined once more in the same lane's own self-review round: 6,646 B became 6,810 B after
-`tests/test_picker_demotion_1389.py`'s own regression test required each of the six demoted files'
-literal path, not a `<name>` placeholder, in the shared spawn example. Ceiling unchanged.
+size. Re-baselined twice more in the same lane's own two self-review rounds: 6,646 B became
+6,810 B after `tests/test_picker_demotion_1389.py`'s own regression test required each of the six
+demoted files' literal path, not a `<name>` placeholder, in the shared spawn example; then 6,810 B
+became 7,162 B making each of the five remaining generic sub-steps its own literal `Agent(...)`
+line rather than one shared example (an Explore reviewer found the shared form left four of the
+five relying on nothing but the required path strings, with no guard against the file drifting
+back to "read and follow" prose for them); then 7,162 B became 8,041 B documenting the new
+`--take` CLI (below) alongside `--record-skip`, once the ordinary case -- taking `candidates[0]`
+-- also needed an explicit commitment call, not only a deviation. Ceiling moved to 8,900 B for the
+last of the three, ~10% headroom over the final size.
+
+**A second follow-up review round on this same lane found a real regression in `rank()` itself
+(unchanged by #1414's own diff, but newly exposed by it): the curate/triage repeat-suppression
+receipt used to be armed by `rank()` on every call, including a plain `--json` read, rather than
+only when a caller actually committed to acting on the top candidate.** `#1414`'s own
+`--record-skip` gave a caller a real reason to call `rank()` without ever taking `candidates[0]`
+at all, collapsing "surfaced" and "acted on" back into one event -- exactly the permanent-divert
+defect the earlier `arm=False`/`arm=True` split (see `#1405`'s own re-baseline above) was built to
+close. Fixed in the same round: `rank()` no longer writes anything, ever; a new `_arm_route_source`
+is the one place a receipt is persisted, called only from a new `--take <source>` CLI (the ordinary
+case) and from `--record-skip` (which arms the source actually taken, once the skip itself is
+recorded). `record_skip()` also gained a membership check on `taken_source` against the real ranked
+sources -- neither existing check caught a typo, and it would have been written into the state
+file's permanent decision log as confidently as a real deviation.
 
 **Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
 1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser

@@ -76,9 +76,22 @@ never arbitrating one verdict:
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/next_action.py" --root . --record-skip <source> --reason "<why>"
   ```
 
-  `source` is `inbound`, `release`, `curate` or `triage`. `inbound` has no dedicated spawn of its
-  own below -- `skills/manager/phases/inbound.md` is read inside dispatch's own tick, so an
-  `inbound` `candidates[0]` proceeds straight to **dispatch** rather than pointing anywhere new.
+  **Reading `rank()`'s answer never commits to it.** `next_action.py --json` is a plain read, and a
+  session that calls it many times over a long run must see the identical answer every time until
+  something actually changes -- curate and triage's own repeat-suppression receipt is armed only by
+  an explicit commitment, never by rank() being asked. Before spawning the procedure below for
+  whichever `source` you are actually taking (`candidates[0]`, ordinarily), say so:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/next_action.py" --root . --take <source>
+  ```
+
+  This is a no-op for `inbound`/`release` (neither carries a receipt of this kind) and refuses if
+  `<source>` is not `candidates[0]` -- use `--record-skip` instead for a deliberate deviation, which
+  arms `<source>`'s own receipt itself once the skip is recorded. `source` is `inbound`, `release`,
+  `curate` or `triage`. `inbound` has no dedicated spawn of its own below -- `skills/manager/phases/
+  inbound.md` is read inside dispatch's own tick, so an `inbound` `candidates[0]` proceeds straight
+  to **dispatch** rather than pointing anywhere new (and needs no `--take` call either).
 - **`nothing-due`** -- every source resolved cleanly and none fired. Proceed to **dispatch**.
 
 ## setup
@@ -94,15 +107,18 @@ return to step 2 -- `setup` changes what every other check reads.
 
 ## scaffold / install-audit / triage / curate / changelog
 
-Each keeps its own procedure, unchanged, at its own file -- `commands/run/scaffold.md`,
-`commands/run/install-audit.md`, `commands/run/triage.md`, `commands/run/curate.md`,
-`commands/run/changelog.md` -- moved out of `commands/` by #1389 (the plugin harness discovers
-slash commands from top-level `commands/*.md` only, never recursively), reachable here or by the
-forcing override above, never by typing `/oss:scaffold` and so on directly. Spawn the one step 2
-named (or the one `$ARGUMENTS` forced), naming its exact path in the prompt:
+Each keeps its own procedure, unchanged, at its own file -- moved out of `commands/` by #1389 (the
+plugin harness discovers slash commands from top-level `commands/*.md` only, never recursively),
+reachable here or by the forcing override above, never by typing `/oss:scaffold` and so on
+directly. Spawn the one step 2 named (or the one `$ARGUMENTS` forced) -- one literal call per file,
+never a `<name>` filled in by hand, so a session cannot follow the wrong one:
 
 ```
 Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/scaffold.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/install-audit.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/triage.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/curate.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/changelog.md from here.")
 ```
 
 Read its report, then return to step 2 to ask again what is needed now.
