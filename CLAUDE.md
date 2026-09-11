@@ -297,7 +297,7 @@ from being invisible.
 | `agents/triager.md` | 15,522 B | 16,600 B |
 | `agents/sub-manager.md` | 17,104 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
-| `agents/scheduler-step.md` | 5,154 B | 5,700 B |
+| `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -851,7 +851,7 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 21,939 B | 22,200 B |
-| `commands/run.md` | 8,233 B | 8,900 B |
+| `commands/run.md` | 8,400 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
