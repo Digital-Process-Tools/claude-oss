@@ -27,6 +27,9 @@ an **exit code**, never a line to grep:
 | `pending` | 2 | every leg is still running, or the rollup is empty |
 | `could-not-read` | 3 | the read failed -- `gh` unreachable, non-zero exit, unparsable output |
 
+A leg superseded by a later run of the same check name is excluded from `red` (#1458), matching
+`gh-pr:N:status`.
+
 It scans the named pull requests in order and stops at the first not pending -- no wait-for-all,
 so a red pull request is reported the instant it is seen rather than behind a slower neighbour.
 Its `red` line already carries the branch, the failing legs, the sha and the shortest decisive log

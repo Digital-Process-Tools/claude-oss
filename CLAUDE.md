@@ -520,7 +520,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
 | `skills/manager/phases/merge.md` | 14,776 B | 15,400 B |
-| `skills/manager/phases/ci-green.md` | 2,646 B | 2,700 B |
+| `skills/manager/phases/ci-green.md` | 2,761 B | 3,050 B |
 | `skills/manager/phases/inbound.md` | 6,533 B | 6,900 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
@@ -610,6 +610,14 @@ now shared by that file and `agents/releaser.md`, each holding a one-line pointe
 reasoning as `tick-order.md`'s own addition: a new subject earns a new file rather than being
 folded into `merge.md`, whose own row moved from 13,985 B to 14,230 B for the one pointer sentence
 it gained in place of restating anything.
+
+**#1458 raised `ci-green.md`'s ceiling from 2,700 B to 3,050 B**: 2,646 B became 2,761 B, past the
+old ceiling by 61 B. `pr_green.py` read a check-run conclusion (e.g. `CANCELLED`) as `red` even when
+a later run of the same check name superseded it, disagreeing with `gh-pr:N:status` -- the fix
+applies the same supersession rule (#1792) to `pr_green.py`, and the new sentence states that a
+superseded leg is excluded from `red`. Nothing already in the file argued that point, so nothing was
+cut to make room; the ceiling carries the same ~10% headroom the other re-baselines in this table
+use.
 
 **#1275 re-baselined `SKILL.md` and `phases/review.md` in the same self-review round that raised
 `agents/developer/review.md`'s ceiling above**, without raising either of these two ceilings: 41,601 B
