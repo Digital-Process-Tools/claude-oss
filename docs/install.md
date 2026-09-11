@@ -107,13 +107,14 @@ list rather than something you have to remember to check. Scaffold moved out of 
 #1389 (the plugin harness only discovers top-level `commands/*.md` as slash commands, never a
 subdirectory), so it is reached by `/oss:run scaffold` rather than a bare `/oss:scaffold`.
 
-Before the doctor diagnostic and before the session opens, the launcher also checks whether the
-`oss` plugin itself is current -- synchronously, the same trade the diagnostic already makes,
-because an update that lands mid-session was invisible until somebody happened to run
-`/oss:doctor` by hand (#753). A genuine update selects `/oss:doctor` as the opening prompt instead
-of the ordinary `/oss:tick`/`/oss:setup` choice, so the new copy diagnoses the tree it just moved
-to; nothing else changes the opening prompt. The `OSS_NO_AUTO_UPDATE` / `auto_update: false`
-opt-out already covers this exactly as it covers the SessionStart hook below. A `claude` started
+Before the session opens, the launcher also checks whether the `oss` plugin itself is current --
+synchronously, the same trade the old pre-launch diagnostic used to make, because an update that
+lands mid-session was invisible until somebody happened to run `/oss:doctor` by hand (#753). It no
+longer picks a prompt over this either (#1392): the update is reported on stderr and the session
+still opens on the same `/oss:run`, which diagnoses whatever tree it is standing on -- just-updated
+or not -- on its own first turn (#1390), rather than the launcher diverting to `/oss:doctor` from
+outside. The `OSS_NO_AUTO_UPDATE` / `auto_update: false` opt-out already covers this exactly as it
+covers the SessionStart hook below. A `claude` started
 by hand never reaches the launcher at all, so `hooks/session-start-update.sh` still runs the same
 check in the background on every `SessionStart` -- `scripts/plugin_update.py` debounces the two
 against each other, so the hook firing seconds after the launcher already checked does no
@@ -126,12 +127,14 @@ launcher would otherwise keep re-pointing itself at its own stale target forever
 silently on success and says so on stderr; if it cannot tell or cannot write, it says that and
 leaves the link untouched rather than guessing.
 
-Before the session starts working, the launcher runs `/oss:doctor`'s diagnostic over the repo it
-just resolved and relays anything short of a clean pass -- see `docs/commands.md`'s `/oss:doctor`
-row for what it covers. It never refuses to open a session over a broken repo; a maintainer whose
-config is broken is exactly the person who needs a session in which to fix it. Set
-`OSS_WORKSPACE_SKIP_DOCTOR=1` (any non-empty value) to skip it -- announced either way, with the
-repo then reported as unknown rather than fine.
+**The launcher itself no longer runs that diagnostic (#1392).** `/oss:run`'s own first turn does,
+over the repo the launcher already resolved and `cd`ed into -- relaying anything short of a clean
+pass, repairing what is ours to repair, and reporting the rest, rather than a launcher-side run
+whose findings a shell script has no way to act on. It never refuses to open a session over a
+broken repo; a maintainer whose config is broken is exactly the person who needs a session in which
+to fix it. See `docs/commands.md`'s `/oss:doctor` row for what the diagnostic covers, and
+`commands/run.md`'s step 1 for how `/oss:run` acts on it. There is no `OSS_WORKSPACE_SKIP_DOCTOR`
+opt-out any more -- that env var died with the launcher's own synchronous call.
 
 Measured 2026-08-29 on macOS 15.3.2 (arm64), with `supertool` 0.52.0, `gh` 2.98.0, node v22.22.1 and
 `claude` 2.1.219 on PATH: eight runs of the real launcher per arm, wall-clock mean, with the final
@@ -142,7 +145,10 @@ every open (#621), which this receipt did not carry when it was first written; o
 own added ~1.9 s, roughly half is its own `claude mcp get` call (`claude` itself takes about a second
 to start, independent of the network) and roughly half the pre-existing per-dependency network check
 bounded at 25 s per dependency -- not "most of it", the way this sentence used to read. One machine,
-one run of measurements; re-measure rather than trust this past its own date.
+one run of measurements; re-measure rather than trust this past its own date. **Taken before #1392
+moved the diagnostic out of the launcher and into `/oss:run`'s own first turn** -- the "~3.2 s with
+it" arm no longer corresponds to anything `bin/oss-workspace` does today, since the launcher never
+runs the diagnostic itself any more; re-measuring should time `/oss:run`'s step 1 instead.
 
 ## From the same workshop
 
