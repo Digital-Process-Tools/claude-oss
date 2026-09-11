@@ -16,7 +16,14 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md"))
+COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md")) + sorted(
+    (REPO_ROOT / "commands" / "run").glob("*.md")
+)
+#: Non-recursive by construction (#1389): the plugin harness discovers slash
+#: commands from top-level commands/*.md only, so a file moved into
+#: commands/run/ is demoted out of the picker while staying prose the loop
+#: still executes -- COMMANDS folds both in so the checks below keep covering
+#: it rather than silently narrowing the moment a file moved.
 
 # ${CLAUDE_PLUGIN_ROOT}/... in a fenced command line.
 PLUGIN_PATH_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+)")
@@ -83,8 +90,8 @@ def test_commands_use_the_plugin_root_variable_for_scripts():
 # load-bearing lines deleted. A predicate surviving all three has looked.
 # --------------------------------------------------------------------------- #
 
-SETUP_MD = REPO_ROOT / "commands" / "setup.md"
-SCAFFOLD_MD = REPO_ROOT / "commands" / "scaffold.md"
+SETUP_MD = REPO_ROOT / "commands" / "run" / "setup.md"
+SCAFFOLD_MD = REPO_ROOT / "commands" / "run" / "scaffold.md"
 # #1037: TICK_FACTS below (step 2/4 content: the board read, the radar heal)
 # moved out of commands/tick.md into its own phase file.
 TICK_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
@@ -125,7 +132,10 @@ def _points_at_an_identity_example(text):
 
 
 def _names_scaffold_as_the_next_step(text):
-    return "/oss:scaffold" in text and bool(re.search(r"tracked file", text, re.I))
+    """#1389: scaffold moved out of the picker, so the only real invocation left
+    is the /oss:run forcing override -- a bare "/oss:scaffold" no longer resolves.
+    """
+    return "/oss:run scaffold" in text and bool(re.search(r"tracked file", text, re.I))
 
 
 def _names_tick_as_the_next_step(text):
@@ -696,7 +706,7 @@ SETUP_FACTS = [
     (
         "scaffold is the next step",
         _names_scaffold_as_the_next_step,
-        r"/oss:scaffold|tracked file",
+        r"/oss:run scaffold|tracked file",
     ),
     (
         "the merge rule's file is named",
@@ -895,7 +905,7 @@ README_FACTS = [
     (
         "scaffold is in the launcher path",
         _names_scaffold_as_the_next_step,
-        r"/oss:scaffold|tracked file",
+        r"/oss:run scaffold|tracked file",
     ),
 ]
 
@@ -1321,8 +1331,8 @@ def test_pointing_at_a_repos_own_readme_fails_the_compatibility_predicate():
 
 # (this command, its doc, the command it must hand off to, the predicate for that)
 CHAIN = [
-    ("/oss:setup", SETUP_MD, "/oss:scaffold", _names_scaffold_as_the_next_step),
-    ("/oss:scaffold", SCAFFOLD_MD, "/oss:tick", _names_tick_as_the_next_step),
+    ("/oss:run setup", SETUP_MD, "/oss:run scaffold", _names_scaffold_as_the_next_step),
+    ("/oss:run scaffold", SCAFFOLD_MD, "/oss:tick", _names_tick_as_the_next_step),
     # A second entry point rather than a third link -- #957. A reopened session runs
     # /oss:doctor, not /oss:scaffold, and has no furniture step to name; it hands off
     # to /oss:tick directly, worded for that path rather than reusing the scaffold
@@ -1369,9 +1379,9 @@ def test_a_chain_with_a_missing_link_is_caught():
     assert len(_broken_links({source: SILENT for source, *_ in CHAIN})) == len(CHAIN)
 
     partial = _chain_texts()
-    partial["/oss:scaffold"] = SILENT
+    partial["/oss:run scaffold"] = SILENT
     assert _broken_links(partial) == [
-        "/oss:scaffold does not name /oss:tick as the next step"
+        "/oss:run scaffold does not name /oss:tick as the next step"
     ]
 
 
@@ -1665,7 +1675,7 @@ def test_deleting_the_carrying_lines_fails_the_predicate(
 # --------------------------------------------------------------------------- #
 
 ASSEMBLER_SCRIPT = REPO_ROOT / "scripts" / "assemble_changelog.py"
-CHANGELOG_MD = REPO_ROOT / "commands" / "changelog.md"
+CHANGELOG_MD = REPO_ROOT / "commands" / "run" / "changelog.md"
 
 ADD_ARGUMENT_RE = re.compile(r"""add_argument\(\s*["'](--[A-Za-z0-9-]+)["']""")
 

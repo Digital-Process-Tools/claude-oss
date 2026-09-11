@@ -112,7 +112,7 @@ def test_the_rule_layer_states_the_canonical_form():
 
 
 def test_the_changelog_command_states_the_canonical_form():
-    text = (REPO_ROOT / "commands" / "changelog.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "commands" / "run" / "changelog.md").read_text(encoding="utf-8")
     assert CANONICAL in text, text
 
 

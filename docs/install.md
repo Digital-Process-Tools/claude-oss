@@ -95,15 +95,17 @@ oss-workspace
 Without the symlink, run it as `bin/oss-workspace` from this checkout. The working directory is
 the selection: it opens *that* repo, never this plugin's own checkout.
 
-That opens a session over the repo you are standing in, with the maintainer loop already running —
-or with `/oss:setup` first if the repo has no `.oss.json` yet, since a tick against guessed values
-merges into the wrong place confidently.
+That opens a session on `/oss:run` (#1389/#1392: the launcher no longer picks a prompt), which
+probes and writes `.oss.json` itself when the repo has none yet, since a tick against guessed
+values merges into the wrong place confidently.
 
 Setup alone is not the whole onboarding: it writes nothing tracked, which leaves the repo
 configured and still without a `CLAUDE.md`, a security policy, issue templates or a changelog
-gate. **`/oss:scaffold` is the second step**, because it writes tracked files that want a branch,
-a diff and a review -- and setup ends by relaying scaffold's own read-only plan, so the gap is a
-measured list rather than something you have to remember to check.
+gate. **Scaffold is the second step**, because it writes tracked files that want a branch, a diff
+and a review -- and setup ends by relaying scaffold's own read-only plan, so the gap is a measured
+list rather than something you have to remember to check. Scaffold moved out of the picker in
+#1389 (the plugin harness only discovers top-level `commands/*.md` as slash commands, never a
+subdirectory), so it is reached by `/oss:run scaffold` rather than a bare `/oss:scaffold`.
 
 Before the doctor diagnostic and before the session opens, the launcher also checks whether the
 `oss` plugin itself is current -- synchronously, the same trade the diagnostic already makes,

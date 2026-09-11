@@ -53,20 +53,32 @@ reproducible and asked for.
 
 ## The surface
 
-**Today the picker shows more than it should**, including `manager`, which is
-the loop's spine — a library that every tick loads, published as a menu entry
-by `user_invocable: true` and invoked by nobody. Reading the menu does not tell
-you what to type.
-
-**The surface we are moving to is two verbs.** `/oss:run` (#1389) and the
+**The surface is moving to two verbs.** `/oss:run` (#1389) and the
 diagnose-repair-report-continue rule it follows on every start (#1390) are
-built and `bin/oss-workspace` no longer picks a prompt at all (#1392) -- it
-always opens `/oss:run`. **Not built yet:** the picker itself still lists the
-older commands `/oss:run` now absorbs (`tick`, `setup`, `triage`, `curate`,
-`release`, `scaffold`, `install-audit`, `changelog`) as their own top-level
-entries, because removing them cascades through roughly forty test files and
-several scripts that name `commands/tick.md` by path; that migration is its
-own, separately-reviewable change.
+built, `bin/oss-workspace` no longer picks a prompt at all (#1392) -- it
+always opens `/oss:run` -- and `manager` no longer publishes into the picker
+either (#1391: `user-invocable: false`, the hyphenated key the harness
+actually reads).
+
+**Six of the eight commands `/oss:run` absorbs are demoted** (#1389):
+`setup`, `scaffold`, `triage`, `curate`, `changelog`, `install-audit` moved
+from `commands/*.md` to `commands/run/*.md`. The plugin harness discovers
+slash commands from top-level `commands/*.md` only, never recursively, so a
+file one directory down is not a picker entry at all -- reachable from
+`/oss:run`'s own procedure and from the forcing override (`/oss:run setup`,
+and so on), never by typing the old bare name again. There is no frontmatter
+equivalent of a skill's `user-invocable: false` for a command file; removing
+it from the top-level directory is the only mechanism the harness offers.
+
+**Not demoted, deliberately: `/oss:tick` and `/oss:release`.** Both stay
+their own top-level commands. Grep for either path by name and the count of
+tests and scripts that name it directly is large -- spawn wiring, board-read
+caps, release-gate plugin-root checks, radar steps -- coupling deep enough
+that migrating either one is its own, separately-reviewable change rather
+than a rider on this one. `/oss:tick` in particular is the command a
+maintainer's fingers already know; leaving it live and unchanged during the
+transition is a deliberate choice, not an oversight. Reaching the full
+two-verb picker is the scope of a follow-up.
 
 | type | what it does |
 | --- | --- |
