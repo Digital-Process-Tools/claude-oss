@@ -220,7 +220,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # that can read issue/PR/comment text must carry -- `triage.md` reads
     # exactly that while this spawn is following it. Ceiling moved to
     # 5700 B, ~10% headroom over the new size.
-    "agents/scheduler-step.md": (5154, 5700),
+    # Re-baselined for #1425: 5154 B became 5162 B -- the curate report
+    # shape now names a fourth outcome, `defer`, alongside promote/merge/
+    # decline, matching the fourth outcome curate.md itself gained. Ceiling
+    # unchanged; comfortably under it.
+    "agents/scheduler-step.md": (5162, 5700),
 }
 
 

@@ -41,6 +41,7 @@ Four states, same discipline as `cohort_freeze` and `push_bypass` above it:
                     not a clean one -- and never as `declined`, which is stated on purpose.
 """
 
+import datetime as _dt
 import sys
 from pathlib import Path
 
@@ -501,41 +502,85 @@ def test_check_repo_corrupt_state_still_validates_a_malformed_at(tmp_path):
     assert "not-a-timestamp" in record["reason"]
 
 
-def test_this_repos_own_current_state_is_could_not_check_or_declined():
-    """The real integration point: run against this repo's own tree, with the real
-    (absent) `.max/claude-oss-watch.json`. Proves the honest third (or fourth)
-    state renders on the exact tree CI actually checks out, rather than being
-    only a fixture claim.
+def test_this_repos_own_marker_is_ok_against_a_state_built_to_cover_it(tmp_path):
+    """#1442: the previous version of this test read the real, git-ignored
+    `.max/claude-oss-watch.json` -- absent on every CI checkout, so
+    `check_repo` always answered `could-not-check` there and `expected` was
+    computed as exactly that, a vacuous pass on every leg. It also pinned
+    `at="2026-09-07T00:00:00Z"`, a wall-clock constant that goes stale every
+    release: any marker citing a cohort frozen after that date is correctly
+    reported as a `finding` on an input that lies about the date, not on a
+    real ordering defect (measured: this test was already red locally,
+    against a real state file, before any release touched it).
 
-    #1264: this repository's own live marker is not always the same shape --
-    a real `cohort-N at M` citation renders `could-not-check` here (no state
-    file exists to verify it against), while a stated decline renders
-    `declined` regardless of the state file, since a decline has nothing to
-    verify in the first place. Either is honest; a silent `ok` never is.
+    Two decisions, both made here rather than left open (#1442's own two
+    bullets):
 
-    Self-review (#1264): an earlier version of this test derived `expected`
-    by calling `cco.extract_cited_cohort` itself -- the very function
-    `check_repo` calls internally -- so it would still have passed against a
-    build of `extract_cited_cohort` that never implemented decline detection
-    at all (both sides would have silently agreed on `could-not-check`). The
-    independent oracle here is a raw substring check against the file's own
-    bytes, the same shape `test_extract_cited_cohort_on_this_repos_own_
-    claude_md_cross_checked` already uses above, so a regression in
-    `extract_cited_cohort` cannot cancel out against this test's own
-    expectation."""
+    - `at` is real UTC now (`datetime.now(timezone.utc)`), not a pinned
+      constant -- so this test cannot go stale by the calendar the way the
+      version it replaces did.
+    - the test builds its own state file in `tmp_path` rather than reading
+      the real, git-ignored one, so it runs identically here and on every CI
+      leg: a synthetic freeze record for whatever cohort CLAUDE.md's own
+      marker actually cites, dated safely in the past, proves `check_repo`
+      reports the marker `ok` against a state that genuinely covers it --
+      the assertion the old version could never make, since a correct
+      marker at a correct `at` is `ok`, which it asserted must never happen.
+
+    The independent-oracle design (#1264) survives the rewrite: the cited
+    cohort and count are pulled out of CLAUDE.md's own bytes by plain string
+    slicing, the same mechanism `test_extract_cited_cohort_on_this_repos_own_
+    claude_md_cross_checked` uses above, never through `cco.extract_cited_
+    cohort` itself -- so a regression there cannot cancel out against this
+    test's own expectation. A declined marker (#1264) has nothing to build a
+    freeze record for and is asserted `declined` directly, with no state
+    file at all, the same as `test_check_repo_end_to_end_declined` above."""
     text = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    expected = (
-        cco.CITATION_DECLINED
-        if cco._DECLINE_TEXT in text
-        else cco.CITATION_COULD_NOT_CHECK
+    section = cco._marker_section(text)
+    marker = "Cohort freeze: "
+    start = section.index(marker)
+    sentence_end = section.index(".", start)
+    sentence = section[start + len(marker) : sentence_end]
+
+    now = _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if sentence.startswith("cannot be cleanly cited this release"):
+        record = cco.check_repo(
+            claude_md_path=REPO_ROOT / "CLAUDE.md",
+            state_path=tmp_path / "does-not-exist.json",
+            at=now,
+        )
+        assert record["state"] == cco.CITATION_DECLINED
+        return
+
+    number_str, rest = sentence[len("cohort-") :].split(" at ", 1)
+    count_str = rest.split(" ", 1)[0]
+    cohort = "cohort-" + number_str
+    count = int(count_str)
+
+    state_path = tmp_path / "watch.json"
+    oss_state.append(
+        state_path,
+        # Safely in the past relative to `now`, whenever `now` is -- this
+        # only has to predate `at`, never a real historical instant.
+        at="2000-01-01T00:00:00Z",
+        decision="froze {} at {}".format(cohort, count),
+        detail={
+            "cohort_freeze": {
+                "cohort": cohort,
+                "counts": {"a": count, "b": count},
+                "count": count,
+                "state": oss_state.COHORT_MEASURED,
+                "why": None,
+            }
+        },
     )
     record = cco.check_repo(
         claude_md_path=REPO_ROOT / "CLAUDE.md",
-        state_path=REPO_ROOT / ".max" / "claude-oss-watch.json",
-        at="2026-09-07T00:00:00Z",
+        state_path=state_path,
+        at=now,
     )
-    assert record["state"] == expected
-    assert record["state"] != cco.CITATION_OK
+    assert record["state"] == cco.CITATION_OK
 
 
 # ---------------------------------------------------------------------------

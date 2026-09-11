@@ -75,8 +75,19 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # against opening a self-review finding by quoting/negating the
         # NO FINDINGS sentinel as a rhetorical denial, since review_return.py
         # classifies that combination could-not-classify. Ceiling unchanged.
-        11486,
-        11600,
+        # Raised for #1383: 11486 B became 12272 B, past the 11600 B ceiling
+        # by 672 B. `schemas/agent-report.schema.json` carries a
+        # `review.spawn_error` field that no document ever told a lane to
+        # fill in -- so a lane whose `Agent` tool was refused at runtime
+        # (observed 2026-09-09, a claude-supertool tick) had a correct
+        # `not-checked` state to land in, per #1333, but no instruction to
+        # record the one string (the verbatim refusal) that could ever
+        # settle whether the cause was a harness gate, a manifest issue, or
+        # something else. Nothing already in the file argued that point, so
+        # nothing was cut to make room; the ceiling moved to 13500 B, ~10%
+        # headroom over the new size.
+        12272,
+        13500,
         "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
     ),
     "agents/developer/review-return.md": (

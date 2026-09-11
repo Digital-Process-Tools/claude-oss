@@ -66,7 +66,7 @@ State plainly what the procedure file itself asked you to report -- each of the 
 shape: `setup` reports what was measured and written to `.oss.json`; `scaffold` reports created
 files versus replaced ones; `install-audit` reports what a human still has to do; `triage` reports
 the five-part sweep the triager's own brief already names; `curate` reports promote / merge /
-decline per fragment; `changelog` reports a fold or a check result. Whatever it is, put it in your
+decline / defer per fragment; `changelog` reports a fold or a check result. Whatever it is, put it in your
 final message **in full** -- the scheduler that spawned you reads only that message, never your
 transcript, and a reply that gestures at findings "reported above" hands back nothing at all (the
 same rule `agents/developer/review.md` states for a review spawn's own final message applies here

@@ -297,7 +297,7 @@ from being invisible.
 | `agents/triager.md` | 15,522 B | 16,600 B |
 | `agents/sub-manager.md` | 17,104 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
-| `agents/scheduler-step.md` | 5,154 B | 5,700 B |
+| `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -429,7 +429,7 @@ only the lane can report.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer/review.md` | 11,486 B | 11,600 B |
+| `agents/developer/review.md` | 12,272 B | 13,500 B |
 | `agents/developer/review-return.md` | 12,465 B | 13,700 B |
 | `agents/developer/report.md` | 18,942 B | 19,100 B |
 
@@ -460,6 +460,15 @@ any real, out-of-scope finding, after the sibling rule -- a non-blocking row rou
 instead -- landed in `agents/developer.md`'s own spine and every other site this diff touches. Too
 small an overage to trim something else in the same file to absorb, so the ceiling moved with ~10%
 headroom over the new size rather than cutting anything.
+
+**#1383 raised `agents/developer/review.md`'s ceiling from 11,600 B to 13,500 B**: 11,486 B became
+12,272 B, past the old ceiling by 672 B. `schemas/agent-report.schema.json` carries a
+`review.spawn_error` field that no document ever told a lane to fill in -- so a lane whose `Agent`
+tool was refused at runtime (observed 2026-09-09, a `claude-supertool` tick) had a correct
+`not-checked` state to land in, per #1333, but no instruction to record the one string (the
+verbatim refusal) that could ever settle whether the cause was a harness gate, a manifest issue, or
+something else. Nothing already in the file argued that point, so nothing was cut to make room; the
+ceiling moved with ~10% headroom over the new size.
 
 **#1047 raised `agents/developer/review-return.md`'s ceiling from 12,400 B to 13,700 B**: 11,249 B
 became 12,465 B. A fix commit answering an audit's own findings is a diff nothing makes a subject
@@ -851,7 +860,7 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 21,939 B | 22,200 B |
-| `commands/run.md` | 8,233 B | 8,900 B |
+| `commands/run.md` | 8,400 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take

@@ -148,7 +148,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # than a literal path -- now anchored to
     # `${CLAUDE_PLUGIN_ROOT}/commands/tick.md` the same way. Ceiling
     # unchanged; still comfortably under it.
-    "commands/run.md": (8233, 8900),
+    # Re-baselined for #1425: 8233 B became 8400 B. One sentence after the
+    # curate spawn line states its standing authority directly -- decides
+    # on its own, its pull request is the review -- so the spawn never has
+    # to infer that from the absence of an instruction to stop and ask.
+    # Ceiling unchanged; still comfortably under it.
+    "commands/run.md": (8400, 8900),
 }
 
 

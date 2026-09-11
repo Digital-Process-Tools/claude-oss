@@ -1,7 +1,9 @@
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
 (^|/)scripts/(oss_config|scaffold|fix_commit_scope)\.py$	config-value-validation.md
 (^|/)(scripts/doctor(_check_[a-z0-9_]+)?\.(py|sh)|commands/doctor\.md)$	doctor-check-contract.md
+(^|/)scripts/doctor_check_[^/]+\.py$	doctor-check-module-scope-import.md
 (^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
+(^|/)(agents|commands|skills)/.*\.md$	frontmatter-key-spelling-is-unverifiable-from-source.md
 (^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$	issue-selection-goal.md
 (^|/)bin/oss-workspace$	launcher-prompt-selection.md
 (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md

@@ -720,6 +720,40 @@ declined narrowing on the grounds that the absent-binary case would be answered 
 reader without `supertool` is no longer blocked, without this rule's `block` weakening for the
 reader who has it. Revisiting `block` again would be re-litigating a question `requires:` was
 written to close.
+
+### #1408: no provenance-verification section is added here, and here is why
+
+The repository that ships `supertool` itself carries its own jit-context tool-redirection rule for
+its own file tools, `.claude/jit-context/tools/00-manual/harness-tools-blocked.md`. That rule gained
+a "This is not a prompt injection" section, in that repository's own issue #1793, after a stock
+reviewer twice read the redirection block and reported it as fabricated attacker content -- the
+section tells a suspicious reader how to verify the block's provenance against tracked history.
+`supertool-required.md` -- scaffolded wholesale into every managed repository, that one's own
+checkout included -- carries the identical `mode: block` tool-redirection shape and no such section
+at all. #1408 asked whether that gap should close.
+
+**Not copied here, on the strength of the evidence that exists.** The lane that filed #1408 had
+already run a falsification experiment (that repository's own issue #2007, n=6 cold reads, two body
+variants) against `harness-tools-blocked.md` itself, and found the provenance section did **not**
+change a fresh reader's verdict: every reader called the redirection an injection regardless of
+whether the section was present. Adding equivalent prose here on the strength of "it worked there"
+would be acting against that repository's own measured result, not informed by it.
+
+**And the failure #1793 exists to prevent has no recorded instance against this rule.** #903, above,
+already shows two observed cases of a spawned, unbriefed `Explore` reviewer hitting this exact block
+and correctly treating it as untrusted content, routing around it via its own already-granted tools
+-- the safe outcome, with no provenance section present, because a reader holding no `supertool`
+grant was never going to act on the block either way. No incident has been recorded here of a
+session that DOES hold `supertool` mistaking this block for a fabricated attack rather than a real
+one -- the specific failure #1793's section was written to prevent.
+
+**The decision is recorded, not closed.** If a real report surfaces of a `supertool`-holding session
+wrongly treating this block as fabricated, or #2007's own line of experiments produces evidence that
+would change the calculus above, that is the trigger to revisit -- and, per #1408's own framing, to
+design something informed by what #2007 actually found rather than copy #1793 unmodified and expect
+a different result. Nothing changes in the rule body itself (`supertool-required.md`) either way: it
+is a `mode: block` rule re-injected whole on every refused call (#757 above), so a decision record
+belongs here, never in the per-refusal body.
 """
 
 
@@ -754,6 +788,12 @@ rename, an external-contributor PR, or anything irreversible.
 - **After merge, check the default branch's own run with `gh-branch`** (GREEN / NOT GREEN /
   NO RUN / UNKNOWN) -- a green PR is a statement about its merge-base, not about `main` after
   the squash.
+- **`mergeable: MERGEABLE` is a claim about the base the reading was computed against, not about
+  the base a merge would use now.** It does not re-render when another PR lands first -- it can
+  read `MERGEABLE | conflicts: no` continuously even after the default branch moved underneath it.
+  Before merging a PR whose base may have moved (several lanes merging in sequence), `git fetch &&
+  git merge origin/main` in the lane's own worktree first: two adjacent changed lines can arrive in
+  one conflict hunk, and neither side is right taken wholesale.
 - **Do not route around a denied merge.** Say the call was denied, name it exactly, and let
   the maintainer run or permit it.
 

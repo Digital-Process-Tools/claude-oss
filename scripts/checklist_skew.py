@@ -179,6 +179,13 @@ EFFECT_COULD_NOT_TELL = "effect-could-not-tell"
 #: comparison means.
 _VERSION_TOKEN_RE = re.compile(r"\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?")
 
+#: #1430: the narrower claim -- the token was actually named as "version
+#: N.N.N", not merely present somewhere in the line (most often inside a
+#: file path). Anchors `compare_effect`'s new provenance field.
+_ASSERTED_VERSION_RE = re.compile(
+    r"version\s*:?\s*(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.]+)?)", re.IGNORECASE
+)
+
 
 def _parse_effect_version(effect_line):
     """``(version, reason)`` out of a "checklist in effect: ..." line -- the
@@ -198,7 +205,7 @@ def _parse_effect_version(effect_line):
     said outright that it did not know.
     """
     if not effect_line or not effect_line.strip():
-        return None, "no 'checklist in effect' line was given to compare"
+        return None, "no 'checklist in effect' line was given to compare", None
     flat = _one_line(effect_line, limit=300)
     lowered = flat.lower()
     if "could not tell" in lowered:
@@ -207,6 +214,7 @@ def _parse_effect_version(effect_line):
             "the auditor's own report said 'could not tell' for the checklist in effect: {0}".format(
                 flat
             ),
+            None,
         )
     if "version unknown" in lowered:
         return (
@@ -214,6 +222,7 @@ def _parse_effect_version(effect_line):
             "the auditor's own report said 'version unknown' for the checklist in effect: {0}".format(
                 flat
             ),
+            None,
         )
     matches = _VERSION_TOKEN_RE.findall(flat)
     if not matches:
@@ -222,8 +231,22 @@ def _parse_effect_version(effect_line):
             "no version-shaped token (N.N.N) found in the checklist-in-effect line: {0}".format(
                 flat
             ),
+            None,
         )
-    return matches[-1], None
+    # #1430: `matches[-1]` alone cannot tell an explicit "version N.N.N"
+    # statement apart from a version-shaped token that only ever appeared
+    # inside the FILE PATH portion of the line (e.g. a cache directory named
+    # after the installed version, with no "version" word anywhere). Both
+    # used to report identically as a parsed version with no way for a
+    # caller to tell which one it actually got. `_ASSERTED_VERSION_RE`
+    # requires the literal word "version" immediately before the token --
+    # the auditor's own template phrasing -- so only a real assertion is
+    # ever labelled "asserted"; anything else that still parsed is labelled
+    # "path-scraped" rather than silently passed off as the same thing.
+    asserted = _ASSERTED_VERSION_RE.findall(flat)
+    if asserted:
+        return asserted[-1], None, "asserted"
+    return matches[-1], None, "path-scraped"
 
 
 def compare_effect(installed_version, effect_line):
@@ -247,14 +270,24 @@ def compare_effect(installed_version, effect_line):
     which protected the human-readable form but not a `--json` caller that
     reads `effect_line` straight out of the payload -- exactly the shape
     `commands/release.md`'s own worked example asks for.
+
+    `effect_version_provenance` (#1430) is ``"asserted"`` when the auditor's
+    own line explicitly named a version ("... version N.N.N"), ``"path-
+    scraped"`` when a version-shaped token still parsed but only because it
+    happened to appear elsewhere in the line -- almost always inside the
+    file path -- and ``None`` when `effect_version` itself is ``None``.
+    Before this field existed, both cases reported the same
+    `effect_version` with nothing to tell a reader which kind of evidence
+    it actually was.
     """
-    effect_version, reason = _parse_effect_version(effect_line)
+    effect_version, reason, provenance = _parse_effect_version(effect_line)
     payload = {
         "installed_version": installed_version,
         "effect_line": _one_line(effect_line, limit=300)
         if effect_line
         else effect_line,
         "effect_version": effect_version,
+        "effect_version_provenance": provenance,
     }
     if installed_version is None:
         return dict(
