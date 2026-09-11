@@ -264,18 +264,57 @@ def _one_line(text, limit=2000):
 SNAPSHOT_ARTIFACT_RE = re.compile(r"(?:^|/)(?:[^/]*-)?before-snapshot\.json$")
 
 
-def _is_own_snapshot_artifact(status_line):
-    """True when a porcelain v2 untracked (``? <path>``) line names a file
-    matching this module's own before-snapshot naming convention.
+def _normalize_snapshot_path(path):
+    """Forward slashes, no leading ``./`` -- the shape both a porcelain
+    status line and a caller-supplied ``--before`` argument converge on,
+    close enough to compare directly regardless of which relative form
+    either one happened to be spelled in."""
+    normalized = path.replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized
+
+
+def _paths_name_the_same_file(status_path, own_snapshot_path):
+    """True when a git-status path and the caller's own ``--before`` path
+    plausibly name the same file, tolerant of one being relative to the
+    repo root and the other to some other cwd (an absolute path, or a
+    path relative to wherever the caller happened to invoke this script
+    from) -- an exact match, or one ending in ``/`` + the other."""
+    a = _normalize_snapshot_path(status_path)
+    b = _normalize_snapshot_path(own_snapshot_path)
+    return a == b or a.endswith("/" + b) or b.endswith("/" + a)
+
+
+def _is_own_snapshot_artifact(status_line, own_snapshot_path=None):
+    """True when a porcelain v2 untracked (``? <path>``) line names this
+    module's own before-snapshot artifact.
 
     Only untracked lines are ever eligible: the artifact this module writes
     is a brand-new file, never a modification of something already tracked,
     so a ``1``/``2``-prefixed (ordinary change / rename) line is never
     excluded here regardless of its path.
+
+    #1430: when the caller told us which file it actually used as the
+    before-snapshot (``own_snapshot_path``, threaded through from
+    `compare`'s own optional argument -- the ordinary CLI shape is
+    ``compare --before <path>``), the exclusion is ANCHORED to that exact
+    file rather than to the generic naming convention -- a real, unrelated
+    file that happens to also match `SNAPSHOT_ARTIFACT_RE` (e.g. a lane's
+    own fixture named ``src/anything-before-snapshot.json``) must still be
+    reported as a mutation, not silently swallowed by the pattern.
+
+    With no such path known (`compare` invoked directly by a caller that
+    built its own before/after dicts, as every test in
+    `tests/test_tree_snapshot_own_artifact_1330.py` still does, or the
+    before-snapshot was read from stdin), there is nothing to anchor to,
+    so the old, unanchored pattern match is the fallback -- unchanged.
     """
     if not status_line.startswith("? "):
         return False
     path = status_line[2:]
+    if own_snapshot_path:
+        return _paths_name_the_same_file(path, own_snapshot_path)
     return bool(SNAPSHOT_ARTIFACT_RE.search(path))
 
 
@@ -291,8 +330,16 @@ def _verdict(state, reason, **extra):
     return out
 
 
-def compare(before, after):
-    """Sort a before/after pair of `snapshot()` dicts into the three states."""
+def compare(before, after, own_snapshot_path=None):
+    """Sort a before/after pair of `snapshot()` dicts into the three states.
+
+    `own_snapshot_path` (#1430) is the caller-supplied path to the actual
+    before-snapshot file, when known -- CLI callers pass `args.before`
+    through `main()`. Anchors the own-artifact exclusion to that specific
+    file rather than the generic naming convention; see
+    `_is_own_snapshot_artifact`'s own docstring for what changes and what
+    stays the same when this is left unset.
+    """
     for label, snap in (("before", before), ("after", after)):
         if not isinstance(snap, dict):
             # Same finding as `_read_before`'s own shape check, caught again
@@ -323,12 +370,12 @@ def compare(before, after):
     added = sorted(
         line
         for line in (after_lines - before_lines)
-        if not _is_own_snapshot_artifact(line)
+        if not _is_own_snapshot_artifact(line, own_snapshot_path)
     )
     removed = sorted(
         line
         for line in (before_lines - after_lines)
-        if not _is_own_snapshot_artifact(line)
+        if not _is_own_snapshot_artifact(line, own_snapshot_path)
     )
     head_moved = before.get("head") != after.get("head")
 
@@ -507,7 +554,12 @@ def main(argv=None):
                 and before.get("root_resolved") is True
                 else "."
             )
-        verdict = compare(before, snapshot(root_for_after))
+        # #1430: anchor the own-artifact exclusion to the file the caller
+        # actually named as the before-snapshot, not the generic naming
+        # convention -- "-" (stdin) names no such file, so it falls through
+        # to the old unanchored behaviour, unchanged.
+        own_snapshot_path = args.before if args.before != "-" else None
+        verdict = compare(before, snapshot(root_for_after), own_snapshot_path)
 
     print("VERDICT: {0} -- {1}".format(verdict["state"], _one_line(verdict["reason"])))
     if verdict["head_moved"]:

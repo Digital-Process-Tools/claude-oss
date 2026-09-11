@@ -2617,10 +2617,31 @@ def test_a_whitespace_only_mechanism_is_refused_too():
 
     pass the floor while describing exactly as much as the empty string the
     floor was built to catch -- this is the same gap wearing padding. Fixed
-    by stripping before counting; the reported character count stays the
-    raw one, so the message matches what was actually typed.
+    by stripping before counting; the message (#1430) now names both the
+    stripped count actually compared against the minimum and the raw count
+    as typed, rather than only the raw one, which used to make the message
+    self-contradicting (e.g. "25 characters, shorter than the 20 minimum").
     """
     padded = _example()
     padded["review"]["mechanism"] = " " * 25
     errors = report_schema.validate(padded)
     assert any("review.mechanism" in error for error in errors), errors
+
+
+def test_min_length_message_does_not_contradict_itself_on_padding():
+    """#1430: the message printed `len(value)` (the raw, unstripped length)
+    while the check itself compares `len(value.strip())` against the
+    minimum -- so a 25-space mechanism produced "25 characters, shorter
+    than the 20 minimum", which reads as false on its face (25 is not
+    shorter than 20). The message must name the count that was actually
+    compared against the minimum, i.e. it must never claim a raw length
+    that exceeds the minimum was "shorter than" it.
+    """
+    padded = _example()
+    padded["review"]["mechanism"] = " " * 25
+    errors = report_schema.validate(padded)
+    matches = [error for error in errors if "review.mechanism" in error]
+    assert matches, errors
+    message = matches[0]
+    assert "0 characters" in message, message
+    assert "25 characters, shorter than the 20 minimum" not in message, message
