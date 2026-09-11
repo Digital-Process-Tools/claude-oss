@@ -326,6 +326,28 @@ def check_mcp_channel_connection(
                 "alike.".format(detail, aged),
             )
             return
+        # #1440: a `failed` listing binds nothing to this session's own
+        # subprocess consumer -- only `bin/oss-workspace`'s launcher census
+        # (relayed via `OSS_WORKSPACE_MCP_LIST_CHECKED`, the same sentinel
+        # `mcp_channel_connection_state` above trusts for the SAME reason)
+        # ever arms one. A session opened any other way cannot have bound a
+        # consumer at all, so a failed transport there is the expected
+        # reading, not a fault -- and it settles the next time a session IS
+        # opened through the launcher. A session that WAS opened through the
+        # launcher and still reports failed is a real gap: something that
+        # should have bound the socket did not.
+        env_ = os.environ if env is None else env
+        if env_.get("OSS_WORKSPACE_MCP_LIST_CHECKED") != "1":
+            doctor.report(
+                "WAIT",
+                "channel MCP connection: every MCP server resolving to the "
+                "claude-channel consumer reports a failed transport ({}), and this "
+                "session was not opened through bin/oss-workspace -- nothing in a "
+                "session opened another way arms or binds the consumer, so this is "
+                "the expected reading rather than a fault. Settles the next time a "
+                "session is opened through the launcher.".format(detail),
+            )
+            return
         doctor.report(
             "WARN",
             "channel MCP connection: every MCP server resolving to the "

@@ -12,6 +12,7 @@ and no third: **a manual op** (a `gh api` call, a settings change, installing a 
 | --- | --- | --- |
 | `OK` | checked, fine | nothing |
 | `NOTICE` | the check has declared it can never answer (#764) | nothing -- it does not gate `VERDICT:` |
+| `WAIT` | the answer settles on its own; the line names what settles it (#1440) | nothing -- does not gate `VERDICT:` or fill `dr` |
 | `WARN` | ran and could not answer, or found a gap it CAN resolve | clear it |
 | `FAIL` | checked, broken | clear it |
 | `not checked` | the check never ran (5 lines say it when `.oss.json` is absent) | a gap in the measurement, not a finding |
@@ -20,6 +21,14 @@ and no third: **a manual op** (a `gh api` call, a settings change, installing a 
 state for a false positive, so one renders as work and a maintainer does it -- and #1062's own remedy,
 followed, would have displaced the CodeQL default setup already scanning this repository. When a WARN
 cannot be cleared, file against the check.
+
+**Except when what clears it is a clock rather than an op (#1440).** A cache older than its own
+refresh interval, an install record read mid-rewrite, a channel consumer that only a launched session
+can bind -- none of these is a manual op or a scaffold run, and none is a bug in the check either:
+the check is right, the reading is real, and it clears itself. That third kind is `WAIT`, not a WARN
+wearing the wrong level and not a defect to file. #1390 is the incident this row exists to name: four
+WARNs, none of them the loop's or a maintainer's to clear, that pinned the statusline's `dr` marker
+after the first end-to-end `/oss:run` and read as the diagnose step having failed.
 
 **And an unclearable WARN is not merely noise -- it changes what the launcher does (#1064).**
 `bin/oss-workspace` replaces `/oss:tick` with `/oss:doctor` whenever the pre-launch diagnostic returns

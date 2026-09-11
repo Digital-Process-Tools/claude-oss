@@ -41,6 +41,13 @@ CONNECTED_ROW = "oss-channel: bun " + CONSUMER + " - ✔ Connected"
 UNRELATED_ROW = "claude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ✔ Connected"
 BANNER = "Checking MCP server health…"
 
+#: #1440: the one fact `bin/oss-workspace` exports that tells a launched
+#: session apart from one opened any other way -- see `check_mcp_channel_
+#: connection`'s own `mcp_channel_connection_state` arm, which already
+#: trusts this exact sentinel for the SAME reason (#1372's own gate 3
+#: finding: the sentinel, not the value, is what makes a relay trustworthy).
+LAUNCHED = {"OSS_WORKSPACE_MCP_LIST_CHECKED": "1"}
+
 
 def setup_function(_):
     doctor.FINDINGS.clear()
@@ -140,11 +147,13 @@ def test_all_failed_is_failed_and_any_connected_is_connected():
 
 def test_a_failed_transport_warns_rather_than_passing():
     """The defect this check exists to remove: on this exact machine state the
-    registration checks reported OK twice and nothing was delivered."""
+    registration checks reported OK twice and nothing was delivered. A launched
+    session (#1440) is what makes a failed transport a real fault rather than
+    the expected reading -- see LAUNCHED's own docstring."""
     conn.check_mcp_channel_connection(
         run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
         which=lambda _name: "/usr/bin/claude",
-        env={},
+        env=LAUNCHED,
     )
     assert _levels() == ["WARN"]
     assert "failed transport" in _text()
@@ -227,7 +236,7 @@ def test_an_established_fault_is_still_a_warning():
     conn.check_mcp_channel_connection(
         run=lambda *_a, **_k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
         which=lambda _n: "/usr/bin/claude",
-        env={},
+        env=LAUNCHED,
     )
     conn.check_channel_delivery(
         "/repo", resolve=lambda _d: ("not_delivering", "cached", 12.0)
@@ -369,7 +378,7 @@ def test_a_failed_row_renders_the_harness_reason_rather_than_a_literal_brace():
     conn.check_mcp_channel_connection(
         run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
         which=lambda _name: "/usr/bin/claude",
-        env={},
+        env=LAUNCHED,
         resolve=lambda _root: ("not_delivering", "cached", 3),
     )
     assert _levels() == ["WARN"]
@@ -412,7 +421,41 @@ def test_a_failed_row_with_no_usable_health_reading_still_warns():
                 "C", (), {"returncode": 0, "stdout": FAILED_ROW}
             )(),
             which=lambda _name: "/usr/bin/claude",
-            env={},
+            env=LAUNCHED,
             resolve=lambda _root, _r=reading: _r,
         )
         assert _levels() == ["WARN"], reading
+
+
+# --------------------------------------------------------------- #1440: WAIT
+
+
+def test_a_failed_row_waits_rather_than_warns_when_not_launched_1440():
+    """A session opened any other way than `bin/oss-workspace` cannot have
+    bound the consumer at all -- nothing in it arms one. A failed transport
+    there is the expected reading, not a fault, and it settles the next time
+    a session IS opened through the launcher."""
+    conn.check_mcp_channel_connection(
+        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _name: "/usr/bin/claude",
+        env={},
+        resolve=lambda _root: ("not_delivering", "cached", 3),
+    )
+    assert _levels() == ["WAIT"]
+    assert "not opened through bin/oss-workspace" in _text()
+    assert "settle" in _text().lower()
+
+
+def test_a_failed_row_still_warns_when_launched_positive_control_1440():
+    """The positive control for the test above: LAUNCHED is exactly what
+    `test_a_failed_transport_warns_rather_than_passing` already asserts --
+    restated here beside its own WAIT sibling so the two cannot silently
+    drift onto the same reading."""
+    conn.check_mcp_channel_connection(
+        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _name: "/usr/bin/claude",
+        env=LAUNCHED,
+        resolve=lambda _root: ("not_delivering", "cached", 3),
+    )
+    assert _levels() == ["WARN"]
+    assert "not opened through bin/oss-workspace" not in _text()

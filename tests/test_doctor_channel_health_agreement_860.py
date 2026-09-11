@@ -384,3 +384,49 @@ def test_preset_disabled_helper_reads_the_explicit_false(monkeypatch):
 def test_preset_disabled_helper_does_not_fold_unknown_into_disabled(monkeypatch):
     monkeypatch.setattr(agreement, "statusline", _FakeStatusline(preset_declared=None))
     assert agreement._preset_disabled("/repo") is False
+
+
+# --------------------------------------------------------------------------
+# #1440: a stale cache beside a census that DID answer is a clock, not a
+# fault -- WAIT, not WARN. The other could-not-compare causes stay WARN.
+# --------------------------------------------------------------------------
+
+
+def test_stale_cache_beside_a_clean_census_waits_rather_than_warns_1440(monkeypatch):
+    fake = _FakeStatusline(
+        cache={"channel": {"raw_state": "forwarding"}, "channel_fetched_at": 0.0}
+    )
+    monkeypatch.setattr(agreement, "statusline", fake)
+
+    def run(argv, **kw):
+        return _Completed(
+            0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n"
+        )
+
+    agreement.check_channel_health_agreement(
+        "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=1000.0
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WAIT", message
+    assert "could not compare" in message
+    assert "Settles on the next statusline render" in message
+
+
+def test_stale_cache_beside_a_census_that_could_not_ask_still_warns_1440(monkeypatch):
+    """The positive control: staleness alone is not enough for WAIT. When the
+    OTHER half of the comparison could not answer either, nothing establishes
+    this will clear on its own, so it must stay WARN."""
+    fake = _FakeStatusline(
+        cache={"channel": {"raw_state": "forwarding"}, "channel_fetched_at": 0.0}
+    )
+    monkeypatch.setattr(agreement, "statusline", fake)
+
+    def run(argv, **kw):
+        return _Completed(1, b"boom")
+
+    agreement.check_channel_health_agreement(
+        "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=1000.0
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WARN", message
+    assert "could not compare" in message

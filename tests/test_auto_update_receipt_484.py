@@ -145,3 +145,101 @@ def test_updated_with_a_partial_failure_names_the_failed_scope_too_521(
     state, message = doctor.FINDINGS[0]  # the loop plugin's row -- see #605 note above
     assert state == "WARN", doctor.FINDINGS
     assert "local" in message and "boom" in message
+
+
+def test_could_not_check_becomes_wait_when_a_fresh_check_answers_cleanly_1440(
+    tmp_path, monkeypatch
+):
+    """#1440's own measured instance: the cached receipt's install record could not
+    be read (mid-rewrite during the launcher's own version bump), and a fresh check
+    right now answers cleanly -- that is a clock, not a fault, so this must WAIT
+    rather than WARN, and must name what settles it."""
+    _reset()
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
+    monkeypatch.setattr(
+        plugin_update,
+        "read_receipt",
+        lambda: {
+            "state": "could-not-check",
+            "detail": "the install record could not be read",
+        },
+    )
+    doctor.check_auto_update(
+        str(tmp_path),
+        fresh_check=lambda: {
+            "state": "current",
+            "detail": "already at the newest published version",
+        },
+    )
+    state, message = doctor.FINDINGS[0]
+    assert state == "WAIT", doctor.FINDINGS
+    assert "current" in message
+    assert "settles" in message.lower()
+
+
+def test_could_not_check_fresh_check_never_calls_update_1440(tmp_path, monkeypatch):
+    """The self-review finding this test exists to lock in: the fresh check must
+    be genuinely read-only. `plugin_update.update()` runs real, mutating
+    subprocesses (`claude plugin marketplace update`, `claude plugin update
+    ... --scope ...`) -- a diagnostic calling it from inside `check_auto_update`
+    would perform a real install action as a side effect of a doctor run. This
+    asserts the REAL (non-injected) fresh-check path never reaches `update` at
+    all, only the pure-read `installed_version`/`plugin_name`."""
+    _reset()
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
+    monkeypatch.setattr(
+        plugin_update,
+        "read_receipt",
+        lambda: {
+            "state": "could-not-check",
+            "detail": "the install record could not be read",
+        },
+    )
+
+    def _explode(*_a, **_k):  # pragma: no cover -- fails the test if reached
+        raise AssertionError("check_auto_update called plugin_update.update()")
+
+    monkeypatch.setattr(plugin_update, "update", _explode)
+    monkeypatch.setattr(plugin_update, "plugin_name", lambda plugin_root=None: "oss")
+    monkeypatch.setattr(
+        plugin_update,
+        "installed_version",
+        lambda name, root, plugins_root=None: "0.32.0",
+    )
+    doctor.check_auto_update(str(tmp_path))  # no fresh_check injected -- the real path
+    state, message = doctor.FINDINGS[0]
+    assert state == "WAIT", doctor.FINDINGS
+    assert "0.32.0" in message
+
+
+def test_could_not_check_stays_warn_when_the_fresh_check_also_fails_1440(
+    tmp_path, monkeypatch
+):
+    """The positive control for the test above: a fresh check that ALSO cannot
+    answer is a real, standing gap -- not a clock -- and must stay WARN."""
+    _reset()
+    monkeypatch.setattr(
+        plugin_update, "opt_out", lambda root=None, env=None: ("on", None)
+    )
+    monkeypatch.setattr(
+        plugin_update,
+        "read_receipt",
+        lambda: {
+            "state": "could-not-check",
+            "detail": "the install record could not be read",
+        },
+    )
+    doctor.check_auto_update(
+        str(tmp_path),
+        fresh_check=lambda: {
+            "state": "could-not-check",
+            "detail": "still could not read the install record",
+        },
+    )
+    state, message = doctor.FINDINGS[0]
+    assert state == "WARN", doctor.FINDINGS
+    assert "could not check" in message

@@ -3,14 +3,25 @@
 Contract, and every line of it is load-bearing:
 
 * **Exit code 0, always.** A diagnostic must print its findings, not fail to run.
-* **Four states: OK / NOTICE / WARN / FAIL.** WARN is "the check ran and could not
-  answer" -- a finding a maintainer can act on. NOTICE is the same absence for a
-  check that already says, in its own text, that it is structurally unable to
-  ever answer (#764) -- reported on every run, never actionable, and never
-  counted toward the verdict's own gate. A check that cannot answer must never
-  render as a check that found nothing, and a check that can NEVER answer must
-  not sit at the same level as one a maintainer can act on -- see the VERDICT
-  arithmetic in `main()`.
+* **Five states: OK / NOTICE / WAIT / WARN / FAIL.** WARN is "the check ran and
+  could not answer" -- a finding a maintainer can act on. NOTICE is the same
+  absence for a check that already says, in its own text, that it is
+  structurally unable to ever answer (#764) -- reported on every run, never
+  actionable, and never counted toward the verdict's own gate. **WAIT (#1440)**
+  is a third kind of absence, and the middle two must never collapse into each
+  other: NOTICE never resolves on its own, WAIT does -- a cache clock runs out,
+  a file finishes being written, a session gets relaunched. A `WAIT` line
+  always names what settles it, still prints on every run, and -- like NOTICE
+  -- never counts toward the verdict's own gate and never fills the
+  statusline's `dr` marker (`scripts/statusline.py`'s `_doctor_field` reads
+  only the free-text `VERDICT:` line's own three prefixes, never an
+  individual finding's level, so a state this file never folds into that
+  prefix cannot move it -- nothing else needed to change for that guarantee to
+  hold). A check that cannot answer must never render as a check that found
+  nothing, a check that can NEVER answer must not sit at the same level as one
+  a maintainer can act on, and a reading that will answer itself on its own
+  clock must not sit at the same level as either -- see the VERDICT arithmetic
+  in `main()`.
 * **One VERDICT line, last.** Greppable, so a human can paste the tail. This holds for
   every diagnostic run. ``--help`` is the one invocation that is not one: it prints
   usage and no VERDICT, and still exits 0.

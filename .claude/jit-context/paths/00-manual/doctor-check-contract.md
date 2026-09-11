@@ -11,14 +11,17 @@ naming the command is not running it, and the decision to run stays with the ses
 
 Two tests, both from #1065.
 
-**1. If nothing can clear it, the bug is in the check.** The states are `OK` / `NOTICE` / `WARN` /
-`FAIL`, and `NOTICE` is reserved for a check that has declared itself structurally unable to *ever*
-answer (#764). There is no state for a WARN that is simply wrong, so a false positive renders as
-work -- and in the worst case the work makes the repository worse. #1062 is the measured instance:
-`CodeQL coverage` warns on a repository CodeQL already scans through GitHub's default setup, and the
-workflow it asks for would displace the setup already running. Its verdict is not *add the workflow*;
-it is *this check must not WARN here*. Apply the test before adding a check, and to every existing
-one: no manual op, no scaffold run, no WARN.
+**1. If nothing can clear it, the bug is in the check -- unless a clock clears it instead.** The
+states are `OK` / `NOTICE` / `WAIT` / `WARN` / `FAIL`. `NOTICE` is reserved for a check that has
+declared itself structurally unable to *ever* answer (#764). `WAIT` (#1440) is the third kind of
+absence: the check ran, the reading is real, and it settles on its own -- a cache clock, a session
+relaunch -- with no manual op and no scaffold run involved at all. There is no state for a WARN that
+is simply wrong, so a false positive renders as work -- and in the worst case the work makes the
+repository worse. #1062 is the measured instance: `CodeQL coverage` warns on a repository CodeQL
+already scans through GitHub's default setup, and the workflow it asks for would displace the setup
+already running. Its verdict is not *add the workflow*; it is *this check must not WARN here*. Apply
+the test before adding a check, and to every existing one: no manual op, no scaffold run that clears
+it, and no clock that clears it either -- WARN only when none of those three exist.
 
 **2. The remedy has to be runnable, not only clickable.** `/oss:doctor` runs inside a session whose
 agent is expected to clear what it reports. `Enable it from the repo's Settings > ... page (URL)` is

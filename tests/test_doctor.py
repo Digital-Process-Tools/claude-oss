@@ -4,7 +4,7 @@ Exit code 0 on every path, including the paths where everything is broken. A
 diagnostic that exits non-zero gets swallowed by whatever ran it, and the one
 output a stuck user needs is the one they do not see.
 
-Three states, never two: OK, WARN, FAIL. A check that could not run says so and
+Five states: OK, NOTICE, WAIT, WARN, FAIL. A check that could not run says so and
 must never render as a check that found nothing.
 """
 
@@ -61,16 +61,17 @@ def test_prints_the_plugin_version_even_when_everything_else_fails(tmp_path):
     assert manifest["version"] in run(tmp_path).stdout
 
 
-def test_every_line_is_one_of_four_states(tmp_path):
+def test_every_line_is_one_of_five_states(tmp_path):
     """#764 added NOTICE beside OK/WARN/FAIL -- a check that already knows, in
-    its own text, that it is structurally unable to ever answer."""
+    its own text, that it is structurally unable to ever answer. #1440 added
+    WAIT -- a check that answered, and the answer settles on its own."""
     out = run(tmp_path).stdout
     body = [
         ln for ln in out.splitlines() if ln.strip() and not ln.startswith("VERDICT")
     ]
     assert body, "doctor printed no findings"
     for line in body:
-        assert line.split()[0] in ("OK", "NOTICE", "WARN", "FAIL"), line
+        assert line.split()[0] in ("OK", "NOTICE", "WAIT", "WARN", "FAIL"), line
 
 
 def test_ends_on_exactly_one_verdict_line(tmp_path):

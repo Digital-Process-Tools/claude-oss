@@ -21,7 +21,7 @@ import time
 import doctor
 
 
-def check_auto_update(project_dir, sh_available=None):
+def check_auto_update(project_dir, sh_available=None, fresh_check=None):
     """Did the SessionStart updater run, and what did it do (#480)?
 
     Five states, and the fifth is the one #492 added:
@@ -143,7 +143,7 @@ def check_auto_update(project_dir, sh_available=None):
         stamp = " ({:.0f} minute(s) ago)".format(max(0.0, (time.time() - when) / 60.0))
     state = receipt.get("state")
     partial = bool(receipt.get("partial_failure"))
-    _report_plugin(receipt, state, partial, stamp)
+    _report_plugin(receipt, state, partial, stamp, project_dir, fresh_check=fresh_check)
     # Second, and always: the loop plugin's row above answers about one plugin, and #605
     # widened what the updater acts on. A row that stayed pinned to the first would have
     # gone silently narrower than its own subject at the moment the subject widened --
@@ -151,7 +151,64 @@ def check_auto_update(project_dir, sh_available=None):
     _report_dependencies(receipt)
 
 
-def _report_plugin(receipt, state, partial, stamp):
+def _fresh_auto_update_check(project_dir, fresh_check=None):
+    """A read right now, genuinely read-only -- ``(state, detail)``, or
+    ``(None, None)`` when nothing could be asked at all (#1440).
+
+    **Never calls `plugin_update.update()`.** A first version of this function
+    did, on the reasoning that `plugin_update.py --print-state` -- the command
+    #1440's own issue named as the fresh check to take -- goes through exactly
+    that function. It does, and `update()` is NOT a read: it runs `claude
+    plugin marketplace update` and then `claude plugin update <target>
+    --scope <scope>` as real subprocesses that MUTATE the installed plugin (and
+    its declared dependencies) on disk. This module's own file, `doctor.py`,
+    opens with "a diagnostic must print its findings, not fail to run" --
+    nothing in that contract authorises a write, and a self-review audit on
+    this same diff caught the first version doing exactly that from inside a
+    tool every developer brief in this repository calls before touching
+    anything else. The issue's own suggested command was a hint, not a
+    verified-safe implementation, and this is the case for reading a linked
+    command's own source rather than trusting its name.
+
+    So this re-reads the install record instead --
+    `plugin_update.installed_version()`, one JSON parse, no subprocess, no
+    network call -- which is the actual thing #1440's own measured instance
+    was about: the install record was mid-rewrite the moment the cached
+    check ran, and readable a minute later. A version this reads back right
+    now, non-`None`, is exactly that: the record is no longer broken. It says
+    nothing about whether a newer version has since been published (only a
+    real `update()` call could ask the marketplace that, and this function
+    deliberately never does), so `state` here means only "the record itself
+    is readable again", not "current with the marketplace".
+
+    `fresh_check` is injected for testing (and lets a caller skip the real
+    ask entirely, including in production if a future caller ever wants a
+    genuinely different fresh source) -- it must return the same `(state,
+    detail)`-shaped dict this function otherwise builds from the pure read.
+    """
+    if fresh_check is not None:
+        result = fresh_check()
+        if not isinstance(result, dict):
+            return None, None
+        return result.get("state"), result.get("detail")
+    if doctor.plugin_update is None or project_dir is None:
+        return None, None
+    name = doctor.plugin_update.plugin_name()
+    if not name:
+        return None, None
+    version = doctor.plugin_update.installed_version(name, project_dir)
+    if version is None:
+        return None, None
+    return (
+        "current",
+        "the install record now reads version {} -- readable again, "
+        "which says nothing about whether it is the newest published version".format(
+            version
+        ),
+    )
+
+
+def _report_plugin(receipt, state, partial, stamp, project_dir=None, fresh_check=None):
     """The loop plugin's own row -- unchanged by #605, moved out so the dependency row
     below cannot be reached only on some of its arms.
 
@@ -208,6 +265,19 @@ def _report_plugin(receipt, state, partial, stamp):
         doctor.report(
             "OK",
             "auto-update: {} already current{}".format(receipt.get("plugin"), stamp),
+        )
+        return
+    fresh_state, fresh_detail = _fresh_auto_update_check(
+        project_dir, fresh_check=fresh_check
+    )
+    if fresh_state in ("current", "updated"):
+        doctor.report(
+            "WAIT",
+            "auto-update: the cached reading could not check{} -- {}. A fresh check "
+            "just now answered {} ({}) -- settles on the next SessionStart check, and "
+            "this is not itself a finding.".format(
+                stamp, receipt.get("detail"), fresh_state, fresh_detail
+            ),
         )
         return
     doctor.report(
