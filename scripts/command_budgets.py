@@ -92,7 +92,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # scheduler-step spawns, live only when tick.md is reached from
     # commands/run.md's dispatch step rather than harness-injected directly.
     # Ceiling unchanged; still comfortably under it.
-    "commands/tick.md": (21939, 22200),
+    # Raised for #1436: 21939 B became 22271 B, past the 22200 B ceiling by
+    # 71 B. The `--triage-recorded` call at step 6 (added by #1386) could not
+    # actually run as written -- it is an attachment to `--decision`, not its
+    # own mode flag, and `oss_state.py`'s argparse refuses it alone. The fix
+    # attaches it to a real `--decision "triage sweep recorded" --at ...`
+    # call and adds one explanatory sentence naming why. Too small an
+    # overage to be worth trimming something else in the same file to
+    # absorb, so the ceiling moves to 24500 B, ~10% headroom over the new
+    # size, rather than cutting anything.
+    "commands/tick.md": (22271, 24500),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at

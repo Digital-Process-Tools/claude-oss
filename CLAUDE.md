@@ -521,7 +521,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
 | `skills/manager/phases/merge.md` | 14,776 B | 15,400 B |
 | `skills/manager/phases/ci-green.md` | 2,761 B | 3,050 B |
-| `skills/manager/phases/inbound.md` | 6,533 B | 6,900 B |
+| `skills/manager/phases/inbound.md` | 6,799 B | 6,900 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
@@ -897,7 +897,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 21,939 B | 22,200 B |
+| `commands/tick.md` | 22,271 B | 24,500 B |
 | `commands/run.md` | 8,400 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb

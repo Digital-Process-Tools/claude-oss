@@ -376,6 +376,11 @@ def _exit_code(state):
 
 
 def _emit(payload, as_json):
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
     if as_json:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
