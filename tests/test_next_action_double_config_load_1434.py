@@ -9,12 +9,16 @@ state_file configured" text a genuinely unconfigured repo produces. A
 caller cannot tell "never configured" from "config vanished a moment
 later".
 
-This is reasoned, not observed: reproducing it for real would mean racing
-the filesystem. The test below demonstrates the fold with a monkeypatch of
-the second load instead, and separately proves the fix removes the second
-load call entirely -- the honest fix here is a real refactor (`rank()`
-exposes the config it already loaded), not a rewording of the fold, per
-this issue's own text.
+This is reasoned, not observed: reproducing the real fold would mean racing
+the filesystem so the second read diverges from the first. The test below
+proves the fix removes the second, independent load call entirely --
+the honest fix here is a real refactor (`rank()` exposes the config it
+already loaded, and both CLI functions reuse it), not a rewording of what
+the fold says when it happens, per this issue's own text. A fix that
+removes the second read leaves nothing left to demonstrate the fold
+against: any test racing a second `oss_config.load` call directly, rather
+than through `_take_cli`/`_record_skip_cli`, would exercise none of the
+code this issue is actually about (self-review, Explore reviewer).
 """
 
 import json
@@ -147,30 +151,3 @@ def test_oss_config_load_is_called_exactly_once_by_take_cli(tmp_path, monkeypatc
         "operation (inside its own rank() call) -- it called it {0} times, "
         "the exact double-load #1434 is about".format(len(calls))
     )
-
-
-def test_a_second_load_that_diverges_would_fold_into_the_generic_message(
-    monkeypatch, tmp_path
-):
-    """Demonstrates the fold this issue describes, via a monkeypatch rather
-    than a real race: if something calls `oss_config.load` a second time
-    and it fails differently from the first, the caller has no way to tell
-    that apart from "never configured" -- this is the shape the fix
-    removes by never taking a second, independent read at all."""
-    _write_config(tmp_path)
-
-    first_config, _problems = oss_config.load(tmp_path / ".oss.json")
-    assert first_config.get("state_file") == ".max/state.json"
-
-    # Simulate the config vanishing between the two reads a pre-fix
-    # `_load_config_and_routes(root)` call would have made.
-    def _second_load_sees_nothing(path):
-        return None, ["{0}: not found".format(path)]
-
-    monkeypatch.setattr(oss_config, "load", _second_load_sees_nothing)
-    config, problems = oss_config.load(tmp_path / ".oss.json")
-    assert config is None
-    # The fold: nothing here distinguishes "never had a state_file" from
-    # "had one, but the second read could not see it" -- both read as the
-    # same "no state_file configured" sentence upstream.
-    assert problems == ["{0}: not found".format(tmp_path / ".oss.json")]
