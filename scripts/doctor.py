@@ -1679,7 +1679,56 @@ def _dir_state(path):
     return ("dir" if stat.S_ISDIR(st.st_mode) else "absent"), ""
 
 
-def _own_supertool_tree(project_dir):
+def _supertool_tree_identity_confirmed(directory, dependency_repos=None, run=None):
+    """Beyond bare two-file existence: is `directory` genuinely supertool's own
+    checkout (#1459)?
+
+    `.supertool.json` is a scaffolded DEFAULT written into the root of every
+    managed repo (`scripts/scaffold.py`), so a `supertool.py` placed at the
+    root of any managed repo's clone -- addable by an ordinary pull request --
+    used to be enough on its own to make `_own_supertool_tree`'s walk claim
+    own-tree, and `lane_setup.read_board` then handed that file to
+    `sys.executable`, in the maintainer's own session, on every board read of
+    every tick. The same class `statusline._sibling_doctor_candidate_is_
+    trusted` already closes one call site over (#1334): trust a fact a pull
+    request cannot alter, never file existence inside the tree the pull
+    request modifies.
+
+    The fact used here: `directory`'s own git `origin` remote -- read from
+    `.git/config`, which is local machine state, never a tracked file a pull
+    request can move -- must resolve to the same repository the INSTALLED
+    `supertool` plugin's own manifest declares (`dependency_repositories`,
+    read from the plugin cache, never from the tree under inspection). A
+    stray `supertool.py` dropped into an unrelated managed repo's root cannot
+    make that repo's own `origin` point at claude-supertool's repository;
+    doing so needs access nobody who can only open a pull request has.
+
+    `False` on every inconclusive input -- no installed `supertool`
+    dependency to compare against, no readable `origin`, an unrecognised
+    remote form -- never a guess. That is the opposite safe direction from
+    `_own_supertool_tree`'s own "an unreadable directory means keep walking":
+    there, failing to claim own-tree only costs a warning; here, the
+    question is which code gets executed, so "could not tell" must decline
+    rather than default to trusting the tree.
+    """
+    repos = (
+        dependency_repositories(["supertool"])
+        if dependency_repos is None
+        else dependency_repos
+    )
+    expected = repos.get("supertool") if isinstance(repos, dict) else None
+    if not expected:
+        return False
+    match = re.search(r"github\.com[:/]+([^/]+/[^/]+?)(?:\.git)?/?$", str(expected))
+    if not match:
+        return False
+    slug, _reason = _origin_slug(directory, run=run)
+    if not slug:
+        return False
+    return slug.lower() == match.group(1).lower()
+
+
+def _own_supertool_tree(project_dir, dependency_repos=None, run=None):
     """The checkout this directory is inside, as ``(root, core)``, or ``(None, None)``.
 
     Transcribed from supertool's `hooks/session-start.sh`, which walks up for the
@@ -1712,18 +1761,32 @@ def _own_supertool_tree(project_dir):
     the easier one to miss. So the swallow is done explicitly here, on every
     interpreter, rather than trusted to a stdlib behaviour whose ignored-errno set
     is not pinned down across the versions CI actually runs.
+
+    **#1459: bare existence of the two files is no longer sufficient.** Once the
+    walk finds a directory carrying both, `_supertool_tree_identity_confirmed`
+    must also agree that the tree's own git origin names claude-supertool's
+    repository before this returns anything but `(None, None)` -- see that
+    function's own docstring for why bare existence was never a safe test to
+    begin with. `dependency_repos` and `run` are dependency-injection seams
+    threaded through for tests; production callers leave both `None`.
     """
     directory = Path(os.path.realpath(str(project_dir)))
     while True:
         if _safe_is_file(directory / WATCH_CONFIG):
             core = directory / SUPERTOOL_CORE
-            return (directory, core) if _safe_is_file(core) else (None, None)
+            if not _safe_is_file(core):
+                return None, None
+            if not _supertool_tree_identity_confirmed(
+                directory, dependency_repos=dependency_repos, run=run
+            ):
+                return None, None
+            return directory, core
         if directory.parent == directory:
             return None, None
         directory = directory.parent
 
 
-def supertool_invocation(project_dir):
+def supertool_invocation(project_dir, dependency_repos=None, run=None):
     """The argv prefix to invoke supertool with, from inside `project_dir`.
 
     Returns `(argv, detail)`. Outside a supertool checkout this is unchanged --
@@ -1732,17 +1795,25 @@ def supertool_invocation(project_dir):
     correct exactly as written, and nothing here special-cases it.
 
     Inside a supertool checkout (`_own_supertool_tree` finds this tree's own
-    `.supertool.json`/`supertool.py`), the global `supertool` name on PATH
-    resolves to whatever clone the SessionStart hook last linked -- ordinarily
-    supertool's own live checkout at `master` -- and running it from inside a
-    *worktree* of that same repository runs master's core against the
-    worktree's own branch-local presets: silently wrong for a read-class op,
-    and refused outright for a write-class one (claude-supertool#1942, #1409).
-    The correct invocation from inside such a tree is this tree's own core,
-    run with the interpreter directly (`python3 supertool.py`), never the
-    bare `supertool` name -- keeping core and presets from the same commit.
+    `.supertool.json`/`supertool.py`, AND `_supertool_tree_identity_confirmed`
+    -- #1459 -- agrees the tree's own git origin names claude-supertool's
+    repository), the global `supertool` name on PATH resolves to whatever
+    clone the SessionStart hook last linked -- ordinarily supertool's own
+    live checkout at `master` -- and running it from inside a *worktree* of
+    that same repository runs master's core against the worktree's own
+    branch-local presets: silently wrong for a read-class op, and refused
+    outright for a write-class one (claude-supertool#1942, #1409). The
+    correct invocation from inside such a tree is this tree's own core, run
+    with the interpreter directly (`python3 supertool.py`), never the bare
+    `supertool` name -- keeping core and presets from the same commit.
+
+    `dependency_repos` and `run` are dependency-injection seams for tests,
+    threaded straight through to `_own_supertool_tree`; production callers
+    (`lane_setup.read_board`) leave both `None`.
     """
-    root, core = _own_supertool_tree(project_dir)
+    root, core = _own_supertool_tree(
+        project_dir, dependency_repos=dependency_repos, run=run
+    )
     if core is not None:
         return [sys.executable, str(core)], "own-tree: {0}".format(core)
     return ["supertool"], "not a supertool checkout"
