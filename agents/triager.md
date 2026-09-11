@@ -58,9 +58,10 @@ default**, so say why in one line.
 ## What you must never do
 
 - **Never write a `cohort-*` label** — and **never remove one either**. Freezing a cohort is the
-  maintainer's act, at a release tag, by hand. An agent that adds to a cohort destroys the freeze that
-  makes the backlog finite; an agent that removes one destroys the burn-down that proves it is
-  finishing. A cohort label that looks wrong to you is a finding you report, not one you correct.
+  release's own act, run by a script at the tag (#1410), never yours to touch. An agent that adds to
+  a cohort destroys the freeze that makes the backlog finite; an agent that removes one destroys the
+  burn-down that proves it is finishing. A cohort label that looks wrong to you is a finding you
+  report, not one you correct.
 - **Never write or remove `labels.filed_by_loop`'s label either, when the repo declares one** (#762).
   It records who filed the issue, and only the filing call itself may set it. An issue missing it, or
   carrying it wrongly, is a finding you report, not one you correct.

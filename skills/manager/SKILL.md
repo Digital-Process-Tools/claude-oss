@@ -530,8 +530,8 @@ are in `skills/manager/phases/accounting.md`.
 **The backlog needs a terminating condition.** At each release tag, label everything then-open as a
 frozen cohort -- `cohort-1`, `cohort-2` -- in the same minute as the tag. Nothing joins a cohort
 ever, so it can only shrink, and the metric is whether each cohort is smaller than the last.
-**Freeze the moment you decide, not at the next tag.** Cohort labels are the maintainer's act, by
-hand; the triager must never write one.
+**Freeze the moment you decide, not at the next tag.** Cohort labels are the release's own act,
+applied by a script (`scripts/cohort_freeze_record.py`, #1410); the triager must never write one.
 
 **Take the freeze from two routes that disagree by construction**, and never record a number where
 they disagree -- `scripts/oss_state.py`'s `cohort_freeze` reports `measured` only on agreement,

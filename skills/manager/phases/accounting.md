@@ -17,50 +17,67 @@ Nothing joins a cohort, ever, so it can only shrink. **Freeze the moment you dec
 tag**: a boundary defined by a future event is not a boundary yet. The metric is whether each cohort
 is smaller than the last.
 
-Cohort labels are the maintainer's act, by hand; **the triager must never write one.** The cohort is
-closure accounting, never a work order — priority decides what gets worked next.
+**Cohort labels are the release's own act, applied by a script, never by hand (#1410) -- and the
+triager must never write one.** That second half of the rule is unchanged; what changed is the
+first half. The reasoning that used to justify "by hand" still holds -- a cohort is a decision on
+record, not a label anyone may apply -- but the conclusion drawn from it did not: *applying* the
+label is mechanical, and a decision on record is better served by a script that records what it did
+than by a hand that may or may not have finished. `v0.31.0` froze cohort-28 at 14 by hand, and it
+was 15 minutes later when #383 was reopened -- every step was correct when taken, the count was
+simply read at one moment and trusted at another. The cohort is closure accounting, never a work
+order — priority decides what gets worked next.
 
-**#917.** `cohort_freeze.py`, run as `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cohort_freeze.py" --tag <tag> --cohort <N>`, derives the cutoff from
-the tag object's own `tagger.date`, never `now`. Dry run by default; `--execute` adds one
-label per issue (`gh issue edit --add-label`), never a `PATCH`. Four states -- `frozen N` /
-`already-frozen` / `label-missing` / `could-not-read`, never a silent zero. It does not yet feed
-the two-route `cohort_freeze` check below; still confirm a second route before recording
-`detail.cohort_freeze`.
+**#917 and #1410.** `cohort_freeze.py` (#917) derives the cutoff from the tag object's own
+`tagger.date`, never `now`, and makes the label write itself reproducible: four states -- `frozen N`
+/ `already-frozen` / `label-missing` / `could-not-read`, never a silent zero. `cohort_freeze_record.py`
+(#1410) is what the release actually runs; it composes that label write with the two-route count
+confirmation below and the state-file record neither `cohort_freeze.py` nor a hand step used to do
+reliably:
 
-**`label-missing` (#956) means the cohort label itself does not exist on the tracker yet** --
-`gh issue edit --add-label` never creates one, and a dry run says so before `--execute` ever
-runs. The fix is one command, and it is yours to run, never the script's: `gh label create
-<cohort-label> --repo <repo> --description "..." --color ededed`. Re-run the identical
-`cohort_freeze.py` call afterward; nothing was written on the `label-missing` run, so there is
-nothing to reconcile.
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cohort_freeze_record.py" --tag <tag> --cohort <N> \
+  --state <state_file> --at "…" --execute
+```
+
+Three states, collapsed from `cohort_freeze.py`'s four because the caller here is deciding whether
+the freeze is *done*, not reading which finer-grained reason applied: `frozen` (labelled, the two
+routes agree, the state file and the label's own description both carry it), `partial` (some of
+that happened and something after it did not -- a run that labels 8 of 14 issues and then fails
+reports this, never `frozen` and never `could-not-freeze`), `could-not-freeze` (nothing was written
+at all). Idempotent: re-running a completed freeze reads every route again but changes nothing on
+disk when what it reads back already matches, and reports `frozen` again rather than silently
+doing nothing. Without `--execute` it only previews `cohort_freeze.py`'s own dry run.
+
+**`could-not-freeze` from a missing label (#956) means the cohort label itself does not exist on the
+tracker yet** -- neither script creates one; that write is yours: `gh label create <cohort-label>
+--repo <repo> --description "..." --color ededed`. Re-run the identical `cohort_freeze_record.py`
+call afterward; nothing was written on that run, so there is nothing to reconcile.
 
 **The freeze is a label, and a label write can silently delete it.** `gh api -X PATCH issues/N -f
 'labels[]=…'` **replaces the whole label set** — so a later write setting priority or lane removes
-the cohort label, exit 0, nothing errors, and the freeze verified minutes earlier is wrong. Add with
-`POST issues/N/labels` or `gh issue edit N --add-label`; reach for `PATCH` only when replacing the
-whole set is what you mean. And re-count the cohort **after the last label write of the tick**,
-never before it — a count taken first measures a set that is still being edited.
+the cohort label, exit 0, nothing errors, and the freeze verified minutes earlier is wrong. Both
+scripts add with `POST issues/N/labels` (`gh issue edit N --add-label`), never `PATCH`.
 
 **Ordering is not settling, and the filtered query can still read low after the last write.**
 GitHub's label filter is an index and it lags the writes that feed it. A cohort can only
-shrink, so a low freeze recorded here is never corrected by any later count. **Take the freeze from
-two routes that disagree by construction** — the filtered query plus either `search/issues`'s
-`total_count` or a per-issue read of the set — and never record a number where they disagree. This
-is `scripts/oss_state.py`'s `cohort_freeze`: given two or more route counts it reports `measured`
-only when they agree, `unknown` when they do not (never the lower one, never the first one), and
-`could-not-count` when fewer than two routes answered. Record the result as `detail.cohort_freeze`
-on the state entry that documents the freeze, and if it reads `unknown`, re-count rather than
-writing down either number.
+shrink, so a low freeze recorded here is never corrected by any later count. `cohort_freeze_record.py`
+takes the freeze from two routes that disagree by construction -- the tag-cutoff issue scan
+`cohort_freeze.py` already computes, and a re-read of the label filter taken after the last label
+write of the run, never before it -- and never records a number where they disagree. This is
+`scripts/oss_state.py`'s `cohort_freeze`: given two or more route counts it reports `measured` only
+when they agree, `unknown` when they do not (never the lower one, never the first one), and
+`could-not-count` when fewer than two routes answered. The result is recorded as `detail.cohort_freeze`
+on the state entry the script itself appends -- an `unknown` result is still recorded, so the ledger
+shows a freeze that needs a re-count rather than silently discarding it, and never trusted as if a
+number had been chosen.
 
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> \
-  --decision "froze <cohort> at N" --at "…" \
-  --cohort <cohort> \
-  --cohort-count filtered_query=22 --cohort-count per_issue_read=22
-```
-
-Passing route counts that disagree records `unknown`, not a freeze at either number. Re-counting
-rather than writing either one down is the correct response to that state.
+**The label's own description carries the tag and the date** (`cohort-27`: "Open at the v0.30.0 tag,
+2026-09-09. Frozen: nothing joins a cohort."), refreshed by the same script call whenever the labels
+are frozen or already were -- #1122 records a releaser reporting a count the label's own text never
+mentioned, and a later triage sweep reading that gap and concluding the opposite. The description
+carries no count on purpose: a number would be a second place for a figure that already lives in the
+state file, able to drift from it silently, which is exactly what `CLAUDE.md`'s governing rule
+against a fact living in two places already forbids.
 
 **The release commit and the freeze are not the same moment, and a citation must never pretend
 they are (#1122).** `CLAUDE.md`'s own "What is not proven yet" marker, where a repo carries one, is

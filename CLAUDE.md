@@ -263,6 +263,8 @@ scripts/release_version.py  the release number, proposed from the fragments: pro
 scripts/release_handback.py a releaser's handback: released / refused / could-not-run / paused / returned-nothing / could-not-classify
 scripts/gate3_disposition.py  gate 3's tag disposition: proceed / stop-tag / carry-forward-and-proceed / could-not-decide
 scripts/push_bypass.py      a release push's own receipt, scanned for a branch-protection bypass: clean / bypassed / could-not-tell
+scripts/cohort_freeze_record.py  the cohort freeze the release runs, not a maintainer's hand (#1410):
+                            frozen / partial / could-not-freeze
 scripts/oss_state.py        the tick state file, and the intake metric it records
 scripts/review_return.py    what a review spawn handed back: states-findings / no-findings / referred-not-stated / returned-nothing / could-not-classify / could-not-read
 scripts/oss_rules.py        the 01-oss rule layer
@@ -291,7 +293,7 @@ from being invisible.
 | `agents/developer.md` | 41,227 B | 44,100 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
-| `agents/triager.md` | 15,488 B | 16,600 B |
+| `agents/triager.md` | 15,522 B | 16,600 B |
 | `agents/sub-manager.md` | 17,104 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 
@@ -479,10 +481,10 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,837 B | 44,800 B |
+| `skills/manager/SKILL.md` | 42,893 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 53,938 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
-| `skills/manager/phases/accounting.md` | 23,564 B | 25,900 B |
+| `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 34,816 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |

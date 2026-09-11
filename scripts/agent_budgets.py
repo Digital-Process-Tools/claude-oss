@@ -95,7 +95,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     "agents/release-auditor.md": (14636, 16400),
     # Re-baselined for #1391's own self-review round, same fix as
     # agents/developer.md above: 15467 B became 15488 B.
-    "agents/triager.md": (15488, 16600),
+    # Re-baselined for #1410: 15488 B became 15522 B -- the cohort-freeze
+    # prohibition now says the freeze is the release's own script, not a
+    # maintainer's hand, matching the same change in accounting.md and
+    # commands/release.md. Comfortably under the 16600 B ceiling.
+    "agents/triager.md": (15522, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):
