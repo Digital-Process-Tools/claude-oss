@@ -55,9 +55,14 @@ One shell script, `exec`ing one command.
     bin/oss-workspace  ->  environment established, unknowns reported, one prompt chosen
     exec claude PROMPT [--dangerously-load-development-channels server:oss-channel]
 
-**Nothing survives the `exec` except the prompt and the flag.** The two env relays
-(`OSS_WORKSPACE_MCP_*`, `OSS_WORKSPACE_CENSUS_*`) reach a subprocess *before* the exec and are unset
-on the last line before it: a reading left in the environment goes on answering all session.
+**Nothing survives the `exec` except the prompt and the flag.** Four env relay groups
+(`OSS_WORKSPACE_MCP_*`, `OSS_WORKSPACE_CENSUS_*`, `OSS_WORKSPACE_MCP_LIST_*` (#1372),
+`OSS_WORKSPACE_CHANNEL_ARM_TARGET` (#1307)) are set before the `exec` and unset again on the last
+line before it: a reading left in the environment would go on answering all session. **Since #1392
+removed this file's own synchronous `doctor.sh` call, none of the four currently has a live
+consumer** -- the diagnostic that used to read them now runs from inside `/oss:run` instead, so
+treat a relay here as dead plumbing pending #1432, not as something a session downstream can rely
+on (`.claude/jit-context/paths/00-manual/launcher-prompt-selection.md` carries the same note).
 
 ## The steps
 
@@ -103,10 +108,10 @@ should divert. Both dissolve into `/oss:run` itself (#1389/#1390): it runs the i
 on every start, from inside the session that can actually repair what it finds, rather than this
 file reading a verdict it cannot act on and picking a different prompt around it.
 
-### Band D -- Hand off (15-16)
+### Band D -- Hand off (13-14)
 
-15. **Unset the two relays.**
-16. **`exec claude "$prompt" "$CHANNEL_FLAG" "server:oss-channel"`.** Prompt **first**, variadic flag
+13. **Unset the four relays.**
+14. **`exec claude "$prompt" "$CHANNEL_FLAG" "server:oss-channel"`.** Prompt **first**, variadic flag
     **last**: `claude` reads only its first positional as the prompt, and a positional after the flag
     is read as one of its values and refuses the launch. **With any argument, the prompt is not
     appended** and the reason is stated.
