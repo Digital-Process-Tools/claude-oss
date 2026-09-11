@@ -8,6 +8,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -15,9 +17,22 @@ import oss_config  # noqa: E402
 import triage_trigger  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "tests"))
+import shell_probe  # noqa: E402
 import spawn_guard  # noqa: E402
 
 OSS_STATE = REPO_ROOT / "scripts" / "oss_state.py"
+
+# #1436 self-review, round two (Windows CI): a bare "bash" on PATH regularly
+# resolves to System32's WSL launcher stub on a windows-latest runner rather
+# than Git's own bash -- a real shell that starts, then fails because it has
+# no installed distribution and cannot see a `D:\...` path anyway. Resolved
+# by measurement, the same pattern tests/test_doctor_launcher.py already
+# uses for the identical problem: spawn every bash-named candidate on PATH
+# and near git, and use only one that actually answers and can see the
+# files this test hands it.
+_SHELL_ATTEMPTS = shell_probe.attempts([OSS_STATE])
+BASH = shell_probe.pick(_SHELL_ATTEMPTS)
+SHELL_REPORT = shell_probe.report(_SHELL_ATTEMPTS)
 
 
 # ----------------------------- finding 1: not backslashreplace-safe --------
@@ -117,7 +132,16 @@ def test_tick_md_attaches_triage_recorded_to_a_real_decision_call():
 def test_tick_mds_own_call_shape_actually_runs(tmp_path):
     """The real call, extracted from commands/tick.md's own fenced code
     block, run for real against a scratch state file -- not just a static
-    substring check."""
+    substring check.
+
+    Spawns `BASH`, resolved by measurement (see the module-level comment
+    above `_SHELL_ATTEMPTS`), never a bare `"bash"` -- self-review round two
+    (Windows CI): a bare `bash` on PATH regularly resolves to System32's
+    WSL launcher stub on a windows-latest runner, which starts, is a real
+    shell, and still cannot see the absolute Windows drive path this test
+    hands it."""
+    if BASH is None:
+        pytest.skip(SHELL_REPORT)
     text = (REPO_ROOT / "commands" / "tick.md").read_text(encoding="utf-8")
     idx = text.index("--triage-recorded")
     block_start = text.rindex("```bash", 0, idx)
@@ -132,7 +156,7 @@ def test_tick_mds_own_call_shape_actually_runs(tmp_path):
         .replace("$(date -u +%Y-%m-%dT%H:%M:%SZ)", now)
     )
     done = spawn_guard.run(
-        ["bash", "-c", command],
+        [BASH, "-c", command],
         subject="whether commands/tick.md's own --triage-recorded call actually runs",
         capture_output=True,
         text=True,
