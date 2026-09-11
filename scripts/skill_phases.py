@@ -415,8 +415,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # 2646 B -- a one-sentence pointer noting a sub-manager's own
         # WAIT-OBSERVABLE additionally folds in fleet occupancy, since a
         # releaser has no fleet to report on. Budget unchanged.
-        2646,
-        2700,
+        # Raised for #1458: 2646 B became 2761 B, past the 2700 B ceiling
+        # by 61 B. The new sentence states that a leg a later run of the
+        # same check name superseded is excluded from `red`, matching
+        # `gh-pr:N:status` (pr_green.py disagreed with it before this fix).
+        # Nothing already in the file argued that point, so nothing was
+        # cut to make room; ceiling moved to 3050 B, ~10% headroom over
+        # the new size.
+        2761,
+        3050,
         "the pr_green.py wait, its four states, and the #1086 substring trap -- shared by a sub-manager merging and a releaser landing gate 3's own fix",
     ),
     # New for #1394: the loop had no owner anywhere for work that arrives from

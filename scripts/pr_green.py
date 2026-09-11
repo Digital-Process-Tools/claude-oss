@@ -119,6 +119,91 @@ _PASSING_CONCLUSIONS = frozenset(("SUCCESS", "NEUTRAL", "SKIPPED"))
 _PASSING_STATUS_CONTEXT_STATES = frozenset(("SUCCESS",))
 _PENDING_STATUS_CONTEXT_STATES = frozenset(("PENDING", "EXPECTED"))
 
+# #1458: a completed conclusion outside _PASSING_CONCLUSIONS is not
+# automatically a failure -- GitHub, and supertool's own `gh-pr:N:status`
+# (`_checks.github_superseded`, #1792), exclude a leg from the failing tally
+# when a *later* run of the exact same check name exists on the same commit.
+# `gh-pr:658:status` on claude-remember read a CANCELLED `fragment` leg this
+# way while `pr_green.py` read it RED -- the two tools disagreed about the
+# same PR at the same instant.
+#
+# The rule, reproduced here rather than imported (this module has no
+# dependency on the supertool package): a leg is superseded only when
+# another leg of the *same name* started strictly after this leg completed.
+# Deliberately narrower than "collapse to latest per name" -- GitHub's
+# default code-scanning setup emits two runs of one workflow per push with
+# colliding check-run names, started in the same second (#1640), and neither
+# supersedes the other; both still have to pass. A leg whose completion
+# timestamp cannot be read is never superseded (declining rather than
+# guessing).
+_ZERO_TIME_YEAR = 1970
+
+
+def _parse_ts(value):
+    """An ISO-8601 instant as epoch seconds, or ``None`` when not
+    establishable -- an unparseable stamp and GitHub's zero-time sentinel
+    both mean "no timestamp", never a number. Mirrors supertool's own
+    `_checks.parse_ts`."""
+    from datetime import datetime, timezone
+
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    if dt.year < _ZERO_TIME_YEAR:
+        return None
+    return dt.timestamp()
+
+
+def _leg_window(row):
+    """``(name, started_epoch, completed_epoch)`` for one rollup row.
+
+    A StatusContext row carries no ``startedAt``/``completedAt`` at all, so
+    both stamps collapse to ``None`` and such a row can never supersede or
+    be superseded.
+    """
+    if not isinstance(row, dict):
+        return ("", None, None)
+    name = str(row.get("name") or row.get("context") or "?")
+    return (
+        name,
+        _parse_ts(row.get("startedAt")),
+        _parse_ts(row.get("completedAt")),
+    )
+
+
+def _superseded_flags(rows):
+    """Per rollup row: has a later run of the same check name replaced it?
+
+    ``len(result) == len(rows)`` always, so this composes with the
+    classification loop below by position.
+    """
+    windows = [_leg_window(row) for row in rows]
+    by_name = {}
+    for i, (name, _started, _done) in enumerate(windows):
+        by_name.setdefault(name, []).append(i)
+
+    flags = [False] * len(windows)
+    for idxs in by_name.values():
+        if len(idxs) < 2:
+            continue
+        for i in idxs:
+            done = windows[i][2]
+            if done is None:
+                continue
+            flags[i] = any(
+                windows[j][1] is not None and windows[j][1] > done
+                for j in idxs
+                if j != i
+            )
+    return flags
+
+
 _JOB_URL_RE = re.compile(r"/actions/runs/(\d+)/job/(\d+)")
 
 _OWNER_REPO_RE = re.compile(r"^https?://[^/]+/([^/]+)/([^/]+)(?:/|$)")
@@ -438,12 +523,15 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
             "pending_legs": [],
             "missing_workflows": [],
             "unresolved_runs": [],
+            "superseded": [],
         }
 
     failing = []
     pending_legs = []
+    superseded = []
     seen_workflows = set()
-    for row in rows:
+    superseded_flags = _superseded_flags(rows)
+    for i, row in enumerate(rows):
         if not isinstance(row, dict):
             continue
         workflow = row.get("workflowName") or row.get("context") or ""
@@ -460,14 +548,16 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
                 continue
             if conclusion in _PASSING_CONCLUSIONS:
                 continue
-            failing.append(
-                {
-                    "name": name,
-                    "workflow": workflow,
-                    "conclusion": conclusion or "unknown",
-                    "detailsUrl": details_url,
-                }
-            )
+            leg = {
+                "name": name,
+                "workflow": workflow,
+                "conclusion": conclusion or "unknown",
+                "detailsUrl": details_url,
+            }
+            if superseded_flags[i]:
+                superseded.append(leg)
+                continue
+            failing.append(leg)
         else:
             # StatusContext shape (a legacy commit-status check -- Codecov,
             # a preview-deploy bot, anything posted via the Statuses API
@@ -481,14 +571,16 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
             if state_value in _PENDING_STATUS_CONTEXT_STATES:
                 pending_legs.append(name)
                 continue
-            failing.append(
-                {
-                    "name": name,
-                    "workflow": workflow,
-                    "conclusion": state_value or "unknown",
-                    "detailsUrl": details_url,
-                }
-            )
+            leg = {
+                "name": name,
+                "workflow": workflow,
+                "conclusion": state_value or "unknown",
+                "detailsUrl": details_url,
+            }
+            if superseded_flags[i]:
+                superseded.append(leg)
+                continue
+            failing.append(leg)
 
     workflows_checked = True
     if declared_workflows is None and workflows_dir is not None:
@@ -534,6 +626,7 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
         "pending_legs": pending_legs,
         "missing_workflows": missing_workflows,
         "unresolved_runs": unresolved_runs,
+        "superseded": superseded,
     }
 
 
@@ -608,6 +701,25 @@ def list_open_pr_numbers(gh, run, repo=None):
     return numbers, None
 
 
+def _superseded_disclosure(entry):
+    """One line per superseded leg, appended to any rendered state -- a
+    later run of the same check name replaced it, so it is not counted in
+    `failing` above, but it is unretractable (no trigger withdraws a
+    concluded run) and is named here rather than dropped (#1458, mirroring
+    supertool's own `_checks.superseded_disclosure`, #1792)."""
+    lines = []
+    for leg in entry.get("superseded") or []:
+        lines.append(
+            "\n  superseded {0} (workflow: {1}, conclusion: {2}) -- a later "
+            "run of the same name superseded it".format(
+                _flatten(leg["name"]),
+                _flatten(leg.get("workflow") or "?"),
+                leg["conclusion"],
+            )
+        )
+    return "".join(lines)
+
+
 def _render(entry):
     if entry["state"] == STATE_COULD_NOT_READ:
         return "#{0} | COULD-NOT-READ | {1}".format(
@@ -627,6 +739,7 @@ def _render(entry):
             line += (
                 "\n  could not determine whether every run on this commit has started"
             )
+        line += _superseded_disclosure(entry)
         return line
     if entry["state"] == STATE_RED:
         lines = [
@@ -644,7 +757,7 @@ def _render(entry):
             )
             if leg.get("log_line"):
                 lines.append("    {0}".format(leg["log_line"]))
-        return "\n".join(lines)
+        return "\n".join(lines) + _superseded_disclosure(entry)
     # STATE_PENDING
     # #1113 self-review: `pending_legs` entries come from the identical
     # forge-controlled `name`/`context` source as `leg["name"]` above --
@@ -662,7 +775,7 @@ def _render(entry):
         entry.get("branch", "?"),
         entry.get("sha", "?"),
         ", ".join(still_running) or "(rollup not yet reported)",
-    )
+    ) + _superseded_disclosure(entry)
 
 
 def main(argv=None, run=None):
