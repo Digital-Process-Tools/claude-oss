@@ -820,7 +820,10 @@ def _entry_point_linked(monkeypatch):
     monkeypatch.setattr(
         doctor,
         "supertool_entry_point",
-        lambda project_dir, cache_root=None, record=None: ("ok", "<the plugin's copy>"),
+        lambda project_dir, cache_root=None, record=None, dependency_repos=None, run=None: (
+            "ok",
+            "<the plugin's copy>",
+        ),
     )
 
 
