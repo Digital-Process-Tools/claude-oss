@@ -40,8 +40,17 @@ _REAL_WATCH_DECLARATION_SPLIT = doctor._watch_declaration_split
 @pytest.fixture(autouse=True)
 def clean_findings():
     doctor.FINDINGS.clear()
+    # #1455 self-review finding: a test that ends on `doctor.main(["--findings"])`
+    # leaves `doctor._FINDINGS_ONLY` at True in this process, and nothing but the
+    # NEXT `doctor.main()` call resets it -- a test in between that exercises a
+    # `check_*`/`report()` call directly, never through `main()`, would silently
+    # print nothing for an OK line it asserts on. Reset alongside FINDINGS itself,
+    # for the same reason FINDINGS is cleared here rather than trusted to whichever
+    # test happened to run last.
+    doctor._FINDINGS_ONLY = False
     yield
     doctor.FINDINGS.clear()
+    doctor._FINDINGS_ONLY = False
 
 
 @pytest.fixture(autouse=True)

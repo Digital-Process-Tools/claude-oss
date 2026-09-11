@@ -130,24 +130,24 @@ def mcp_channel_connection_state(run=None, which=None, env=None):
     which = shutil.which if which is None else which
     run = subprocess.run if run is None else run
 
-    # #1361: `bin/oss-workspace` asks `claude mcp list` once at session-open
-    # and exports the raw answer, the same relay shape #629 and #810 already
-    # use for the two asks either side of this one -- `claude` is ~1.3s to
-    # start and the answer cannot have changed in the seconds between. A relay
-    # that is absent or empty is not read as an empty listing: this falls
-    # through to a real ask, so a launcher that could not run the command and a
-    # machine with no consumer never render alike.
-    # #1372 (gate 3 round one, v0.31.0): the sentinel is the guard, not the
-    # value. A first version read OSS_WORKSPACE_MCP_LIST_OUTPUT on its own, so
-    # a stale export left by an earlier session -- or one inherited from an
-    # unrelated parent shell, or forged outright -- answered `connected` on a
-    # machine with no `claude` binary at all. #1344 had already hardened the
-    # sibling relay against exactly that, in those words, one check over; this
-    # one shipped in the same delta without any of the three guards its two
-    # siblings carry. `_CHECKED == "1"` mirrors OSS_WORKSPACE_MCP_CHECKED and
-    # OSS_WORKSPACE_CENSUS_CHECKED; an unset or unrecognised sentinel falls
-    # through to a real ask rather than being trusted or read as an empty
-    # listing.
+    # #1361: `bin/oss-workspace` used to ask `claude mcp list` once at
+    # session-open and export the raw answer for this check to relay-read
+    # instead of asking again -- the same relay shape #629 and #810 use either
+    # side of this one. #1372 (gate 3 round one, v0.31.0) hardened the read
+    # with a sentinel (`_CHECKED == "1"`) so a stale or forged
+    # `OSS_WORKSPACE_MCP_LIST_OUTPUT` could never be trusted on its own.
+    #
+    # #1432: this check runs from inside the session's own `/oss:run` step 1
+    # now (#1392 moved it there), a separate process started well after
+    # `bin/oss-workspace` has already exited -- so this relay has had no
+    # reachable producer for a while, and #1432 dropped
+    # `OSS_WORKSPACE_MCP_LIST_CHECKED`'s export entirely (it was never read by
+    # anything else). The branch below is therefore permanently unreachable:
+    # `_CHECKED` can no longer be `"1"` from any real caller, so this always
+    # falls through to a real ask. Left in place rather than deleted -- the
+    # fallback (a live `claude mcp list`) is exactly what already ran in
+    # practice, and removing dead code here is a separate, larger change than
+    # this comment fix.
     relayed = env.get("OSS_WORKSPACE_MCP_LIST_OUTPUT", "")
     if env.get("OSS_WORKSPACE_MCP_LIST_CHECKED") == "1" and relayed.strip():
         return _classify_listing(relayed)
