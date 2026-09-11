@@ -49,8 +49,9 @@ def check_trap_queue(project_dir):
     doctor.report(
         "NOTICE",
         "trap queue: {} waiting for /oss:curate ({}). Not a fault and nothing is blocked -- "
-        "fragments are inert until a pass promotes, merges or declines them, and a queue "
-        "that carries over is how the pass gets skipped for being too big.".format(
+        "fragments are inert until a pass promotes, merges, declines or defers them (#1425): "
+        "one pass takes the whole backlog, uncapped, so a queue that carries over is a fragment "
+        "the pass genuinely could not decide, never a batch it skipped for being too big.".format(
             result["count"], ", ".join(f["name"] for f in result["fragments"])
         ),
     )

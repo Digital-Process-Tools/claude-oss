@@ -1,8 +1,10 @@
 # Declined traps
 
-`/oss:curate` reads `trap.d/` and gives every fragment exactly one outcome: promote, merge, or
-decline. This file is the record of the declines, so the next lane to hit the same thing finds a
-decision rather than an absence and does not refile it. The rule builder skips this file by name.
+`/oss:curate` reads `trap.d/` and gives every fragment exactly one outcome: promote, merge,
+decline, or defer (#1425) -- a fragment the pass genuinely cannot decide is left in `trap.d/`,
+named and reasoned in the pass's own pull request, rather than forced into one of the other three.
+This file is the record of the declines, so the next lane to hit the same thing finds a decision
+rather than an absence and does not refile it. The rule builder skips this file by name.
 
 ## 2026-09-05 — 30 fragments, 4 promoted, 6 merged, 18 declined
 
