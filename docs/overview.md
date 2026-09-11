@@ -237,9 +237,15 @@ the same argument the release audit rests on, one level up.
 this plugin installs fires on a push or a pull request — a human act.
 `docs/autonomy.md` names what would have to exist first, and answers none of it.
 
-**It works, and it has only ever worked here.** It runs across several
-repositories, watched by the person who wrote it, who knows by now what it looks
-like when it goes wrong. Nobody else has installed it into a repository we have
-never seen, and nobody but its author has ever had to read its output cold. That
-is not a defect. It is the one claim with no observation behind it, and the one
-thing prose cannot supply.
+**A few people run it, and what they see has not reached this page.** It is not
+the most used plugin in the world. A handful of maintainers inside one
+organisation run it, one of them every day, on repositories the author does not
+watch. An earlier version of this paragraph said only the author had ever run
+it, on the strength of a probe that counts config files and cannot see who
+opens a session — an absence the tool produced, read as an absence in the world,
+in the one sentence meant to be the honest one.
+
+What still has no observation behind it is narrower and real: a maintainer
+outside the organisation, and any second user's output read cold by someone
+here who could act on it. The inbound half exists now and has never carried a
+fragment from any of them. That is the gap, and prose cannot close it.
