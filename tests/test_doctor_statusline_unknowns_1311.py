@@ -198,7 +198,13 @@ def test_channel_stale_reports_wait_not_warn_1440(monkeypatch, tmp_path):
     ]
     state, msg = channel_findings[0]
     assert state == "WAIT", doctor.FINDINGS
-    assert "Settles on the next statusline render" in msg
+    # #1071/main merge: the message text itself now comes from the shared
+    # {fork_sentence}/{remedy} template every other "stale" row already
+    # uses (main introduced it after #1440 forked) -- the WAIT/WARN level
+    # is #1440's own contribution and is asserted above; what this still
+    # checks is that the line names what settles it, in whichever of the
+    # two fork_sentence variants applies here.
+    assert "fork" in msg.lower() and "background refresh" in msg
 
 
 def test_channel_not_attributable_stays_warn_with_a_fixable_remedy(
