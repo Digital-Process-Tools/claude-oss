@@ -22,6 +22,12 @@ rename, an external-contributor PR, or anything irreversible.
 - **After merge, check the default branch's own run with `gh-branch`** (GREEN / NOT GREEN /
   NO RUN / UNKNOWN) -- a green PR is a statement about its merge-base, not about `main` after
   the squash.
+- **`mergeable: MERGEABLE` is a claim about the base the reading was computed against, not about
+  the base a merge would use now.** It does not re-render when another PR lands first -- it can
+  read `MERGEABLE | conflicts: no` continuously even after the default branch moved underneath it.
+  Before merging a PR whose base may have moved (several lanes merging in sequence), `git fetch &&
+  git merge origin/main` in the lane's own worktree first: two adjacent changed lines can arrive in
+  one conflict hunk, and neither side is right taken wholesale.
 - **Do not route around a denied merge.** Say the call was denied, name it exactly, and let
   the maintainer run or permit it.
 

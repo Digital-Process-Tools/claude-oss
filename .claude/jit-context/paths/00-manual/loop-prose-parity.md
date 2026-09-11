@@ -21,6 +21,14 @@ match: (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$
   new paragraph by cutting one, or raise the number in the same diff with a sentence saying what was
   weighed.
 
+- **A new Bash-granted file under `agents/` needs a fifth guard beyond the three above.**
+  `tests/test_delegated_test_run_877.py` requires every Bash-granted `agents/*.md` file to declare,
+  in its own name-lookup tables, whether it may run the test suite (`ALREADY_COVERED_ELSEWHERE`,
+  `NO_TEST_CONCERN`, or `REQUIRED_MARKER`) -- a new agent file is unaccounted for the moment it
+  exists, and this guard refuses to guess which bucket it belongs in. Run it alongside
+  `test_agent_definition_budget_491.py`, `test_claude_md_budget_table_709.py`,
+  `test_baseline_matches_disk_1014.py` and `test_agent_grant_is_total.py` whenever adding a new file
+  under `agents/` (#1414).
 - **A content guard can go red on layout, not on content, and the correct fix is to re-wrap.**
   `tests/test_command_references.py` matches **per line**, not across the document. A deletion pass
   that reflows a paragraph can split an asserted phrase across a newline without changing a word:

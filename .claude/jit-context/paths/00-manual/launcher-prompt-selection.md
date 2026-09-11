@@ -1,42 +1,38 @@
 ---
-title: "bin/oss-workspace: it chooses the session's first command, and that choice needs a memory"
-description: "The launcher's whole output is one prompt. A route that fires on a condition the maintainer cannot clear pins every future launch to it. No /reload-plugins is needed after a pre-exec update."
+title: "bin/oss-workspace: it always opens on /oss:run now, and its job is priming what /oss:run reads"
+description: "The launcher no longer picks the opening command (#1392) -- prompt is a fixed /oss:run. Its remaining job is the currency check, symlink repoint, census, identity check, and handing each reading forward via env relays that currently die at exec, unconsumed."
 match: (^|/)bin/oss-workspace$
 ---
 
-**What this file is for.** Open a maintainer session over the repository the caller is standing in,
-and decide the one command that session starts on. Everything else here -- the currency check, the
-symlink repoint, the census, the identity check, the diagnostic -- exists to make that one choice
-correctly and to report what it could not establish. The working directory is the selection; it
-opens THEIR repo, never this plugin's checkout.
+**What this file is for.** Open a maintainer session over the repository the caller is standing in.
+Before #1392 it also chose which command that session opened on (`/oss:setup` / `/oss:doctor` /
+`/oss:tick`); it no longer does -- `prompt="/oss:run"` is fixed, and `/oss:run` itself now makes
+that decision from inside the session (`commands/run.md`, `scripts/next_action.py`, which produces
+a ranked candidate list rather than a single verdict). **Do not add a route back into this file for
+"if X, open on Y instead"** -- that logic now lives one layer in, where `next_action.rank()` can see
+the whole ranked candidate list rather than one launcher-time reading.
 
-**The intended order of the prompt decision**, and each departure from it is a bug:
+**What still runs here, and why:** the plugin-currency check and its own repoint of
+`~/.local/bin/oss-workspace` if stale, the MCP census, the identity/registration check for
+`oss-channel`, and the channel-arm decision (#1307 -- whether an installed plugin already provides
+an in-scope consumer). Each is still computed synchronously before `exec claude`, for the same
+reason it always was: a maintainer session should not spend its first turn re-deriving something
+the launcher already measured.
 
-1. no `.oss.json` -> `/oss:setup`. A tick on guessed values merges into a guessed default branch.
-2. the plugin was just updated -> `/oss:doctor`, to diagnose the tree it moved to.
-3. otherwise, and once doctor has already run here against this state -> `/oss:tick`.
+**`/reload-plugins` is still not needed after a pre-exec update.** The update runs before `exec
+claude`, so the session that starts has never held the old registry -- there is no stale copy to
+reload out of.
 
-**`/reload-plugins` is not part of step 2 and adding it is wrong.** The update runs *before*
-`exec claude`, so the session that starts has never held the old registry. `/reload-plugins` moves
-the registry and does not move text already injected -- in a session zero turns old there is nothing
-stale to move. The file's own comment says so: *no stale-copy window to reload or restart out of*.
-A fresh session that still resolved the old copy would be a harness bug worth filing, not a launcher
-fix.
+**Four env relays hand each computed reading forward, and are unset again right before `exec`:**
+`OSS_WORKSPACE_MCP_CHECKED` (#629), `OSS_WORKSPACE_CENSUS_CHECKED` (#810),
+`OSS_WORKSPACE_MCP_LIST_CHECKED` (#1372), `OSS_WORKSPACE_CHANNEL_ARM_TARGET` (#1307). **Since #1392
+removed this file's own synchronous `doctor.sh` call, none of the four currently has a live
+consumer** -- the one thing that read them was the launcher's own diagnostic, which now runs from
+inside the session instead (`/oss:run` step 1). They are still computed and still unset, unchanged,
+pending a decision on whether to thread them into `/oss:run`'s own first `doctor.sh` call or retire
+them (#1432): treat a relay here as dead plumbing until that lands, not as something a session
+downstream can rely on.
 
-**A route that fires on a standing condition must carry a receipt (#1064).** There are two routes
-into `/oss:doctor` and only the first is bounded: the update route fires once per update, and the
-diagnostic route (`VERDICT: usable with gaps` / `not usable`) is stateless and re-fires on every
-launch for as long as any actionable WARN survives. One WARN the maintainer cannot clear -- #1062 is
-the live instance -- therefore pins every session to the diagnostic and the loop never ticks. The
-route can no longer tell *something changed* from *the same thing as last time*, which is this
-repository's own defect class pointed at the router.
-
-So: record the verdict word and the plugin version the route fired against, arm it only when one of
-those has moved, and never write a receipt from the `could not run` or unrecognised-verdict arms --
-a diagnostic that did not answer must not clear a route on no evidence.
-
-**Handing a computed reading forward beats spending a turn on it.** What the route wanted is for the
-acting agent to start with what the diagnostic found. The launcher already holds the whole report and
-already knows the shape: `OSS_WORKSPACE_MCP_CHECKED` (#629) and `OSS_WORKSPACE_CENSUS_CHECKED` (#810)
-relay an answer into a subprocess instead of recomputing it. Relaying the verdict is cheaper than
-replacing the prompt, and both env relays are unset before `exec` for the reason named there.
+Routed via /oss:curate from `trap.d/1392.env-relays-now-consumerless.md`; the sibling docs
+staleness (`docs/open-the-workspace.md`, `docs/install.md`) this same launcher change left behind
+is tracked separately (#1439), not in this file.

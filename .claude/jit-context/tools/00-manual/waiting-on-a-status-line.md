@@ -35,3 +35,24 @@ Three rules, in order of how much they buy:
 
 The same defect in GitHub's own parser rather than a shell:
 `pr-body-closing-keywords.md` -- writing "does not close #N" closes #N.
+
+**Enumerating the transient side is still a bet that the tool's vocabulary is closed, and it
+usually is not.** `gh api .../actions/runs ... .status` returned `pending` -- a real, undocumented-
+in-the-loop value neither `queued` nor `in_progress` named -- and a loop enumerating only those two
+reported a run that had not started as finished. Enumerate the CLOSED side instead when one exists:
+there is exactly one terminal `status`, `completed`, so `grep -q -v -E "^completed$"` (anchored) is
+complete regardless of what the API adds to the transient set next (#1369).
+
+**When you invert the grep, invert the keyword too.** Rewriting `until ! grep -q "pending"` (wait
+while a transient state is present) into `until ! grep -q -v "^completed$"` (find a NON-completed
+run) inverts the predicate a second time without touching `until`/`!` -- the loop then reads "keep
+going while there is NO incomplete run", exactly backwards, and exits immediately. Changing one
+without the other is the natural next mistake, not a rare one: it happened one minute after fixing
+the enumeration bug in the same loop.
+
+**A `cmd | grep -q` pipeline cannot carry three states.** If `cmd` fails outright -- a rate limit, a
+network blip, no output at all -- `grep` selects nothing and exits 1, indistinguishable from "looked,
+and found nothing incomplete": the loop reports done. Use a tool with its own exit status for the
+thing actually being waited on (`gh run watch <run-id> --exit-status`), or capture the ask's own
+exit status separately before ever interpreting its output. All three failures above were caught
+only because the loop happened to print the rows it had just decided were finished.

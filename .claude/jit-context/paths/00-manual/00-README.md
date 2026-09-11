@@ -173,3 +173,74 @@ instead as eight issues:
   `vocabulary/00-manual/worktree-writes-land-where-cwd-says.md`'s subject. Nothing here would fire
   usefully on any match this repo has. Note the fragment also broke the naming convention: there was
   no issue being worked on, so it was filed as `0.<slug>.md`.
+
+## 2026-09-11 — 36 fragments, 3 promoted, 5 merged, 28 declined
+
+**Promoted.** `tools/00-manual/refused-bash-call-is-all-or-nothing.md` (from
+`1345.tmp-toml-collision-blocked-heredoc`), `paths/00-manual/frontmatter-key-spelling-is-
+unverifiable-from-source.md` (from `1391.skill-frontmatter-underscore-vs-hyphen`),
+`paths/00-manual/doctor-check-module-scope-import.md` (from
+`1350.doctor-check-circular-import-systemic`).
+
+**Merged.** `tools/00-manual/waiting-on-a-status-line.md` gained the GitHub-status-enumeration,
+invert-the-keyword and pipe-cannot-carry-three-states material (from
+`1369.status-enumeration-missed-pending`); `tools/00-manual/supertool-payload-forms.md` gained the
+doubled-backslash-lands-as-valid-Python bullet (from
+`1343.literal-backslashes-writes-doubled-escape-not-caught-by-py-syntax` and
+`1389.toml-literal-string-no-escapes`, the same root cause found twice); `tools/01-oss/merge-gate.md`
+gained the `mergeable`-is-stale-against-a-moved-base bullet (from
+`1403.github-mergeable-is-computed-against-a-stale-base`, edited via `scripts/oss_rules.py`'s
+`TOOLS_MERGE_GATE` per the rules-layer-symlinks rule, not the generated `.md` directly); and
+`paths/00-manual/loop-prose-parity.md` gained the fifth Bash-granted-agent-file guard bullet (from
+`1414.new-agent-file-needs-the-delegated-test-run-bucket`).
+
+**Existing rule corrected, not promoted.** `paths/00-manual/launcher-prompt-selection.md` described
+a three-way `/oss:setup`/`/oss:doctor`/`/oss:tick` launcher decision that `bin/oss-workspace` no
+longer makes at all (#1392/#1404 moved it into `/oss:run`) -- rewritten to state what the launcher
+actually still does. The underlying fragments (`1389.stale-launcher-docs-from-1404`,
+`1392.env-relays-now-consumerless`) are declined below with issue numbers, since the residual work
+(doc sweep, an open design decision on the four env relays) is not itself a rule.
+
+**Already actioned or already stated elsewhere; the fragment is a record, not a new rule.**
+
+- `1405.run-md-stale-shape` -- checked live: `commands/run.md` already documents the `ranked`/
+  `candidates[0]` shape correctly (confirmed by grep, no stale `could-not-decide` prose remains).
+- `1405.record-skip-uncalled-anywhere` -- checked live: `commands/run.md` now calls
+  `next_action.py --record-skip` for a deliberate deviation from `candidates[0]`. Already wired.
+- `1350.self-hosting-plugin-cache-schema-skew` -- the transferable half ("this repo IS the plugin,
+  the checkout outranks `${CLAUDE_PLUGIN_ROOT}`") is already
+  `vocabulary/00-manual/self-hosted-plugin-resolution.md`'s whole subject, already carrying three
+  independently-measured instances. This is a fourth, from the same tick as one of the three
+  already in that file. Nothing here would add content.
+
+**One incident, a real defect, not a rule -- filed as an issue instead.**
+
+- `1339.round2-doctor-check-statusline-remedy-unescaped-quoting`,
+  `1339.round2-statusline-scaffold-oss-literal-duplicated-unguarded` -- filed as #1426.
+- `1346.plugin-update-root-last-token-indexerror` -- filed as #1429.
+- `1347.lane-coupling-import-loop-oserror-silently-swallowed` -- filed as #1427.
+- `1350.doctor-inprocess-preexisting-failure-plugin-source-match` -- filed as #1428.
+- `1354.checklist-skew-version-scrape-ambiguous-provenance`,
+  `1354.report-schema-minlength-message-uses-unstripped-length`,
+  `1354.tree-snapshot-artifact-regex-matches-any-depth`,
+  `1354.workspace-plural-test-lacks-returncode-positive-control` -- filed as #1430.
+- `1361.doctor-next-step-ignores-its-own-remedies` -- filed as #1441.
+- `1378.cohort-citation-test-green-because-subject-absent` -- filed as #1442.
+- `1389.stale-remedy-strings-picker-demotion` -- filed as #1431.
+- `1389.stale-launcher-docs-from-1404` -- filed as #1439 (the docs/ half; the jit-rule half was
+  corrected directly, above).
+- `1392.env-relays-now-consumerless` -- filed as #1432 (the open thread-through-vs-delete design
+  decision; the jit rule describing the launcher's current behaviour was corrected directly, above).
+- `1405.inbound-no-repeat-suppression`, `1405.inbound-triage-not-actually-reused` -- filed as #1433.
+- `1414.record-skip-cli-double-config-load` -- filed as #1434.
+- `1418.root-vs-repo-flag-spelling-across-scripts` -- filed as #1435.
+- `1419.gh-error-text-not-backslashreplace-safe`, `1419.inbound-phase-file-stale-gap-claim`,
+  `1419.triage-recorded-flag-cannot-run-as-written`, `1419.triage-trigger-ignores-oss-local-json` --
+  filed as #1436.
+- `1421.channel-suppresses-warn-on-other-sessions-cached-reading`,
+  `1421.record-skip-cli-untrapped-statererror` -- filed as #1437.
+- `583.tick-md-over-command-budget` -- filed as #1438.
+
+30 fragment files map onto these 28 declines (`1339`, `1354`, `1405`, `1419` and `1421` each cluster
+two or four fragments into one bullet or one issue); together with the 3 promoted and 5 merged
+fragments (`1414` counted once, under merged) this accounts for all 36.
