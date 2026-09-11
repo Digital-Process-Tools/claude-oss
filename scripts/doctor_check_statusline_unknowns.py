@@ -343,10 +343,16 @@ _CHANNEL_EXPLAIN = {
         "for this repo (no cached channel entry) -- renders `ch?`. {}",
     ),
     "stale": (
-        "WARN",
+        # #1440: a cache clock running out settles on its own -- the very
+        # next statusline render forks a background refresh -- so it is not
+        # a WARN wearing a self-heal disclaimer, it is a WAIT. Every other
+        # row in this table stays WARN: none of them names a moment that
+        # clears the gap on its own the way this one's own refresh interval
+        # does.
+        "WAIT",
         "statusline channel: the cached `channel:health` reading is older "
-        "than its own refresh interval -- renders `ch?`. This self-heals on "
-        "the next statusline render (a background refresh forks "
+        "than its own refresh interval -- renders `ch?`. Settles on the "
+        "next statusline render (a background refresh forks "
         "automatically), or force it now: {}",
     ),
     "declaration-unreadable": (

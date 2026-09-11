@@ -297,6 +297,20 @@ def check_channel_health_agreement(
             "nothing to answer with until that changes -- {}".format(detail),
         )
         return
+    # #1440: a census that answered fine, beside a health cache too old to
+    # speak, is a clock running out -- not a fault either instrument found.
+    # `_census_signal` returning non-None is what tells this apart from the
+    # OTHER `could-not-compare` causes just below (`could-not-ask`, no cache
+    # at all): those stay WARN, because nothing establishes they will ever
+    # clear on their own the way a cache's own refresh interval does.
+    if health_source == "cached-stale" and _census_signal(census_state) is not None:
+        doctor.report(
+            "WAIT",
+            "channel census vs channel:health: could not compare -- {}. Settles on "
+            "the next statusline render, which refreshes the cache in the "
+            "background.".format(detail),
+        )
+        return
     doctor.report(
         "WARN",
         "channel census vs channel:health: could not compare -- {}".format(detail),

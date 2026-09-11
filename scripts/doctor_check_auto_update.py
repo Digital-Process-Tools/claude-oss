@@ -21,7 +21,7 @@ import time
 import doctor
 
 
-def check_auto_update(project_dir, sh_available=None):
+def check_auto_update(project_dir, sh_available=None, fresh_check=None):
     """Did the SessionStart updater run, and what did it do (#480)?
 
     Five states, and the fifth is the one #492 added:
@@ -143,7 +143,7 @@ def check_auto_update(project_dir, sh_available=None):
         stamp = " ({:.0f} minute(s) ago)".format(max(0.0, (time.time() - when) / 60.0))
     state = receipt.get("state")
     partial = bool(receipt.get("partial_failure"))
-    _report_plugin(receipt, state, partial, stamp)
+    _report_plugin(receipt, state, partial, stamp, project_dir, fresh_check=fresh_check)
     # Second, and always: the loop plugin's row above answers about one plugin, and #605
     # widened what the updater acts on. A row that stayed pinned to the first would have
     # gone silently narrower than its own subject at the moment the subject widened --
@@ -151,7 +151,39 @@ def check_auto_update(project_dir, sh_available=None):
     _report_dependencies(receipt)
 
 
-def _report_plugin(receipt, state, partial, stamp):
+def _fresh_auto_update_check(project_dir, fresh_check=None):
+    """A read right now, un-cached and never persisted -- ``(state, detail)``, or
+    ``(None, None)`` when nothing could be asked at all (#1440).
+
+    Exists for exactly one caller: the ``could-not-check`` arm below, when the
+    CACHED receipt says the install record could not be read. #1440's own
+    measured instance was the install record mid-rewrite during the launcher's
+    own version bump -- broken the second the check ran, readable a minute
+    later. Asking again, once, right now, tells that transient timing apart
+    from a real, standing failure without ever gating a doctor run on a
+    network call by default: this only runs when the cache has already
+    reported a gap.
+
+    `fresh_check` is injected for testing (and lets a caller skip the real
+    ask entirely); it defaults to `doctor.plugin_update.update`, called with
+    `receipt=None` so the debounce window in `update()`'s own docstring never
+    applies here -- a debounced answer would just hand back the same stale
+    `could-not-check` this function exists to look past. Never calls
+    `write_receipt`: this is a read for THIS report, not a second update run
+    competing with the SessionStart hook's own receipt.
+    """
+    if fresh_check is not None:
+        result = fresh_check()
+    elif doctor.plugin_update is None or project_dir is None:
+        return None, None
+    else:
+        result = doctor.plugin_update.update(root=project_dir, receipt=None)
+    if not isinstance(result, dict):
+        return None, None
+    return result.get("state"), result.get("detail")
+
+
+def _report_plugin(receipt, state, partial, stamp, project_dir=None, fresh_check=None):
     """The loop plugin's own row -- unchanged by #605, moved out so the dependency row
     below cannot be reached only on some of its arms.
 
@@ -208,6 +240,19 @@ def _report_plugin(receipt, state, partial, stamp):
         doctor.report(
             "OK",
             "auto-update: {} already current{}".format(receipt.get("plugin"), stamp),
+        )
+        return
+    fresh_state, fresh_detail = _fresh_auto_update_check(
+        project_dir, fresh_check=fresh_check
+    )
+    if fresh_state in ("current", "updated"):
+        doctor.report(
+            "WAIT",
+            "auto-update: the cached reading could not check{} -- {}. A fresh check "
+            "just now answered {} ({}) -- settles on the next SessionStart check, and "
+            "this is not itself a finding.".format(
+                stamp, receipt.get("detail"), fresh_state, fresh_detail
+            ),
         )
         return
     doctor.report(
