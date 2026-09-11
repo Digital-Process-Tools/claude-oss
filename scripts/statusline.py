@@ -99,6 +99,17 @@ REFRESH_AFTER = 60
 #: them.
 LATEST_REFRESH_AFTER = 3600
 
+#: The RENDER-time boundary for folding a `latest` comparison to `unknown` (#1464), a
+#: different question from `LATEST_REFRESH_AFTER` above (which governs when `refresh()`
+#: re-asks). A reading crossing `LATEST_REFRESH_AFTER` is merely DUE -- the detached
+#: refresh it provokes can take up to ~60s to land -- and folding to `unknown` at that
+#: exact instant showed `unknown` for a reading correct a second earlier and correct
+#: again a minute later. `2x` the refresh interval, the issue's own proposed boundary,
+#: is past the point where "a refresh just has not landed yet" is a credible
+#: explanation, so only a reading this old (or one a refresh was actually attempted
+#: and failed against, see `latest_is_unknown`) folds early.
+LATEST_UNKNOWN_AFTER = 2 * LATEST_REFRESH_AFTER
+
 #: A third clock (#613), beside the two above, for the one field that answers a
 #: question neither of them can afford: is the watch channel actually delivering.
 #: `channel:health` is classed `acts` and spawns `claude mcp get` once per
@@ -780,6 +791,18 @@ def mark_board_stale(repo, now=None, delay=0):
     return True
 
 
+def _latest_stamp_key(cache):
+    """Which stamp `latest`'s own age is measured from: the split `latest_fetched_at`
+    where present, else the pre-#515 legacy fallback `fetched_at` -- the same test
+    `latest_is_due` and `latest_is_unknown` both apply, factored out so the two
+    thresholds cannot silently drift onto different keys."""
+    if isinstance(cache, dict) and not isinstance(
+        cache.get("latest_fetched_at"), (int, float)
+    ):
+        return "fetched_at"
+    return "latest_fetched_at"
+
+
 def latest_is_due(cache, now):
     """The same question for the published plugin versions, on the long clock.
 
@@ -787,12 +810,45 @@ def latest_is_due(cache, now):
     that one stamp is when those versions were fetched -- so it is what the age is measured
     from. Reading a missing stamp as "just now" would freeze the version column for a whole
     interval on every upgrade, which is the quiet direction to be wrong in.
+
+    This governs when `refresh()` re-asks -- a DIFFERENT question from whether the render
+    should still trust the old reading in the meantime; see `latest_is_unknown` for that one
+    (#1464).
     """
-    if isinstance(cache, dict) and not isinstance(
-        cache.get("latest_fetched_at"), (int, float)
-    ):
-        return _is_due(cache, "fetched_at", LATEST_REFRESH_AFTER, now)
-    return _is_due(cache, "latest_fetched_at", LATEST_REFRESH_AFTER, now)
+    return _is_due(cache, _latest_stamp_key(cache), LATEST_REFRESH_AFTER, now)
+
+
+def latest_is_unknown(cache, now):
+    """Should `gather()` fold the cached `latest` comparison to `unknown` (#1464)?
+
+    NOT the same threshold `latest_is_due` uses. A reading merely due -- between one and
+    two `LATEST_REFRESH_AFTER` intervals old -- still renders as its last-known state,
+    because the detached refresh a due reading provokes can take up to ~60s to land, and
+    folding at the exact instant of due-ness showed `unknown` for a comparison that was
+    correct a second earlier and would be correct again once the refresh lands.
+
+    Folds early on either of two conditions:
+
+    * a refresh was attempted and failed SINCE the last success -- `latest_refresh_failed_at`
+      newer than the stamp `_latest_stamp_key` reads. That is no longer "merely due", it is
+      known to be unconfirmable right now. A failure recorded BEFORE the most recent success
+      is stale news, superseded, and must not fold an otherwise-fine reading.
+    * the reading is past `LATEST_UNKNOWN_AFTER` (2x the refresh interval) with no fresher
+      stamp -- past the point where "a refresh just has not landed yet" is credible.
+
+    Does not affect a `latest` entry that was never fetched at all for a given plugin --
+    `version_status` already folds that to `unknown` because `theirs is None`, independent
+    of this function or `stale`.
+    """
+    if not isinstance(cache, dict):
+        return True
+    key = _latest_stamp_key(cache)
+    stamp = cache.get(key)
+    failed_at = cache.get("latest_refresh_failed_at")
+    if isinstance(failed_at, (int, float)):
+        if not isinstance(stamp, (int, float)) or failed_at > stamp:
+            return True
+    return _is_due(cache, key, LATEST_UNKNOWN_AFTER, now)
 
 
 def _is_due(cache, key, interval, now):
@@ -2819,9 +2875,13 @@ def refresh(root, now=None, session_id=None):
     carried_stamp = previous.get("latest_fetched_at")
     if not isinstance(carried_stamp, (int, float)):
         carried_stamp = previous.get("fetched_at")
+    carried_failed_at = previous.get("latest_refresh_failed_at")
     if not latest_is_due(previous, now):
         document["latest"] = carried
         document["latest_fetched_at"] = carried_stamp
+        # Not attempted this pass -- whatever failure record was already there (or
+        # was not) carries forward unchanged; this is not itself an ask.
+        document["latest_refresh_failed_at"] = carried_failed_at
     else:
         latest = {}
         answered = False
@@ -2835,12 +2895,19 @@ def refresh(root, now=None, session_id=None):
         if answered:
             document["latest"] = latest
             document["latest_fetched_at"] = now
+            # A success clears any prior failure -- leaving a stale failure marker in
+            # place would keep folding a now-good reading to `unknown` (#1464).
+            document["latest_refresh_failed_at"] = None
         else:
             # Asked and got nothing back. A network that answered once and cannot now is
             # not a plugin with no published version, so the previous reading stays --
             # under its own old stamp, which is what makes it due again immediately.
+            # The failure IS recorded, though (#1464): silently leaving the old stamp in
+            # place read identically to "not due yet", and `latest_is_unknown` needs to
+            # tell "still due" from "asked and got nothing" to fold correctly.
             document["latest"] = carried
             document["latest_fetched_at"] = carried_stamp
+            document["latest_refresh_failed_at"] = now
     if config.get("watch_channel") is False:
         # A deliberate off switch (#613): no reading, no stamp, and never
         # carried forward from a previous `on` state -- `channel_status` reads
@@ -3174,12 +3241,14 @@ def gather(payload, root, now=None):
     # `latest_fetched_at` used to be read here and dropped, so `plugin_facts` decided
     # `current`/`behind`/`ahead` with no knowledge of the reading's own age -- the
     # same defect `refresh()`'s docstring warns against, one function later (#550).
-    # `latest_is_due` is the same threshold `refresh()` itself uses to decide whether
-    # a reading needs asking again; a comparison this old is folded into `unknown`
-    # rather than rendered as a real answer. It does NOT catch a reading that is
-    # fresh by that same rule and simply wrong -- #549 closes that gap by
-    # invalidating the cache at the moment a publish falsifies it.
-    stale_latest = latest_is_due(cache, now)
+    # `latest_is_unknown` -- NOT `latest_is_due` -- decides the render-time fold
+    # (#1464): a reading merely due keeps rendering its last-known state, because the
+    # detached refresh a due reading provokes can take up to ~60s to land, and
+    # `latest_is_due`'s own threshold folded to `unknown` the instant that refresh
+    # became due rather than once it had had a real chance to land. It does NOT catch
+    # a reading that is fresh by either rule and simply wrong -- #549 closes that gap
+    # by invalidating the cache at the moment a publish falsifies it.
+    stale_latest = latest_is_unknown(cache, now)
     loop_name = os.environ.get("OSS_STATUSLINE_PLUGIN", "oss")
 
     channel = None
