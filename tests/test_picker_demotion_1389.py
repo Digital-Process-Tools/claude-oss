@@ -209,20 +209,42 @@ def test_tick_md_self_read_instruction_is_anchored_1421():
     this plugin's own checkout and a bare `commands/tick.md` read resolves
     nowhere. It must be anchored to ${CLAUDE_PLUGIN_ROOT} the same way the
     six commands/run.md spawn prompts are.
+
+    It must also be *double*-quoted, not single-quoted: this string is a
+    literal, executable `supertool <quote>read:...<quote>` invocation (unlike
+    commands/run.md's six spawn prompts, which are `Agent(..., prompt: "...")`
+    tool-call arguments a session builds itself, never shell text). Bash
+    performs no parameter expansion inside single quotes, so a self-review
+    round on this exact lane found the first draft's fix -- `supertool
+    'read:${CLAUDE_PLUGIN_ROOT}/commands/tick.md:OFFSET:LIMIT'` -- anchored
+    in name only: run literally, ${CLAUDE_PLUGIN_ROOT} reaches supertool as
+    that seven-character literal string, not the resolved plugin path. The
+    established convention for a literal shell invocation elsewhere in this
+    repo (`commands/run.md:34`, `commands/doctor.md:9`, both
+    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/..."`) always double-quotes the
+    variable for exactly this reason.
     """
     text = (COMMANDS_DIR / "tick.md").read_text(encoding="utf-8")
 
-    read_calls = re.findall(r"read:(\S+?):OFFSET:LIMIT", text)
+    read_calls = re.findall(r"(['\"])read:(\S+?):OFFSET:LIMIT\1", text)
     assert read_calls, (
         "expected at least one 'read:<path>:OFFSET:LIMIT' self-read "
         "instruction in commands/tick.md -- if this fires because the "
         "prose changed, update this test to match the new phrasing"
     )
-    for path_template in read_calls:
+    for quote_char, path_template in read_calls:
         assert "${CLAUDE_PLUGIN_ROOT}" in path_template, (
             "commands/tick.md's own self-read instruction names {!r}, "
             "which is not anchored to ${{CLAUDE_PLUGIN_ROOT}} -- it "
             "resolves only relative to the session's own cwd, which is "
             "not this plugin's checkout when tick.md is reached from "
             "commands/run.md's dispatch step".format(path_template)
+        )
+        assert quote_char == '"', (
+            "commands/tick.md's self-read instruction anchors "
+            "${{CLAUDE_PLUGIN_ROOT}} inside single quotes ('{}') rather "
+            "than double quotes -- this is a literal, executable shell "
+            "invocation, and bash performs no parameter expansion inside "
+            "single quotes, so the anchor is inert when this line is "
+            "actually run outside this repository's own checkout".format(path_template)
         )

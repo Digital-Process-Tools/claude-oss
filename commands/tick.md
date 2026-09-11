@@ -8,7 +8,7 @@ back as a preview of the first ~2KB plus a pointer to a saved file, not the cont
 `wc -l` plus three `sed -n` ranges that follow it in that case cost roughly 11.9k tokens of pure
 duplication for nothing the first read delivered.** Measured directly, in this repository's own
 session, reproducing #940's own trap.d finding rather than only citing it. Read this file in
-bounded chunks from the first call -- `supertool 'read:${CLAUDE_PLUGIN_ROOT}/commands/tick.md:OFFSET:LIMIT'`, or a single
+bounded chunks from the first call -- `supertool "read:${CLAUDE_PLUGIN_ROOT}/commands/tick.md:OFFSET:LIMIT"`, or a single
 `sed -n 'START,ENDp'` sized well under the truncation point -- never a bare `cat`.
 
 One pass of the maintainer loop over the repo named in `.oss.json`.
