@@ -244,10 +244,17 @@ def _route_already_seen(repo_root, config, route, signature, arm=True):
     evaluation time reintroduces the exact permanent-divert defect this
     function exists to close, one call later: a curate backlog nobody has
     touched would be marked "already routed" the moment it merely showed up
-    ranked below something else. `rank()` calls this with `arm=False` for
-    every candidate, then re-calls only `candidates[0]` (if it is `curate` or
-    `triage`) with `arm=True` once ranking is settled, so only the entry that
-    ends up as the answer actually gets recorded."""
+    ranked below something else, or even the moment it was merely read.
+    `rank()` itself calls this with `arm=False` for every candidate,
+    unconditionally, and never re-calls with `arm=True` for any of them --
+    not even `candidates[0]` (self-review finding, #1414's own follow-up: an
+    earlier version of this module re-called `candidates[0]` with `arm=True`
+    from inside `rank()`, reasoning that only the entry surfaced as the
+    answer should ever be armed, but "surfaced by this call" and "acted on
+    by the caller" are still two different events, and a plain, read-only
+    `--json` call armed it regardless). The only caller of `arm=True` now is
+    `_arm_route_source`, from `_take_cli` or `_record_skip_cli`, at the
+    moment a caller actually commits to a source."""
     state_file = config.get("state_file")
     if not isinstance(state_file, str) or not state_file.strip():
         return False, "no state_file configured, so no receipt could be read or written"
@@ -412,8 +419,12 @@ def _curate_candidate(repo_root, config, routes, arm=False):
     """`arm=False` by default (self-review finding, Explore reviewer, #1405):
     `rank()` evaluates every source every call, so this candidate's own
     signature must not be recorded as "already routed" just for having been
-    looked at -- only `rank()`'s own re-call, once it knows this candidate is
-    the one at `candidates[0]`, passes `arm=True`."""
+    looked at. `rank()` itself never passes `arm=True` (self-review finding,
+    #1414's own follow-up: even a re-call keyed on `candidates[0]` still
+    fires on a plain read, which is not the same event as a caller actually
+    committing to act) -- only `_arm_route_source`, called from `_take_cli`
+    or `_record_skip_cli` at the moment a caller commits to this source,
+    ever does."""
     curate = routes.get("curate", {"configured": False})
     if curate.get("configured"):
         if curate.get("state") == workspace_routes.OVER:
@@ -464,8 +475,10 @@ def _triage_candidate(repo_root, config, routes, arm=False):
     `not-due`. Neither displaces the other.
 
     `arm=False` by default, same reasoning as `_curate_candidate`'s own
-    (self-review finding, Explore reviewer, #1405): only `rank()`'s re-call
-    of `candidates[0]` passes `arm=True`."""
+    (self-review finding, Explore reviewer, #1405, and #1414's own
+    follow-up): only `_arm_route_source`, called at the moment a caller
+    actually commits to this source, ever passes `arm=True` -- never
+    `rank()` itself."""
     state_file = config.get("state_file")
     state_path = (
         str(Path(repo_root) / state_file)
