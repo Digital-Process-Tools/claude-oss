@@ -105,13 +105,19 @@ def _rig(monkeypatch, tmp_path, installed_version="0.13.0"):
 def test_gather_marks_a_comparison_stale_once_its_own_interval_has_passed(
     tmp_path, monkeypatch
 ):
-    """Must-fire: a `latest` reading well past `LATEST_REFRESH_AFTER` renders `?`
-    rather than a false `behind`/`ahead`."""
+    """Must-fire: a `latest` reading well past `LATEST_UNKNOWN_AFTER` renders `?`
+    rather than a false `behind`/`ahead`.
+
+    Moved from `LATEST_REFRESH_AFTER` to `LATEST_UNKNOWN_AFTER` by #1464: a
+    reading merely past `LATEST_REFRESH_AFTER` is DUE for a refresh, not yet
+    stale enough to distrust -- see `tests/test_statusline_latest_grace_1464.py`
+    for the "merely due" must-not-fire case this boundary move makes room for.
+    """
     _rig(monkeypatch, tmp_path, installed_version="0.13.0")
     now = 100_000.0
     cache = {
         "fetched_at": now - 10,
-        "latest_fetched_at": now - statusline.LATEST_REFRESH_AFTER - 1,
+        "latest_fetched_at": now - statusline.LATEST_UNKNOWN_AFTER - 1,
         "latest": {"owner/repo": "0.12.0"},
     }
     statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")

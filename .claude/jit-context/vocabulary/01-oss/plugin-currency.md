@@ -47,8 +47,15 @@ So a session can hold a registry at one version and instructions from another, a
 `ahead` is the normal state in a clone of the plugin itself (unreleased work), and normal for any session
 in the window after a release before the cache refreshes. It is not a problem.
 
-`version_status` folds a stale comparison into `unknown` rather than inventing vocabulary -- so a
-`?` means either half was missing **or** the reading was too old to trust.
+`version_status` folds a stale comparison into `unknown` rather than inventing
+vocabulary -- so a `?` means either half was missing **or** the reading was too
+old to trust. "Too old" is NOT the moment a refresh becomes due
+(`LATEST_REFRESH_AFTER`): the background refresh a due reading provokes can
+take up to ~60s to land, and folding the instant it becomes due showed
+`unknown` for a reading correct a second earlier (#1464). `gather()` keeps
+rendering the last-known comparison while a refresh is merely due, and only
+folds early on a recorded failed refresh or past `LATEST_UNKNOWN_AFTER` (2x
+the refresh interval).
 
 ## The cached `latest`
 

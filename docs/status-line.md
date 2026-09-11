@@ -28,8 +28,21 @@ The `repo` field's marker maps `gh-branch`'s own four states down to `_symbols`'
 `✓` for GREEN, `✗` only when a leg on the head commit has actually failed, and `⋯` for both
 "still running" and NO RUN — nothing has concluded yet, including the moment right after a
 merge, when the branch has a fresh commit and no run against it at all. `?` covers UNKNOWN and
-a reading older than its own refresh interval, folded the same way `plug`'s own `behind`/`ahead`
-comparison folds a stale one (#550) — a stale `✓` about a commit that may no longer be green is
-worse than an honest `?`. The marker is absent entirely, not `?`, when `.oss.json` declares no
-`default_branch` to compare against — a deliberate absence of the question, the same convention
-`ch`'s own off switch above uses.
+a reading older than its own refresh interval, folded on the same principle -- a stale answer is
+worse than an honest `?` -- that `plug`'s own `behind`/`ahead` comparison uses (#550). Unlike
+`plug` (see below), this field has no grace window: it folds the instant its own reading is due,
+because the danger #856 names is specifically the moment right after a merge, when the previous
+reading is confidently green about a commit that no longer exists — the opposite of `plug`'s own
+incident, where the reading was merely due and still correct. The marker is absent entirely, not
+`?`, when `.oss.json` declares no `default_branch` to compare against — a deliberate absence of
+the question, the same convention `ch`'s own off switch above uses.
+
+`plug`'s own fold is NOT the instant `?`-worthy moment described above
+(#1464): a comparison merely due for its refresh still renders its
+last-known state, because the background refresh a due reading provokes
+can take up to ~60s to land, and folding at the exact instant of due-ness
+showed `unknown` for a reading correct a second earlier. `plug` folds
+early only on a refresh that was actually attempted and failed, or once
+a reading is well past due (past 2x its own refresh interval) — see
+`scripts/statusline.py`'s own `latest_is_unknown` docstring for the
+exact boundary.
