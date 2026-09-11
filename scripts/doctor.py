@@ -7543,7 +7543,7 @@ NOT_COMPARED_TOP_LEVEL = {
     "install step and by a contributor's own environment, "
     "never read at runtime by an installed plugin copy",
     "tests": "not shipped by every install and never read at runtime",
-    "trap.d": "traps logged by a lane and not yet curated; emptied at every /oss:curate pass, so a copy holding none of them is the healthy state, exactly like changelog.d above",
+    "trap.d": "traps logged by a lane and not yet curated; a /oss:curate pass resolves promote, merge and decline outcomes and deletes those fragments, but a fragment it genuinely cannot decide is left as `defer` (#1425), so a copy holding only deferred fragments is also a healthy state, not only an empty one",
 }
 
 #: The one compared file whose skew has a named, user-visible consequence. Byte

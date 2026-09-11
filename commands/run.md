@@ -121,6 +121,9 @@ Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLU
 Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLUGIN_ROOT}/commands/run/changelog.md from here.")
 ```
 
+`curate` decides on its own -- promote, merge, decline or defer -- and its pull request is the
+review; the spawn is never waiting on a human's word before it writes.
+
 Read its report, then return to step 2 to ask again what is needed now.
 
 ## release

@@ -1,5 +1,5 @@
 ---
-description: Curate the traps logged in trap.d/ into jit-context rules — promote, merge or decline, one fragment at a time.
+description: Curate the traps logged in trap.d/ into jit-context rules — promote, merge, decline or defer, one fragment at a time.
 allowed-tools: Bash
 ---
 
@@ -22,9 +22,21 @@ judgment about whether it is worth keeping. **All of that judgment is this pass*
 here rather than in the lane because it needs every fragment visible at once: "these three are one
 rule" is not visible from inside the lane that wrote one of them.
 
-**This is an interactive pass with the maintainer.** It is the one place in this loop where a human
-is the point rather than the fallback. Do not promote, merge or decline a fragment without the
-maintainer's word on it.
+## The pass decides. The pull request is the review
+
+This step used to stop here and hand the fragments to a maintainer, one at a time, because
+`/oss:curate` was a command a person typed and a human reading the terminal was the only review that
+existed. It is now a step `/oss:run` reaches on its own, and a pass that pauses to ask is a human put
+back into the loop wearing a different sentence — the same failure this issue exists to remove, not
+a milder version of it.
+
+**Decide every fragment.** Every outcome below writes a file — a rule under
+`.claude/jit-context/<paths|tools|vocabulary>/00-manual/`, a body merged into an existing rule, a
+decline line in that layer's `00-README.md` — and every file this pass writes in one run goes up as
+**one pull request**. The PR is the review: the maintainer reads it and can refuse any part of it,
+the same way every other write this loop makes into this repository already works. State each
+decision's reason **in the PR body** as a sentence a reviewer can disagree with — never a bare
+verdict — because that sentence is what gets reviewed, not the fact that a decision was made.
 
 ## Read every fragment first, then decide
 
@@ -39,13 +51,37 @@ For each fragment, exactly one outcome:
 | **promote** | this is a rule, and no existing rule covers it | write it into `.claude/jit-context/<paths\|tools\|vocabulary>/00-manual/`, with a firing proof — below |
 | **merge** | an existing rule already governs this situation | add it to that rule's body, and pay for the growth if the rule is getting long |
 | **decline** | not worth a rule: too narrow, already obvious, already stated elsewhere, or an observation about one incident rather than a rule | one line in that layer's `00-README.md`, naming what was declined and why |
+| **defer** | genuinely cannot be decided alone, even with every other fragment visible — ambiguous dimension, an incident too thin to tell rule from noise, a call this pass is not positioned to make | leave the fragment in `trap.d/`, unchanged, and name it plus the reason in the PR body |
 
-**Delete the fragment in every one of the three cases.** The directory ends this pass empty. A queue
-allowed to carry over gets skipped for being too big, and then it is a landfill rather than a backlog.
+**Delete the fragment for promote, merge and decline — the directory ends this pass empty of
+everything it resolved.** A queue allowed to carry over gets skipped for being too big, and then it
+is a landfill rather than a backlog. **Leave a deferred fragment exactly where it is**, so the next
+pass finds it rather than a decision made to clear the queue.
 
 **A declined trap must leave its trace** in `00-README.md`, or the next lane to hit the same thing
 files it again and this pass declines it again. The rule builder skips that file by name, so an
 absence recorded there reads as a decision rather than an oversight.
+
+**`defer` is a real answer, not a delay dressed up as one, and it is bounded.** The old rule here was
+*do not leave a fragment for next time* — written for a human who can always reach a decision given
+enough time in the room. A spawn sometimes honestly cannot: it lacks the standing to judge, or the
+fragment is too thin to tell a real rule from a one-off. Forcing a decline in that case records a
+wrong decision as a made one, which is worse than an honest deferral. But a pass that defers most or
+all of what it read has curated nothing — if `defer` is more than a small fraction of the batch, say
+so plainly in the PR rather than reporting a completed pass; that is itself the finding (the
+fragments arrived too ambiguous for this pass, or this pass lacked context it needed), not a curation
+this issue's fix produced.
+
+## One pass takes the whole backlog, uncapped
+
+Whether one pass takes every waiting fragment or caps itself at some batch size is a decision, not
+an accident, and the answer is: **take all of it.** *Read every fragment first, then decide*, above,
+is not a courtesy — a merge candidate split across two batches is invisible to whichever batch does
+not hold its sibling, so capping the batch size directly breaks the co-visibility this pass exists
+for. 36 fragments in one pass, the live count this issue was filed against, is a lot of judgment to
+hold at once; the answer to that is `defer` on the ones this pass cannot actually decide, not a
+smaller batch that quietly loses the cross-fragment view. The PR that results can be large — that is
+the cost of the review being real, not a reason to shrink the batch to make the PR look smaller.
 
 ## Choosing the dimension, which is the whole decision
 
@@ -78,8 +114,9 @@ reports silence, which is indistinguishable from a rule that does not fire; a co
 already seen fire is what tells those apart. That is logged in `trap.d/` because it happened while
 this command was being written.
 
-Report both results in the pull request that promotes the rule. A promotion with no firing proof is
-a rule nobody has established is reachable.
+**Report both results in the pull request that promotes the rule. A promotion with no firing proof in
+the PR is refused by this pass itself, not by whoever reviews it** — the mechanical guard is what
+makes deciding alone safe, and it does not relax because nobody is watching in real time.
 
 ## What this pass must not do
 
@@ -87,5 +124,8 @@ a rule nobody has established is reachable.
   friction stops the lesson being written, which is what `trap.d/` exists to remove.
 - **Do not promote on volume.** A trap logged twice is evidence about frequency, not about whether a
   rule would fire correctly.
-- **Do not leave a fragment for next time.** Decline it — that is what declining is for, and it is
-  recorded rather than silent.
+- **Do not decline a fragment just because deciding it is hard.** `defer` is for that; `decline` is
+  for a fragment that genuinely is not worth a rule. The two must never be interchangeable exits from
+  the same discomfort.
+- **Do not ask.** There is no maintainer to ask mid-pass — the PR this pass opens is the only place
+  a human's word enters, and it enters after the decisions are made, not before.
