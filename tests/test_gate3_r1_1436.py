@@ -5,7 +5,6 @@ Each test below is the audit's own reproduction, written before the fix.
 """
 
 import json
-import subprocess
 import sys
 from pathlib import Path
 
@@ -14,6 +13,9 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import oss_config  # noqa: E402
 import triage_trigger  # noqa: E402
+
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+import spawn_guard  # noqa: E402
 
 OSS_STATE = REPO_ROOT / "scripts" / "oss_state.py"
 
@@ -78,7 +80,7 @@ def test_triage_recorded_alone_is_not_a_valid_oss_state_call():
     added `--triage-recorded` as an attachment to `--decision`, not its own
     mode flag -- `oss_state.py`'s argparse requires one of the mutually
     exclusive mode flags first."""
-    done = subprocess.run(
+    done = spawn_guard.run(
         [
             sys.executable,
             str(OSS_STATE),
@@ -86,6 +88,7 @@ def test_triage_recorded_alone_is_not_a_valid_oss_state_call():
             "--triage-recorded",
             "2026-01-01T00:00:00Z",
         ],
+        subject="whether --triage-recorded alone is refused by oss_state.py's argparse",
         capture_output=True,
         text=True,
         timeout=30,
@@ -128,8 +131,9 @@ def test_tick_mds_own_call_shape_actually_runs(tmp_path):
         .replace("<state_file>", str(state_file))
         .replace("$(date -u +%Y-%m-%dT%H:%M:%SZ)", now)
     )
-    done = subprocess.run(
+    done = spawn_guard.run(
         ["bash", "-c", command],
+        subject="whether commands/tick.md's own --triage-recorded call actually runs",
         capture_output=True,
         text=True,
         timeout=30,
@@ -201,7 +205,7 @@ def test_triage_trigger_cli_does_not_misreport_could_not_tell(tmp_path):
     (project + local) must not answer could-not-tell for a state file that
     is, in fact, configured."""
     _write_config(tmp_path)
-    done = subprocess.run(
+    done = spawn_guard.run(
         [
             sys.executable,
             str(REPO_ROOT / "scripts" / "triage_trigger.py"),
@@ -209,6 +213,7 @@ def test_triage_trigger_cli_does_not_misreport_could_not_tell(tmp_path):
             str(tmp_path),
             "--json",
         ],
+        subject="whether triage_trigger.py misreports could-not-tell on a split config",
         capture_output=True,
         text=True,
         timeout=30,
