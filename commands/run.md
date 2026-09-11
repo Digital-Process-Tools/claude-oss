@@ -99,7 +99,7 @@ never arbitrating one verdict:
 No `.oss.json`, and `next_action.py` has already confirmed a probe is safe to attempt.
 
 ```
-Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/setup.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLUGIN_ROOT}/commands/run/setup.md from here.")
 ```
 
 It measures the repo and writes the config; do not guess values by hand. Read its report, then
@@ -114,11 +114,11 @@ directly. Spawn the one step 2 named (or the one `$ARGUMENTS` forced) -- one lit
 never a `<name>` filled in by hand, so a session cannot follow the wrong one:
 
 ```
-Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/scaffold.md from here.")
-Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/install-audit.md from here.")
-Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/triage.md from here.")
-Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/curate.md from here.")
-Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow commands/run/changelog.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLUGIN_ROOT}/commands/run/scaffold.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLUGIN_ROOT}/commands/run/install-audit.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLUGIN_ROOT}/commands/run/triage.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLUGIN_ROOT}/commands/run/curate.md from here.")
+Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLUGIN_ROOT}/commands/run/changelog.md from here.")
 ```
 
 Read its report, then return to step 2 to ask again what is needed now.

@@ -851,7 +851,7 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 21,917 B | 22,200 B |
-| `commands/run.md` | 8,041 B | 8,900 B |
+| `commands/run.md` | 8,173 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
