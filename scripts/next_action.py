@@ -699,11 +699,61 @@ def _build_parser():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", default=".", help="repository root (default: cwd)")
     parser.add_argument("--json", action="store_true", help="emit the payload as JSON")
+    parser.add_argument(
+        "--record-skip",
+        metavar="TAKEN_SOURCE",
+        default=None,
+        help=(
+            "record that TAKEN_SOURCE was deliberately taken over rank()'s own "
+            "top candidate -- requires --reason. #1414: this is the CLI a "
+            "markdown procedure (commands/run.md) can actually call; record_skip() "
+            "itself is a plain Python function no shell command could reach."
+        ),
+    )
+    parser.add_argument(
+        "--reason",
+        default=None,
+        help="required with --record-skip -- the one-line reason for the deviation",
+    )
     return parser
+
+
+def _record_skip_cli(root, taken_source, reason):
+    """The CLI half of `record_skip` -- re-derives `rank()`'s own candidates
+    fresh (a markdown procedure calling this has no other way to hand them
+    back in) and the `state_file` path from `.oss.json`, then delegates.
+    Never raises past this point: every failure is a printed `FAIL:` and a
+    non-zero exit, the same convention `main()`'s own JSON/receipt branches
+    use for a payload rather than an exception a shell caller has to catch."""
+    payload = rank(root)
+    if payload.get("state") != RANKED:
+        print(
+            "FAIL: rank() is not currently {0!r} (state={1!r}), so there is no "
+            "top candidate to have skipped".format(RANKED, payload.get("state"))
+        )
+        return 1
+    config, _problems = oss_config.load(Path(root) / ".oss.json")
+    state_file = (config or {}).get("state_file")
+    if not isinstance(state_file, str) or not state_file.strip():
+        print("FAIL: no state_file configured, so the skip could not be recorded")
+        return 1
+    state_path = str(Path(root) / state_file)
+    try:
+        entry = record_skip(state_path, payload["candidates"], taken_source, reason)
+    except ValueError as exc:
+        print("FAIL: {0}".format(exc))
+        return 1
+    print("OK: recorded ({0})".format(entry["decision"]))
+    return 0
 
 
 def main(argv=None):
     args = _build_parser().parse_args(argv)
+    if args.record_skip is not None:
+        if not args.reason:
+            print("FAIL: --record-skip needs --reason")
+            return 1
+        return _record_skip_cli(args.root, args.record_skip, args.reason)
     payload = rank(args.root)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))

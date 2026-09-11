@@ -96,7 +96,25 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined by #1389's own follow-up (the picker consolidation): 4365 B
     # became 4784 B naming the six commands moved to `commands/run/*.md` and
     # why `commands/release.md` did not move with them. Ceiling unchanged.
-    "commands/run.md": (4784, 4800),
+    # Raised for #1414: 4784 B became 6646 B. The scheduler used to read
+    # six command files and `commands/release.md` directly in its own
+    # long-lived session -- exactly the erosion #695 built the sub-manager
+    # split to prevent, one layer over, and the four-state `next_action.py`
+    # shape this file parsed (`due`/`nothing-due`/`could-not-decide`/
+    # `unsafe`) no longer matches #1405's `rank()` output at all. Every
+    # sub-step now names a spawn (`oss:scheduler-step` for the six generic
+    # ones, `oss:releaser` for release, unchanged for dispatch) instead of
+    # "read and follow" prose, and step 2 documents `rank()`'s ordered
+    # candidates plus the `--record-skip` CLI for a deliberate deviation.
+    # Nothing already in the file argued either point, so nothing was cut
+    # to make room; the ceiling moves to 7300 B, ~10% headroom over the
+    # new size.
+    # Re-baselined in the same lane's own self-review: 6646 B became 6810 B
+    # after test_picker_demotion_1389.py's own regression test required
+    # every one of the six demoted files' literal paths to appear, not the
+    # `<name>` placeholder the first draft used in the shared spawn example.
+    # Ceiling unchanged; still comfortably under it.
+    "commands/run.md": (6810, 7300),
 }
 
 

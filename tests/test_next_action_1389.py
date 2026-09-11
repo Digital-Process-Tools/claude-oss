@@ -736,3 +736,55 @@ def test_receipt_names_could_not_tell_candidates_by_that_word(tmp_path, monkeypa
     text = next_action.receipt(result)
     assert "could-not-tell" in text
     assert "inbound" in text
+
+
+# --- --record-skip CLI (#1414: the markdown-driven scheduler has no way to --
+# --- call the plain Python record_skip() function directly) -----------------
+
+
+def test_record_skip_cli_writes_a_state_entry(tmp_path, monkeypatch, capsys):
+    root = _git_repo(tmp_path)
+    _write_config(root, {"state_file": ".max/oss-watch.json"})
+    _quiet_inbound(monkeypatch, unruled=1)
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_FIRED,
+            "fired": ["merged_prs"],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    rc = next_action.main(
+        ["--root", str(root), "--record-skip", "release", "--reason", "quiet board"]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "OK:" in out
+    assert "took release over inbound" in out
+    state_path = root / ".max" / "oss-watch.json"
+    assert "quiet board" in state_path.read_text(encoding="utf-8")
+
+
+def test_record_skip_cli_needs_reason(tmp_path, capsys):
+    root = _git_repo(tmp_path, with_origin=False)
+    rc = next_action.main(["--root", str(root), "--record-skip", "release"])
+    assert rc != 0
+    assert "--reason" in capsys.readouterr().out
+
+
+def test_record_skip_cli_fails_loudly_when_nothing_is_ranked(
+    tmp_path, monkeypatch, capsys
+):
+    """Positive control: the same repo with nothing due at all -- the CLI
+    must refuse rather than silently writing a no-op entry."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"state_file": ".max/oss-watch.json"})
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    rc = next_action.main(
+        ["--root", str(root), "--record-skip", "release", "--reason", "no reason"]
+    )
+    assert rc != 0
+    assert "FAIL:" in capsys.readouterr().out
