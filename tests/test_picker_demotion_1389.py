@@ -23,6 +23,7 @@ top-level glob is genuinely scanning `commands/` (finds a file placed there)
 so a directory typo could not make every assertion below pass vacuously.
 """
 
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -104,4 +105,52 @@ def test_run_md_points_at_the_new_locations_not_the_old_ones():
         assert "`commands/{}`".format(name) not in text, (
             "commands/run.md still names the stale top-level path "
             "commands/{}, which no longer exists".format(name)
+        )
+
+
+def test_run_md_agent_spawns_resolve_against_a_fake_plugin_root(tmp_path):
+    """The guard above only checks that the substring `commands/run/<name>`
+    appears somewhere in commands/run.md's text -- it passes identically
+    whether the path is anchored to ${CLAUDE_PLUGIN_ROOT} or left
+    cwd-relative, because a cwd-relative path also contains that same
+    substring. #1419: a cwd-relative
+    `Agent(..., prompt: "Read and follow commands/run/<file>.md from
+    here.")` resolves only inside this repository's own checkout, where
+    this plugin's own source happens to live at that relative path -- in
+    every *other* repo that installs this plugin, the spawned
+    scheduler-step agent is pointed at a path that does not exist there.
+
+    This test actually resolves each of the six spawn prompts' named path
+    against a fake, temporary plugin root standing in for
+    ${CLAUDE_PLUGIN_ROOT}, with no copy of the real commands/run/ tree
+    anywhere nearby -- a positive control that only a real, anchored
+    substitution can satisfy.
+    """
+    text = (COMMANDS_DIR / "run.md").read_text(encoding="utf-8")
+    prompts = re.findall(r"Read and follow (\S+\.md) from here\.", text)
+    assert len(prompts) == 6, (
+        "expected exactly 6 'Read and follow ...' Agent spawn prompts in "
+        "commands/run.md (setup + the five commands/run/*.md spawns), found "
+        "{}: {}".format(len(prompts), prompts)
+    )
+
+    fake_plugin_root = tmp_path / "fake-plugin-root"
+    for name in DEMOTED:
+        target = fake_plugin_root / "commands" / "run" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("stub", encoding="utf-8")
+
+    for path_template in prompts:
+        assert "${CLAUDE_PLUGIN_ROOT}" in path_template, (
+            "Agent spawn prompt path {!r} in commands/run.md is not "
+            "anchored to ${{CLAUDE_PLUGIN_ROOT}} -- it resolves only "
+            "relative to the session's own cwd, which is this "
+            "repository's own checkout and no other repo that installs "
+            "this plugin".format(path_template)
+        )
+        resolved = path_template.replace("${CLAUDE_PLUGIN_ROOT}", str(fake_plugin_root))
+        assert Path(resolved).exists(), (
+            "Agent spawn prompt path {!r} does not resolve to a real file "
+            "once ${{CLAUDE_PLUGIN_ROOT}} is substituted with a fake "
+            "plugin root -- got {!r}".format(path_template, resolved)
         )

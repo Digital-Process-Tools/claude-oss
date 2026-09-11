@@ -130,7 +130,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # corresponding spawn, not only the deviation case. Nothing already in
     # the file argued that point, so nothing was cut to make room; the
     # ceiling moves to 8900 B, ~10% headroom over the new size.
-    "commands/run.md": (8041, 8900),
+    # Re-baselined for #1419: 8041 B became 8173 B, anchoring the six
+    # scheduler-step Agent spawn prompts to ${CLAUDE_PLUGIN_ROOT} instead of
+    # a cwd-relative path that only resolved inside this repo's own
+    # checkout. Ceiling unchanged; still comfortably under it.
+    "commands/run.md": (8173, 8900),
 }
 
 
