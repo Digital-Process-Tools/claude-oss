@@ -85,7 +85,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined by #1386/#1402: 20177 B became 21917 B for the scheduler's
     # own new step reading a releaser's `RELEASE: released` handback and
     # calling `scripts/triage_trigger.py`. Ceiling unchanged.
-    "commands/tick.md": (21917, 22200),
+    # Re-baselined for #1421: 21917 B became 21939 B, anchoring the self-read
+    # instruction at line 11 (`supertool 'read:commands/tick.md:OFFSET:
+    # LIMIT'`) to `${CLAUDE_PLUGIN_ROOT}/commands/tick.md` -- the same
+    # cwd-relative gap #1419/#1420 already fixed for commands/run.md's six
+    # scheduler-step spawns, live only when tick.md is reached from
+    # commands/run.md's dispatch step rather than harness-injected directly.
+    # Ceiling unchanged; still comfortably under it.
+    "commands/tick.md": (21939, 22200),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at
@@ -134,7 +141,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # scheduler-step Agent spawn prompts to ${CLAUDE_PLUGIN_ROOT} instead of
     # a cwd-relative path that only resolved inside this repo's own
     # checkout. Ceiling unchanged; still comfortably under it.
-    "commands/run.md": (8173, 8900),
+    # Re-baselined for #1421: 8173 B became 8233 B. The `## dispatch`
+    # section's own read of `commands/tick.md` was the seventh site of the
+    # same shape #1419/#1420 fixed for the six scheduler-step spawns above,
+    # missed there because it named the target with the pronoun "it" rather
+    # than a literal path -- now anchored to
+    # `${CLAUDE_PLUGIN_ROOT}/commands/tick.md` the same way. Ceiling
+    # unchanged; still comfortably under it.
+    "commands/run.md": (8233, 8900),
 }
 
 

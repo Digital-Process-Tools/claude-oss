@@ -138,5 +138,6 @@ Classify what comes back with `scripts/release_handback.py`, then return to step
 ## dispatch
 
 The ordinary cadence: read the board, decide what to build, delegate, review, merge on green. This
-is `commands/tick.md`'s own procedure, unchanged -- it is a thin spawn wrapper, not a document to
-follow, so reading it here does not repeat #1414's own mistake. Read and follow it from here.
+is `${CLAUDE_PLUGIN_ROOT}/commands/tick.md`'s own procedure, unchanged -- it is a thin spawn
+wrapper, not a document to follow, so reading it here does not repeat #1414's own mistake. Read and
+follow `${CLAUDE_PLUGIN_ROOT}/commands/tick.md` from here.

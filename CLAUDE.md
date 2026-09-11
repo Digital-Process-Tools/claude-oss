@@ -850,8 +850,8 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 21,917 B | 22,200 B |
-| `commands/run.md` | 8,173 B | 8,900 B |
+| `commands/tick.md` | 21,939 B | 22,200 B |
+| `commands/run.md` | 8,233 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
@@ -864,6 +864,14 @@ files and several scripts (`lane_setup.py`, `tick_handback.py`, `plugin_update.p
 `commands/tick.md` by path, and that migration is deliberately left for its own change rather than
 folded in here. `commands/tick.md`'s own row moved separately, in #1386/#1402, for the scheduler's
 new triage-trigger step -- both re-baselines land in this merge together.
+
+**#1421 re-baselined both rows together.** `commands/run.md`'s own `## dispatch` step named
+`commands/tick.md` with the pronoun "it" rather than a literal path, one section below the six
+`${CLAUDE_PLUGIN_ROOT}`-anchored spawn prompts #1419/#1420 already fixed -- invisible to that fix's
+own regex guard by construction. Anchoring it (8,173 B -> 8,233 B) also required anchoring
+`commands/tick.md:11`'s own self-read instruction (21,917 B -> 21,939 B), live only when `tick.md`
+is reached from `run.md`'s dispatch step rather than harness-injected directly. Neither ceiling
+moved.
 
 **#1389's own follow-up demotes six of the eight: `setup.md`, `scaffold.md`, `triage.md`,
 `curate.md`, `changelog.md` and `install-audit.md` moved to `commands/run/*.md`.** The plugin
