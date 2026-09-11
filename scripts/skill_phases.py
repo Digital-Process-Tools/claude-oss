@@ -284,10 +284,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # the moment a twelfth row was added) were corrected to drop the
         # count rather than update it to thirteen and go stale again the
         # next time a row is added. Budget unchanged; comfortably under it.
-        # Re-baselined for #1409: 53938 B became 55222 B -- a new paragraph
+        # Re-baselined for #1409: 53938 B became 55309 B -- a new paragraph
         # after the verbatim supertool blockquote states that the blockquote
-        # is wrong as written inside a worktree of the one managed repo that
-        # is supertool's own checkout, and points at the new
+        # is wrong as written inside a worktree of a managed repo that is
+        # supertool's own checkout, and points at the new
         # `doctor.supertool_invocation` detection rather than editing the
         # blockquote itself. Budget unchanged; comfortably under it.
         55309,
