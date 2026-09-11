@@ -55,6 +55,95 @@ set -eu
 # as a typo and is flagged as one.
 CDPATH=
 
+# --- fireworks. The first thing this launcher does, and the only thing it does for fun. ---
+#
+# Nine frames and a spinner, about two seconds, then the real work starts. Three
+# guards, each a reason it must never get in the way: stdout has to be a terminal
+# (a captured launch prints nothing decorative into a log), TERM must not be dumb,
+# and OSS_WORKSPACE_NO_FIREWORKS set to anything skips it. A `sleep` that refuses
+# a fractional argument -- strict POSIX sleep takes integers -- runs the frames
+# back to back rather than failing the launch: nothing after this depends on it.
+oss_fireworks() {
+    [ -t 1 ] || return 0
+    [ "${TERM:-dumb}" != "dumb" ] || return 0
+    [ -z "${OSS_WORKSPACE_NO_FIREWORKS:-}" ] || return 0
+    e=$(printf '\033')
+    up=$(printf '%s[6A' "$e")
+    r="${e}[0m"; y="${e}[1;33m"; m="${e}[1;35m"; c="${e}[1;36m"; g="${e}[1;32m"; w="${e}[1;97m"; d="${e}[2m"
+    printf '\n\n\n\n\n\n'
+    f() { printf '%s' "$up"; printf '%s\n' "$1" "$2" "$3" "$4" "$5" "$6"; sleep "$7" 2>/dev/null || :; }
+    f "                                " \
+      "                                " \
+      "                                " \
+      "                                " \
+      "         ${y}.${r}                      " \
+      "         ${d}|${r}              ${d}|${r}       " 0.08
+    f "                                " \
+      "                                " \
+      "                                " \
+      "         ${y}.${r}                      " \
+      "                      ${c}.${r}         " \
+      "                      ${d}|${r}         " 0.08
+    f "                                " \
+      "         ${w}*${r}                      " \
+      "                                " \
+      "                      ${c}.${r}         " \
+      "                                " \
+      "                                " 0.07
+    f "        ${m}\\${y}|${m}/${r}                     " \
+      "       ${c}- ${w}*${c} -${r}                    " \
+      "        ${m}/${y}|${m}\\${r}          ${w}*${r}          " \
+      "                                " \
+      "                                " \
+      "                                " 0.08
+    f "      ${y}.  ${d}|${r}  ${y}.${r}                   " \
+      "     ${m}\\ ${c}'${r} ${w}*${r} ${c}'${r} ${m}/${r}      ${g}\\${c}|${g}/${r}         " \
+      "      ${c}- ${y}*${r} ${w}O${r} ${y}*${r} ${c}-${r}    ${y}- ${w}*${y} -${r}        " \
+      "     ${m}/ ${c}.${r} ${w}*${r} ${c}.${r} ${m}\\${r}      ${g}/${c}|${g}\\${r}         " \
+      "      ${y}'  ${d}|${r}  ${y}'${r}                   " \
+      "                                " 0.10
+    f "      ${d}.     .${r}         ${c}.  ${d}|${r}  ${c}.${r}     " \
+      "        ${d}.   .${r}        ${g}\\ ${y}'${r} ${w}*${r} ${y}'${r} ${g}/${r}    " \
+      "     ${d}.${r}   ${m}*${r}   ${d}.${r}       ${y}- ${g}*${r} ${w}O${r} ${g}*${r} ${y}-${r}   " \
+      "       ${d}.     .${r}        ${g}/ ${y}.${r} ${w}*${r} ${y}.${r} ${g}\\${r}    " \
+      "      ${d}.   .   .${r}        ${c}'  ${d}|${r}  ${c}'${r}     " \
+      "                                " 0.10
+    f "                          ${d}.     .${r} " \
+      "        ${m}.${r}                 ${d}.   .${r}   " \
+      "     ${y}.${r}    ${c}.${r}    ${y}.${r}     ${d}.${r}   ${g}*${r}   ${d}.${r} " \
+      "        ${m}.${r}                 ${d}.     .${r} " \
+      "                          ${d}.   .   .${r}" \
+      "                                " 0.09
+    f "                                " \
+      "         ${y}.${r}    ${m}.${r}    ${c}.${r}    ${g}.${r}      " \
+      "                                " \
+      "             ${w}o  s  s${r}               " \
+      "                                " \
+      "                                " 0.12
+    # The spinner verbs. Claude Code has a whole vocabulary of these and so should a
+    # loop that is about to run somebody's repository on its own. One line, rewritten
+    # in place, one verb per beat, then the tagline stays.
+    for verb in "Igniting" "Unspooling the board" "Wrangling worktrees" "Herding lanes" "Fixaxksdsding the link" "Bamboozling the tracker"; do
+        printf '%s' "$up"; printf '%s\n' \
+          "                                " \
+          "                                " \
+          "             ${w}o  s  s${r}               " \
+          "                                " \
+          "        ${d}${verb}...${r}                        " \
+          "                                "
+        sleep 0.16 2>/dev/null || :
+    done
+    printf '%s' "$up"; printf '%s\n' \
+      "                                " \
+      "                                " \
+      "             ${w}o  s  s${r}               " \
+      "                                " \
+      "        ${d}the loop is yours${r}                        " \
+      "                                "
+    sleep 0.25 2>/dev/null || :
+}
+oss_fireworks
+
 CHANNEL_FLAG="--dangerously-load-development-channels"
 
 # Deliberately not `claude-channel`: the supertool plugin's own entry keeps that
