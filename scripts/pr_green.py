@@ -59,12 +59,16 @@ any one of them is not.
                     workflow that genuinely did not trigger for this event
                     produces no run object at all and is correctly left out
                     of this check -- gate 1's own documented middle state.
-                    Named under `unresolved_runs` on the returned entry;
-                    `[]` when nothing is unresolved, including when
-                    owner/repo/sha could not be derived or the extra read
-                    itself failed -- an unreadable fact here must not block
-                    `green` forever, the same rule `missing_workflows`
-                    already follows.
+                    Named under `unresolved_runs` on the returned entry:
+                    `[]` when checked and nothing is unresolved, `None`
+                    when it could not be established (owner/repo/sha
+                    unavailable, the extra read failed, or too many
+                    uncovered runs to check cheaply) -- never blocking
+                    `green` forever on a fact this module could not check,
+                    the same rule `missing_workflows` already follows, and
+                    never folded into the same `[]` that means "checked,
+                    clean" either, which is the identical collapse #1400
+                    itself reports.
   could-not-read   the read itself failed -- `gh` not on PATH, the process
                     could not start, a non-zero exit, or output this module
                     could not parse. **Never folded into `pending`** (that
@@ -234,9 +238,18 @@ def _rollup_run_ids(rows):
     return ids
 
 
+# Trigger events that can plausibly feed a pull request's own check rollup.
+# A run whose ``event`` is outside this set (a `push` to the same sha on a
+# branch, a `schedule` run, a `workflow_dispatch`) was never going to appear
+# in the rollup regardless of its job state, so counting it as "uncovered"
+# would report a PR pending over a run that has nothing to do with it --
+# self-review finding, alongside #1400's own reconciliation.
+_PR_RELEVANT_EVENTS = frozenset(("pull_request", "pull_request_target"))
+
+
 def _runs_on_commit(gh, run, owner, repo, sha):
-    """``[(run_id, name), ...]`` for every Actions run GitHub has recorded
-    against ``sha``, or ``None`` when the read failed.
+    """``[(run_id, name, event), ...]`` for every Actions run GitHub has
+    recorded against ``sha``, or ``None`` when the read failed.
 
     This is the distinction #1400 asks for: a workflow declared in
     `.github/workflows/` whose trigger genuinely did not fire for this event
@@ -246,7 +259,9 @@ def _runs_on_commit(gh, run, owner, repo, sha):
     object that *does* exist but carries no job yet is the other case, and
     is resolved by `_run_has_jobs` below rather than being guessed at from
     the workflow file's own trigger declaration, which cannot see a
-    path filter or a conditional job.
+    path filter or a conditional job. ``event`` rides along so a caller can
+    tell a run irrelevant to this PR (a `push` to the same sha) from one
+    that actually belongs to its rollup.
     """
     if not owner or not repo or not sha:
         return None
@@ -275,7 +290,7 @@ def _runs_on_commit(gh, run, owner, repo, sha):
             continue
         run_id = str(entry.get("id") or "").strip()
         if run_id:
-            result.append((run_id, str(entry.get("name") or "")))
+            result.append((run_id, str(entry.get("name") or ""), entry.get("event")))
     return result
 
 
@@ -311,23 +326,41 @@ def _run_has_jobs(gh, run, owner, repo, run_id):
 
 def _unresolved_runs(gh, run, owner, repo, sha, rollup_run_ids):
     """Names of the Actions runs on this commit that are not yet covered by
-    the rollup and have produced no job -- the shape #1400 reports. Returns
-    ``[]`` when nothing is unresolved (including when owner/repo/sha cannot
-    be derived, or the commit-runs read itself failed: a fact this module
-    cannot check must never block `green` on its own, the same rule
-    `missing_workflows` already follows for the informational check it
-    performs). Bounded by `_MAX_UNRESOLVED_RUN_CHECKS`: past that many
-    uncovered runs the answer is left unestablished rather than paying for a
-    slow reconciliation.
+    the rollup and have produced no job -- the shape #1400 reports.
+
+    Three outcomes, deliberately mirroring `missing_workflows`'s own
+    `None`/`[]` split rather than only claiming to (self-review finding: an
+    earlier version of this function returned `[]` for "unestablished" too,
+    which is the exact collapse #1400 itself is about, reproduced one layer
+    in):
+
+    * ``None`` -- could not be established: owner/repo/sha could not be
+      derived, the commit-runs read itself failed, or more than
+      `_MAX_UNRESOLVED_RUN_CHECKS` runs are uncovered (checking all of them
+      is not worth the round trips). A caller must not read this as "none
+      are unresolved" -- the same rule `missing_workflows` already follows.
+    * ``[]`` -- checked, and nothing is unresolved.
+    * a non-empty list -- these runs exist on the commit, are not yet in the
+      rollup, and have produced no job.
+
+    Only runs whose own ``event`` is plausibly rollup-feeding
+    (`_PR_RELEVANT_EVENTS`) are considered at all: a `push`-triggered run
+    sharing this sha was never going to reach the PR's rollup regardless of
+    its job state, and counting it would both report a false pending and
+    spend part of the reconciliation budget on a run that has nothing to do
+    with this PR.
     """
     commit_runs = _runs_on_commit(gh, run, owner, repo, sha)
     if commit_runs is None:
-        return []
+        return None
     uncovered = [
-        (run_id, name) for run_id, name in commit_runs if run_id not in rollup_run_ids
+        (run_id, name)
+        for run_id, name, event in commit_runs
+        if run_id not in rollup_run_ids
+        and (event is None or event in _PR_RELEVANT_EVENTS)
     ]
     if len(uncovered) > _MAX_UNRESOLVED_RUN_CHECKS:
-        return []
+        return None
     unresolved = []
     for run_id, name in uncovered:
         has_jobs = _run_has_jobs(gh, run, owner, repo, run_id)
@@ -590,6 +623,10 @@ def _render(entry):
             )
         elif entry["missing_workflows"] is None:
             line += "\n  could not determine whether every declared workflow ran"
+        if entry.get("unresolved_runs") is None:
+            line += (
+                "\n  could not determine whether every run on this commit has started"
+            )
         return line
     if entry["state"] == STATE_RED:
         lines = [

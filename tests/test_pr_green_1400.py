@@ -153,6 +153,93 @@ def test_render_pending_names_the_unresolved_run():
     assert "tests (no job yet)" in rendered
 
 
+def test_read_pr_green_with_note_when_commit_runs_read_fails():
+    """Self-review finding: a transient `gh api` failure on the commit-runs
+    read must NOT read identically to "checked, nothing unresolved" -- it
+    must stay `unresolved_runs is None`, mirroring `missing_workflows`'s own
+    `None`/`[]` split, and the state stays GREEN with a note rather than
+    silently dropping the check."""
+    rows = [_row("CodeQL", "CodeQL")]
+    run = _run_sequence(
+        [
+            (
+                0,
+                _rollup_json(
+                    381, "fix/380", "187135ca", rows, "https://github.com/o/r/pull/381"
+                ),
+                "",
+            ),
+            (1, "", "gh: rate limited"),
+        ]
+    )
+    entry = pr_green.read_pr(381, "gh", run, workflows_dir=None)
+    assert entry["state"] == pr_green.STATE_GREEN
+    assert entry["unresolved_runs"] is None
+    rendered = pr_green._render(entry)
+    assert (
+        "could not determine whether every run on this commit has started" in rendered
+    )
+
+
+def test_read_pr_green_with_note_when_too_many_uncovered_runs():
+    """Self-review finding: more than `_MAX_UNRESOLVED_RUN_CHECKS` uncovered
+    runs must also read `None` (unestablished), never the same `[]` that
+    means "checked and clean" -- the exact collapse #1400 itself reports,
+    one layer in."""
+    rows = [_row("CodeQL", "CodeQL")]
+    many_runs = [
+        {"id": i, "name": "leg-{0}".format(i), "event": "pull_request"}
+        for i in range(1, pr_green._MAX_UNRESOLVED_RUN_CHECKS + 2)
+    ]
+    run = _run_sequence(
+        [
+            (
+                0,
+                _rollup_json(
+                    381, "fix/380", "187135ca", rows, "https://github.com/o/r/pull/381"
+                ),
+                "",
+            ),
+            (0, _runs_json(many_runs), ""),
+        ]
+    )
+    entry = pr_green.read_pr(381, "gh", run, workflows_dir=None)
+    assert entry["state"] == pr_green.STATE_GREEN
+    assert entry["unresolved_runs"] is None
+    # never fetched a single job -- the bound is checked before spending the
+    # per-run round trips
+    assert len(run.calls) == 2
+
+
+def test_read_pr_green_ignores_a_push_triggered_run_on_the_same_sha():
+    """Self-review finding: a `push`-triggered run sharing this commit's sha
+    was never going to reach the PR's rollup regardless of its job state --
+    counting it as "uncovered" would report a false pending."""
+    rows = [_row("CodeQL", "CodeQL")]
+    run = _run_sequence(
+        [
+            (
+                0,
+                _rollup_json(
+                    381, "fix/380", "187135ca", rows, "https://github.com/o/r/pull/381"
+                ),
+                "",
+            ),
+            (
+                0,
+                _runs_json([{"id": 999, "name": "tests", "event": "push"}]),
+                "",
+            ),
+        ]
+    )
+    entry = pr_green.read_pr(381, "gh", run, workflows_dir=None)
+    assert entry["state"] == pr_green.STATE_GREEN
+    assert entry["unresolved_runs"] == []
+    # the push-triggered run was filtered out before a job-count call was
+    # ever made for it
+    assert len(run.calls) == 2
+
+
 def test_read_pr_green_unaffected_when_no_url_is_available():
     """No `url` field (older fixtures, or a shape gh did not return it for):
     owner/repo cannot be derived, so the reconciliation call is skipped
