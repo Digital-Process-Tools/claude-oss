@@ -436,8 +436,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # `ready-to-merge` renamed to `green-and-mergeable` (a returned string
     # that names the one act merge.md forbids absolutely is a verdict, not a
     # measurement). Budget unchanged; comfortably under it.
+    # Re-baselined for #1436: 6533 B became 6799 B. The "What this buys the
+    # statusline" section still said the unruled-issue/unreviewed-pull-
+    # request count was "left for a lane that can measure it" -- but
+    # `statusline.inbound_reading`/`_inbound_field` already exist (#1406,
+    # landed in the same delta this stale sentence survived). Rewritten to
+    # name what actually measures it now. Budget unchanged; still under it.
     "skills/manager/phases/inbound.md": (
-        6533,
+        6799,
         6900,
         "classifying what arrived from outside: refusing an issue with a stated reason, an external pull request's readiness, and an unanswered comment -- never performing the act itself (#1394)",
     ),

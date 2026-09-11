@@ -68,6 +68,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gh_which  # noqa: E402
+import oss_config  # noqa: E402
 import oss_state  # noqa: E402
 import release_delta  # noqa: E402
 
@@ -260,13 +261,20 @@ def receipt(payload):
 
 
 def _load_config(path):
+    """`(config, detail)` -- routed through `oss_config.load`, not a raw
+    `json.load` over `.oss.json` alone (#1436 self-review, and see
+    `next_action.py`'s own identical call for the reference shape). A raw
+    read never merges `.oss.local.json`, where `state_file` actually lives
+    on any repo with a split config -- this call reported "no state file
+    configured" even when one was, in the half it never read."""
     if not path:
         return {}, None
-    try:
-        with open(str(path), "r", encoding="utf-8") as handle:
-            return json.load(handle), None
-    except (OSError, UnicodeDecodeError, ValueError) as exc:
-        return None, "{0}: {1}".format(path, exc)
+    config, problems = oss_config.load(path)
+    if config is None:
+        return None, "; ".join(problems) if problems else "could not read {0}".format(
+            path
+        )
+    return config, None
 
 
 def main(argv=None):

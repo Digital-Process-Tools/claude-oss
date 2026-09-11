@@ -91,8 +91,11 @@ publicly is #1395's act, not this step's.
 ## What this buys the statusline, and what it does not yet
 
 The issue that filed this phase also asked for a count beside `trap.d`'s own backlog: unruled
-issues, unreviewed pull requests, unanswered comments. That count would need `refresh()` to fetch and
-cache the same fields this file classifies -- a genuine new cost, not a free branch on data already
-in hand, unlike everything above. Left for a lane that can measure it rather than guessed at here;
-`scripts/statusline.py`'s own `?`-for-unmeasured convention is exactly what stops that gap from
-rendering as a false, confident zero in the meantime.
+issues, unreviewed pull requests, unanswered comments. That count exists now (#1406):
+`scripts/statusline.py`'s `inbound_reading()` computes `unruled_issues` and `unreviewed_prs` on the
+board's own refresh cadence, cached and rendered by `_inbound_field` (`inb Nis Npr`).
+`next_action.py` calls the same function directly for a fresh reading rather than trusting a stale
+cache. Only `unanswered_comments` stays unmeasured -- it always reports `None`, because counting it
+needs a per-thread walk over every open issue and pull request that neither of those callers builds;
+`scripts/statusline.py`'s own `?`-for-unmeasured convention is exactly what stops that particular gap
+from rendering as a false, confident zero.
