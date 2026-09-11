@@ -52,6 +52,23 @@ def test_malformed_repo_accepts_well_formed_slug():
     assert doctor._malformed_repo("owner/name") is False
 
 
+@pytest.mark.parametrize("slug", ["o/n?x", "o/n#x"])
+def test_malformed_repo_rejects_query_and_fragment_characters(slug):
+    """#1401's sibling finding: `?` starts a query string and `#` starts a
+    fragment the instant either appears inside a path segment `gh api`
+    builds by plain string substitution -- neither was refused here before
+    this fix, even though `statusline._malformed_repo`'s own `?`-adjacent
+    `_BRANCH_UNSAFE_RE` guard already refused `?` for `branch`."""
+    assert doctor._malformed_repo(slug) is True
+
+
+def test_malformed_repo_accepts_adjacent_dots_not_a_whole_segment():
+    """Must-not-fire pairing for the same fix: a segment merely containing
+    two adjacent dots (not a whole `..` segment) is not a traversal and
+    must not be caught by the new query/fragment check either."""
+    assert doctor._malformed_repo("owner/na..me") is False
+
+
 # ------------------------------------------------------- per-module _resolve_slug
 
 

@@ -345,9 +345,10 @@ _CHANNEL_EXPLAIN = {
     "stale": (
         "WARN",
         "statusline channel: the cached `channel:health` reading is older "
-        "than its own refresh interval -- renders `ch?`. This self-heals on "
-        "the next statusline render (a background refresh forks "
-        "automatically), or force it now: {}",
+        "than its own refresh interval -- renders `ch?`. This check just "
+        "forked a background refresh itself (best-effort; the same fork a "
+        "live statusline render would have started), so it should self-heal "
+        "in moments -- or force it synchronously now: {}",
     ),
     "declaration-unreadable": (
         "WARN",
@@ -397,8 +398,9 @@ _BRANCH_EXPLAIN = {
         "statusline default-branch marker: the cached board (including the "
         "default branch's own CI state, which shares its clock, #856) is "
         "older than its own refresh interval, or was marked stale by a "
-        "recent merge/close in this session -- renders `unk`. Self-heals on "
-        "the next statusline render, or force it now: {}",
+        "recent merge/close in this session -- renders `unk`. This check "
+        "just forked a background refresh itself (best-effort), so it "
+        "should self-heal in moments -- or force it synchronously now: {}",
     ),
     "no-answer": (
         "WARN",
@@ -446,8 +448,9 @@ _DOCTOR_EXPLAIN = {
     "stale": (
         "WARN",
         "/oss:doctor reading: the cached doctor reading is older than its "
-        "own refresh interval -- renders `dr?`. Self-heals on the next "
-        "statusline render, or force it now: {}",
+        "own refresh interval -- renders `dr?`. This check just forked a "
+        "background refresh itself (best-effort), so it should self-heal "
+        "in moments -- or force it synchronously now: {}",
     ),
     "no-answer": (
         "WARN",
@@ -552,11 +555,46 @@ def _report_doctor(result, remedy):
     doctor.report(level, template.format(remedy))
 
 
+def _maybe_fork_refresh(project_dir, repo, now):
+    """Fork a background refresh the moment THIS check finds a stale cache
+    (#1373), rather than only naming a command for the reader to run by
+    hand. Doctor already reads the cache to derive the cause below -- this
+    is the same read, spending nothing new to also start the fix.
+
+    Deliberately calls `statusline.fork_refresh` -- a public wrapper added
+    for exactly this caller, per the module docstring's own rule against
+    reaching into a leading-underscore name -- never `statusline.
+    _fork_refresh` directly. Best-effort: `fork_refresh` already swallows
+    every failure it can reach (a lock it cannot write, a `Popen` that
+    cannot start), so nothing here needs its own `try`/`except` to keep
+    doctor's "exit 0, always" contract.
+
+    This clears the cache the same way `/oss:release`'s own
+    `invalidate_latest_cache` does -- an actor OTHER than the render path
+    starting the fix at the moment it finds the falsified/stale state --
+    rather than writing a diagnosis into the cache itself: the fork starts
+    an ordinary `--refresh` subprocess, the identical one a live statusline
+    render already forks on its own when `board_is_due`. Deleting or
+    rewriting cache fields directly, from inside a diagnostic, would cross
+    into repair; forking the same self-healing refresh the render path
+    already trusts does not -- see CLAUDE.md's "a diagnosis is not a
+    repair" and this file's own PR body for the fuller argument.
+    """
+    if statusline is None or not repo:
+        return
+    statusline.fork_refresh(project_dir, repo, now=now)
+
+
 def check_statusline_unknowns(project_dir, config, now=None):
     """Explain the cause of every `?` `statusline.py` can render for the
     watch channel, the default-branch marker, and (#1345) the `/oss:doctor`
     reading, each with a runnable remedy (#1311). See the module docstring
     for the full derivation.
+
+    #1373: when any of the three causes below is `"stale"`, this also forks
+    the same background refresh a live statusline render would have forked
+    on its own -- see `_maybe_fork_refresh`'s own docstring for why that
+    stays inside the report-only contract rather than crossing into repair.
     """
     if config is None:
         doctor.unmeasured("statusline unknowns")
@@ -589,8 +627,14 @@ def check_statusline_unknowns(project_dir, config, now=None):
             )
             doctor.report("WARN", message)
             return
-    _report_channel(channel_cause(config, cache, now, repo_missing), remedy)
-    _report_default_branch(
-        default_branch_cause(config, cache, now, repo_missing), remedy
-    )
-    _report_doctor(doctor_cause(cache, now, repo_missing), remedy)
+    channel_result = channel_cause(config, cache, now, repo_missing)
+    branch_result = default_branch_cause(config, cache, now, repo_missing)
+    doctor_result = doctor_cause(cache, now, repo_missing)
+    if not repo_missing and any(
+        result.get("reason") == "stale"
+        for result in (channel_result, branch_result, doctor_result)
+    ):
+        _maybe_fork_refresh(project_dir, repo, now)
+    _report_channel(channel_result, remedy)
+    _report_default_branch(branch_result, remedy)
+    _report_doctor(doctor_result, remedy)

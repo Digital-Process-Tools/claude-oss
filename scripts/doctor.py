@@ -8636,6 +8636,13 @@ def _malformed_repo(repo):
             return True
         if "%" in segment:
             return True
+        # #1401 (statusline._malformed_repo's own sibling finding, ported
+        # here): `?` starts a query string and `#` starts a fragment the
+        # instant either appears inside a path segment `gh api` builds by
+        # plain string substitution -- neither `oss_config.repo_problem`
+        # nor the inline fallback above excludes them.
+        if "?" in segment or "#" in segment:
+            return True
     if segments[0].startswith("-"):
         return True
     return False

@@ -277,6 +277,14 @@ _WATCH_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
 #: two patterns together so this copy cannot drift from `oss_config.REPO_RE` again.
 _REPO_RE = re.compile(r"\A[^/\\\s]+/[^/\\\s]+\Z")
 
+#: `?` starts a query string and `#` starts a fragment the instant either
+#: appears inside a path segment `gh api` builds by plain string
+#: substitution -- `_REPO_RE` above forbids a slash, a backslash and
+#: whitespace within a segment but not these two (#1401). Used only by
+#: `_malformed_repo`, as a separate check rather than widened into
+#: `_REPO_RE` itself -- see that function's own docstring for why.
+_REPO_QUERY_FRAGMENT_RE = re.compile(r"[?#]")
+
 #: `.supertool.json`'s own filename, read but never written -- the same constant
 #: `doctor.py` carries as `WATCH_CONFIG`, duplicated rather than imported for the
 #: same standalone-vendoring reason as every other copy in this section (#754).
@@ -1656,7 +1664,22 @@ def _malformed_repo(repo):
     """
     if not isinstance(repo, str) or not _REPO_RE.match(repo):
         return True
-    return ".." in repo.split("/")
+    if ".." in repo.split("/"):
+        return True
+    # #1401: `_REPO_RE` forbids a slash, a backslash and whitespace WITHIN a
+    # segment but never excludes `?` or `#` -- both are legal characters
+    # inside an owner/name segment as far as that regex is concerned, and
+    # both start a new URL component (a query string, a fragment) the
+    # instant they appear inside a path segment `gh api` builds by plain
+    # string substitution rather than URL-encoding. `_BRANCH_UNSAFE_RE`
+    # above already refuses `?` for `branch` for exactly this reason
+    # (#1035); this closes the identical gap on `repo`, plus `#`, which
+    # that regex does not check either. Checked here rather than folded
+    # into `_REPO_RE` itself, which is pinned byte-for-byte against
+    # `oss_config.REPO_RE` (`tests/test_statusline_watch_name_refusal_653.
+    # py`) -- the same reason `".."` above is checked as a separate step
+    # rather than widening the regex.
+    return bool(_REPO_QUERY_FRAGMENT_RE.search(repo))
 
 
 #: A branch name may legitimately carry a slash (`release/1.0`) and sits as
@@ -2391,10 +2414,30 @@ def _run_channel_health(timeout=30):
     ordinary case, and `MCP_LOOKUP_BUDGET` plus `PS_TIMEOUT` (supertool's own
     constants) put a documented worst case north of 20s when a lookup is slow
     rather than merely present.
+
+    **`argv[0]` is resolved through `_safe_which` first (#1399), the same way
+    `_run` above resolves `git`/`gh`.** This used to hand `"supertool"` to
+    `subprocess.run` bare, which on Windows lets a same-named
+    `supertool.exe`/`supertool.cmd` planted at the root of the repository
+    this statusline is reporting on win over the real `PATH` entry, for the
+    identical `CreateProcess`-searches-cwd-first reason `_run`'s own
+    docstring names. Deliberately NOT routed through `_run` itself: that
+    helper folds every non-zero exit into `None`, and `NOT DELIVERING`/
+    `CANNOT DETERMINE`/`CONTRADICTED`/`BOUND, NOT SUBSCRIBED` are all real,
+    distinct findings that exit non-zero on purpose -- see this function's
+    own "NOT `_run`" paragraph above. `_safe_which` returning `None` (the
+    binary is not resolvable at all) folds to the same `None` `_run_channel_
+    health` already returned for a missing binary before this fix, via the
+    `OSError` `subprocess.run` itself would have raised for a bare name that
+    does not resolve -- so the caller-visible contract is unchanged, only
+    the resolution path underneath it.
     """
+    resolved = _safe_which("supertool")
+    if resolved is None:
+        return None
     try:
         result = subprocess.run(
-            ["supertool", "channel:health"],
+            [resolved, "channel:health"],
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             timeout=timeout,
@@ -3041,6 +3084,26 @@ def _fork_refresh(root, repo, session_id=None):
         )
     except (OSError, ValueError):
         pass
+
+
+def fork_refresh(root, repo, now=None, session_id=None):
+    """Public entry point for `_fork_refresh`, for a caller outside this
+    module's own render path (#1373) -- `doctor_check_statusline_unknowns.py`
+    calls this the moment IT finds a stale cache during its own read, rather
+    than reaching into the leading-underscore `_fork_refresh` this module's
+    own `_fork_refresh` docstring says every other cross-module caller in
+    this codebase avoids.
+
+    Same lock-file dedup, same detached `Popen` as the render path's own
+    call inside `gather()` -- a doctor run and a live statusline render
+    racing on the same stale cache fork at most one refresh between them,
+    never two. `now` is accepted for signature symmetry with this module's
+    other now-taking functions but is not itself used: the lock's own
+    staleness check reads the real wall clock via `time.time()`, the same
+    as `_fork_refresh` always has, so a test driving `now` synthetically
+    does not change which lock state this function sees.
+    """
+    _fork_refresh(root, repo, session_id=session_id)
 
 
 # ---------------------------------------------------------------------------- main
