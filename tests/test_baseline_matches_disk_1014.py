@@ -127,6 +127,28 @@ def test_matching_baseline_is_not_flagged():
     assert _stale_baselines(fake_pairs, root) == []
 
 
+def test_declared_pairs_covers_command_budgets():
+    """Must-fire control for #1438: `_declared_pairs()` merges in
+    `command_budgets.BUDGETS` via its own `pairs.update(...)` call, three
+    lines away from the other three modules' merges and easy to delete
+    without any other assertion here noticing -- `test_declared_baselines_
+    match_disk` would keep passing (vacuously: nothing to report a mismatch
+    on) even with `command_budgets.BUDGETS` entirely absent from the
+    comparison, which is exactly the absence-reads-as-clean defect this
+    repository is named after. Confirmed at #1438: the merge is present and
+    every path currently on disk agrees with its declared baseline, but
+    nothing previously pinned that the merge itself stays wired -- this
+    closes that gap directly, rather than leaving it implicit in
+    `test_declared_baselines_match_disk` passing for the wrong reason.
+    """
+    pairs = _declared_pairs()
+    missing = [rel for rel in command_budgets.BUDGETS if rel not in pairs]
+    assert not missing, (
+        "command_budgets.BUDGETS path(s) missing from _declared_pairs(): "
+        + ", ".join(missing)
+    )
+
+
 def test_missing_file_is_skipped_not_raised():
     """A declared path with no file on disk is `missing`'s finding to make
     (each module's own `check()` already reports it), not this comparison's
