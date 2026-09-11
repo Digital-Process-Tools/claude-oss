@@ -54,9 +54,11 @@ For each fragment, exactly one outcome:
 | **defer** | genuinely cannot be decided alone, even with every other fragment visible — ambiguous dimension, an incident too thin to tell rule from noise, a call this pass is not positioned to make | leave the fragment in `trap.d/`, unchanged, and name it plus the reason in the PR body |
 
 **Delete the fragment for promote, merge and decline — the directory ends this pass empty of
-everything it resolved.** A queue allowed to carry over gets skipped for being too big, and then it
-is a landfill rather than a backlog. **Leave a deferred fragment exactly where it is**, so the next
-pass finds it rather than a decision made to clear the queue.
+everything it resolved.** A queue allowed to carry over unresolved, for no stated reason, is how a
+backlog turns into a landfill — every fragment gets a decision this pass, `defer` included, rather
+than being left silently for whoever looks next. **Leave a deferred fragment exactly where it is**,
+so the next pass finds it, with a reason attached, rather than a decision made just to clear the
+queue.
 
 **A declined trap must leave its trace** in `00-README.md`, or the next lane to hit the same thing
 files it again and this pass declines it again. The rule builder skips that file by name, so an
