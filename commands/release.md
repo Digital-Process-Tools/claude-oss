@@ -772,9 +772,22 @@ before saying the release is done.
 
 ## Cohort
 
-At the tag, label everything then-open as a frozen cohort — in the same minute, by hand. Nothing
-joins a cohort ever, so it can only shrink. This is the maintainer's act; the triager must never
-write one.
+At the tag, label everything then-open as a frozen cohort. Nothing joins a cohort ever, so it can
+only shrink. This is the release's own act -- mechanical, run by a script, never by the triager
+(#1410; `agents/triager.md` still must never write a `cohort-*` label, and nothing here changes
+that half). Run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/cohort_freeze_record.py" --tag <tag> --cohort <N> \
+  --state <state_file> --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --execute
+```
+
+Three states -- `frozen` (labelled, the two-route count agreed, the state file and the label's own
+description both carry it), `partial` (some of that happened and something after it did not --
+`--json` shows exactly what, so a re-run is never a guess), `could-not-freeze` (nothing was written
+at all). Re-running a completed freeze is safe and reports `frozen` again with nothing changed; a
+`partial` run is re-run identically once whatever stopped it is fixed. Without `--execute` this only
+previews `cohort_freeze.py`'s own dry run and touches nothing.
 
 This freeze runs strictly *after* the tag it labels, and the marker gate above is written *before*
 that same tag exists — so the cohort this step is about to create is never the one the marker gate
