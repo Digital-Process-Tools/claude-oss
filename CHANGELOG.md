@@ -7,6 +7,169 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-11
+
+### Added
+
+- Added (#1423): `oss-workspace` opens with about three seconds of terminal fireworks -- three
+  rockets, three bursts, `OSS` in block letters -- and then a real progression: one line per step
+  the launcher actually takes, landing when the step finishes and carrying what it found. `plugin`
+  (updated from-to, current, auto-update off, or could not check), `channel` (armed as which server,
+  or opening without one), `session` (what it is opening). A tick is a step that looked and passed,
+  a question mark one that could not look, a dot a decision not to do it; a step that never printed
+  is an absence a reader can see. Only when stdout is a terminal and `TERM` is not `dumb`;
+  `OSS_WORKSPACE_NO_FIREWORKS` set to anything skips all of it, and the stderr prose the launcher
+  always printed is unchanged underneath. A strict POSIX `sleep` that refuses fractional seconds runs
+  the frames back to back rather than failing the launch.
+
+### Changed
+
+- `supertool-required.md`'s scaffold template shipped the same tool-redirection shape a sibling
+  repository's rule carried before it added a provenance-verification section, but with no such
+  section at all. `00-README.md` now records the considered decision: not added here, since that
+  sibling repository's own falsification experiment found the section does not actually change a
+  reader's verdict, and no incident against this rule (unlike that repository's) has been recorded
+  of a `supertool`-holding session mistaking the block for a fabricated attack. The decision names
+  what would trigger a revisit (#1408).
+
+### Fixed
+
+- `agents/developer/review.md` now tells a lane what to do when the `Agent` tool itself is
+  refused at runtime: report `not-checked` with a `reason` (already correct per #1333), and record
+  the verbatim refusal or error text in the schema's existing but previously undocumented
+  `review.spawn_error` field, the same "quote it verbatim" rule already used for a dispatch-level
+  `agent-unreachable` state. Filed after a live lane in a separate managed repo reported no
+  `Agent`/`Task` tool callable despite the frontmatter granting it -- the same shape #978 already
+  documents for `agents/sub-manager.md`'s `SendMessage` grant. Investigation concluded the
+  reporting contract's core behaviour was already sound; the field existed in
+  `schemas/agent-report.schema.json` but nothing ever told a lane to use it, so the one string that
+  could settle whether this is a harness gate, a manifest issue, or something else was being lost
+  even on an honest `not-checked` (#1383).
+
+- `scripts/statusline.py`'s `_run_channel_health` used to hand a bare `"supertool"` to
+  `subprocess.run`, bypassing `_safe_which` the way every other spawn in this file already goes
+  through it -- a same-named `supertool.exe`/`supertool.cmd` planted at the root of the repository
+  being reported on could otherwise win over the real `PATH` entry on Windows. Now resolved through
+  `_safe_which` first, with the raw `subprocess.run` call kept (not routed through `_run`, which
+  would fold the four real `channel:health` exit states into one `None`) (#1399).
+- `/oss:doctor` used to report a stale statusline cache (the watch-channel field, the default-branch
+  marker, or `/oss:doctor`'s own `dr` reading) and leave it exactly as stale as it found it, so the
+  affected field kept rendering `?` (`ch?`/`unk`/`dr?`) until someone ran `statusline.py --refresh`
+  by hand. The same check that finds the staleness now also forks the identical background refresh a
+  live statusline render would have started on its own (a new public `statusline.fork_refresh`),
+  rather than only naming a command for a human to run -- the same self-healing pattern
+  `/oss:release`'s own `invalidate_latest_cache` already uses, applied to a diagnostic rather than a
+  publish. `fork_refresh` now reports whether it actually started a fresh refresh (versus a busy lock
+  or a failed spawn), and the WARN text says which happened rather than always claiming success
+  (#1373).
+- `scripts/statusline.py`'s `_malformed_repo` guard let `?` and `#` through inside a repo slug --
+  both are legal to its `_REPO_RE` pattern, and both start a new URL component (a query string, a
+  fragment) the instant they appear inside a path segment `gh api` builds by plain string
+  substitution rather than URL-encoding. `_BRANCH_UNSAFE_RE` already refused `?` for `branch` for the
+  identical reason; `_malformed_repo` now refuses both characters for `repo` too (#1401). The
+  identical gap existed in `scripts/doctor.py`'s own sibling `_malformed_repo` (#1055's own port of
+  the same check, reused by all four `_resolve_slug` implementations) and is fixed alongside it,
+  since it is the same guard, the same subsystem, and the same one-line fix. `_BRANCH_UNSAFE_RE`
+  itself was refusing `?` but not `#` -- and, correcting a stale comment above it, `branch` is not
+  always the LAST path segment in every `gh api` call that builds one (`check-runs`/`status` both
+  append a further segment after it), so a `#` there could truncate/redirect the URL the identical
+  way; `#` is now refused there too (self-review finding on this same round).
+
+- #1400: `pr_green.py` no longer exits GREEN while a declared workflow's
+  Actions run exists on the commit but has produced no job yet. It now
+  queries the runs GitHub has recorded for the commit directly
+  (`.../actions/runs?head_sha=`), the same distinction `gh-branch` already
+  draws between a run that has not started and a workflow that correctly
+  never triggered, and reads such a PR as `pending` rather than `green`.
+
+- `select_issues_rank.SHORT_REASONS` gained a fifth value, `declined-for-cause`, for a lane that
+  found a real, well-formed, file-adjacent candidate and declined it anyway for a substantive
+  judgment reason -- a shape none of `board-exhausted`/`no-adjacent`/`did-not-search`/
+  `could-not-tell` fits, since the search ran, found something, and the something was rejected on
+  purpose. Like `board-exhausted`'s own `candidates` count, the new reason is checked rather than
+  merely typed: `check_lane`'s new `declined` parameter must look like a real citation (at least one
+  `#N` issue reference plus enough surrounding text that a bare issue number with no reason attached
+  is refused), or the reason is refused as `declined-without-citation`. `oss_state.lane_fill` and
+  its `--lane-fill PRIMARY:COUNT[:REASON[:CANDIDATES[:DECLINED]]]` CLI thread the citation through to
+  the per-lane record, so the real reason travels with the receipt instead of being buried in
+  free-text `--decision` prose capped at 200 characters (#1407).
+
+- The mandatory `Use \`supertool\` for every write... it is on PATH, from any directory` blockquote a
+  developer lane is dispatched with is wrong, as written, inside a worktree of a managed repo that
+  is supertool's own checkout: the bare `supertool` name on PATH resolves to whichever clone the
+  SessionStart hook last linked, ordinarily that project's own live checkout at its trunk branch,
+  and running it from a worktree of that same repository runs the trunk's core against the
+  worktree's own branch-local presets -- silently wrong for a read, refused outright for a write.
+  `scripts/doctor.py` gained `supertool_invocation(project_dir)`, reusing the existing
+  `_own_supertool_tree` walk `check_supertool_entry_point` already uses for its `own-tree`
+  diagnostic state, so a repo is never checked two ways for the same fact. `skills/manager/phases/
+  dispatch.md` now tells a dispatching session to consult it and append a one-line correction after
+  the verbatim blockquote rather than editing the blockquote itself, which stays byte-identical for
+  every other managed repo. `scripts/lane_setup.py`'s own `read_board` now routes through the same
+  function, independently fixing the `COULD NOT RUN -- mixed supertool trees` receipt one lane
+  reported after following the blockquote literally (#1409).
+
+- `/oss:curate`'s step under `/oss:run` no longer stops to ask the maintainer per fragment: it
+  decides promote, merge, decline or defer on its own, states each reason in the pull request it
+  opens, and that pull request is the review (#1425).
+
+- Fixed four small release-audit misreports (#1430): `checklist_skew.compare_effect` now
+  records `effect_version_provenance` (`asserted` vs `path-scraped`) so a version scraped out of
+  a file path is never indistinguishable from one the auditor actually named explicitly;
+  `report_schema.py`'s `minLength` error message no longer contradicts itself (it named the raw,
+  unstripped length while checking the stripped one, so a padded string could read "25
+  characters, shorter than the 20 minimum"); `tree_snapshot.compare`'s own before-snapshot
+  exclusion is now anchored to the caller's actual `--before` path rather than matching any file
+  at any depth that merely resembles the naming convention, so an unrelated file such as
+  `src/anything-before-snapshot.json` is no longer silently invisible to the mutation detector;
+  and `test_two_plugin_consumers_disarm_without_registering_oss_channel` now asserts
+  `returncode == 0`, the missing positive control that used to let the test pass whether the
+  launcher degraded gracefully or crashed before reaching the launch step.
+
+- `docs/open-the-workspace.md` and `docs/install.md` no longer describe the launcher's old
+  `/oss:tick`/`/oss:setup`/`/oss:doctor` prompt-picking logic, removed by #1389/#1390/#1392: the
+  launcher always opens on `/oss:run` now, and both docs are rewritten to say so and to point at
+  `commands/run.md` for where that decision actually lives (#1439).
+
+- `commands/doctor.md` named `/oss:tick` as the next step regardless of what the report above it
+  said, even when an actionable `WARN`'s own remedy pointed at `/oss:scaffold`. The next step is
+  now derived from the report's own `WARN` lines with a small, tested script
+  (`scripts/doctor_next_step.py`): if any `WARN` carries the literal, paste-ready remedy
+  `Run /oss:scaffold.` that `scripts/doctor.py` already prints for a missing owned file, that
+  command is named first and the clearing lines are listed; `/oss:tick` is named only once no
+  `WARN` carries it. The match stays on that exact sentence rather than any mention of
+  `/oss:scaffold`: several WARNs (a drifted owned file, the statusline gap, CodeQL's ownership
+  note, and the fragments-README gap, which explicitly says `/oss:scaffold` will NOT fix it) name
+  the command without it being an unconditional fix, and a looser match would misread at least one
+  of them backwards (#1441).
+
+- `tests/test_cohort_citation_order_1220.py`'s own-repo integration test no longer reads the
+  real, git-ignored `.max/claude-oss-watch.json` (absent on every CI checkout, so it always
+  answered `could-not-check` and passed vacuously) and no longer pins `at` to a wall-clock
+  constant that went stale every release. It now builds a synthetic state file in `tmp_path`
+  covering whatever cohort CLAUDE.md's own marker actually cites, and asserts `check_repo` reports
+  the marker `ok` against a state that genuinely covers it -- runs identically here and on every CI
+  leg, and stays correct as the calendar moves. The independent-oracle design (#1264) is
+  unchanged: the cited cohort and count are still pulled out of CLAUDE.md's own bytes by plain
+  string slicing, never through the function under test (#1442).
+
+- Fixed (#1453): `docs/overview.md` no longer claims only its author has ever run it. A few people
+  do, one of them daily, inside the organisation -- the earlier sentence rested on a probe that counts
+  config files and cannot see who opens a session. What remains unobserved is stated narrower: a
+  maintainer outside the organisation, and any second user's output read cold by someone here.
+
+### Security
+
+- `doctor.supertool_invocation` (and the `_own_supertool_tree` walk it shares with the
+  entry-point diagnostic) no longer trusts a `supertool.py` beside `.supertool.json` on bare
+  file existence alone. `.supertool.json` is a scaffolded default in every managed repo, so a
+  `supertool.py` an ordinary pull request adds at that repo's root used to be executed with
+  `sys.executable`, in the maintainer's own session, on every `lane_setup.py` board read of
+  every tick -- release gate 3's own blocking finding for v0.32.0 (#1459). Own-tree is now
+  additionally confirmed against the tree's own git `origin` remote, which a pull request
+  cannot move, matched against the installed `supertool` dependency's own declared
+  repository.
+
 ## [0.32.0] - 2026-09-11
 
 ### Added
@@ -10762,7 +10925,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.32.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.33.0...HEAD
+[0.33.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.33.0
 [0.32.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.32.0
 [0.31.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.31.0
 [0.30.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.30.0

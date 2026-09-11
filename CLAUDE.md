@@ -998,14 +998,15 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.32.0`, and it was written inside the v0.32.0 release commit.**
+**The marker below names `v0.33.0`, and it was written inside the v0.33.0 release commit.**
 
-**Delta, taken two ways that agree.** The range is `v0.31.0..HEAD` at `d435f89b`: `git rev-list
---count v0.31.0..HEAD` returns **27**. `gh-prs:state=merged,merged-since=v0.31.0` returns **18**
-merged pull requests -- `#1380`, `#1382`, `#1384`, `#1385`, `#1387`, `#1388`, `#1393`, `#1397`,
-`#1398`, `#1402`, `#1403`, `#1404`, `#1411`, `#1413`, `#1415`, `#1418`, `#1420`, `#1422`. The
-nine-commit gap is direct pushes carrying no trailing `(#N)`, named as such by the op's own output
-rather than inferred here. Both numbers are reported rather than one being silently preferred.
+**Delta, taken two ways that agree.** The range is `v0.32.0..HEAD` at `35558ced`: `git rev-list
+--count v0.32.0..HEAD` returns **16**. `gh-prs:state=merged,merged-since=v0.32.0` returns **14**
+merged pull requests -- `#1443`, `#1444`, `#1445`, `#1446`, `#1447`, `#1449`, `#1424`, `#1450`,
+`#1452`, `#1451`, `#1456`, `#1454`, `#1461`, `#1465`. The two-commit gap is direct pushes carrying no
+trailing `(#N)` -- the `v0.32.0` release commit itself and one launcher commit -- named as such by
+the op's own output rather than inferred here. Both numbers are reported rather than one being
+silently preferred.
 
 **One workflow is declared and produced no run on this commit, and that is not a gap.** `changelog`
 is `pull_request`-only, so it gated every pull request in this delta before each merged and simply
@@ -1013,64 +1014,58 @@ does not re-run at the tag: unrepeated, not unchecked. Gate 1's coverage came fr
 `CodeQL`, and from a **dispatched full matrix** rather than the push run alone -- this repository
 reduces its push/pull_request matrix and reserves all twelve OS x Python legs for
 `workflow_dispatch` with `full_matrix: true` (#1246), so the push run is never the whole picture
-here. Run `34585232930` on `d435f89b`, 14 legs, `conclusion=success`.
+here. Run `34636426513` on `35558ced`, 14 legs, `conclusion=success`; 22 legs across 3 runs green
+on that commit in total.
 
-**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-90bae15e5253`,
-over `v0.31.0..HEAD` at `66f8b256`, 19 commits): 5 findings, one in a blocking row.
+**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-a3cefee77a71`,
+over `v0.32.0..HEAD` at `1d749041`, 14 commits): 5 findings, one in a blocking row.
 `gate3_disposition.py --round 1 --verdict findings --blocking yes` returned `stop-tag`. The blocking
-finding (`ships-local-state`): all six `oss:scheduler-step` spawn prompts in `commands/run.md`
-pointed a cwd-relative `commands/run/<file>.md` at the spawned agent, which resolves only inside
-this repository's own checkout -- in every other repo installing this plugin the first-run `setup`
-step would point at a file that does not exist there. Filed as `#1419`, fixed and merged as `#1420`
-before round two. The four non-blocking findings (`triage_trigger.py` reading `.oss.json` raw and
-missing `.oss.local.json`'s `state_file`; `--triage-recorded` requiring `--decision`, which
-`commands/tick.md`'s own call omits; `gh`/`git` error text not backslashreplace-safe on the
-non-`--json` cohort-freeze path; `skills/manager/phases/inbound.md` asserting a gap this same delta
-closed) were written to `trap.d/1419.*.md`.
+finding (`executes`): `doctor.supertool_invocation`'s own-tree walk trusted bare existence of
+`.supertool.json` beside `supertool.py` -- and `.supertool.json` is a scaffolded default in every
+managed repo's root, so a `supertool.py` added by an ordinary pull request was enough to make
+`lane_setup.read_board` hand that file to `sys.executable`, in the maintainer's own session, on every
+board read of every tick. Filed as `#1459`, fixed and merged as `#1461` before round two: the walk
+now also requires the tree's own git `origin` to name the repository the installed `supertool`
+dependency's manifest declares. The fix's first push was CI-red on a second, un-swept call site
+(`supertool_entry_point`) and fixed forward on the same branch before merging. The four non-blocking
+findings (`merge-gate.md` hardcoding `origin/main`; the same rule contradicting `merge.md`'s
+no-pre-merge-rebase policy; `pr_green.py` holding `pending` forever on a jobless completed run;
+`tree_snapshot.py` comparing paths case-sensitively on Windows) were landed as `trap.d/1459.gate3r1-
+*.md` via `#1465`.
 
-Round two (dispatch token `gate3-r2-891d2d27a502`, over the range re-derived at `24004187` after
-round one's fix, 24 commits): the auditor re-derived independently and returned **3 findings, one in
-a blocking row**. `gate3_disposition.py --round 2 --verdict findings --blocking yes` returned
-`stop-tag` -- the rule that a blocking row stops the tag in either round, past the two-round cap,
-held. The blocking finding was the sibling of round one's: `commands/run.md`'s own `## dispatch`
-step read `commands/tick.md` with a pronoun-phrased, still-cwd-relative "Read and follow it from
-here", one section below the six prompts round one's fix had anchored -- invisible to that fix's own
-guard, which matched only the literal `Read and follow (\S+\.md) from here.` phrasing.
-`commands/tick.md:11`'s own self-read line carried the identical defect. Filed as `#1421`, fixed and
-merged as `#1422`; the fix's own self-review caught and corrected a real second bug in its first
-draft (the `${CLAUDE_PLUGIN_ROOT}` anchor written inside single quotes, inert under bash) before it
-committed. The two non-blocking findings (a cached channel reading suppressing a WARN even though a
-same-delta commit declared such readings session-scoped and untrustworthy across sessions;
-`next_action._record_skip_cli` trapping only `ValueError` and missing `oss_state.StateError`) were
-written to `trap.d/1421.*.md`.
+Round two (dispatch token `gate3-r2-fcf88543b7a6`, over the range re-derived at `35558ced` after
+both merges, 16 commits): the auditor re-derived independently, exercised the round-one fix against
+three scratch trees on the production path (a stray `supertool.py` with a `claude-oss` origin, one
+with no origin, one with a genuine `claude-supertool` origin -- only the last was trusted), and
+returned **2 findings, none in a blocking row**. `gate3_disposition.py --round 2 --verdict findings
+--blocking no` returned `carry-forward-and-proceed`. One finding (`misreports`: the new identity
+check renders every "could not tell" input the same as "not supertool") went to
+`trap.d/1459.gate3r2-identity-check-collapses-could-not-tell.md`, carried in this commit. The other
+came back `unranked` and was ranked here before the cap reached it: `#1443` made the curate pass
+decide alone on the premise that "the pull request is the review", and `merge.md` has no arm that
+distinguishes a loop-authored curate PR from any other green one -- so nothing makes that review
+happen. Fits no row, so it was filed as `#1467` per `findings.md`'s routing rule; it does not block.
+2 of 4 classes were `read` rather than `exercised`; the test suite was reasoned, not run, by the
+auditor.
 
-**Both rounds' blocking findings were the same class, in the same file, missed by the fix that
-closed the first one.** Round one's own guard test checked only the literal phrasing it saw; round
-two's finding was the identical defect one paragraph away, spelled differently enough to dodge that
-guard. The two-round cap was reached with a blocking finding still open in round two, and the
-release procedure's own rule held: the fix landed and merged before the tag, and no third audit
-round was dispatched -- the cap governs how many rounds of "findings, therefore stop" a release can
-be held to, not whether a blocking row gets fixed.
-
-**Cohort freeze: cohort-28 at 14.** Per #1122's rule this marker cites a cohort that has already
+**Cohort freeze: cohort-29 at 20.** Per #1122's rule this marker cites a cohort that has already
 finished freezing, never this release's own -- the freeze runs after the tag and this commit is
-written before it. The state file records `cohort-28` as `measured` at **14**, frozen at the
-`v0.31.0` tag (`17303889`, 2026-09-09T18:07Z), with two independently-agreeing routes
-(`rest-open-issues: 14`, `graphql-totalcount: 14`). `cohort_citation_order.py --state
-.max/claude-oss-watch.json --at 2026-09-11T09:45:25Z` read `ok -- cohort-27 was already frozen`
-against the pre-edit marker (cohort-27, this release's predecessor citation) before this paragraph
-moved the citation forward to cohort-28, which is also `measured` and frozen, and strictly newer.
-Cited cleanly, no discrepancy carried forward.
+written before it. The state file records `cohort-29` as `measured` at **20**, frozen at the
+`v0.32.0` tag (`0c7473f`, 2026-09-11T10:02Z), with two routes that first disagreed (`cutoff_scan:
+20`, `label_filter: 18`, recorded as `unknown` rather than taking the lower number) and agreed at
+**20** on the re-count a minute later. `cohort_citation_order.py --state .max/claude-oss-watch.json
+--at <now>` was run against this paragraph before committing; its answer is quoted in the release
+report.
 
-**The reach probe was NOT re-derived at `v0.31.0`** -- it is still `v0.21.0`'s, measured at
+**The reach probe was NOT re-derived at `v0.32.0`** -- it is still `v0.21.0`'s, measured at
 `c565488`, eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of
 the field readings were not either: the owned-files table, the two installs and the `doctor` run are
-still `v0.17.0`'s, measured at `ad38b93` and now carried through **fifteen** tags (`v0.18.0` through
-`v0.30.0`). `#1127` tracks re-deriving them. A fifteenth release disclosing the identical,
+still `v0.17.0`'s, measured at `ad38b93` and now carried through **sixteen** tags (`v0.18.0` through
+`v0.33.0`). `#1127` tracks re-deriving them. A sixteenth release disclosing the identical,
 unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low priority
 against everything else this loop spends a tick on, or the disclosure is not actually driving anyone
 to close it. Both are worth naming and neither is decided here -- the honest content of this
-paragraph is the count itself, fifteen releases running, not a conclusion drawn from it. **The
+paragraph is the count itself, sixteen releases running, not a conclusion drawn from it. **The
 readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
 marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release
 commit, per this section's own stated exception, so a developer lane does not have to catch the gap
@@ -1084,7 +1079,7 @@ confirmed by its own contents read rather than inferred from the listing. The co
 scoped to the organisation the command names, never to "the field": a repository under a different
 account renders identically to one that does not exist, and this probe cannot tell the two apart.
 
-What has **not been observed**, across fifteen rounds inside the one organisation this probe can see:
+What has **not been observed**, across sixteen rounds inside the one organisation this probe can see:
 any repository scaffolded by a maintainer who is not this plugin's author. That qualifier is
 load-bearing and it is `#711`'s whole subject — `#705` was filed from a repository under a personal
 account this probe cannot enumerate — so "not observed" here means "not observed by a probe that
