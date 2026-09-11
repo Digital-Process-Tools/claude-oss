@@ -251,6 +251,7 @@ agents/auditor.md           one diff, four classes, one verdict each; annotates,
 agents/release-auditor.md   the whole delta since the last tag, once per release; blocks
 agents/sub-manager.md       one tick, then dies with its context; never tags, never publishes
 agents/releaser.md          one release, fresh context; the only spawn holding tag-and-publish authority
+agents/scheduler-step.md    one /oss:run sub-step (setup scaffold install-audit triage curate changelog), then dies with its context (#1414)
 commands/*.md               the picker: /oss:run /oss:doctor /oss:tick /oss:release
 commands/run/*.md           demoted out of the picker (#1389): setup scaffold triage curate changelog install-audit, reached via /oss:run's own procedure or its forcing override
 scripts/oss_config.py       read, validate and derive .oss.json
@@ -296,6 +297,7 @@ from being invisible.
 | `agents/triager.md` | 15,522 B | 16,600 B |
 | `agents/sub-manager.md` | 17,104 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
+| `agents/scheduler-step.md` | 5,154 B | 5,700 B |
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -361,6 +363,16 @@ reaching a CI wait -- observed three times in one release closing on an unkeepab
 resume once CI reports back" instead of a state a scheduler could act on. Nothing already
 in the file argued that point, so there was nothing safe to cut in its place; the ceiling
 carries the same ~10% headroom the other re-baselines in this table use.
+
+**#1414 adds `agents/scheduler-step.md`, a new file rather than growing an existing one.**
+`/oss:run`'s own scheduler used to read six command files directly in its own long-lived session
+(setup, scaffold, install-audit, triage, curate, changelog) -- the erosion #695 built the
+sub-manager/releaser split to prevent, one layer over. One generic spawn covers all six, since none
+differ in shape, only in which file to read; dispatch and release keep their own dedicated spawns
+unchanged. 4,554 B became 5,154 B in the same lane's own self-review round, after a content-
+invariant test found this file missing the untrusted-input clause every document that can read
+issue/PR/comment text must carry -- `commands/run/triage.md` reads exactly that while this spawn
+follows it.
 
 **#1190 re-baselined `agents/sub-manager.md` without raising its ceiling**: 14,666 B became
 16,060 B, still under the 16,800 B budget. #818 ("hand a CI wait back, always") and #1086
@@ -839,7 +851,7 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 21,917 B | 22,200 B |
-| `commands/run.md` | 4,784 B | 4,800 B |
+| `commands/run.md` | 8,041 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
@@ -867,6 +879,42 @@ fingers already know, so keeping it live and unchanged during the transition is 
 `commands/run.md`'s own row moved from 4,365 B to 4,784 B naming the new paths; the six moved files
 carry no budget of their own (never did, since only `tick.md` and `run.md` are budgeted), so no
 other row in this table changes.
+
+**Raised for #1414: 4,784 B became 6,810 B.** The scheduler used to read `commands/run/*.md`'s six
+files and `commands/release.md` directly, in its own long-lived session -- exactly the erosion #695
+built the sub-manager/releaser split to prevent, one layer over, since a session left running many
+ticks pays for every document it ever opened on every later turn. A new agent,
+`agents/scheduler-step.md`, is the one wrapper all six generic sub-steps share (they differ only in
+which file to read, never in shape); release keeps its own dedicated `oss:releaser`, unchanged.
+Step 2 also needed rewriting regardless: `#1405`'s `rank()` replaced the four-state `next_action.py`
+shape (`due`/`nothing-due`/`could-not-decide`/`unsafe`) this file used to parse with an ordered
+candidate list, and this file now documents both that shape and the `--record-skip` CLI for a
+caller that deliberately takes a lower-ranked candidate. Nothing already in the file argued either
+point, so nothing was cut to make room; the ceiling moves to 7,300 B, ~10% headroom over the new
+size. Re-baselined twice more in the same lane's own two self-review rounds: 6,646 B became
+6,810 B after `tests/test_picker_demotion_1389.py`'s own regression test required each of the six
+demoted files' literal path, not a `<name>` placeholder, in the shared spawn example; then 6,810 B
+became 7,162 B making each of the five remaining generic sub-steps its own literal `Agent(...)`
+line rather than one shared example (an Explore reviewer found the shared form left four of the
+five relying on nothing but the required path strings, with no guard against the file drifting
+back to "read and follow" prose for them); then 7,162 B became 8,041 B documenting the new
+`--take` CLI (below) alongside `--record-skip`, once the ordinary case -- taking `candidates[0]`
+-- also needed an explicit commitment call, not only a deviation. Ceiling moved to 8,900 B for the
+last of the three, ~10% headroom over the final size.
+
+**A second follow-up review round on this same lane found a real regression in `rank()` itself
+(unchanged by #1414's own diff, but newly exposed by it): the curate/triage repeat-suppression
+receipt used to be armed by `rank()` on every call, including a plain `--json` read, rather than
+only when a caller actually committed to acting on the top candidate.** `#1414`'s own
+`--record-skip` gave a caller a real reason to call `rank()` without ever taking `candidates[0]`
+at all, collapsing "surfaced" and "acted on" back into one event -- exactly the permanent-divert
+defect the earlier `arm=False`/`arm=True` split (see `#1405`'s own re-baseline above) was built to
+close. Fixed in the same round: `rank()` no longer writes anything, ever; a new `_arm_route_source`
+is the one place a receipt is persisted, called only from a new `--take <source>` CLI (the ordinary
+case) and from `--record-skip` (which arms the source actually taken, once the skip itself is
+recorded). `record_skip()` also gained a membership check on `taken_source` against the real ranked
+sources -- neither existing check caught a typo, and it would have been written into the state
+file's permanent decision log as confidently as a real deviation.
 
 **Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
 1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser

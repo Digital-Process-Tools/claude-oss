@@ -207,6 +207,20 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # sub-manager.md also now points at. Budget unchanged; 582 B of headroom
     # remains.
     "agents/releaser.md": (7218, 7800),
+    # #1414: new file. `/oss:run`'s own scheduler used to read six command
+    # files directly in its own long-lived session (setup, scaffold,
+    # install-audit, triage, curate, changelog) -- exactly the erosion #695
+    # built the sub-manager/releaser split to prevent, one layer over. One
+    # generic spawn, reused across all six rather than six near-identical
+    # wrappers, since none differ in shape -- only in which file to read.
+    # Budgeted from the day it was added, the same posture #1389 already
+    # takes for `commands/run.md`. Re-baselined in the same lane's own
+    # self-review: 4554 B became 5154 B after a content-invariant test
+    # found this file missing the untrusted-input clause every document
+    # that can read issue/PR/comment text must carry -- `triage.md` reads
+    # exactly that while this spawn is following it. Ceiling moved to
+    # 5700 B, ~10% headroom over the new size.
+    "agents/scheduler-step.md": (5154, 5700),
 }
 
 

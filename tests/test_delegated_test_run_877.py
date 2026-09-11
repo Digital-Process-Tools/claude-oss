@@ -52,7 +52,13 @@ ALREADY_COVERED_ELSEWHERE = {"developer.md"}
 #: Granted `Bash` but never runs or reasons about a test suite -- it "never
 #: touches code" (agents/triager.md's own frontmatter description), so there is
 #: no test-behaviour claim for it to make.
-NO_TEST_CONCERN = {"triager.md"}
+#:
+#: `scheduler-step.md` (#1414) joins it: it reads exactly one of the demoted
+#: command files -- setup, scaffold, install-audit, triage, curate, changelog --
+#: and none of those runs `test_command`. Its own description forbids the two
+#: sub-steps that could (dispatch goes to oss:sub-manager, release to
+#: oss:releaser), so there is no test-behaviour claim for it to make either.
+NO_TEST_CONCERN = {"triager.md", "scheduler-step.md"}
 
 #: filename -> the marker that must survive in the file, verbatim.
 REQUIRED_MARKER = {
