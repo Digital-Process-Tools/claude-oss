@@ -88,6 +88,40 @@ def _state(project, root, **kw):
     return doctor.supertool_entry_point(project, **kw), entry
 
 
+#: The repository the installed `supertool` dependency's own manifest declares --
+#: the #1459 identity check's comparison point, injected here rather than read from
+#: a real plugin cache/git repo, so these tests stay hermetic. Mirrors
+#: tests/test_supertool_invocation_1409.py's own fixtures of the same shape.
+_SUPERTOOL_REPOS = {
+    "supertool": "https://github.com/Digital-Process-Tools/claude-supertool"
+}
+
+
+def _fake_git_remote(url):
+    """A fake `run=` for `subprocess.run`, standing in for `git remote get-url
+    origin` and answering with `url` -- #1459's injection seam."""
+
+    def _run(argv, **kwargs):
+        class _Result:
+            returncode = 0
+            stdout = url + "\n"
+            stderr = ""
+
+        return _Result()
+
+    return _run
+
+
+#: The #1459 kwargs a fixture representing a GENUINE own-tree checkout passes to
+#: supertool_entry_point/check_supertool_entry_point, so the identity check agrees.
+_OWN_TREE_IDENTITY = {
+    "dependency_repos": _SUPERTOOL_REPOS,
+    "run": _fake_git_remote(
+        "https://github.com/Digital-Process-Tools/claude-supertool.git"
+    ),
+}
+
+
 def test_absent_is_a_finding_and_names_what_creates_it(tmp_path):
     """The state of every fresh clone, and of every worktree an agent cuts mid-session:
     the hook fires on a session's cwd, and nothing fires when an agent cds into a
@@ -482,7 +516,7 @@ def test_a_supertool_checkout_is_not_told_to_create_a_wrapper(tmp_path):
     project.mkdir()
     (project / ".supertool.json").write_text("{}\n", encoding="utf-8")
     (project / "supertool.py").write_text("# core\n", encoding="utf-8")
-    (state, detail), _ = _state(project, tmp_path)
+    (state, detail), _ = _state(project, tmp_path, **_OWN_TREE_IDENTITY)
     assert state == "own-tree", (state, detail)
     # The second instance of the comparison defect CI caught, bound here rather than
     # left incidental: the walk starts at realpath(project_dir), so the core is spelled
@@ -499,7 +533,7 @@ def test_a_supertool_checkout_is_not_told_to_create_a_wrapper(tmp_path):
 
     home, record, _ = _cache(tmp_path)
     doctor.check_supertool_entry_point(
-        project, cache_root=str(home), record=str(record)
+        project, cache_root=str(home), record=str(record), **_OWN_TREE_IDENTITY
     )
     level, message = doctor.FINDINGS[-1]
     assert level == "OK", message
@@ -526,12 +560,12 @@ def test_a_wrapper_inside_a_supertool_checkout_is_its_own_state(tmp_path):
         pytest.skip(refused + "; what went untested is the own-tree-stranger arm")
 
     state, detail = doctor.supertool_entry_point(
-        project, cache_root=str(home), record=str(record)
+        project, cache_root=str(home), record=str(record), **_OWN_TREE_IDENTITY
     )
     assert state == "own-tree-stranger", (state, detail)
 
     doctor.check_supertool_entry_point(
-        project, cache_root=str(home), record=str(record)
+        project, cache_root=str(home), record=str(record), **_OWN_TREE_IDENTITY
     )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
@@ -555,8 +589,11 @@ def test_the_check_prints_exactly_one_line_in_every_state(tmp_path):
             (project / ".supertool.json").write_text("{}\n", encoding="utf-8")
             (project / "supertool.py").write_text("x\n", encoding="utf-8")
         doctor.FINDINGS.clear()
+        # own-tree is the only case #1459's identity check can act on; the other two
+        # never reach a directory carrying both marker files, so passing the same
+        # kwargs unconditionally changes nothing for them.
         doctor.check_supertool_entry_point(
-            project, cache_root=str(home), record=str(record)
+            project, cache_root=str(home), record=str(record), **_OWN_TREE_IDENTITY
         )
         assert len(doctor.FINDINGS) == 1, (name, doctor.FINDINGS)
         seen.add(name)

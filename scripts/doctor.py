@@ -1860,8 +1860,13 @@ def plugin_supertool_entries(cache_root=None, record=None):
     return found
 
 
-def supertool_entry_point(project_dir, cache_root=None, record=None):
+def supertool_entry_point(
+    project_dir, cache_root=None, record=None, dependency_repos=None, run=None
+):
     """Which state this repo's `./supertool` is in. Returns ``(state, detail)``.
+
+    `dependency_repos` and `run` are the #1459 dependency-injection seams, threaded
+    straight through to `_own_supertool_tree` -- production callers leave both `None`.
 
     Thirteen states. Four of them are ways of saying "could not tell", and those are the
     reason this is a function rather than an ``==``:
@@ -1919,7 +1924,9 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
       remedy, none of them "create one".
     """
     link = Path(project_dir) / SUPERTOOL_ENTRY
-    root, core = _own_supertool_tree(project_dir)
+    root, core = _own_supertool_tree(
+        project_dir, dependency_repos=dependency_repos, run=run
+    )
     # #341: `os.path.lexists` swallows every `OSError`, not only `ENOENT` --
     # the third instance of the class #333/#340 already fixed once in this
     # file's PATH walk. An unreadable PARENT of `link` (an over-long
@@ -2016,10 +2023,20 @@ def supertool_entry_point(project_dir, cache_root=None, record=None):
     return "other-target", resolved
 
 
-def check_supertool_entry_point(project_dir, cache_root=None, record=None):
-    """One line, in every state. Never raises: `supertool_entry_point` returns."""
+def check_supertool_entry_point(
+    project_dir, cache_root=None, record=None, dependency_repos=None, run=None
+):
+    """One line, in every state. Never raises: `supertool_entry_point` returns.
+
+    `dependency_repos` and `run` are the #1459 dependency-injection seams, threaded
+    straight through to `supertool_entry_point` -- production callers leave both `None`.
+    """
     state, detail = supertool_entry_point(
-        project_dir, cache_root=cache_root, record=record
+        project_dir,
+        cache_root=cache_root,
+        record=record,
+        dependency_repos=dependency_repos,
+        run=run,
     )
     if state == "own-tree":
         report(
