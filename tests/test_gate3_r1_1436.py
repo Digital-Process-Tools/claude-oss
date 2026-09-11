@@ -150,9 +150,21 @@ def test_tick_mds_own_call_shape_actually_runs(tmp_path):
 
     state_file = tmp_path / "state.json"
     now = "2026-01-01T00:00:00Z"
+    # #1436 self-review, round three (Windows CI): `bash -c` treats a raw
+    # backslash outside single quotes as "drop it, keep the next character"
+    # for an ordinary character -- so a Windows-native path built with a
+    # backslash and interpolated straight into this command string arrives
+    # with every separator eaten and its segments concatenated.
+    # `.as_posix()` is this repo's own existing idiom for exactly this ("a
+    # path fed into a shell command string"), already used by
+    # test_changelog_gate.py's own shim. Git-Bash on Windows accepts
+    # forward-slash paths for a Windows path without translation, so this
+    # is correct on POSIX too.
     command = (
-        block.replace('"${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py"', str(OSS_STATE))
-        .replace("<state_file>", str(state_file))
+        block.replace(
+            '"${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py"', OSS_STATE.as_posix()
+        )
+        .replace("<state_file>", state_file.as_posix())
         .replace("$(date -u +%Y-%m-%dT%H:%M:%SZ)", now)
     )
     done = spawn_guard.run(
