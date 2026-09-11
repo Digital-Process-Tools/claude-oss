@@ -126,18 +126,32 @@ oss_fireworks() {
     at 8 18 "${o}██    ██      ██      ██${r}"
     at 9 18 "${o} ██████  ███████ ███████${r}"
     z 0.18
-    # The spinner verbs. Claude Code has a whole vocabulary of these and so should a
-    # loop that is about to run somebody's repository on its own.
-    for verb in "Igniting" "Unspooling the board" "Wrangling worktrees" "Herding lanes" "Fixaxksdsding the link" "Bamboozling the tracker" "Merging on green"; do
-        at 11 18 "${d}$(printf '%-30s' "$verb...")${r}"
-        z 0.16
-    done
-    at 11 18 "${w}$(printf '%-30s' "the loop is yours")${r}"
-    z 0.30
-    # leave the cursor below the canvas, where the launcher's own output starts
-    printf '%s[%dB' "$e" "$H"
+    # leave the cursor just under the letters; the real steps print from here
+    printf '%s[%dB\n' "$e" 10
+    oss_steps=1
 }
 oss_fireworks
+
+# --- the progression under the letters, and it is real: each line lands when its ---
+# step actually finished, carrying what that step actually found. Three marks and
+# they mean three different things -- a tick is a step that looked and passed, a
+# question mark is one that could not look (never a pass), a dot is a decision
+# not to do the step at all. A step that never printed is a step that never
+# reported, and that renders as an absence a reader can see rather than a tick
+# nobody earned. Silent when the fireworks were (no terminal, TERM=dumb, opted
+# out): every line below is decoration over stderr prose that still prints as
+# it always did, which is what the launcher tests read.
+oss_step() {
+    [ "${oss_steps:-0}" -eq 1 ] || return 0
+    case $3 in
+        ok)   mark="${g}✓${r}" ;;
+        ask)  mark="${y}?${r}" ;;
+        skip) mark="${d}·${r}" ;;
+        go)   mark="${w}▸${r}" ;;
+        *)    mark="${y}?${r}" ;;
+    esac
+    printf '  %s▸%s %-9s %-40s %s\n' "$d" "$r" "$1" "$2" "$mark"
+}
 
 CHANNEL_FLAG="--dangerously-load-development-channels"
 
@@ -254,6 +268,7 @@ if [ -n "$python_bin" ]; then
         if [ -n "$auto_update_line" ]; then
             printf '%s\n' "$auto_update_line" >&2
         fi
+        oss_step plugin "could not check (exit $auto_update_status)" ask
     else
         auto_update_tab=$(printf '\t')
         IFS="$auto_update_tab" read -r auto_update_state auto_update_from \
@@ -271,8 +286,10 @@ AUTO_UPDATE_LINE
                      "started, so there is no stale-copy window to reload or" \
                      "restart out of. $prompt diagnoses the tree it just moved" \
                      "to on its own first turn." >&2
+                oss_step plugin "$auto_update_from → $auto_update_to" ok
                 ;;
-            current|off) ;;
+            current) oss_step plugin "${auto_update_to:-current}" ok ;;
+            off)     oss_step plugin "auto-update off" skip ;;
             could-not-check)
                 # A THIRD state reporting itself and then saying nothing about
                 # why is the defect this whole plugin is about, reproduced
@@ -285,13 +302,16 @@ AUTO_UPDATE_LINE
                 echo "oss-workspace: could not check whether the oss plugin is" \
                      "current: $auto_update_reason. This is not a statement that" \
                      "it is. Opening $prompt anyway." >&2
+                oss_step plugin "could not check" ask
                 ;;
             "")
+                oss_step plugin "check printed nothing" ask
                 echo "oss-workspace: the plugin update check printed nothing" \
                      "this launcher could parse, so whether the oss plugin is" \
                      "current is UNKNOWN. Opening $prompt anyway." >&2
                 ;;
             *)
+                oss_step plugin "unrecognised state: $auto_update_state" ask
                 echo "oss-workspace: the plugin update check reported a state" \
                      "this launcher does not recognise ($auto_update_state), so" \
                      "whether the oss plugin is current is UNKNOWN. Opening" \
@@ -303,6 +323,7 @@ else
     echo "oss-workspace: no working python was found, so the oss plugin could" \
          "not be checked for an update here. hooks/session-start-update.sh" \
          "still covers it once the session is running." >&2
+    oss_step plugin "no python, not checked" ask
 fi
 
 # --- repoint this launcher's own symlink at the currently installed copy (#753) ---
@@ -2091,6 +2112,21 @@ channel_arm_server=$CHANNEL_SERVER
 if [ -n "$plugin_channel_target" ]; then
     channel_arm_server=$plugin_channel_target
 fi
+
+# The last two lines of the progression. `channel_ready` is the one fact the
+# whole channel section above resolves to, so it is what the line reports;
+# the prose on stderr above it already said why when it is 0.
+if [ "$channel_ready" -eq 1 ]; then
+    oss_step channel "$channel_arm_server armed" ok
+else
+    oss_step channel "opening without a channel (see above)" skip
+fi
+if [ "$#" -eq 0 ]; then
+    oss_step session "opening $prompt" go
+else
+    oss_step session "opening with your arguments, $prompt not appended" go
+fi
+[ "${oss_steps:-0}" -eq 1 ] && printf '\n  %sthe loop is yours%s\n\n' "$w" "$r"
 
 if [ "$#" -eq 0 ]; then
     # The prompt goes FIRST and the variadic flag LAST. A positional after the
