@@ -48,7 +48,27 @@ any one of them is not.
                     developer can be briefed from this one call.
   pending          every leg is either still running or the rollup is empty
                     (no checks reported yet is not a read failure and is
-                    never green).
+                    never green). Also `pending` -- never `green` -- when an
+                    Actions run exists on the commit, is not yet reflected
+                    in the rollup at all, and has produced zero jobs so far
+                    (#1400): queried directly against
+                    `.../actions/runs?head_sha=`, the same fact `gh-branch`
+                    already reads to draw this exact line, rather than
+                    guessed at from a workflow file's own `on:` declaration,
+                    which cannot see a path filter or a conditional job. A
+                    workflow that genuinely did not trigger for this event
+                    produces no run object at all and is correctly left out
+                    of this check -- gate 1's own documented middle state.
+                    Named under `unresolved_runs` on the returned entry:
+                    `[]` when checked and nothing is unresolved, `None`
+                    when it could not be established (owner/repo/sha
+                    unavailable, the extra read failed, or too many
+                    uncovered runs to check cheaply) -- never blocking
+                    `green` forever on a fact this module could not check,
+                    the same rule `missing_workflows` already follows, and
+                    never folded into the same `[]` that means "checked,
+                    clean" either, which is the identical collapse #1400
+                    itself reports.
   could-not-read   the read itself failed -- `gh` not on PATH, the process
                     could not start, a non-zero exit, or output this module
                     could not parse. **Never folded into `pending`** (that
@@ -101,7 +121,16 @@ _PENDING_STATUS_CONTEXT_STATES = frozenset(("PENDING", "EXPECTED"))
 
 _JOB_URL_RE = re.compile(r"/actions/runs/(\d+)/job/(\d+)")
 
-_PR_VIEW_FIELDS = "number,headRefName,headRefOid,state,statusCheckRollup"
+_OWNER_REPO_RE = re.compile(r"^https?://[^/]+/([^/]+)/([^/]+)(?:/|$)")
+
+_PR_VIEW_FIELDS = "number,headRefName,headRefOid,state,statusCheckRollup,url"
+
+# A run that exists on the commit but is not yet reflected in the rollup
+# needs one extra `gh api` call per run to ask whether it has a job yet.
+# Past this many uncovered runs the answer is "unestablished" rather than a
+# slow, correct one -- the same bound `claude-supertool`'s own
+# `_declared_legs.MAX_RECONCILED_RUNS` uses for the identical reconciliation.
+_MAX_UNRESOLVED_RUN_CHECKS = 4
 
 
 def _decode(value):
@@ -182,6 +211,164 @@ def _declared_pr_workflow_names(workflows_dir):
     return names, True
 
 
+def _owner_repo(url):
+    """``(owner, repo)`` parsed out of a GitHub PR URL, ``("", "")`` when
+    unparseable -- the same fact `claude-supertool`'s own
+    `_declared_legs.owner_repo` derives, re-derived here rather than
+    imported since this module has no dependency on that project."""
+    text = str(url or "").strip()
+    if not text:
+        return "", ""
+    match = _OWNER_REPO_RE.match(text)
+    return (match.group(1), match.group(2)) if match else ("", "")
+
+
+def _rollup_run_ids(rows):
+    """Distinct Actions run ids a rollup already carries, parsed out of each
+    row's ``detailsUrl`` -- the same field `_failure_log_line` reads the job
+    id from. A run whose id is already in this set is covered by the rollup
+    and is never asked about again."""
+    ids = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        match = _JOB_URL_RE.search(str(row.get("detailsUrl") or ""))
+        if match:
+            ids.add(match.group(1))
+    return ids
+
+
+# Trigger events that can plausibly feed a pull request's own check rollup.
+# A run whose ``event`` is outside this set (a `push` to the same sha on a
+# branch, a `schedule` run, a `workflow_dispatch`) was never going to appear
+# in the rollup regardless of its job state, so counting it as "uncovered"
+# would report a PR pending over a run that has nothing to do with it --
+# self-review finding, alongside #1400's own reconciliation.
+_PR_RELEVANT_EVENTS = frozenset(("pull_request", "pull_request_target"))
+
+
+def _runs_on_commit(gh, run, owner, repo, sha):
+    """``[(run_id, name, event), ...]`` for every Actions run GitHub has
+    recorded against ``sha``, or ``None`` when the read failed.
+
+    This is the distinction #1400 asks for: a workflow declared in
+    `.github/workflows/` whose trigger genuinely did not fire for this event
+    (a `pull_request_target`-only workflow, a path filter that excluded
+    every changed file) never produces a run object here at all, and is
+    correctly left alone -- gate 1's own documented middle state. A run
+    object that *does* exist but carries no job yet is the other case, and
+    is resolved by `_run_has_jobs` below rather than being guessed at from
+    the workflow file's own trigger declaration, which cannot see a
+    path filter or a conditional job. ``event`` rides along so a caller can
+    tell a run irrelevant to this PR (a `push` to the same sha) from one
+    that actually belongs to its rollup.
+    """
+    if not owner or not repo or not sha:
+        return None
+    out, _err, detail = _gh(
+        gh,
+        [
+            "api",
+            "repos/{0}/{1}/actions/runs?head_sha={2}&per_page=100".format(
+                owner, repo, sha
+            ),
+        ],
+        run,
+    )
+    if detail is not None or out is None:
+        return None
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return None
+    runs = data.get("workflow_runs") if isinstance(data, dict) else None
+    if not isinstance(runs, list):
+        return None
+    result = []
+    for entry in runs:
+        if not isinstance(entry, dict):
+            continue
+        run_id = str(entry.get("id") or "").strip()
+        if run_id:
+            result.append((run_id, str(entry.get("name") or ""), entry.get("event")))
+    return result
+
+
+def _run_has_jobs(gh, run, owner, repo, run_id):
+    """``True``/``False``/``None`` (could not tell) -- whether an Actions
+    run has produced at least one job yet. ``filter=all`` (not the
+    endpoint's own default of ``filter=latest``) for the same reason
+    `claude-supertool`'s `_declared_legs.legs_for_run` uses it: a partial
+    re-run can otherwise read as zero jobs for ~18s after it starts."""
+    if not owner or not repo or not run_id:
+        return None
+    out, _err, detail = _gh(
+        gh,
+        [
+            "api",
+            "repos/{0}/{1}/actions/runs/{2}/jobs?filter=all&per_page=1".format(
+                owner, repo, run_id
+            ),
+        ],
+        run,
+    )
+    if detail is not None or out is None:
+        return None
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return None
+    jobs = data.get("jobs") if isinstance(data, dict) else None
+    if not isinstance(jobs, list):
+        return None
+    return len(jobs) > 0
+
+
+def _unresolved_runs(gh, run, owner, repo, sha, rollup_run_ids):
+    """Names of the Actions runs on this commit that are not yet covered by
+    the rollup and have produced no job -- the shape #1400 reports.
+
+    Three outcomes, deliberately mirroring `missing_workflows`'s own
+    `None`/`[]` split rather than only claiming to (self-review finding: an
+    earlier version of this function returned `[]` for "unestablished" too,
+    which is the exact collapse #1400 itself is about, reproduced one layer
+    in):
+
+    * ``None`` -- could not be established: owner/repo/sha could not be
+      derived, the commit-runs read itself failed, or more than
+      `_MAX_UNRESOLVED_RUN_CHECKS` runs are uncovered (checking all of them
+      is not worth the round trips). A caller must not read this as "none
+      are unresolved" -- the same rule `missing_workflows` already follows.
+    * ``[]`` -- checked, and nothing is unresolved.
+    * a non-empty list -- these runs exist on the commit, are not yet in the
+      rollup, and have produced no job.
+
+    Only runs whose own ``event`` is plausibly rollup-feeding
+    (`_PR_RELEVANT_EVENTS`) are considered at all: a `push`-triggered run
+    sharing this sha was never going to reach the PR's rollup regardless of
+    its job state, and counting it would both report a false pending and
+    spend part of the reconciliation budget on a run that has nothing to do
+    with this PR.
+    """
+    commit_runs = _runs_on_commit(gh, run, owner, repo, sha)
+    if commit_runs is None:
+        return None
+    uncovered = [
+        (run_id, name)
+        for run_id, name, event in commit_runs
+        if run_id not in rollup_run_ids
+        and (event is None or event in _PR_RELEVANT_EVENTS)
+    ]
+    if len(uncovered) > _MAX_UNRESOLVED_RUN_CHECKS:
+        return None
+    unresolved = []
+    for run_id, name in uncovered:
+        has_jobs = _run_has_jobs(gh, run, owner, repo, run_id)
+        if has_jobs is False:
+            unresolved.append(name or "run #{0}".format(run_id))
+    return unresolved
+
+
 def _failure_log_line(gh, run, details_url):
     """The shortest decisive line out of a failing job's own log -- never the
     whole log, which is the developer's to pull (#1086's own phrasing).
@@ -250,6 +437,7 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
             "failing": [],
             "pending_legs": [],
             "missing_workflows": [],
+            "unresolved_runs": [],
         }
 
     failing = []
@@ -322,6 +510,21 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
     else:
         state = STATE_GREEN
 
+    # #1400: a workflow run can exist on this commit with no job reported
+    # yet -- the rollup is simply short of rows for it, indistinguishable
+    # from those rows having passed once only the exit code is read. Only
+    # worth asking when the rollup alone would otherwise read GREEN: a
+    # RED or PENDING verdict is already correct and an unresolved run
+    # cannot make it more so.
+    unresolved_runs = []
+    if state == STATE_GREEN:
+        owner, repo = _owner_repo(payload.get("url"))
+        unresolved_runs = _unresolved_runs(
+            gh, run, owner, repo, sha, _rollup_run_ids(rows)
+        )
+        if unresolved_runs:
+            state = STATE_PENDING
+
     return {
         "pr": number,
         "branch": branch,
@@ -330,6 +533,7 @@ def read_pr(number, gh, run, workflows_dir=None, declared_workflows=None):
         "failing": failing,
         "pending_legs": pending_legs,
         "missing_workflows": missing_workflows,
+        "unresolved_runs": unresolved_runs,
     }
 
 
@@ -419,6 +623,10 @@ def _render(entry):
             )
         elif entry["missing_workflows"] is None:
             line += "\n  could not determine whether every declared workflow ran"
+        if entry.get("unresolved_runs") is None:
+            line += (
+                "\n  could not determine whether every run on this commit has started"
+            )
         return line
     if entry["state"] == STATE_RED:
         lines = [
@@ -441,12 +649,19 @@ def _render(entry):
     # #1113 self-review: `pending_legs` entries come from the identical
     # forge-controlled `name`/`context` source as `leg["name"]` above --
     # flattened for the same reason.
+    still_running = [_flatten(leg) for leg in entry.get("pending_legs", [])]
+    # #1400: a run that exists on this commit but has produced no job yet is
+    # also why this is PENDING rather than GREEN, even when `pending_legs`
+    # itself is empty (every rollup row that DID arrive already concluded).
+    still_running.extend(
+        "{0} (no job yet)".format(_flatten(name))
+        for name in entry.get("unresolved_runs", [])
+    )
     return "#{0} | PENDING | branch: {1} | sha: {2} | still running: {3}".format(
         entry["pr"],
         entry.get("branch", "?"),
         entry.get("sha", "?"),
-        ", ".join(_flatten(leg) for leg in entry.get("pending_legs", []))
-        or "(rollup not yet reported)",
+        ", ".join(still_running) or "(rollup not yet reported)",
     )
 
 
