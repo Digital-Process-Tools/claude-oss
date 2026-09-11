@@ -194,3 +194,35 @@ def test_effect_line_is_flattened_once_in_the_json_payload_not_only_at_print_tim
     payload = checklist_skew.compare_effect("0.28.0", hostile)
     assert "\n" not in payload["effect_line"]
     assert "FORGED HEADING" in payload["effect_line"]
+
+
+def test_explicit_version_is_reported_as_asserted_provenance():
+    """#1430: nothing in the payload distinguished a version taken from the
+    auditor's own explicit "version N.N.N" statement from one merely
+    scraped out of a path-shaped token elsewhere in the same line. An
+    explicit statement is provenance "asserted".
+    """
+    checklist_skew = _module()
+    line = "checklist in effect: agents/auditor.md version 0.28.0"
+    payload = checklist_skew.compare_effect("0.28.0", line)
+    assert payload["effect_version_provenance"] == "asserted"
+
+
+def test_a_path_only_version_token_is_reported_as_path_scraped_provenance():
+    """Positive control beside the above: a line with no explicit "version"
+    statement at all, only a version-shaped directory component in the
+    file path, must be distinguishable from a real assertion -- #1430's own
+    finding: `_parse_effect_version` picked up such a token with nothing in
+    the payload saying it never saw an explicit statement.
+    """
+    checklist_skew = _module()
+    line = "checklist in effect: /plugins/dpt-plugins/oss/1.2.3/agents/auditor.md"
+    payload = checklist_skew.compare_effect("1.2.3", line)
+    assert payload["effect_version"] == "1.2.3"
+    assert payload["effect_version_provenance"] == "path-scraped"
+
+
+def test_could_not_tell_cases_carry_no_provenance():
+    checklist_skew = _module()
+    payload = checklist_skew.compare_effect("0.28.0", "")
+    assert payload["effect_version_provenance"] is None

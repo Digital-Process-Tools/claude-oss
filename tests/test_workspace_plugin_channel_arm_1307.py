@@ -175,6 +175,14 @@ def test_two_plugin_consumers_disarm_without_registering_oss_channel(tmp_path):
     _plant_plugin_channel_server(repo, home)
     _plant_second_plugin_channel_server(repo, home)
     done, argv = run(repo, with_channel=False, env_extra=_NO_AUTO_UPDATE)
+    # #1430: this assertion used to be missing entirely, so the test could
+    # not distinguish "degraded gracefully and still launched" from "crashed
+    # before ever reaching the launch step" -- both leave `argv` free of
+    # "development-channels", and a real regression that made the launcher
+    # exit non-zero here would have passed silently. Matches the sibling
+    # convention in tests/test_workspace_launcher.py (e.g.
+    # test_opens_the_repo_you_are_standing_in).
+    assert done.returncode == 0, done.stderr
     assert not any("development-channels" in a for a in argv), (argv, done.stderr)
     add_calls = [
         call for call in _mcp_calls(repo) if len(call) > 1 and call[1] == "add"

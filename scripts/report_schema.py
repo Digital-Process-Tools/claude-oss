@@ -669,7 +669,8 @@ def _walk(value, sub, root, path, errors, rules):
                     _label(path), len(value), sub["maxLength"]
                 )
             )
-        if "minLength" in sub and len(value.strip()) < sub["minLength"]:
+        stripped_length = len(value.strip())
+        if "minLength" in sub and stripped_length < sub["minLength"]:
             # #1333: mechanism was required but unbounded, so an empty or
             # near-empty string satisfied "type: string" while describing
             # nothing -- the narrow, mechanically reachable half of "no
@@ -679,14 +680,20 @@ def _walk(value, sub, root, path, errors, rules):
             # all). Stripped before counting, self-review finding: raw
             # len() let a string of 20+ spaces (or tabs, or newlines) pass
             # this floor while describing exactly as much as the empty
-            # string it was meant to catch. The reported count is the raw
-            # length, not the stripped one, so the message still shows what
-            # was actually typed rather than a number that does not match
-            # what a reader would count.
+            # string it was meant to catch.
+            #
+            # #1430: the message used to print the RAW length here even
+            # though the check compares the STRIPPED one -- a 25-space
+            # mechanism produced "25 characters, shorter than the 20
+            # minimum", which reads as false on its face (25 is not
+            # shorter than 20). Naming both counts keeps the message
+            # honest about what was actually compared while still showing
+            # what was typed.
             errors.append(
-                "{}: {} characters, shorter than the {} minimum -- too short "
+                "{}: {} characters after trimming surrounding whitespace "
+                "({} as typed), shorter than the {} minimum -- too short "
                 "to describe what actually ran".format(
-                    _label(path), len(value), sub["minLength"]
+                    _label(path), stripped_length, len(value), sub["minLength"]
                 )
             )
         if "pattern" in sub and re.fullmatch(sub["pattern"], value) is None:
