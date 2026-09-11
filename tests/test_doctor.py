@@ -4,7 +4,7 @@ Exit code 0 on every path, including the paths where everything is broken. A
 diagnostic that exits non-zero gets swallowed by whatever ran it, and the one
 output a stuck user needs is the one they do not see.
 
-Three states, never two: OK, WARN, FAIL. A check that could not run says so and
+Five states: OK, NOTICE, WAIT, WARN, FAIL. A check that could not run says so and
 must never render as a check that found nothing.
 """
 
