@@ -148,6 +148,15 @@ empty for a reason opposite to the filing one — you are asking the maintainer 
 anything, so what they need in order to leave it closed is your argument that the class cannot be
 reached.
 
+**If the `Agent` tool itself is not callable -- refused, absent from your grant, or the spawn call
+itself errors -- that is `not-checked` with a `reason`, never `checked` (#1383: this frontmatter
+declares `Agent` in its grant, and a live lane still reported no such tool callable in its own
+session; the same shape #978 already documents for `agents/sub-manager.md`'s `SendMessage` grant).
+Put the verbatim refusal or error text in `review.spawn_error`, quoted rather than paraphrased --
+the same "quote it verbatim" rule `dispatch.md` already applies to an `agent-unreachable` dispatch
+state. That string is the one piece of evidence that could ever settle whether this is a harness
+version gate, a manifest issue, or something else; a `not-checked` with no `spawn_error` loses it.**
+
 **Do not shell out to a headless `claude` CLI.** If a capability is genuinely unreachable, say so and
 stop.
 
