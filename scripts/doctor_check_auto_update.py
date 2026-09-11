@@ -152,35 +152,60 @@ def check_auto_update(project_dir, sh_available=None, fresh_check=None):
 
 
 def _fresh_auto_update_check(project_dir, fresh_check=None):
-    """A read right now, un-cached and never persisted -- ``(state, detail)``, or
+    """A read right now, genuinely read-only -- ``(state, detail)``, or
     ``(None, None)`` when nothing could be asked at all (#1440).
 
-    Exists for exactly one caller: the ``could-not-check`` arm below, when the
-    CACHED receipt says the install record could not be read. #1440's own
-    measured instance was the install record mid-rewrite during the launcher's
-    own version bump -- broken the second the check ran, readable a minute
-    later. Asking again, once, right now, tells that transient timing apart
-    from a real, standing failure without ever gating a doctor run on a
-    network call by default: this only runs when the cache has already
-    reported a gap.
+    **Never calls `plugin_update.update()`.** A first version of this function
+    did, on the reasoning that `plugin_update.py --print-state` -- the command
+    #1440's own issue named as the fresh check to take -- goes through exactly
+    that function. It does, and `update()` is NOT a read: it runs `claude
+    plugin marketplace update` and then `claude plugin update <target>
+    --scope <scope>` as real subprocesses that MUTATE the installed plugin (and
+    its declared dependencies) on disk. This module's own file, `doctor.py`,
+    opens with "a diagnostic must print its findings, not fail to run" --
+    nothing in that contract authorises a write, and a self-review audit on
+    this same diff caught the first version doing exactly that from inside a
+    tool every developer brief in this repository calls before touching
+    anything else. The issue's own suggested command was a hint, not a
+    verified-safe implementation, and this is the case for reading a linked
+    command's own source rather than trusting its name.
+
+    So this re-reads the install record instead --
+    `plugin_update.installed_version()`, one JSON parse, no subprocess, no
+    network call -- which is the actual thing #1440's own measured instance
+    was about: the install record was mid-rewrite the moment the cached
+    check ran, and readable a minute later. A version this reads back right
+    now, non-`None`, is exactly that: the record is no longer broken. It says
+    nothing about whether a newer version has since been published (only a
+    real `update()` call could ask the marketplace that, and this function
+    deliberately never does), so `state` here means only "the record itself
+    is readable again", not "current with the marketplace".
 
     `fresh_check` is injected for testing (and lets a caller skip the real
-    ask entirely); it defaults to `doctor.plugin_update.update`, called with
-    `receipt=None` so the debounce window in `update()`'s own docstring never
-    applies here -- a debounced answer would just hand back the same stale
-    `could-not-check` this function exists to look past. Never calls
-    `write_receipt`: this is a read for THIS report, not a second update run
-    competing with the SessionStart hook's own receipt.
+    ask entirely, including in production if a future caller ever wants a
+    genuinely different fresh source) -- it must return the same `(state,
+    detail)`-shaped dict this function otherwise builds from the pure read.
     """
     if fresh_check is not None:
         result = fresh_check()
-    elif doctor.plugin_update is None or project_dir is None:
+        if not isinstance(result, dict):
+            return None, None
+        return result.get("state"), result.get("detail")
+    if doctor.plugin_update is None or project_dir is None:
         return None, None
-    else:
-        result = doctor.plugin_update.update(root=project_dir, receipt=None)
-    if not isinstance(result, dict):
+    name = doctor.plugin_update.plugin_name()
+    if not name:
         return None, None
-    return result.get("state"), result.get("detail")
+    version = doctor.plugin_update.installed_version(name, project_dir)
+    if version is None:
+        return None, None
+    return (
+        "current",
+        "the install record now reads version {} -- readable again, "
+        "which says nothing about whether it is the newest published version".format(
+            version
+        ),
+    )
 
 
 def _report_plugin(receipt, state, partial, stamp, project_dir=None, fresh_check=None):
