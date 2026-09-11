@@ -1723,6 +1723,31 @@ def _own_supertool_tree(project_dir):
         directory = directory.parent
 
 
+def supertool_invocation(project_dir):
+    """The argv prefix to invoke supertool with, from inside `project_dir`.
+
+    Returns `(argv, detail)`. Outside a supertool checkout this is unchanged --
+    `["supertool"], "not a supertool checkout"` -- so every other managed
+    repo's own dispatch.md blockquote ("on PATH, from any directory") is
+    correct exactly as written, and nothing here special-cases it.
+
+    Inside a supertool checkout (`_own_supertool_tree` finds this tree's own
+    `.supertool.json`/`supertool.py`), the global `supertool` name on PATH
+    resolves to whatever clone the SessionStart hook last linked -- ordinarily
+    supertool's own live checkout at `master` -- and running it from inside a
+    *worktree* of that same repository runs master's core against the
+    worktree's own branch-local presets: silently wrong for a read-class op,
+    and refused outright for a write-class one (claude-supertool#1942, #1409).
+    The correct invocation from inside such a tree is this tree's own core,
+    run with the interpreter directly (`python3 supertool.py`), never the
+    bare `supertool` name -- keeping core and presets from the same commit.
+    """
+    root, core = _own_supertool_tree(project_dir)
+    if core is not None:
+        return [sys.executable, str(core)], "own-tree: {0}".format(core)
+    return ["supertool"], "not a supertool checkout"
+
+
 def plugin_supertool_entries(cache_root=None, record=None):
     """Every unpacked supertool `supertool.py` in the plugin cache, newest-named last.
 

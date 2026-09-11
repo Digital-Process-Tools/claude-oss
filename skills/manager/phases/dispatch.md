@@ -560,6 +560,21 @@ one checks what goes into a lane, the other what comes back out of it.
    cost two agents a re-sent heredoc; naming it *once* then cost two more (#685). Same test file
    holds the refusal and remedy, `test_write_receipt_685.py` the per-call half.
 
+   **The blockquote is wrong, as written, inside a worktree of a managed repo that is supertool's
+   own checkout** (#1409): the bare `supertool` name resolves to whichever clone the SessionStart
+   hook last linked, ordinarily that project's own live checkout at its trunk branch, and running it
+   from a *worktree* of that same repository runs the trunk's core against the worktree's own
+   branch-local presets -- silently wrong for a read, refused outright for a write. Which repo, if
+   any, this applies to is never named here -- see the rule against a fact about one repository
+   living in shared code -- so consult `scripts/doctor.py`'s own `supertool_invocation(project_dir)`
+   against the target repo rather than assuming; it reuses the same `_own_supertool_tree` walk
+   `check_supertool_entry_point` already uses for the `own-tree` diagnostic state, so a repo is never
+   checked two ways. When it answers `own-tree*`, append one line after the verbatim blockquote
+   naming the tree's own core (`python3 supertool.py`, not the bare name) rather than editing the
+   blockquote itself, which stays byte-identical for every other managed repo. `lane_setup.py`'s own
+   board-line read already routes through the same function, so its `COULD NOT RUN -- mixed
+   supertool trees` receipt is fixed independently of whether this note is added to a given brief.
+
 2. **Name the hidden judgment call.** If you cannot state what the agent will have to decide, you
    have not read the issue closely enough to delegate it.
 3. **Invite pushback explicitly, and mean it.** Write diagnoses as hypotheses with the evidence

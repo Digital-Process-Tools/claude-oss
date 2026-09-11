@@ -284,7 +284,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # the moment a twelfth row was added) were corrected to drop the
         # count rather than update it to thirteen and go stale again the
         # next time a row is added. Budget unchanged; comfortably under it.
-        53938,
+        # Re-baselined for #1409: 53938 B became 55222 B -- a new paragraph
+        # after the verbatim supertool blockquote states that the blockquote
+        # is wrong as written inside a worktree of the one managed repo that
+        # is supertool's own checkout, and points at the new
+        # `doctor.supertool_invocation` detection rather than editing the
+        # blockquote itself. Budget unchanged; comfortably under it.
+        55309,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -589,7 +595,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # paragraph pointing at the new phases/inbound.md file, since inbound
         # work outranks the loop's own findings the same way an unmerged PR
         # or a red default branch already does. Budget unchanged.
-        34816,
+        # Re-baselined for #1409: 34816 B became 34905 B -- the short-lane
+        # reason list gained a fifth word, declined-for-cause (#1407).
+        # Budget unchanged; comfortably under it.
+        34905,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

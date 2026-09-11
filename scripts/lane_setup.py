@@ -163,6 +163,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import doctor  # noqa: E402  (path insert above must run first)
 import gh_which  # noqa: E402  (path insert above must run first)
 import lane_setup_brief_schema  # noqa: E402  (path insert above must run first)
 import lane_setup_claim  # noqa: E402
@@ -687,19 +688,33 @@ def _condense_board(raw):
 
 
 def read_board(repo):
-    """The live worktree board, condensed. `could-not-run` is a state, not a crash."""
-    # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
-    # module's docstring for why a `path=` argument does not close the gap.
-    supertool = gh_which.safe_which("supertool")
-    if supertool is None:
-        return {
-            "state": "could-not-run",
-            "lines": [],
-            "detail": "supertool is not on PATH",
-        }
+    """The live worktree board, condensed. `could-not-run` is a state, not a crash.
+
+    #1409: `doctor.supertool_invocation(repo)` is consulted first -- inside a
+    worktree of a supertool checkout, the bare `supertool` name on PATH
+    resolves to whatever clone the SessionStart hook last linked (ordinarily
+    supertool's own live checkout at `master`) and runs master's core against
+    *this* worktree's own branch-local presets, refusing a write-class op
+    outright (claude-supertool#1942). Everywhere else this is unchanged --
+    the bare name, found via `gh_which.safe_which`.
+    """
+    argv_prefix, _detail = doctor.supertool_invocation(repo)
+    if argv_prefix == ["supertool"]:
+        # #1157: `gh_which.safe_which`, not `shutil.which` directly -- see that
+        # module's docstring for why a `path=` argument does not close the gap.
+        supertool = gh_which.safe_which("supertool")
+        if supertool is None:
+            return {
+                "state": "could-not-run",
+                "lines": [],
+                "detail": "supertool is not on PATH",
+            }
+        argv = [supertool, "git-worktrees"]
+    else:
+        argv = argv_prefix + ["git-worktrees"]
     try:
         done = subprocess.run(
-            [supertool, "git-worktrees"],
+            argv,
             cwd=str(repo),
             capture_output=True,
             text=True,

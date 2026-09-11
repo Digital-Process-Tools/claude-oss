@@ -99,6 +99,7 @@ Python 3.9 compatible.
 """
 
 import os
+import re
 
 
 #: rank -> (author, band). The single source for the table above; `rank()`
@@ -140,9 +141,9 @@ ASSOCIATIONS = ("external", "maintainer")
 #: names are ever produced, because they are what the table above is written in.
 BANDS = ("high", "medium", "low")
 
-#: The four reasons a lane may be short (#799, #918). A closed set on purpose: a
-#: free-text reason is unreadable by anything but a person, which is the defect
-#: #773 filed against a handback state carrying only prose.
+#: The five reasons a lane may be short (#799, #918, #1407). A closed set on
+#: purpose: a free-text reason is unreadable by anything but a person, which is
+#: the defect #773 filed against a handback state carrying only prose.
 #:
 #: `did-not-search` is #918's addition and it is the third state this set was
 #: missing. `no-adjacent` asserts the board was measured and found to hold
@@ -153,11 +154,24 @@ BANDS = ("high", "medium", "low")
 #: three lanes it had already picked. That is the conflict check, not the
 #: companion search, and reading `no overlap` from it as `no-adjacent` is a
 #: claim about a board nothing looked at.
+#:
+#: `declined-for-cause` is #1407's addition and it is the fourth state this set
+#: was missing -- a different shape from the other four, and not a weaker
+#: version of any of them. It does not claim the board is empty, unsearched or
+#: unreadable: it claims a real, well-formed adjacent candidate was found and
+#: named, and the loop declined it anyway for a substantive judgment reason (the
+#: case that surfaced the gap: two file-adjacent companions, both speculative
+#: proposals depending on an unreleased, flag-gated feature). `could-not-tell`
+#: was the least-wrong existing value for that tick, and it buried the real
+#: reason in free prose that never travelled with the per-lane `--lane-fill`
+#: record. Like `board-exhausted`'s `candidates` count, this reason is checked
+#: rather than merely typed -- see `check_lane`'s `declined` parameter.
 SHORT_REASONS = (
     "board-exhausted",
     "no-adjacent",
     "did-not-search",
     "could-not-tell",
+    "declined-for-cause",
 )
 
 #: Measured across 237 lanes (#499): three issues cost 16% less per issue than
@@ -404,7 +418,26 @@ def order(issues, declared):
     return sorted(issues, key=key)
 
 
-def check_lane(issues, short_reason, candidates=None, adjacent=None):
+#: A checkable citation for `declined-for-cause` (#1407): at least one `#N`
+#: issue reference, plus enough text past it that a bare `#123` with no reason
+#: attached does not pass. The same bar `oss_state.decline_reason_state` sets
+#: for a declined dispatch (#866) -- checkable by shape, not by trusting the
+#: prose. This cannot tell a true citation from a fabricated one, only that
+#: something citation-shaped is present; nothing here verifies the named
+#: issue really was adjacent, or that the reason given is the real one.
+_DECLINED_CITATION_RE = re.compile(r"#\d+")
+
+
+def _looks_like_a_declined_citation(text):
+    if not text or not isinstance(text, str):
+        return False
+    text = text.strip()
+    if not _DECLINED_CITATION_RE.search(text):
+        return False
+    return len(text) >= 15
+
+
+def check_lane(issues, short_reason, candidates=None, adjacent=None, declined=None):
     """Is this a lane that may be dispatched, and has a short one said why?
 
     Three issues is the normal case, not the ceiling: the fixed overhead of a
@@ -446,6 +479,16 @@ def check_lane(issues, short_reason, candidates=None, adjacent=None):
     job and `adjacent=None` means "no board was named", never "the board was
     empty". A caller that never ran the search has no count to offer and should
     declare `did-not-search` rather than borrow a word that asserts it did.
+
+    `declined` (#1407) is the citation `declined-for-cause` requires -- free
+    text naming which issue(s) were found adjacent and declined, and why, not
+    a count. It must look like a real citation (`_looks_like_a_declined_
+    citation`): at least one `#N` issue reference plus enough surrounding text
+    that a bare issue number with no reason attached is refused. A
+    `declined-for-cause` claim with no citation, or one that does not look
+    like one, is refused the same way an over-claimed `board-exhausted` is --
+    `declined=None` (the default) refuses it too, since the whole point is
+    that this reason is checked rather than merely typed.
     """
     size = len(issues)
     if size == 0:
@@ -504,6 +547,20 @@ def check_lane(issues, short_reason, candidates=None, adjacent=None):
                 "the board -- the word means zero, so one refutes it, and one "
                 "adjacent candidate is one issue this lane could have carried "
                 "(#918)".format(adjacent)
+            ),
+        }
+    if short_reason == "declined-for-cause" and not _looks_like_a_declined_citation(
+        declined
+    ):
+        return {
+            "state": "declined-without-citation",
+            "size": size,
+            "short_reason": None,
+            "why": (
+                "declined-for-cause needs a citation of what was declined and "
+                "why -- name the declined issue(s) (e.g. '#123, #124') and the "
+                "substantive reason, the same way board-exhausted needs its "
+                "candidate count checked rather than merely typed (#1407)"
             ),
         }
     return {"state": "ok", "size": size, "short_reason": short_reason, "why": None}
