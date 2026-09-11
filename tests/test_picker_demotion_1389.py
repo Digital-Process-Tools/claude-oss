@@ -154,3 +154,97 @@ def test_run_md_agent_spawns_resolve_against_a_fake_plugin_root(tmp_path):
             "once ${{CLAUDE_PLUGIN_ROOT}} is substituted with a fake "
             "plugin root -- got {!r}".format(path_template, resolved)
         )
+
+
+def test_run_md_every_read_and_follow_is_anchored_nearby_1421():
+    """#1421: the exact-phrase guard above (`test_run_md_agent_spawns_
+    resolve_against_a_fake_plugin_root`) only matches `Read and follow
+    <path> from here.` where the sentence itself names a literal path --
+    it is blind by construction to a paraphrase that instead points back
+    at a document named earlier in the same paragraph with a pronoun.
+    That was exactly commands/run.md's own `## dispatch` section before
+    this fix: "This is `commands/tick.md`'s own procedure ... Read and
+    follow it from here.", naming the target as a bare, cwd-relative path
+    one sentence before the pronoun-phrased instruction that reads it.
+
+    Rather than pin this test to the literal word "it" -- which the fix
+    below removes entirely, by naming the target directly instead of by
+    pronoun -- this widens the net to every "Read and follow" occurrence
+    in the file, phrased however, and requires a ${CLAUDE_PLUGIN_ROOT}
+    anchor somewhere in the same paragraph. That is a real positive
+    control: run against the pre-fix text (a pronoun paragraph naming
+    only a bare `commands/tick.md`), this fails exactly the same way the
+    narrower, now-removed pronoun-literal assertion did.
+    """
+    text = (COMMANDS_DIR / "run.md").read_text(encoding="utf-8")
+
+    spots = [m.start() for m in re.finditer(r"Read and\s+follow\b", text)]
+    assert len(spots) >= 7, (
+        "expected at least 7 'Read and follow' instructions in "
+        "commands/run.md (the 6 scheduler-step spawns plus the dispatch "
+        "step's own read of commands/tick.md) -- found {}".format(len(spots))
+    )
+
+    for idx in spots:
+        paragraph_start = text.rfind("\n\n", 0, idx)
+        paragraph_end = text.find("\n\n", idx)
+        if paragraph_end == -1:
+            paragraph_end = len(text)
+        paragraph = text[paragraph_start:paragraph_end]
+        assert "${CLAUDE_PLUGIN_ROOT}" in paragraph, (
+            "a 'Read and follow' instruction in commands/run.md sits in a "
+            "paragraph with no ${{CLAUDE_PLUGIN_ROOT}} anchor anywhere in "
+            "it, however the instruction itself is phrased (literal path "
+            "or pronoun) -- it resolves only relative to the session's "
+            "own cwd. paragraph: {!r}".format(paragraph)
+        )
+
+
+def test_tick_md_self_read_instruction_is_anchored_1421():
+    """#1421's second site: commands/tick.md:11 tells the reader to fetch
+    the rest of itself with `supertool 'read:commands/tick.md:OFFSET:LIMIT'`
+    -- harmless when tick.md is harness-injected directly as a slash
+    command, but live when tick.md is instead reached from commands/run.md's
+    dispatch step, where the session's cwd is the target repo rather than
+    this plugin's own checkout and a bare `commands/tick.md` read resolves
+    nowhere. It must be anchored to ${CLAUDE_PLUGIN_ROOT} the same way the
+    six commands/run.md spawn prompts are.
+
+    It must also be *double*-quoted, not single-quoted: this string is a
+    literal, executable `supertool <quote>read:...<quote>` invocation (unlike
+    commands/run.md's six spawn prompts, which are `Agent(..., prompt: "...")`
+    tool-call arguments a session builds itself, never shell text). Bash
+    performs no parameter expansion inside single quotes, so a self-review
+    round on this exact lane found the first draft's fix -- `supertool
+    'read:${CLAUDE_PLUGIN_ROOT}/commands/tick.md:OFFSET:LIMIT'` -- anchored
+    in name only: run literally, ${CLAUDE_PLUGIN_ROOT} reaches supertool as
+    that seven-character literal string, not the resolved plugin path. The
+    established convention for a literal shell invocation elsewhere in this
+    repo (`commands/run.md:34`, `commands/doctor.md:9`, both
+    `bash "${CLAUDE_PLUGIN_ROOT}/scripts/..."`) always double-quotes the
+    variable for exactly this reason.
+    """
+    text = (COMMANDS_DIR / "tick.md").read_text(encoding="utf-8")
+
+    read_calls = re.findall(r"(['\"])read:(\S+?):OFFSET:LIMIT\1", text)
+    assert read_calls, (
+        "expected at least one 'read:<path>:OFFSET:LIMIT' self-read "
+        "instruction in commands/tick.md -- if this fires because the "
+        "prose changed, update this test to match the new phrasing"
+    )
+    for quote_char, path_template in read_calls:
+        assert "${CLAUDE_PLUGIN_ROOT}" in path_template, (
+            "commands/tick.md's own self-read instruction names {!r}, "
+            "which is not anchored to ${{CLAUDE_PLUGIN_ROOT}} -- it "
+            "resolves only relative to the session's own cwd, which is "
+            "not this plugin's checkout when tick.md is reached from "
+            "commands/run.md's dispatch step".format(path_template)
+        )
+        assert quote_char == '"', (
+            "commands/tick.md's self-read instruction anchors "
+            "${{CLAUDE_PLUGIN_ROOT}} inside single quotes ('{}') rather "
+            "than double quotes -- this is a literal, executable shell "
+            "invocation, and bash performs no parameter expansion inside "
+            "single quotes, so the anchor is inert when this line is "
+            "actually run outside this repository's own checkout".format(path_template)
+        )
