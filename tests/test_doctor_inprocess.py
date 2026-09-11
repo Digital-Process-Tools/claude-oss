@@ -714,6 +714,54 @@ def test_main_returns_zero_and_ends_on_a_verdict(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out.rstrip().splitlines()[-1].startswith("VERDICT:")
 
 
+def test_findings_mode_suppresses_ok_but_keeps_warn_fail_notice_verdict_1455(
+    tmp_path, monkeypatch, capsys
+):
+    """#1455: a caller told to "relay every WARN/FAIL" from doctor.sh's report
+    reached for `head`/`grep` because the ordinary report is dozens of OK lines
+    plus the findings, and one of those lines got cut. `--findings` must print
+    only WARN, FAIL, NOTICE and the final VERDICT line -- nothing a reader has
+    to filter by hand.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
+    assert doctor.main(["--findings"]) == 0
+    out = capsys.readouterr().out
+    lines = [line for line in out.splitlines() if line]
+    assert lines, "findings mode printed nothing at all"
+    for line in lines:
+        assert not line.startswith("OK "), "an OK line survived --findings: {}".format(
+            line
+        )
+    assert lines[-1].startswith("VERDICT:")
+    # Positive control, same run: a real FAIL/WARN finding on this unconfigured
+    # tmp_path must still be visible -- "nothing printed" must not pass the
+    # must-not-fire assertion above by accident.
+    assert any(
+        line.startswith("WARN ") or line.startswith("FAIL ") for line in lines
+    ), (out, lines)
+
+
+def test_findings_mode_still_counts_ok_lines_toward_nothing_and_findings_toward_verdict_1455(
+    tmp_path, monkeypatch, capsys
+):
+    """The suppression is a PRINT-time filter, not a count-time one: `--findings`
+    and the ordinary run must agree on the verdict for the same tree, or the
+    mode would let a maintainer read a different (wrong) health claim depending
+    on which invocation they happened to run.
+    """
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
+    assert doctor.main() == 0
+    ordinary_verdict = capsys.readouterr().out.rstrip().splitlines()[-1]
+    doctor.FINDINGS.clear()
+    assert doctor.main(["--findings"]) == 0
+    findings_verdict = capsys.readouterr().out.rstrip().splitlines()[-1]
+    assert ordinary_verdict == findings_verdict
+
+
 def _fully_configured(root):
     """Everything the doctor checks, present and current.
 

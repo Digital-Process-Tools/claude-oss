@@ -198,6 +198,13 @@ def _stub_claude(
         'printf "%s" "${OSS_WORKSPACE_CHANNEL_ARM_TARGET-}" > "'
         + str(bindir / "arm_target_at_exec.txt")
         + '"\n'
+        # #1432: one flat capture of every OSS_WORKSPACE_* name still exported at
+        # exec time, rather than one file per name -- so a test can assert an
+        # env var was never relayed at all without this stub needing to grow a
+        # dedicated capture for it first.
+        'env | grep "^OSS_WORKSPACE_" > "'
+        + str(bindir / "env_at_exec.txt")
+        + '" || true\n'
         'for a in "$@"; do printf "%s\\n" "$a" >> "' + str(argv_log) + '"; done\n'
         "exit 0\n",
     )

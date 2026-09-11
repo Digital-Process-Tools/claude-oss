@@ -1616,18 +1616,15 @@ if [ "$plugin_channel_state" = "single" ]; then
         fi
     fi
     channel_ready=1
-    # Relayed to `scripts/doctor.py`'s own registration check (#1307
-    # self-review finding), now run from inside the session's own /oss:run,
-    # not from this file (#1392 moved the `doctor.sh` invocation there): that
-    # check asks
-    # `claude mcp get oss-channel` on its own, independent of this branch,
-    # and oss-channel really is not registered here -- correctly. With no
-    # relay, it would answer `not-registered` and print its ordinary "run
-    # bin/oss-workspace once, or claude mcp add ..." remedy, telling a
-    # maintainer to manually recreate the exact collision this branch exists
-    # to avoid. Naming the real target here lets that check render `ok`
-    # instead.
-    export OSS_WORKSPACE_CHANNEL_ARM_TARGET="$plugin_channel_target"
+    # #1432: this used to relay to `scripts/doctor.py`'s own registration
+    # check via `OSS_WORKSPACE_CHANNEL_ARM_TARGET`, back when that check ran
+    # SYNCHRONOUSLY from this file, in this same process. #1392 moved that
+    # `doctor.sh` invocation into the session's own `/oss:run` step 1 instead
+    # -- a separate process, started well after this script (and the relay it
+    # would have exported) has already exited, so nothing has ever been able
+    # to read it since. `$plugin_channel_target` still decides what THIS
+    # launch arms against, below (`channel_arm_server`); only the dead export
+    # is gone.
     # `$plugin_channel_label` is the #810/#1241 census's OWN reporting form
     # of the same server (the installed-plugin registry's un-stripped
     # `<name>@<marketplace>` key) -- named here too, alongside the resolved
@@ -1659,14 +1656,17 @@ else
 channel_registered=0
 registered_command=""
 registered_args=""
-# `mcp_get_status` is captured on the `if` itself (`set -eu`-safe: a command used
-# as an `if` condition is exempt from errexit either way) and exported below
-# alongside the raw output, so `scripts/doctor.py`'s own registration check --
-# `check_mcp_channel_registration`, run from inside the session's own /oss:run
-# rather than from this file (#1392 moved the `doctor.sh` invocation there) --
-# can read this answer instead of shelling out to `claude mcp get` a second
-# time in the same session-open (#629: `claude` is not a cheap binary to
-# start, and this question was being asked twice back to back).
+# #1432: `mcp_get_status`/`channel_entry` used to be exported here too
+# (`OSS_WORKSPACE_MCP_CHECKED`/`_STATUS`/`_OUTPUT`), so `scripts/doctor.py`'s
+# own registration check could read this answer instead of shelling out to
+# `claude mcp get` a second time in the same session-open (#629: `claude` is
+# not cheap to start). That check now runs from inside the session's own
+# `/oss:run` step 1 (#1392 moved the `doctor.sh` invocation there) -- a
+# separate process, started after this one has already exited, so the export
+# has had no reachable reader since. `channel_registered`/`registered_command`/
+# `registered_args` below are this script's OWN plain shell variables, read
+# directly a few lines down for this launch's own arming decision; only the
+# env relay to a process that can no longer see it is gone.
 mcp_get_status=1
 if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
     channel_registered=1
@@ -1681,9 +1681,6 @@ if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
 else
     mcp_get_status=$?
 fi
-export OSS_WORKSPACE_MCP_CHECKED=1
-export OSS_WORKSPACE_MCP_STATUS="$mcp_get_status"
-export OSS_WORKSPACE_MCP_OUTPUT="$channel_entry"
 
 channel_ready=0
 if [ "$find_consumer_status" -ne 0 ]; then
@@ -1801,22 +1798,19 @@ if [ "$channel_ready" -eq 1 ]; then
              "could not be checked. Opening WITHOUT the channel flag." >&2
     else
         # #1361: ask `claude mcp list` ONCE, here, and relay the raw answer to
-        # every reader that needs it -- the census below (names) and doctor's
-        # own connection check (the connection status on the same rows). Each
-        # asking for itself made a launch pay for three starts of a binary
-        # measured at ~1.3s, and `test_the_launcher_relays_its_own_census_to_
-        # doctor_sh_rather_than_asking_twice` counts them. Same relay shape as
-        # OSS_WORKSPACE_MCP_CHECKED (#629) and OSS_WORKSPACE_CENSUS_CHECKED
-        # (#810); unset before `exec` alongside those, for the reason stated
-        # there. A failed or unavailable ask exports nothing, so every reader
-        # falls through to its own ask and its own could-not-ask state rather
-        # than reading an empty relay as an empty listing.
+        # the census heredoc a few lines below, in THIS SAME process -- not to
+        # doctor's own connection check any more (#1432): that relied on
+        # `OSS_WORKSPACE_MCP_LIST_CHECKED` reaching a later, separate
+        # `doctor.sh` process this file used to run synchronously, which #1392
+        # moved into the session's own `/oss:run` step 1 instead. That sentinel
+        # is dropped -- nothing has read it since -- but `OSS_WORKSPACE_MCP_
+        # LIST_OUTPUT` itself stays: it is what lets the embedded python census
+        # below reuse this one `claude mcp list` call instead of asking again,
+        # which is the actual saving #1361 measured (~1.3s per extra start). A
+        # failed or unavailable ask exports nothing, so the census falls
+        # through to its own ask rather than reading an empty relay as an
+        # empty listing.
         if mcp_list_output=$(claude mcp list 2>&1); then
-            # The sentinel is what makes the value trustworthy downstream
-            # (#1372) -- same shape as OSS_WORKSPACE_MCP_CHECKED (#629) and
-            # OSS_WORKSPACE_CENSUS_CHECKED (#810). Exported together, and only
-            # when the ask actually succeeded.
-            export OSS_WORKSPACE_MCP_LIST_CHECKED=1
             export OSS_WORKSPACE_MCP_LIST_OUTPUT="$mcp_list_output"
         fi
         census_report=$("$python_bin" - "$plugin_root/scripts" "$repo_root" <<'CHANNEL_CENSUS'
@@ -1883,18 +1877,16 @@ CHANNEL_CENSUS
                  "census check crashed, exit status $census_parse_status)." \
                  "Opening WITHOUT the channel flag." >&2
         else
-            # Relayed to doctor.sh's own check, run from inside the session's
-            # own /oss:run rather than from this file (#1392 moved the
-            # `doctor.sh` invocation there; #810 review finding, the identical
-            # shape #629 already fixed for the registration check above):
-            # without this, a launcher-opened session pays for a real
-            # `claude mcp list` twice in one session-open sequence, seconds
-            # apart, for an answer that cannot
-            # have changed. `census_report` is exactly the shape
-            # `channel_consumer_census_state`'s own relay parsing expects,
-            # because both sides are the same function.
-            export OSS_WORKSPACE_CENSUS_CHECKED=1
-            export OSS_WORKSPACE_CENSUS_REPORT="$census_report"
+            # #1432: `census_report` used to be relayed here too
+            # (`OSS_WORKSPACE_CENSUS_CHECKED`/`_REPORT`) to doctor.sh's own
+            # #810 census check, run from inside the session's own /oss:run
+            # rather than from this file (#1392 moved that invocation there) --
+            # a separate process that starts after this one has already
+            # exited, so the relay has had nothing to reach since. This
+            # script's own `census_state`/`census_rest` below, parsed straight
+            # out of `$census_report`, are what THIS launch's own arm/disarm
+            # decision actually reads; only the env export to an unreachable
+            # later reader is gone.
             census_state=$(printf '%s\n' "$census_report" | head -n1)
             census_rest=$(printf '%s\n' "$census_report" | tail -n +2)
             case $census_state in
@@ -2075,32 +2067,22 @@ fi
 # dispatch cadence. A launcher-side copy of either check would be exactly
 # the second copy of a fact this project's governing rule forbids.
 
-# #629: exported only to relay one already-computed answer -- #1392 removed
-# this file's own synchronous `doctor.sh` call, which used to read it a few
-# lines above; never meant to reach the session itself either way. Left
-# exported, a `claude mcp get` answer read at session-open would go on
-# answering an in-session `/oss:doctor` run for the rest of the session, which
-# is precisely the reading-taken-once-and-treated-as-fresh-forever defect this
-# repo is named after (see `statusline.py`'s cache history). Unset before the
-# session starts, in every arm above -- ran, skipped, or could not be started.
-unset OSS_WORKSPACE_MCP_CHECKED OSS_WORKSPACE_MCP_STATUS OSS_WORKSPACE_MCP_OUTPUT
-# Same reason, same terms, for the #810 census relay (#629's shape reapplied).
-unset OSS_WORKSPACE_CENSUS_CHECKED OSS_WORKSPACE_CENSUS_REPORT
-# #1361's own relay, unset here for the same reason the two above are: a
-# session that inherited it would read a session-open reading as its own,
-# arbitrarily later, which is the stale-reading trap this repo has paid for
-# three times over.
-unset OSS_WORKSPACE_MCP_LIST_CHECKED OSS_WORKSPACE_MCP_LIST_OUTPUT
-# Same reason, same terms, for #1307's own single-plugin-consumer relay
-# (#1343): left exported, `check_mcp_channel_registration`'s in-session
-# `/oss:doctor` would go on reading a launch-time arm decision as though it
-# were still current for the rest of the session -- unsetting it here, right
-# before `exec claude`, is what stops that: #1392 removed this file's own
-# synchronous `doctor.sh` call, the relay's one-time consumer, so the value
-# now has no reader left inside this process either way, but staleness is
-# the reason it is not simply left exported for the session's own later
-# `/oss:doctor` runs to find.
-unset OSS_WORKSPACE_CHANNEL_ARM_TARGET
+# #1432: `OSS_WORKSPACE_MCP_CHECKED`/`_STATUS`/`_OUTPUT` (#629),
+# `OSS_WORKSPACE_CENSUS_CHECKED`/`_REPORT` (#810) and
+# `OSS_WORKSPACE_CHANNEL_ARM_TARGET` (#1307) are gone from this file entirely
+# now, not merely unset here -- their one intended reader was this file's own
+# synchronous `doctor.sh` call, which #1392 removed; nothing has been able to
+# reach any of the three since, so there was nothing left to protect from
+# staleness by unsetting again. `OSS_WORKSPACE_MCP_LIST_OUTPUT` is the one
+# survivor in this family: it still has a real, same-process consumer (the
+# #1361 census heredoc above), so it still needs unsetting here for the
+# ordinary reason -- left exported, a session that inherited it would read a
+# launch-time `claude mcp list` answer as though it were still current for the
+# rest of the session, the stale-reading trap this repo is named after (see
+# `statusline.py`'s cache history). Its own sentinel,
+# `OSS_WORKSPACE_MCP_LIST_CHECKED`, is dropped along with the other three: it
+# was read only by the same now-unreachable session-side `doctor.sh` check.
+unset OSS_WORKSPACE_MCP_LIST_OUTPUT
 
 # #1307: which name to arm the channel flag against. `oss-channel` unless the
 # plugin-population precheck above found exactly one in-scope plugin-provided

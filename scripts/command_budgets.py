@@ -153,7 +153,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # on its own, its pull request is the review -- so the spawn never has
     # to infer that from the absence of an instruction to stop and ask.
     # Ceiling unchanged; still comfortably under it.
-    "commands/run.md": (8400, 8900),
+    "commands/run.md": (8717, 8900),
 }
 
 
