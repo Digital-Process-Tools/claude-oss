@@ -90,6 +90,33 @@ def test_an_unrelated_file_matching_the_naming_convention_is_reported_when_ancho
     )
 
 
+def test_a_different_directory_with_the_same_basename_is_not_falsely_excluded(
+    tmp_path,
+):
+    """Self-review finding (#1430, both spawned reviewers found this
+    independently): the first anchoring attempt matched on a shared
+    BASENAME alone whenever `own_snapshot_path` was a bare filename with no
+    directory component (the ordinary case -- see #1330's own convention
+    of writing the before-snapshot inside the worktree it snapshots). That
+    silently re-admits the exact ambiguity the anchoring fix exists to
+    remove: a real, unrelated file at a DIFFERENT path that happens to
+    share the caller's own snapshot basename must still be reported.
+    """
+    repo = _real_git_repo(tmp_path)
+    before = tree_snapshot.snapshot(str(repo))
+    (repo / "important").mkdir()
+    (repo / "important" / "1430-before-snapshot.json").write_text("{}")
+    after = tree_snapshot.snapshot(str(repo))
+
+    verdict = tree_snapshot.compare(
+        before, after, own_snapshot_path="1430-before-snapshot.json"
+    )
+    assert verdict["state"] == "mutated", verdict
+    assert any(
+        "important/1430-before-snapshot.json" in line for line in verdict["added"]
+    ), verdict
+
+
 def test_the_actual_snapshot_file_is_still_excluded_when_anchored(tmp_path):
     """Must-not-fire, same fixture shape: the snapshot the caller actually
     named must still be excluded when anchored, exactly as it was under the

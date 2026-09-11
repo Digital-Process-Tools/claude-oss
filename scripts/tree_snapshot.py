@@ -275,18 +275,45 @@ def _normalize_snapshot_path(path):
     return normalized
 
 
-def _paths_name_the_same_file(status_path, own_snapshot_path):
-    """True when a git-status path and the caller's own ``--before`` path
-    plausibly name the same file, tolerant of one being relative to the
-    repo root and the other to some other cwd (an absolute path, or a
-    path relative to wherever the caller happened to invoke this script
-    from) -- an exact match, or one ending in ``/`` + the other."""
-    a = _normalize_snapshot_path(status_path)
-    b = _normalize_snapshot_path(own_snapshot_path)
-    return a == b or a.endswith("/" + b) or b.endswith("/" + a)
+def _root_relative_path(path_str, root):
+    """String-only: strip `root` as a literal prefix off `path_str`, when
+    `path_str` is absolute and actually sits under `root`, returning the
+    remainder in root-relative, forward-slash form -- the same convention
+    a git-status line already uses. Never touches the filesystem (no
+    existence check, no `Path.resolve()`, no cwd assumption): `root` and
+    `path_str` are simply strings this module already trusts (`root` is
+    `snapshot()`'s own resolution; `path_str` is what the caller named).
+
+    Returns ``None`` when `root` is falsy, or `path_str` is not absolute,
+    or does not sit under `root` -- "cannot resolve", never "does not
+    match": the caller falls back to comparing the raw, unresolved form.
+    """
+    if not root:
+        return None
+    norm_path = _normalize_snapshot_path(path_str)
+    norm_root = _normalize_snapshot_path(str(root)).rstrip("/")
+    prefix = norm_root + "/"
+    if not norm_path.startswith(prefix):
+        return None
+    return norm_path[len(prefix) :]
 
 
-def _is_own_snapshot_artifact(status_line, own_snapshot_path=None):
+def _resolve_own_snapshot_path(own_snapshot_path, root):
+    """The form `_is_own_snapshot_artifact` compares a status line against:
+    `own_snapshot_path` reduced to root-relative form when it resolves
+    that way (an absolute `--before` argument, the common CLI shape), or
+    left as its own normalized self otherwise (a caller-relative path,
+    already root-relative by convention, or one this module cannot place).
+    """
+    resolved = _root_relative_path(own_snapshot_path, root)
+    return (
+        resolved
+        if resolved is not None
+        else _normalize_snapshot_path(own_snapshot_path)
+    )
+
+
+def _is_own_snapshot_artifact(status_line, own_snapshot_relpath=None):
     """True when a porcelain v2 untracked (``? <path>``) line names this
     module's own before-snapshot artifact.
 
@@ -296,13 +323,23 @@ def _is_own_snapshot_artifact(status_line, own_snapshot_path=None):
     excluded here regardless of its path.
 
     #1430: when the caller told us which file it actually used as the
-    before-snapshot (``own_snapshot_path``, threaded through from
-    `compare`'s own optional argument -- the ordinary CLI shape is
-    ``compare --before <path>``), the exclusion is ANCHORED to that exact
-    file rather than to the generic naming convention -- a real, unrelated
-    file that happens to also match `SNAPSHOT_ARTIFACT_RE` (e.g. a lane's
-    own fixture named ``src/anything-before-snapshot.json``) must still be
-    reported as a mutation, not silently swallowed by the pattern.
+    before-snapshot (``own_snapshot_relpath``, computed by `compare` via
+    `_resolve_own_snapshot_path` -- the ordinary CLI shape is ``compare
+    --before <path>``), the exclusion is ANCHORED to that exact file via
+    EXACT equality on the root-relative form, rather than to the generic
+    naming convention -- a real, unrelated file that happens to also match
+    `SNAPSHOT_ARTIFACT_RE` (e.g. a lane's own fixture named
+    ``src/anything-before-snapshot.json``) must still be reported as a
+    mutation, not silently swallowed by the pattern.
+
+    Self-review finding (#1430, both spawned reviewers independently): an
+    earlier version of this anchoring matched on a shared basename alone
+    (`a.endswith("/" + b)`), which silently re-admitted the exact
+    ambiguity the fix exists to remove whenever `own_snapshot_relpath` was
+    a bare filename with no directory component -- the ordinary case, per
+    #1330's own convention of writing the before-snapshot inside the
+    worktree it snapshots. Exact equality on a properly root-resolved path
+    removes that heuristic rather than narrowing it.
 
     With no such path known (`compare` invoked directly by a caller that
     built its own before/after dicts, as every test in
@@ -313,8 +350,8 @@ def _is_own_snapshot_artifact(status_line, own_snapshot_path=None):
     if not status_line.startswith("? "):
         return False
     path = status_line[2:]
-    if own_snapshot_path:
-        return _paths_name_the_same_file(path, own_snapshot_path)
+    if own_snapshot_relpath is not None:
+        return _normalize_snapshot_path(path) == own_snapshot_relpath
     return bool(SNAPSHOT_ARTIFACT_RE.search(path))
 
 
@@ -367,15 +404,22 @@ def compare(before, after, own_snapshot_path=None):
     after_lines = {
         line for line in (after.get("status") or "").splitlines() if line.strip()
     }
+    own_snapshot_relpath = None
+    if own_snapshot_path:
+        # Trust `before`'s own recorded root only when it says it actually
+        # resolved -- same caveat `main()` already applies to `root_for_after`
+        # a few lines below in the CLI path, kept consistent here.
+        root = before.get("root") if before.get("root_resolved") is True else None
+        own_snapshot_relpath = _resolve_own_snapshot_path(own_snapshot_path, root)
     added = sorted(
         line
         for line in (after_lines - before_lines)
-        if not _is_own_snapshot_artifact(line, own_snapshot_path)
+        if not _is_own_snapshot_artifact(line, own_snapshot_relpath)
     )
     removed = sorted(
         line
         for line in (before_lines - after_lines)
-        if not _is_own_snapshot_artifact(line, own_snapshot_path)
+        if not _is_own_snapshot_artifact(line, own_snapshot_relpath)
     )
     head_moved = before.get("head") != after.get("head")
 
