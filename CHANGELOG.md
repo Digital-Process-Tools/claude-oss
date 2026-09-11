@@ -7,6 +7,320 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-11
+
+### Added
+
+- `scripts/triage_trigger.py` computes whether a post-release triage sweep is due instead of leaving
+  the rule in `skills/manager/phases/accounting.md`'s Cadence section unread by anything that could
+  act on it (#1386): `due` / `not-due` / `could-not-tell`. A release has landed and either no sweep
+  was ever recorded, or the most recent one predates the most recent tag -- that is `due`, computed
+  by comparing the tag's own commit date against `scripts/oss_state.py --last-triage`'s existing
+  three-state answer, never a tick count a sub-manager cannot keep across its own spawns. An
+  unreadable tag date or state file is `could-not-tell`, never folded into `not-due` -- an absence
+  this call could not observe is not the same fact as one it looked for and did not find. The
+  scheduler reads it at the `RELEASE: released` handback in `commands/tick.md` and dispatches
+  `oss:triager` when it fires; the repository opts in with `release.triggers.triage_after_release`
+  in `.oss.json`, the same "absent means not wanted" rule `curate_route_threshold` already uses.
+
+- Added (#1389): `/oss:run`, the new primary entry point. It calls the new `scripts/next_action.py`
+  to answer one question -- what does this repo need now -- from state and config: probe and write
+  `.oss.json` on a fresh clone, release when the repo's own release trigger has fired, curate when
+  `trap.d/` is over its configured threshold, triage when either the post-release triage trigger
+  (#1386's `scripts/triage_trigger.py`) or the label-coverage route is due, and otherwise fall
+  through to the ordinary dispatch cadence (`commands/tick.md`'s own procedure, unchanged). An
+  argument (`/oss:run triage`, and so on) forces one step immediately; every forced step is named as
+  a defect report, since a trigger that has to be typed by hand is a trigger that is missing.
+  `commands/tick.md`, `setup.md`, `triage.md`, `curate.md`, `release.md`, `scaffold.md`,
+  `install-audit.md` and `changelog.md` are unchanged and stay reachable as their own commands too --
+  removing them from the picker entirely is a separate, larger migration (roughly forty test files
+  and several scripts name `commands/tick.md` by path) left for its own change.
+
+- Added (#1394): the loop now has an owner for work that arrives from outside itself. A new
+  `scripts/inbound_triage.py` classifies an issue not filed by the loop (inbound, or the loop's own
+  filing), an external contributor's pull request (`green-and-mergeable`, `needs-answer`,
+  `not-inbound`, or `could-not-tell` -- the first name reports a measurement, deliberately not an
+  instruction, since the act it could be misread as authorising is never-auto-merge without
+  exception), and a comment new since the last tick that still needs an
+  answer -- all from data a tick already holds, never a second forge call. `CLAUDE.md`'s own
+  refusal doctrine ("closed with the reason stated") now has a closed set of six reasons behind it
+  (`duplicate`, `out-of-scope`, `not-reproducible`, `needs-info`, `wontfix`, `superseded`) instead
+  of no set at all. A new phase file, `skills/manager/phases/inbound.md`, is read at step 3 of a
+  tick -- before dispatch, in the same slot as any other unfinished act -- and `skills/manager/
+  phases/merge.md`'s one-line "never auto-merge external-contributor PRs" now points at it instead
+  of dead-ending. This step classifies and surfaces only; performing the close, the merge or the
+  reply is `#1395`'s own queue. A statusline count for what has arrived and not been answered was
+  considered and left out of this change: it needs `refresh()` to fetch and cache new fields, a
+  real added cost rather than a free branch on data already in hand, and is better measured in its
+  own lane.
+
+- Added (#1406): the statusline now shows how much of what arrived from outside is still waiting,
+  beside the existing `trap.d/` backlog -- `inb 2is 1pr`, outside issues still open (unruled) and
+  outside pull requests still open (unreviewed). Built as one function, `statusline.
+  inbound_reading`, with two consumers: `refresh()` caches it on the board's own clock, since the
+  statusline must never block a prompt on a fresh forge round trip, and `scripts/next_action.py`'s
+  new `_fresh_inbound_reading` (#1405) calls the identical function directly for a reading the loop
+  is about to act on -- the same computation, never a second opinion about it. Each count renders
+  `?`, never `0`, for a read that could not be taken -- the same discipline `_trap_field` and the
+  existing `eis` count already apply, so a zero from a check that never looked and a zero from one
+  that looked and found nothing stay visibly different. `unanswered_comments` is deliberately not a
+  third number on this line: a real count needs a per-thread walk over every open issue and pull
+  request, a materially larger cost than the two reads this change makes, and `inbound_reading`
+  always reports it as `None` rather than a guessed zero -- left for a follow-up rather than built
+  here.
+
+- Added (#1410): the cohort freeze at a release tag is now a script the release itself runs,
+  `scripts/cohort_freeze_record.py`, not a maintainer's own hand step. It composes the label write
+  #917's `cohort_freeze.py` already made reproducible (derived from the tag object's own timestamp,
+  never `now`) with the two-route count confirmation `scripts/oss_state.py`'s `cohort_freeze` already
+  builds and a `gh label edit` refreshing the label's own description with the tag and date --
+  `cohort-27`-style: "Open at the v0.30.0 tag, 2026-09-09. Frozen: nothing joins a cohort." Three
+  states -- `frozen` (labelled, the two routes agree, the state file and the description both carry
+  it), `partial` (some of that happened and something after it did not, e.g. a run that labels 8 of
+  14 issues and then fails), `could-not-freeze` (nothing was written at all) -- and idempotent: a
+  re-run of a completed freeze reads every route again but changes nothing on disk. `v0.31.0` froze
+  cohort-28 at 14 by hand and it was 15 minutes later when #383 was reopened -- every step was
+  correct when taken, the count was simply read at one moment and trusted at another, the drift #917's
+  own docstring already named for label membership one layer up. `CLAUDE.md`'s own subject-is-this-file
+  exception applies here: the "by hand" reasoning stated in `skills/manager/phases/accounting.md` and
+  `agents/triager.md`'s own cohort prohibition still holds -- a cohort is a decision on record, never a
+  label anyone may apply -- but the conclusion that it must be applied by hand does not, so both files
+  are corrected rather than left contradicting the code. `agents/triager.md` still must never write a
+  `cohort-*` label; that half of the rule is unchanged.
+
+### Changed
+
+- Changed (#1389): the picker demotes six of the eight commands `/oss:run` absorbs --
+  `setup.md`, `scaffold.md`, `triage.md`, `curate.md`, `changelog.md` and `install-audit.md` moved
+  from `commands/*.md` to `commands/run/*.md`. The plugin harness discovers slash commands from
+  top-level `commands/*.md` only, never recursively, and there is no frontmatter equivalent of a
+  skill's `user-invocable: false` for a command file -- so moving the file one directory down is
+  the only mechanism that removes it from the picker while keeping it reachable, by the existing
+  `/oss:run <step>` forcing override or by reading the file directly. `commands/tick.md` and
+  `commands/release.md` stay top-level, deliberately: each is named by dozens of test files and
+  several scripts by literal path, coupling deep enough that migrating either is its own,
+  separately-reviewable change, and `/oss:tick` is the command a maintainer's fingers already know.
+  The picker is now four commands (`run`, `doctor`, `tick`, `release`) rather than nine; reaching
+  the full two-verb target is left for a follow-up.
+
+- Changed (#1391): `skills/manager/SKILL.md` now declares `user-invocable: false` (hyphenated --
+  the first draft of this fix spelled it `user_invocable`, an unrecognised key the harness silently
+  ignores, which never changed the picker at all; the coordinator caught it before landing). The
+  manager skill is the loop's spine, loaded as a library by `commands/tick.md` and
+  `commands/release.md` via `Skill(manager)`; it is not an entry point, and invoking it directly
+  loaded the whole spine into the invoking session, defeating the per-tick context discard the
+  sub-manager exists for. It no longer appears in the slash picker as `/oss:manager`. Per Claude
+  Code's own skill documentation, `Skill(manager)` still resolves for both callers under
+  `user-invocable: false` -- "The skill still loads via the Skill tool when invoked by name" --
+  documented rather than independently observed on this machine, since nothing installed here ships
+  the hyphenated key to test the harness against directly. `tests/test_manager_not_user_invocable_
+  1391.py` pins the correct hyphenated key, that the misspelled underscored key is gone, and that
+  both callers still name `Skill(manager)`.
+
+- Changed (#1392): `bin/oss-workspace` no longer decides which prompt a session opens with. Its
+  three-branch selection (no config -> `/oss:setup`, plugin just updated -> `/oss:doctor`, else ->
+  `/oss:tick`), the pre-launch setup diagnostic, and the `#1155` triage/curate/release threshold
+  routes are all removed; every session now opens on `/oss:run`, which makes all of those decisions
+  itself, in-session, on every start (#1389, #1390). The launcher still does the three things a
+  session cannot do for itself: update the plugin before `exec claude`, wire the MCP watch channel,
+  and open the session over the caller's own repository -- plus the env relays that hand a computed
+  reading forward rather than making the session recompute it.
+
+- Changed (#1396): `docs/overview.md` is now a goal statement work can be tested against, and it
+  carries no counts. The page had drifted on five separate numbers -- commands, agents, phase files,
+  scripts, and the sub-manager's handback states -- while still reading as current, plus a standing
+  table dated to v0.17.0. Correcting the numbers would have bought one more cycle before the same
+  drift; the page now holds no countable fact at all, and says why. Added in their place: four tests
+  for whether a piece of work is inside the goal, the two-verb surface the project is moving to
+  (marked as not built), the rule that a cadence step with a threshold in config reaches itself while
+  one written only in prose needs remembering, a routing table for where each kind of prose belongs
+  and what each destination costs, and an honest statement that the loop has only ever run in front
+  of the person who wrote it.
+
+- Changed (#1405): `scripts/next_action.py` no longer arbitrates one verdict -- `rank()` replaces
+  `decide()` and composes every source every time (`inbound`, `release`, `curate`, `triage`),
+  returning them ordered rather than stopping at the first fired or unresolved one, the same
+  measure/decide split `select_issues.py` already gave dispatch. Every candidate carries its own
+  evidence; a reading that could not be taken is listed as `could-not-tell` and never dropped, so a
+  short candidate list and one that could not be fully built no longer render alike. `unsafe` and
+  `due: setup` stay outside the ranking, exactly as before -- a refusal and a precondition, never
+  candidates. A new `record_skip()` composes the one-line `oss_state.append` decision a caller takes
+  when it deliberately picks a lower-ranked candidate over the top one, so a loop skipping the same
+  candidate several ticks running is now distinguishable from one that never had a top candidate.
+  `inbound` -- external issues still open and external pull requests still open, a fresh reading of
+  the new `statusline.inbound_reading` -- becomes a fourth source, closing the composition gap
+  #1394 left: a repository with an unanswered external pull request and no release due used to
+  report `nothing-due`. `commands/run.md` still reads the old four-state shape and needs its own
+  follow-up to consume the new one; not changed here, since that file is owned by a lane in flight
+  on the same subsystem.
+
+- Changed (#1412): the README shows the loop as a mermaid flowchart instead of describing it in a
+  paragraph -- one human action (`oss-workspace`, once), the question `/oss:run` asks, the branches
+  it takes, and every arrow returning to the start rather than stopping. Mermaid rather than an
+  image: GitHub renders it natively, it diffs like any other text, and a wrong arrow shows up in
+  review, where an image drifts silently. Paid for by cutting rather than by raising the 80-line
+  ceiling -- the `Type it once` paragraph the diagram now states better, and the `More` link list,
+  where nine of ten entries wrapped onto a second line.
+
+- Changed (#1414): `/oss:run`'s own scheduler session no longer reads a procedure document
+  itself. After #1389/#1390/#1392, the scheduler opened and followed `commands/run/setup.md`,
+  `scaffold.md`, `install-audit.md`, `triage.md`, `curate.md`, `changelog.md` and `commands/
+  release.md` directly, in its own long-lived session -- exactly the erosion #695 built the
+  sub-manager/releaser split to prevent, one layer over: every file it read that way stayed in its
+  context for the rest of what may be an hours-long, many-tick run. A new agent,
+  `agents/scheduler-step.md`, is the one wrapper the first six generic sub-steps now share (they
+  differ only in which file to read, never in shape) -- release keeps its own dedicated
+  `oss:releaser`, dispatch keeps `commands/tick.md`'s existing thin spawn wrapper, and both were
+  already correct before this change. `commands/run.md` itself also needed rewriting regardless:
+  `#1405`'s `rank()` replaced the four-state `next_action.py` shape (`due`/`nothing-due`/
+  `could-not-decide`/`unsafe`) it used to parse with an ordered candidate list, so step 2 now
+  documents the new shape and a new `next_action.py --record-skip` CLI a scheduler can actually
+  call from a markdown procedure to record a deliberate deviation from the top-ranked candidate
+  (`record_skip()` itself, added by #1405, was a plain Python function nothing outside its own unit
+  tests could reach). The scheduler's own context size across a multi-tick session was not
+  independently measured for this change; `not-measured` rather than reasoned to a number, per this
+  repository's own rule that a claim without a number is trusted least.
+
+### Fixed
+
+- Fixed (#1362): the status line's watch-channel reading is now keyed to the session that took it,
+  so two sessions open on one repository -- one armed via `bin/oss-workspace`, one a bare `claude`
+  subscribed to nothing -- no longer overwrite each other's `raw_state` and render the wrong
+  session's measurement as their own. `channel_status` gained a fifth `cannot_determine` reason,
+  `other-session`, checked right after `not-asked` and before attribution or staleness: a reading
+  taken by a different session is untrustworthy regardless of how sound it otherwise looks. The
+  cache document gained a `session` field alongside `raw_state`/`attribution`, threaded from
+  `gather()`'s own `payload.get("session_id")` through `_fork_refresh`'s new `--session-id` argv to
+  `refresh()`. Every other field (`prs`, `issues`, `latest`, `pr_checks`, etc.) stays shared exactly
+  as before -- only the channel reading, whose correct answer genuinely differs by session, gained
+  the new dimension. A cache written before this fix carries no `session` key and self-heals at the
+  next refresh, the same convention #754's own `attribution` migration used. Self-review finding
+  fixed in place: a malformed session id (a non-string value) is now coerced to "absent" rather than
+  reaching `subprocess.Popen`'s argv unchecked, which would have crashed the entire status line
+  render rather than costing only the channel field its answer.
+
+- Fixed (#1364): the `claude mcp list` census parser can now see a plugin-declared
+  server name that contains a colon (e.g. `plugin:supertool:claude-channel`). The old regex
+  (`_MCP_LIST_LINE_RE`) stopped its name group at the first colon, so any such row silently
+  vanished from `channel_consumer_names` -- a plugin-provided claude-channel consumer visible on
+  `claude mcp list` was invisible to the #810 census, letting a real socket-collision race go
+  unreported. Widening the regex means the same server can now surface twice, once from `claude
+  mcp list` under its resolvable name and once from the installed-plugin registry under its
+  `key@marketplace` spelling; the census now dedupes the two populations through
+  `resolvable_plugin_server_name`, the same mapping the arm-decision logic already uses to connect
+  them, so one real consumer is no longer double-counted as a false collision. `doctor_check_mcp_
+  channel_connection.py`'s own copy of this pattern is now imported from the same constant instead
+  of being kept in sync by hand.
+
+- Fixed (#1370): `/oss:doctor`'s `oss-workspace launcher` remedy no longer pins the printed
+  `ln -sf` at the checkout the diagnostic happens to be running from. Run from a maintainer's own
+  clone or a feature branch, the old remedy named that tree, which `bin/oss-workspace`'s own
+  repoint block already refuses to do for the identical reason: a stale link is exactly the case
+  where the OLD launcher keeps running. `check_oss_workspace_launcher` now resolves the copy
+  actually recorded as installed for the project being diagnosed (`plugin_update.resolved_plugin_
+  root`, the same accessor #677/#1126 already use) and names that instead; where no install can be
+  resolved at all, the remedy says so plainly rather than guessing at a path.
+
+- Fixed (#1372): the vocabulary index this plugin scaffolds into a repo
+  (`.claude/jit-context/vocabulary/01-oss/00-index.tsv`) was not a fixed point of
+  `claude-jit-context`'s own `scripts/rebuild-tsv.sh`. The dependency's builder (0.7.1+)
+  writes three columns -- `keyword<TAB>file<TAB>verdict` -- and `oss_rules.index_rows()`
+  wrote two, so running the builder once over a freshly-scaffolded repo added an empty
+  third column to every row, and the next `/oss:scaffold --apply` removed it again: a
+  dirty working tree for no reason a maintainer of that repo caused. `index_rows()` now
+  emits the trailing empty verdict column the builder itself would write when no
+  `GENERIC_WORDS_FILE` is configured (this plugin configures none), matching the shape
+  the `00-manual` vocabulary layer already carries for the same reason. A new test
+  (`tests/test_oss_rules.py::test_vocabulary_index_row_is_the_rebuild_tsv_shape_1372`)
+  pins every shipped vocabulary row against a faithful reimplementation of the
+  builder's column logic, so the index stays a fixed point if the builder's format
+  changes again.
+
+- Fixed: the ranking table in `skills/manager/phases/findings.md` gained a new row,
+  `overexposes`, for a secret or private file created at a mode wider than intended and
+  narrowed a line later -- a shape a release audit of claude-supertool found and none of
+  the eleven existing rows fit. The `Blocks a release?` column states a condition rather
+  than a bare yes/no (#1374): it blocks when the file outlives the writing process or the
+  host is shared between users, otherwise it can ship behind a `trap.d/` fragment.
+  `scripts/ranking_table.py` gained `conditional_classes` so a router reads this as a
+  third bucket rather than sorting it silently into `blocking_classes` or
+  `non_blocking_classes`. (#1374)
+
+- Fixed (#1375): release gate 1 stopped asserting this repo own CI shape (a
+  reduced push matrix, full coverage reserved for a workflow_dispatch, #1246)
+  as a permanent fact inside commands/release.md -- a document every managed
+  repo release reads identically. Read against claude-supertool, whose push
+  trigger already runs the full matrix and defines no such workflow_dispatch
+  input, the old wording made a releaser wait forever on a dispatched run that
+  will never appear. Gate 1 and the post-push CI-wait section (#1266, #1324)
+  now both frame the reduced/full split as something to derive per repo by
+  reading that repo own `.github/workflows/*.yml`, never as a fact asserted
+  for one named repo, and the post-push section now says explicitly to skip
+  only the second dispatch and its workflow_dispatch-specific wait on a repo
+  where the push trigger already runs full coverage -- waiting on the
+  ordinary push-triggered run itself before tagging, never skipping the CI
+  wait outright.
+
+- Fixed (#1379): doctor's `channel MCP connection` check no longer reports a fault when a live
+  consumer is forwarding. `claude mcp list` forks its own copy of the consumer to produce each
+  status, and that fork cannot bind a socket the live consumer already holds -- so it exits
+  `CONNECTION_CLOSED` and the listing reads `failed` for the working server too. The check now
+  cross-reads the cached `channel:health` reading it already resolves: `forwarding` and fresh
+  suppresses the WARN and explains why the listing lies, while a stale, missing or non-forwarding
+  reading leaves it exactly as it was. The WARN's own message also carried a literal `{}` -- the
+  `.format(detail)` call was missing, so the harness's own reason was never rendered.
+
+- Fixed (#1381): the auto-updater now clears the cached `latest` reading when it actually moves a
+  version, so the status line stops rendering a stale currency marker. `scripts/statusline.py`
+  caches the newest published Release on an hour-long clock and `scripts/plugin_update.py` moves the
+  installed version, so the updater is the actor that falsifies the comparison -- the same principle
+  `/oss:release` already follows by invalidating the moment a Release is published. Observed: an
+  update took supertool 0.58.0 to 0.59.0 while the cache still held 0.58.0 from a poll 39 minutes
+  earlier, and the status line reported the install as ahead of a Release that was already
+  published. The outcome is recorded on the update receipt as `latest_cache` in all four of its
+  states, so a run that could not locate the cache never reads as one that decided not to clear it.
+
+- Fixed (#1390): a standing diagnostic gap used to permanently divert every future session into
+  `/oss:doctor`, because the divert had no memory of its own and nothing could clear it once a
+  single unfixable WARN existed. `/oss:run` (#1389) replaces the divert with a rule that never
+  fully stops: diagnose on every start, repair what is within the loop's own power (a missing
+  `.oss.json`, a stale owned file), report what is not (a missing binary, a permission this session
+  lacks) with that capability marked unavailable, and carry on regardless. Only two named gaps stop
+  the loop at all -- no config and the probe itself cannot run, or a `default_branch` that does not
+  resolve to a real ref -- and both name what would clear them.
+
+- Fixed (#1419): the six `oss:scheduler-step` spawns `/oss:run` uses for `setup`, `scaffold`,
+  `install-audit`, `triage`, `curate` and `changelog` pointed their `Agent(...)` prompt at a
+  cwd-relative `commands/run/<file>.md` path. That resolves only inside this repository's own
+  checkout, where this plugin's own source happens to live at that relative location -- in every
+  other repo that installs this plugin, the spawned agent was pointed at a path that does not
+  exist there, hitting the first-run `setup` step first. All six prompts in `commands/run.md` now
+  anchor to `${CLAUDE_PLUGIN_ROOT}/commands/run/<file>.md`, the harness substituting the literal
+  env var at load time, the same way every other plugin-root reference in this loop's prose does.
+  `tests/test_picker_demotion_1389.py` gained a sibling test that actually resolves each of the
+  six prompts' path against a fake, temporary plugin root -- the prior guard only asserted the
+  substring `commands/run/<name>` was present, which passed identically whether the path was
+  anchored or left cwd-relative, since a cwd-relative path contains that same substring.
+
+- Fixed (#1421): `commands/run.md`'s own `## dispatch` step named the scheduler's
+  ordinary cadence procedure with the pronoun "it" ("This is `commands/tick.md`'s own
+  procedure ... Read and follow it from here."), one section below the six
+  `${CLAUDE_PLUGIN_ROOT}`-anchored scheduler-step spawn prompts #1419/#1420 already
+  fixed -- a cwd-relative path that only resolved inside this repository's own
+  checkout, invisible to that fix's own regex guard because it names no literal path
+  in the sentence itself. Both mentions of the target are now anchored to
+  `${CLAUDE_PLUGIN_ROOT}/commands/tick.md`, and the same fix was applied to
+  `commands/tick.md:11`'s own self-read instruction
+  (`supertool 'read:commands/tick.md:OFFSET:LIMIT'`), live only when `tick.md` is
+  reached from `run.md`'s dispatch step rather than harness-injected directly.
+  Anchored double-quoted (`supertool "read:${CLAUDE_PLUGIN_ROOT}/..."`), not
+  single-quoted, since this is a literal, executable shell invocation and bash
+  performs no parameter expansion inside single quotes -- a self-review finding.
+  `tests/test_picker_demotion_1389.py`'s own six-exact-phrase guard is widened with
+  a new positive control that sweeps every "Read and follow" occurrence regardless
+  of phrasing (literal path or pronoun) for a nearby `${CLAUDE_PLUGIN_ROOT}` anchor,
+  plus a dedicated assertion for `commands/tick.md`'s own self-read line.
+
 ## [0.31.0] - 2026-09-09
 
 ### Added
@@ -10448,7 +10762,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.32.0
 [0.31.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.31.0
 [0.30.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.30.0
 [0.29.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.29.1

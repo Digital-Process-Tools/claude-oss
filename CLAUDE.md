@@ -959,12 +959,13 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.31.0`, and it was written inside the v0.31.0 release commit.**
+**The marker below names `v0.32.0`, and it was written inside the v0.32.0 release commit.**
 
-**Delta, taken two ways that agree.** The range is `v0.30.0..HEAD` at `492cb1ce`: `git rev-list
---count v0.30.0..HEAD` returns **13**. `gh-prs:state=merged,merged-since=v0.30.0` returns **11**
-merged pull requests -- `#1355`-`#1358`, `#1360`, `#1363`, `#1366`-`#1368`, `#1371`, `#1377`. The
-two-commit gap is direct pushes carrying no trailing `(#N)`, named as such by the op's own output
+**Delta, taken two ways that agree.** The range is `v0.31.0..HEAD` at `d435f89b`: `git rev-list
+--count v0.31.0..HEAD` returns **27**. `gh-prs:state=merged,merged-since=v0.31.0` returns **18**
+merged pull requests -- `#1380`, `#1382`, `#1384`, `#1385`, `#1387`, `#1388`, `#1393`, `#1397`,
+`#1398`, `#1402`, `#1403`, `#1404`, `#1411`, `#1413`, `#1415`, `#1418`, `#1420`, `#1422`. The
+nine-commit gap is direct pushes carrying no trailing `(#N)`, named as such by the op's own output
 rather than inferred here. Both numbers are reported rather than one being silently preferred.
 
 **One workflow is declared and produced no run on this commit, and that is not a gap.** `changelog`
@@ -973,46 +974,54 @@ does not re-run at the tag: unrepeated, not unchecked. Gate 1's coverage came fr
 `CodeQL`, and from a **dispatched full matrix** rather than the push run alone -- this repository
 reduces its push/pull_request matrix and reserves all twelve OS x Python legs for
 `workflow_dispatch` with `full_matrix: true` (#1246), so the push run is never the whole picture
-here. Run `34380226158` on `f07bf240`, 14 legs, `conclusion=success`.
+here. Run `34585232930` on `d435f89b`, 14 legs, `conclusion=success`.
 
-**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-4f2a9c7e1b83`,
-over `v0.30.0..HEAD` at `f07bf240`, 12 commits): 4 findings, none in a blocking row.
-`gate3_disposition.py --round 1 --verdict findings --blocking no` returned `stop-tag`, per the rule
-that round-one findings always stop the tag regardless of the blocking column. **All four were
-defects that had shipped in that same delta**, and three of them had already passed a per-PR review
-and a green CI run: `statusline._trap_count` and `trap_curate.OWNED_README` disagreeing by one
-permanently (16 against 17, so a fully drained `trap.d/` rendered `trap 1` forever with nothing left
-to delete); `OSS_WORKSPACE_MCP_LIST_OUTPUT` read with no sentinel, so a forged variable reported the
-channel consumer `connected` on a machine with no `claude` binary; `bin/oss-workspace`'s own
-`declared-but-not-live` repair composing with the #810 census to disarm the channel flag -- the fix
-reproducing the bug it fixed; and that arm having no test at all. Two of the four were
-**compositions of two commits each, and neither commit's own diff contains the defect**, which is
-the argument for auditing a delta rather than only its parts, restated by measurement. Fixed and
-merged as `#1377` before round two, and filed as `#1376`.
+**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-90bae15e5253`,
+over `v0.31.0..HEAD` at `66f8b256`, 19 commits): 5 findings, one in a blocking row.
+`gate3_disposition.py --round 1 --verdict findings --blocking yes` returned `stop-tag`. The blocking
+finding (`ships-local-state`): all six `oss:scheduler-step` spawn prompts in `commands/run.md`
+pointed a cwd-relative `commands/run/<file>.md` at the spawned agent, which resolves only inside
+this repository's own checkout -- in every other repo installing this plugin the first-run `setup`
+step would point at a file that does not exist there. Filed as `#1419`, fixed and merged as `#1420`
+before round two. The four non-blocking findings (`triage_trigger.py` reading `.oss.json` raw and
+missing `.oss.local.json`'s `state_file`; `--triage-recorded` requiring `--decision`, which
+`commands/tick.md`'s own call omits; `gh`/`git` error text not backslashreplace-safe on the
+non-`--json` cohort-freeze path; `skills/manager/phases/inbound.md` asserting a gap this same delta
+closed) were written to `trap.d/1419.*.md`.
 
-Round two (dispatch token `gate3-r2-9d13ba60c4f7`, over the range re-derived at `492cb1ce`, 13
-commits, with round one's fixes inside it): the auditor re-derived independently and returned **6
-findings, none in a blocking row**. `gate3_disposition.py --round 2 --verdict findings --blocking
-no` returned `carry-forward-and-proceed`. Five are `misreports`; the sixth arrived `unranked` and
-was ranked **here**, by the maintainer, as `fails-to-preserve` -- a session-open latency and
-duplicate-spawn regression against the relay economy #629 and #810 built, which no existing row
-names. That ranking is a decision on record, not a column read, and the auditor explicitly flagged
-that passing `--blocking no` without it would have been one made silently. All six carry forward as
-`#1378`.
+Round two (dispatch token `gate3-r2-891d2d27a502`, over the range re-derived at `24004187` after
+round one's fix, 24 commits): the auditor re-derived independently and returned **3 findings, one in
+a blocking row**. `gate3_disposition.py --round 2 --verdict findings --blocking yes` returned
+`stop-tag` -- the rule that a blocking row stops the tag in either round, past the two-round cap,
+held. The blocking finding was the sibling of round one's: `commands/run.md`'s own `## dispatch`
+step read `commands/tick.md` with a pronoun-phrased, still-cwd-relative "Read and follow it from
+here", one section below the six prompts round one's fix had anchored -- invisible to that fix's own
+guard, which matched only the literal `Read and follow (\S+\.md) from here.` phrasing.
+`commands/tick.md:11`'s own self-read line carried the identical defect. Filed as `#1421`, fixed and
+merged as `#1422`; the fix's own self-review caught and corrected a real second bug in its first
+draft (the `${CLAUDE_PLUGIN_ROOT}` anchor written inside single quotes, inert under bash) before it
+committed. The two non-blocking findings (a cached channel reading suppressing a WARN even though a
+same-delta commit declared such readings session-scoped and untrustworthy across sessions;
+`next_action._record_skip_cli` trapping only `ValueError` and missing `oss_state.StateError`) were
+written to `trap.d/1421.*.md`.
 
-**Two of round two's six are defects inside round one's own fix commit.** That is PR #921's shape --
-a fix answering an audit shipping as though already reviewed -- recurring in a release where the
-dispatch brief named that precedent and warned about it explicitly. The rule existed, it was read,
-and it happened anyway. One of the two makes `492cb1ce`'s own commit message false where it claims
-the relay fix landed "on both sides"; the commit cannot be amended and `#1378` is the correction.
-Three of the six sit in `bin/oss-workspace` and the channel census, an area repaired three times in
-thirteen commits.
+**Both rounds' blocking findings were the same class, in the same file, missed by the fix that
+closed the first one.** Round one's own guard test checked only the literal phrasing it saw; round
+two's finding was the identical defect one paragraph away, spelled differently enough to dodge that
+guard. The two-round cap was reached with a blocking finding still open in round two, and the
+release procedure's own rule held: the fix landed and merged before the tag, and no third audit
+round was dispatched -- the cap governs how many rounds of "findings, therefore stop" a release can
+be held to, not whether a blocking row gets fixed.
 
-**Cohort freeze: cohort-27 at 12.** Per #1122's rule this marker cites a cohort that has already
+**Cohort freeze: cohort-28 at 14.** Per #1122's rule this marker cites a cohort that has already
 finished freezing, never this release's own -- the freeze runs after the tag and this commit is
-written before it. The state file records `cohort-27` as `measured` at **12** on
-2026-09-09T13:18:41Z, with two independently-agreeing routes (`gh-issues: 12`, `gh-issues-label:
-12`). Cited cleanly, no discrepancy carried forward.
+written before it. The state file records `cohort-28` as `measured` at **14**, frozen at the
+`v0.31.0` tag (`17303889`, 2026-09-09T18:07Z), with two independently-agreeing routes
+(`rest-open-issues: 14`, `graphql-totalcount: 14`). `cohort_citation_order.py --state
+.max/claude-oss-watch.json --at 2026-09-11T09:45:25Z` read `ok -- cohort-27 was already frozen`
+against the pre-edit marker (cohort-27, this release's predecessor citation) before this paragraph
+moved the citation forward to cohort-28, which is also `measured` and frozen, and strictly newer.
+Cited cleanly, no discrepancy carried forward.
 
 **The reach probe was NOT re-derived at `v0.31.0`** -- it is still `v0.21.0`'s, measured at
 `c565488`, eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of
