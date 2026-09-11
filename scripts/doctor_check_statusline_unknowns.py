@@ -340,28 +340,27 @@ _CHANNEL_EXPLAIN = {
     "not-asked": (
         "WARN",
         "statusline channel: nobody has taken a `channel:health` reading yet "
-        "for this repo (no cached channel entry) -- renders `ch?`. {}",
+        "for this repo (no cached channel entry) -- renders `ch?`. {remedy}",
     ),
     "stale": (
         "WARN",
         "statusline channel: the cached `channel:health` reading is older "
-        "than its own refresh interval -- renders `ch?`. This self-heals on "
-        "the next statusline render (a background refresh forks "
-        "automatically), or force it now: {}",
+        "than its own refresh interval -- renders `ch?`. {fork_sentence} Or "
+        "force it synchronously now: {remedy}",
     ),
     "declaration-unreadable": (
         "WARN",
         "statusline channel: `.supertool.json` exists and could not be read "
         "or parsed, so which repo this channel reading belongs to could not "
         "be settled -- renders `ch?`. Fix or remove the malformed file, "
-        "then: {}",
+        "then: {remedy}",
     ),
     "unrecognized": (
         "WARN",
         "statusline channel: the last `channel:health` reading did not match "
         "any of the five recognised states -- renders `ch?`. Run `supertool "
         "'channel:health'` directly to see the raw text and confirm "
-        "`supertool version` is current, then: {}",
+        "`supertool version` is current, then: {remedy}",
     ),
     "not-attributable": (
         "WARN",
@@ -372,7 +371,7 @@ _CHANNEL_EXPLAIN = {
         "another project's fleet, in which case no further action is "
         "needed); if this repo should own the channel instead, declare it "
         "explicitly under `ops.<name>.watch_name` in `.supertool.json`, "
-        "matching the exported `SUPERTOOL_WATCH_NAME`, then: {}",
+        "matching the exported `SUPERTOOL_WATCH_NAME`, then: {remedy}",
     ),
     "repo-missing": (
         "WARN",
@@ -390,22 +389,22 @@ _BRANCH_EXPLAIN = {
         "statusline default-branch marker: no board reading has ever been "
         "cached for this repo -- renders as no marker at all rather than a "
         "real state (`?` once a first reading exists and then goes stale). "
-        "{}",
+        "{remedy}",
     ),
     "stale": (
         "WARN",
         "statusline default-branch marker: the cached board (including the "
         "default branch's own CI state, which shares its clock, #856) is "
         "older than its own refresh interval, or was marked stale by a "
-        "recent merge/close in this session -- renders `unk`. Self-heals on "
-        "the next statusline render, or force it now: {}",
+        "recent merge/close in this session -- renders `unk`. {fork_sentence} "
+        "Or force it synchronously now: {remedy}",
     ),
     "no-answer": (
         "WARN",
         "statusline default-branch marker: the last refresh's own `gh` call "
         "for this branch's CI state did not answer -- renders `unk`. Confirm "
         "`gh auth status` and that the configured `default_branch` exists on "
-        "the forge, then: {}",
+        "the forge, then: {remedy}",
     ),
     "unrecognized": (
         "WARN",
@@ -413,7 +412,7 @@ _BRANCH_EXPLAIN = {
         "the four states this field can ever produce -- likely a "
         "hand-edited or corrupted cache file -- renders `unk`. Delete the "
         "cache file (see `scripts/statusline.py`'s own `cache_path`) and "
-        "then: {}",
+        "then: {remedy}",
     ),
     "repo-missing": (
         "WARN",
@@ -441,13 +440,13 @@ _DOCTOR_EXPLAIN = {
     "not-asked": (
         "WARN",
         "/oss:doctor reading: nobody has taken a doctor reading yet for "
-        "this repo (no cached `doctor_verdict`) -- renders `dr?`. {}",
+        "this repo (no cached `doctor_verdict`) -- renders `dr?`. {remedy}",
     ),
     "stale": (
         "WARN",
         "/oss:doctor reading: the cached doctor reading is older than its "
-        "own refresh interval -- renders `dr?`. Self-heals on the next "
-        "statusline render, or force it now: {}",
+        "own refresh interval -- renders `dr?`. {fork_sentence} Or force it "
+        "synchronously now: {remedy}",
     ),
     "no-answer": (
         "WARN",
@@ -456,18 +455,39 @@ _DOCTOR_EXPLAIN = {
         "does not record which of five causes it was (no doctor.py located, "
         "the subprocess could not start, DOCTOR_TIMEOUT expired, it exited "
         "non-zero, or its output had no `VERDICT:` line); run `/oss:doctor` "
-        "(or the script directly) to see the real one, then: {}",
+        "(or the script directly) to see the real one, then: {remedy}",
     ),
     "unrecognized": (
         "WARN",
         "/oss:doctor reading: the cached verdict text does not match any "
         "shape doctor.py's own main() is known to print -- renders `dr?`. "
-        "Run `/oss:doctor` directly to see the raw VERDICT line, then: {}",
+        "Run `/oss:doctor` directly to see the raw VERDICT line, then: {remedy}",
     ),
 }
 
 
-def _report_channel(result, remedy):
+#: The two `{fork_sentence}` fillers a "stale" template's `.format()` call
+#: chooses between (#1373's own reviewer round) -- `_fork_refresh` (via the
+#: public `statusline.fork_refresh`) now REPORTS whether it actually started
+#: a new detached process, so the WARN a reader sees stops claiming a fork
+#: "just" happened when the attempt was skipped (a busy lock) or failed (the
+#: lock write, or the `Popen` itself).
+_FORK_SUCCEEDED_SENTENCE = (
+    "This check just forked a background refresh itself; it should "
+    "self-heal in moments."
+)
+_FORK_NOT_STARTED_SENTENCE = (
+    "This check tried to fork a background refresh but none was started -- "
+    "a refresh may already be in flight from another render, or the "
+    "attempt itself failed."
+)
+
+
+def _fork_sentence(forked):
+    return _FORK_SUCCEEDED_SENTENCE if forked else _FORK_NOT_STARTED_SENTENCE
+
+
+def _report_channel(result, remedy, forked=False):
     if not result.get("applicable"):
         doctor.report(
             "OK",
@@ -493,12 +513,14 @@ def _report_channel(result, remedy):
         )
         return
     level, template = _CHANNEL_EXPLAIN.get(
-        reason, ("WARN", "statusline channel: could not be determined -- {}")
+        reason, ("WARN", "statusline channel: could not be determined -- {remedy}")
     )
-    doctor.report(level, template.format(remedy))
+    doctor.report(
+        level, template.format(remedy=remedy, fork_sentence=_fork_sentence(forked))
+    )
 
 
-def _report_default_branch(result, remedy):
+def _report_default_branch(result, remedy, forked=False):
     if not result.get("applicable"):
         doctor.report(
             "OK",
@@ -524,12 +546,17 @@ def _report_default_branch(result, remedy):
         return
     level, template = _BRANCH_EXPLAIN.get(
         reason,
-        ("WARN", "statusline default-branch marker: could not be determined -- {}"),
+        (
+            "WARN",
+            "statusline default-branch marker: could not be determined -- {remedy}",
+        ),
     )
-    doctor.report(level, template.format(remedy))
+    doctor.report(
+        level, template.format(remedy=remedy, fork_sentence=_fork_sentence(forked))
+    )
 
 
-def _report_doctor(result, remedy):
+def _report_doctor(result, remedy, forked=False):
     reason = result.get("reason")
     if reason == "could-not-determine":
         doctor.unmeasured(
@@ -547,9 +574,41 @@ def _report_doctor(result, remedy):
         )
         return
     level, template = _DOCTOR_EXPLAIN.get(
-        reason, ("WARN", "/oss:doctor reading: could not be determined -- {}")
+        reason, ("WARN", "/oss:doctor reading: could not be determined -- {remedy}")
     )
-    doctor.report(level, template.format(remedy))
+    doctor.report(
+        level, template.format(remedy=remedy, fork_sentence=_fork_sentence(forked))
+    )
+
+
+def _maybe_fork_refresh(project_dir, repo, now):
+    """Fork a background refresh the moment THIS check finds a stale cache
+    (#1373), rather than only naming a command for the reader to run by
+    hand. Doctor already reads the cache to derive the cause below -- this
+    is the same read, spending nothing new to also start the fix.
+
+    Deliberately calls `statusline.fork_refresh` -- a public wrapper added
+    for exactly this caller, per the module docstring's own rule against
+    reaching into a leading-underscore name -- never `statusline.
+    _fork_refresh` directly. Best-effort: `fork_refresh` already swallows
+    every failure it can reach (a lock it cannot write, a `Popen` that
+    cannot start), so nothing here needs its own `try`/`except` to keep
+    doctor's "exit 0, always" contract.
+
+    This clears the cache the same way `/oss:release`'s own
+    `invalidate_latest_cache` does -- an actor OTHER than the render path
+    starting the fix at the moment it finds the falsified/stale state --
+    rather than writing a diagnosis into the cache itself: the fork starts
+    an ordinary `--refresh` subprocess, the identical one a live statusline
+    render already forks on its own when `board_is_due`. Deleting or
+    rewriting cache fields directly, from inside a diagnostic, would cross
+    into repair; forking the same self-healing refresh the render path
+    already trusts does not -- see CLAUDE.md's "a diagnosis is not a
+    repair" and this file's own PR body for the fuller argument.
+    """
+    if statusline is None or not repo:
+        return False
+    return statusline.fork_refresh(project_dir, repo, now=now)
 
 
 def check_statusline_unknowns(project_dir, config, now=None):
@@ -557,6 +616,11 @@ def check_statusline_unknowns(project_dir, config, now=None):
     watch channel, the default-branch marker, and (#1345) the `/oss:doctor`
     reading, each with a runnable remedy (#1311). See the module docstring
     for the full derivation.
+
+    #1373: when any of the three causes below is `"stale"`, this also forks
+    the same background refresh a live statusline render would have forked
+    on its own -- see `_maybe_fork_refresh`'s own docstring for why that
+    stays inside the report-only contract rather than crossing into repair.
     """
     if config is None:
         doctor.unmeasured("statusline unknowns")
@@ -589,8 +653,20 @@ def check_statusline_unknowns(project_dir, config, now=None):
             )
             doctor.report("WARN", message)
             return
-    _report_channel(channel_cause(config, cache, now, repo_missing), remedy)
-    _report_default_branch(
-        default_branch_cause(config, cache, now, repo_missing), remedy
-    )
-    _report_doctor(doctor_cause(cache, now, repo_missing), remedy)
+    channel_result = channel_cause(config, cache, now, repo_missing)
+    branch_result = default_branch_cause(config, cache, now, repo_missing)
+    doctor_result = doctor_cause(cache, now, repo_missing)
+    # #1373's own reviewer round: `forked` is threaded into every `_report_*`
+    # call below so the WARN text reflects what `_maybe_fork_refresh` ACTUALLY
+    # did, never a blanket claim -- `False` (the default) is also the correct
+    # value passed when nothing was stale, since `_fork_sentence` is only
+    # ever read from a "stale" template.
+    forked = False
+    if not repo_missing and any(
+        result.get("reason") == "stale"
+        for result in (channel_result, branch_result, doctor_result)
+    ):
+        forked = _maybe_fork_refresh(project_dir, repo, now)
+    _report_channel(channel_result, remedy, forked)
+    _report_default_branch(branch_result, remedy, forked)
+    _report_doctor(doctor_result, remedy, forked)
