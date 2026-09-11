@@ -295,7 +295,7 @@ from being invisible.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 17,104 B | 18,800 B |
+| `agents/sub-manager.md` | 17,270 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 
@@ -403,6 +403,15 @@ silently keeping the old file-everything default. Too small an overage to be wor
 something else in the same file to absorb, so the ceiling moved with ~10% headroom over the new
 size rather than cutting anything.
 
+**#1409 re-baselined `agents/sub-manager.md` without raising its ceiling**: 17,104 B became
+17,270 B, still under the 18,800 B ceiling. `select_issues_rank.SHORT_REASONS` gained a fifth
+value, `declined-for-cause` (#1407), for a lane that found a real, adjacent candidate and declined
+it for a substantive judgment reason -- neither `board-exhausted` nor `no-adjacent` nor
+`did-not-search` nor `could-not-tell` fits a search that ran, found something, and rejected it on
+purpose. The short-lane reason list this file states was extended to match, since
+`test_spawn_token_fill_parity_828_867.py` pins it against `SHORT_REASONS` itself rather than a
+retyped copy.
+
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
 number of bytes on every platform unless something pins line endings — a CRLF checkout of an
@@ -503,10 +512,10 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,893 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 53,938 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 55,309 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
-| `skills/manager/phases/tick-order.md` | 34,816 B | 36,000 B |
+| `skills/manager/phases/tick-order.md` | 34,905 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
@@ -556,6 +565,21 @@ findings table" mentions in `skills/manager/phases/dispatch.md` and `scripts/sel
 rather than bump it to thirteen and go stale again at the next row; `dispatch.md`'s own baseline
 below moved with it (54,117 B -> 53,938 B, still comfortably under its ceiling). Ceiling for
 `findings.md` unchanged at 13,800 B; still comfortably under it.
+
+**#1409 re-baselined `dispatch.md` without raising its ceiling**: 53,938 B became 55,309 B, still
+under the 57,400 B ceiling. A lane dispatched with the blockquote's verbatim "on PATH, from any
+directory" claim, inside a worktree of the one managed repo that is supertool's own checkout, cost
+three round-trips following it literally -- the bare `supertool` name there resolves to whichever
+clone the SessionStart hook last linked, ordinarily supertool's own live checkout at `master`, and
+running it from a worktree of that same repository runs master's core against the worktree's own
+branch-local presets, refusing a write-class op outright (claude-supertool#1942). The new paragraph
+points at `scripts/doctor.py`'s new `supertool_invocation(project_dir)` -- reusing the existing
+`_own_supertool_tree` walk `check_supertool_entry_point` already uses for its `own-tree` diagnostic
+state, rather than a second, drifting copy of the same detection -- and tells a dispatching session
+to append one line naming the tree's own core after the verbatim blockquote, never to edit the
+blockquote itself, which stays byte-identical for every other managed repo.
+`scripts/lane_setup.py`'s own board-line read (`read_board`) now routes through the same function,
+independently fixing the `COULD NOT RUN -- mixed supertool trees` receipt #1409 also reported.
 
 **#1047 re-baselined `skills/manager/phases/review.md` without raising its ceiling**: 10,353 B
 became 10,829 B. A fix commit answering an audit's own findings is a diff nothing makes a subject
@@ -607,6 +631,12 @@ review round renamed `classify_pr`'s `ready-to-merge` state to `green-and-mergea
 string naming the one act `merge.md` forbids absolutely is a verdict, not a measurement) -- the
 same rename touched `merge.md`, 14,621 B to 14,776 B, for the same reason; see this table's own
 current row for both files' final measurements.
+
+**#1409 re-baselined `tick-order.md` without raising its ceiling**: 34,816 B became 34,905 B, still
+under the 36,000 B ceiling. The same `select_issues_rank.SHORT_REASONS` fifth value,
+`declined-for-cause` (#1407), that re-baselined `agents/sub-manager.md` above also reaches this
+file's own statement of the short-lane reasons, since `test_spawn_token_fill_parity_828_867.py`
+requires the two documents to agree on the fact rather than each naming its own stale copy.
 
 **#1136 cut the rationale out of the loop's own markdown: 581,678 B became 480,591 B across 23 files, -17.4%.** The rule applied, written down as `.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`: **a loop markdown file is an operator's manual for the tools its phase runs.** The rule, the call, every state and every payload field stay; the measurement that justified a constant belongs beside the constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each rule keeps a bare issue citation for provenance. `dispatch.md`'s selection band was the worked example -- 14,240 B to 6,601 B, prose still explaining how to drive by hand the four scripts `select_issues.py` had already composed (#970, #1068, #1129). Every ceiling came down with its measurement rather than being left where it was (#958, #960). Four content guards refused cuts that went too far and every one was right: the bundle cap rule, the #499 citation, the `27m36s` threshold, and an unhyphenated `could not tell` -- each restored as a rule, without its narrative.
 

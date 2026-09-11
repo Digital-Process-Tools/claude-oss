@@ -1698,6 +1698,16 @@ def lane_fill(entries, window, why=None):
                 "lane fill {} (issue {}): candidates must be a whole number, not "
                 "{!r}".format(position, primary, candidates)
             )
+        # `declined` (#1407) is `declined-for-cause`'s own companion field --
+        # free text, not a count, so it is validated and routed separately
+        # from `candidates`/`adjacent` rather than reused as a fifth meaning
+        # for the same field.
+        declined = entry.get("declined")
+        if declined is not None and not isinstance(declined, str):
+            raise StateError(
+                "lane fill {} (issue {}): declined must be a string citation, "
+                "not {!r}".format(position, primary, declined)
+            )
 
         # `range(count)`, not `list(range(count))`: check_lane() only ever calls
         # len() on its argument (see its own docstring/body), and a range's len() is
@@ -1736,7 +1746,30 @@ def lane_fill(entries, window, why=None):
                     position, primary, count, candidates
                 )
             )
-        if candidates is not None and reason in ("did-not-search", "could-not-tell"):
+        if declined is not None and count == _dispatch_rank.MAX_LANE:
+            # The same defect #918 fixed for a stray count, one field over: a
+            # full lane makes no short-lane claim at all, so there is nothing
+            # a citation could refute either.
+            raise StateError(
+                "lane fill {} (issue {}): a full lane of {} makes no claim a "
+                "citation could refute, but {!r} was given -- record it on "
+                "the short lane it was measured for, or omit it "
+                "(#1407)".format(position, primary, count, declined)
+            )
+        if declined is not None and reason != "declined-for-cause":
+            # A citation only answers `declined-for-cause`; recording one
+            # against any other reason would be a claim the reason itself
+            # never makes.
+            raise StateError(
+                "lane fill {} (issue {}): {!r} takes no declined citation, "
+                "but {!r} was given -- only declined-for-cause makes that "
+                "claim (#1407)".format(position, primary, reason, declined)
+            )
+        if candidates is not None and reason in (
+            "did-not-search",
+            "could-not-tell",
+            "declined-for-cause",
+        ):
             # Neither reason is a claim a count can refute, so `check_lane` would
             # read this field for neither parameter and drop it -- and a dropped
             # measurement renders exactly like one nobody took, which is the
@@ -1752,6 +1785,8 @@ def lane_fill(entries, window, why=None):
             )
         if reason == "no-adjacent":
             check = _dispatch_rank.check_lane(range(count), reason, adjacent=candidates)
+        elif reason == "declined-for-cause":
+            check = _dispatch_rank.check_lane(range(count), reason, declined=declined)
         else:
             check = _dispatch_rank.check_lane(
                 range(count), reason, candidates=candidates
@@ -1775,6 +1810,8 @@ def lane_fill(entries, window, why=None):
         # one even when `count`/`reason` are identical.
         if candidates is not None:
             lane_record["candidates"] = candidates
+        if declined is not None:
+            lane_record["declined"] = declined
         normalized.append(lane_record)
 
     return {
@@ -3184,19 +3221,23 @@ def _lane_dispatch_state_argument(text):
 
 
 def _lane_fill_argument(text):
-    """A CLI lane fill: ``PRIMARY:COUNT[:REASON[:CANDIDATES]]`` (#852, #871).
+    """A CLI lane fill: ``PRIMARY:COUNT[:REASON[:CANDIDATES[:DECLINED]]]``
+    (#852, #871, #1407).
 
     Only the shape is checked here -- a primary issue number present, a count that
-    parses as a whole number, and a fourth field (#871) that parses as one too when
-    given. Whether the count needs a reason, whether one given is from the closed
-    vocabulary, whether the count itself is in range, and whether ``CANDIDATES``
-    contradicts a claimed ``board-exhausted`` is left to
-    ``lane_fill``/``dispatch_rank.check_lane``, the single place that decision is made,
-    at the CLI or from any other caller.
+    parses as a whole number, a fourth field (#871) that parses as one too when
+    given, and a fifth field (#1407) taken as the ``declined-for-cause`` citation
+    verbatim, colons and all -- ``maxsplit=4`` stops splitting once that field is
+    reached, so a citation naming a call (``select_issues.py --check-lane:845``)
+    is not itself split apart. Whether the count needs a reason, whether one given
+    is from the closed vocabulary, whether the count itself is in range, and
+    whether ``CANDIDATES``/``DECLINED`` contradicts what the reason claims is left
+    to ``lane_fill``/``dispatch_rank.check_lane``, the single place that decision
+    is made, at the CLI or from any other caller.
     """
     import argparse
 
-    parts = text.split(":", 3)
+    parts = text.split(":", 4)
     if len(parts) < 2 or not parts[0].strip() or not parts[1].strip():
         raise argparse.ArgumentTypeError(
             "{!r} is not PRIMARY:COUNT[:REASON[:CANDIDATES]]".format(text)
@@ -3230,6 +3271,11 @@ def _lane_fill_argument(text):
             raise argparse.ArgumentTypeError(
                 "{!r}: {!r} is not a whole number".format(text, candidates_text)
             )
+    # #1407: the fifth, optional field -- the `declined-for-cause` citation,
+    # free text rather than a count. `maxsplit=4` above already kept any
+    # colons inside it intact, so this is taken verbatim, not re-split.
+    if len(parts) > 4 and parts[4].strip():
+        entry["declined"] = parts[4].strip()
     return entry
 
 

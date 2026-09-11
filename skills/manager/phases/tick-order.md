@@ -334,7 +334,8 @@ tool, and you are gone by the time step 7 would run.
    invent a preflight or lane pattern for an issue that named neither (#267). Three issues is the
    default rather than the ceiling, and a
    lane dispatched with fewer says why in one of `board-exhausted`, `no-adjacent`,
-   `did-not-search` or `could-not-tell`. **Read `lanes`** (#1146): one entry per declared lane label,
+   `did-not-search`, `could-not-tell` or `declined-for-cause` (the last needs a citation of what
+   was declined and why, #1407). **Read `lanes`** (#1146): one entry per declared lane label,
    `labels.lane_other` included, each returning one group of up to three with its own third state
    (`candidates`/`none`/`could-not-tell`) and, when short, why. Every group carries its issues'
    bodies (#1147), fenced as untrusted and reporting `body_truncated` when capped — read those
