@@ -11,7 +11,7 @@ also runs mid-tick and before a release with no standing to say what
 happens after. This module is the derivation that lives on that surface:
 given the report's own printed text, which next step does it point at.
 
-## Why the match is `Run /oss:scaffold.`, not any mention of `/oss:scaffold`
+## Why the match is `Run /oss:scaffold`, not any mention of `/oss:scaffold`
 
 `doctor.py`'s remedy text is free prose, not a closed enum, and it
 mentions `/oss:scaffold` for reasons that are NOT "this is the fix":
@@ -26,21 +26,31 @@ mentions `/oss:scaffold` for reasons that are NOT "this is the fix":
   scaffold;
 * a drifted owned file's remedy (`doctor.py`'s `_drift_detail`) and the
   statusline gap's remedy (`doctor_check_statusline.py`) ARE genuinely
-  scaffold-actionable, but neither is phrased as `Run /oss:scaffold.` --
-  they are out of scope for THIS derivation and are read and acted on by
-  hand, the same as any other WARN this file does not classify.
+  scaffold-actionable, but neither opens with the imperative `Run
+  /oss:scaffold` -- they are out of scope for THIS derivation and are
+  read and acted on by hand, the same as any other WARN this file does
+  not classify.
 
-So this module keys on the literal, paste-ready sentence
-`Run /oss:scaffold.` -- the phrase `report_with_remedy()` and
-`owned_drift_summary()` print verbatim for the two unambiguous cases (an
-owned file missing entirely; an owned file missing and its changelog gate
-could not be determined). It is deliberately narrow rather than
-deliberately complete: it never fires on a WARN merely mentioning
-`/oss:scaffold` in passing, and it never contradicts a WARN that says the
-command will not help.
+So this module keys on the literal, paste-ready sentence opening `Run
+/oss:scaffold` -- the phrase `owned_drift_summary()` in `scripts/doctor.py`
+prints verbatim for the two unambiguous, absent-owned-file cases, which
+end that sentence two different ways depending on whether the changelog
+gate behind the file could be read: `Run /oss:scaffold.` (a plain owned
+file, or one whose gate is a clean "declines"/"absent") and `Run
+/oss:scaffold, which reports what it could not read.` (the gate itself
+could not be determined). An earlier version of this module matched only
+the first, period-terminated form -- a real bug caught in self-review
+(#1441): the second, comma-continued sentence is one of the two cases
+this derivation's own docstring already claimed to cover, and it silently
+fell through to `"tick"`. Matching the shared `Run /oss:scaffold` prefix
+rather than either full sentence catches both without touching the three
+non-actionable mentions above, none of which opens with that imperative.
+It is deliberately narrow rather than deliberately complete: it never
+fires on a WARN merely mentioning `/oss:scaffold` in passing, and it
+never contradicts a WARN that says the command will not help.
 """
 
-SCAFFOLD_REMEDY = "Run /oss:scaffold."
+SCAFFOLD_REMEDY = "Run /oss:scaffold"
 
 
 def next_step(report_text):
@@ -48,8 +58,9 @@ def next_step(report_text):
 
     Returns ``(state, matched_lines)``:
 
-    * ``"scaffold"`` -- at least one ``WARN `` line carries the literal
-      remedy ``Run /oss:scaffold.``; ``matched_lines`` names every one.
+    * ``"scaffold"`` -- at least one ``WARN `` line carries the literal,
+      imperative remedy ``Run /oss:scaffold`` (however that sentence ends);
+      ``matched_lines`` names every one.
     * ``"tick"`` -- no ``WARN`` line carries that remedy: the report is
       clean, or every ``WARN`` present is informational or not fixed by
       ``/oss:scaffold``; ``matched_lines`` is empty.
