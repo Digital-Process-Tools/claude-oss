@@ -2867,7 +2867,7 @@ def test_the_owned_file_count_in_the_doc_matches_scaffold_owned():
     from `scaffold.OWNED` itself, so a fifth owned file added later fails this test
     instead of silently going stale the same way.
     """
-    doc = (REPO_ROOT / "commands" / "scaffold.md").read_text(encoding="utf-8")
+    doc = (REPO_ROOT / "commands" / "run" / "scaffold.md").read_text(encoding="utf-8")
     match = re.search(r"The last (\w+) are ours", doc)
     assert match, 'expected a "The last <N> are ours" sentence in commands/scaffold.md'
     words = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}

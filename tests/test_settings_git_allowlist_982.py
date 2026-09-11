@@ -78,7 +78,7 @@ REQUIRED_SUBCOMMAND_GRANTS = {
     "git rev-parse": "agents/developer.md:51, skills/manager/phases/release.md:43",
     "git rev-list": "skills/manager/phases/accounting.md:234 (git rev-list --count)",
     "git ls-remote": "agents/releaser.md:90, commands/release.md:433",
-    "git ls-files": "commands/install-audit.md:40, commands/setup.md:66",
+    "git ls-files": "commands/run/install-audit.md:40, commands/run/setup.md:66",
     "git symbolic-ref": "agents/developer.md:51",
     "git remote": "agents/developer.md:51 (git remote -v)",
     "git describe": "agents/release-auditor.md:64",

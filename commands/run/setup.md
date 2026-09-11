@@ -272,16 +272,16 @@ answer before asking. A `PLAN: 0 to create` line does carry information: it sepa
 from *nobody looked*, which are the two states this repo is named after confusing.
 
 **Never `--apply`, and never from here.** This command writes one untracked local file; the flag
-that writes tracked files belongs to `/oss:scaffold`, on a branch, with a diff and a review. That
-boundary is the working part of the split and running the plan is what keeps it — the maintainer
-gets the measured gap without anything being written for them.
+that writes tracked files belongs to `/oss:run scaffold`, on a branch, with a diff and a review.
+That boundary is the working part of the split and running the plan is what keeps it — the
+maintainer gets the measured gap without anything being written for them.
 
 ### The three outcomes, and the third is the point
 
 | What the run printed | What it means | What to say |
 | --- | --- | --- |
-| `PLAN: N to create …`, N ≥ 1 | measured gap | relay the `create` lines verbatim, then name `/oss:scaffold` |
-| `PLAN: 0 to create …` | furnished, and checked | say so, and still name `/oss:scaffold` — the owned files are replaced on every run, so a repo scaffolded before they existed is furnished and stale at once |
+| `PLAN: N to create …`, N ≥ 1 | measured gap | relay the `create` lines verbatim, then name `/oss:run scaffold` |
+| `PLAN: 0 to create …` | furnished, and checked | say so, and still name `/oss:run scaffold` — the owned files are replaced on every run, so a repo scaffolded before they existed is furnished and stale at once |
 | a `FAIL` line, a non-zero exit, or no output at all | **could not plan** | say the furniture gap is *unmeasured*, and why |
 
 The third row is not the second one. *Nothing to do* and *I could not look* are opposite facts, and
@@ -309,7 +309,9 @@ that line could not answer.
 
 ### Then name the next step
 
-Name **`/oss:scaffold`** whatever the plan and the doctor verdict said. Scaffold is a separate
-command because it writes tracked files, and tracked files want a branch, a diff and a review rather
-than a command that has already run. The plan above is what makes naming it a measurement with a
-recommendation attached, rather than a recommendation on its own.
+Name **`/oss:run scaffold`** whatever the plan and the doctor verdict said. Scaffold is a
+separate step (#1389: demoted out of the picker, reached only by this override or by reading
+`commands/run/scaffold.md` directly) because it writes tracked files, and tracked files want a
+branch, a diff and a review rather than a step that has already run as part of this one. The plan
+above is what makes naming it a measurement with a recommendation attached, rather than a
+recommendation on its own.

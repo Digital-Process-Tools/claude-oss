@@ -46,8 +46,9 @@ existed, the two were free to drift apart with every other test in the file stil
 The consequence follows from the ownership contract rather than from anything about scheduling.
 The executable artifacts an install puts in a managed repository are the changelog gate — a
 `pull_request`-triggered workflow and the assembler it calls — and that dependabot config.
-Everything else the loop does is a slash command someone types into a session: `/oss:tick`,
-`/oss:scaffold`, `/oss:doctor`, `/oss:release`.
+Everything else the loop does is a slash command someone types into a session: `/oss:run`,
+`/oss:doctor`, `/oss:tick`, `/oss:release` -- or, for a step #1389 demoted out of the picker,
+`/oss:run scaffold` and its siblings.
 
 The dependabot config is worth more than a footnote, because it is the shape of the whole problem
 in miniature. It is a **default**: written once when absent, theirs forever after, deletable and

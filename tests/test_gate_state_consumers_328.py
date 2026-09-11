@@ -73,8 +73,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PRODUCER = REPO_ROOT / "scripts" / "oss_config.py"
 PRODUCER_FUNCTION = "scaffolded_changelog_gate"
 
-CHANGELOG_COMMAND = REPO_ROOT / "commands" / "changelog.md"
-SCAFFOLD_COMMAND = REPO_ROOT / "commands" / "scaffold.md"
+CHANGELOG_COMMAND = REPO_ROOT / "commands" / "run" / "changelog.md"
+SCAFFOLD_COMMAND = REPO_ROOT / "commands" / "run" / "scaffold.md"
 RELEASE_VERSION = REPO_ROOT / "scripts" / "release_version.py"
 DOCTOR_CHECK_FRAGMENTS_README = (
     REPO_ROOT / "scripts" / "doctor_check_fragments_readme.py"

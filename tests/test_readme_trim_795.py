@@ -80,7 +80,7 @@ def test_the_issue_number_detector_actually_fires():
 #: being silently dropped.
 DOCS_TARGETS = {
     "docs/install.md": ["ln -sf", "#607", "#617"],
-    "docs/commands.md": ["/oss:doctor", "/oss:install-audit"],
+    "docs/commands.md": ["/oss:doctor", "install-audit"],
     "docs/status-line.md": ["watch_channel"],
     "docs/development.md": ["pytest-cov", "#303"],
     "docs/status.md": ["Tested, not proven", "#293"],

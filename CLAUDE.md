@@ -251,7 +251,8 @@ agents/auditor.md           one diff, four classes, one verdict each; annotates,
 agents/release-auditor.md   the whole delta since the last tag, once per release; blocks
 agents/sub-manager.md       one tick, then dies with its context; never tags, never publishes
 agents/releaser.md          one release, fresh context; the only spawn holding tag-and-publish authority
-commands/*.md               /oss:tick setup scaffold triage changelog release doctor
+commands/*.md               the picker: /oss:run /oss:doctor /oss:tick /oss:release
+commands/run/*.md           demoted out of the picker (#1389): setup scaffold triage curate changelog install-audit, reached via /oss:run's own procedure or its forcing override
 scripts/oss_config.py       read, validate and derive .oss.json
 scripts/agent_role.py       the code-level half of withholding release authority from a sub-manager
 scripts/tick_handback.py    a sub-manager's handback: completed / blocked / paused / could-not-run / returned-nothing / could-not-classify
@@ -838,7 +839,7 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 21,917 B | 22,200 B |
-| `commands/run.md` | 4,365 B | 4,800 B |
+| `commands/run.md` | 4,784 B | 4,800 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
@@ -851,6 +852,21 @@ files and several scripts (`lane_setup.py`, `tick_handback.py`, `plugin_update.p
 `commands/tick.md` by path, and that migration is deliberately left for its own change rather than
 folded in here. `commands/tick.md`'s own row moved separately, in #1386/#1402, for the scheduler's
 new triage-trigger step -- both re-baselines land in this merge together.
+
+**#1389's own follow-up demotes six of the eight: `setup.md`, `scaffold.md`, `triage.md`,
+`curate.md`, `changelog.md` and `install-audit.md` moved to `commands/run/*.md`.** The plugin
+harness discovers slash commands from top-level `commands/*.md` only, never recursively -- no
+`user-invocable: false` equivalent exists for a command file, the mechanism #1391 used for the
+`manager` skill -- so a file one directory down is out of the picker entirely while staying prose
+`/oss:run` still reads and follows, and reachable by its own forcing override
+(`/oss:run setup`, and so on). `commands/tick.md` and `commands/release.md` are deliberately left
+alone: each is named by dozens of test files and several scripts by literal path (spawn wiring,
+board-read caps, release-gate plugin-root checks), coupling deep enough that migrating either is
+its own change rather than a rider on this one -- and `/oss:tick` is the command a maintainer's
+fingers already know, so keeping it live and unchanged during the transition is deliberate.
+`commands/run.md`'s own row moved from 4,365 B to 4,784 B naming the new paths; the six moved files
+carry no budget of their own (never did, since only `tick.md` and `run.md` are budgeted), so no
+other row in this table changes.
 
 **Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
 1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser
