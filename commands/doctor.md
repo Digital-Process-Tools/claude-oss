@@ -542,9 +542,35 @@ Two of the warnings are about CI rather than about setup, and neither is cosmeti
 
 ## Then name the next step
 
-Name **`/oss:tick`** as the next step once the report above is clean, or once every `FAIL` and
-every actionable `WARN` is resolved. That is the maintainer loop itself -- read the board, decide,
-delegate, review, merge on green (#957).
+Do not name a fixed next step -- derive it from the `WARN` lines actually printed above, with
+`scripts/doctor_next_step.next_step(report_text)`: scan every line beginning `WARN` for the literal,
+imperative remedy `Run /oss:scaffold` (`owned_drift_summary()` in `scripts/doctor.py` prints it
+verbatim for the two unambiguous, actionable cases -- an owned file missing entirely, or missing
+with its changelog gate undecidable -- and ends the sentence two different ways depending on which
+case fired, `Run /oss:scaffold.` or `Run /oss:scaffold, which reports what it could not read.`; the
+derivation matches the shared prefix rather than either full sentence, so both are caught). If any
+`WARN` line carries it, name **`/oss:scaffold`** as the next step first, and say which lines it
+clears -- do not name `/oss:tick` while one of those is still open.
+
+Name **`/oss:tick`** once no `WARN` line carries that remedy: the report above is clean, or every
+`FAIL` and every remaining `WARN` is either informational or not something `/oss:scaffold` fixes. If
+`next_step()` instead returns `could-not-determine` -- `report_text` was empty, unreadable, or the
+run itself never completed (`VERDICT: could not run`) -- name neither command: say the diagnostic
+did not produce a report to derive a next step from, and offer to re-run it.
+
+That is the maintainer loop itself -- read the board, decide, delegate, review, merge on green
+(#957).
+
+**The match is deliberately the literal, imperative prefix, not any mention of `/oss:scaffold`.**
+Several WARNs in this diagnostic name `/oss:scaffold` in their own prose without it being the fix, or
+without it being safe to name unconditionally: a drifted owned file's remedy says re-running it
+"would change" the file rather than telling the reader to; the statusline gap's remedy describes
+what scaffold writes rather than instructing it; CodeQL's `owned-only` WARN mentions it only to
+explain which directory is already owned, while its real remedy is a `languages:` config change;
+and the fragments-README gap explicitly warns `/oss:scaffold will NOT fix it`. A looser match on
+the bare substring would misread that last WARN as pointing at the very command it refuses, and
+would send the CodeQL WARN down the wrong remedy entirely. Those other scaffold-adjacent WARNs are
+read and acted on by hand, the same as any other `WARN` this derivation does not classify.
 
 The diagnostic itself never names a next command: a line printed regardless of state carries no
 information, and the advice belongs on the surface that instructs the work. `scripts/doctor.py` is

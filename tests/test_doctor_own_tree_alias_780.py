@@ -49,6 +49,40 @@ def _own_tree(tmp_path, name="claude-supertool"):
     return project
 
 
+#: The repository the installed `supertool` dependency's own manifest declares --
+#: the #1459 identity check's comparison point, injected here rather than read from
+#: a real plugin cache/git repo, so these tests stay hermetic. Mirrors
+#: tests/test_supertool_invocation_1409.py's own fixtures of the same shape.
+_SUPERTOOL_REPOS = {
+    "supertool": "https://github.com/Digital-Process-Tools/claude-supertool"
+}
+
+
+def _fake_git_remote(url):
+    """A fake `run=` for `subprocess.run`, standing in for `git remote get-url
+    origin` and answering with `url` -- #1459's injection seam."""
+
+    def _run(argv, **kwargs):
+        class _Result:
+            returncode = 0
+            stdout = url + "\n"
+            stderr = ""
+
+        return _Result()
+
+    return _run
+
+
+#: The #1459 kwargs a fixture representing a GENUINE own-tree checkout passes to
+#: supertool_entry_point/check_supertool_entry_point, so the identity check agrees.
+_OWN_TREE_IDENTITY = {
+    "dependency_repos": _SUPERTOOL_REPOS,
+    "run": _fake_git_remote(
+        "https://github.com/Digital-Process-Tools/claude-supertool.git"
+    ),
+}
+
+
 def test_a_wrapper_aliasing_the_trees_own_core_is_ok(tmp_path):
     """The convenience form the issue is about: `./supertool -> supertool.py`,
     both inside the same checkout. Before #780 this rendered as
@@ -59,11 +93,13 @@ def test_a_wrapper_aliasing_the_trees_own_core_is_ok(tmp_path):
         pytest.skip(refused + "; what went untested is the own-tree-ok arm")
 
     state, detail = doctor.supertool_entry_point(
-        project, cache_root=str(tmp_path / "no-cache")
+        project, cache_root=str(tmp_path / "no-cache"), **_OWN_TREE_IDENTITY
     )
     assert state == "own-tree-ok", (state, detail)
 
-    doctor.check_supertool_entry_point(project, cache_root=str(tmp_path / "no-cache"))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(tmp_path / "no-cache"), **_OWN_TREE_IDENTITY
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "OK", message
     assert "supertool.py" in message, message
@@ -90,12 +126,12 @@ def test_a_wrapper_pointing_elsewhere_still_warns(tmp_path):
         pytest.skip(refused + "; what went untested is the own-tree-stranger arm")
 
     state, detail = doctor.supertool_entry_point(
-        project, cache_root=str(home), record=str(record)
+        project, cache_root=str(home), record=str(record), **_OWN_TREE_IDENTITY
     )
     assert state == "own-tree-stranger", (state, detail)
 
     doctor.check_supertool_entry_point(
-        project, cache_root=str(home), record=str(record)
+        project, cache_root=str(home), record=str(record), **_OWN_TREE_IDENTITY
     )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
@@ -117,11 +153,13 @@ def test_a_readlink_failure_reads_as_could_not_tell_not_a_stranger(
     monkeypatch.setattr(doctor, "_same_file", lambda left, right: None)
 
     state, detail = doctor.supertool_entry_point(
-        project, cache_root=str(tmp_path / "no-cache")
+        project, cache_root=str(tmp_path / "no-cache"), **_OWN_TREE_IDENTITY
     )
     assert state == "own-tree-unknown", (state, detail)
 
-    doctor.check_supertool_entry_point(project, cache_root=str(tmp_path / "no-cache"))
+    doctor.check_supertool_entry_point(
+        project, cache_root=str(tmp_path / "no-cache"), **_OWN_TREE_IDENTITY
+    )
     level, message = doctor.FINDINGS[-1]
     assert level == "WARN", message
     assert "unknown" in message, message

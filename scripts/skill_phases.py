@@ -284,7 +284,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # the moment a twelfth row was added) were corrected to drop the
         # count rather than update it to thirteen and go stale again the
         # next time a row is added. Budget unchanged; comfortably under it.
-        53938,
+        # Re-baselined for #1409: 53938 B became 55309 B -- a new paragraph
+        # after the verbatim supertool blockquote states that the blockquote
+        # is wrong as written inside a worktree of a managed repo that is
+        # supertool's own checkout, and points at the new
+        # `doctor.supertool_invocation` detection rather than editing the
+        # blockquote itself. Budget unchanged; comfortably under it.
+        55309,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -409,8 +415,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # 2646 B -- a one-sentence pointer noting a sub-manager's own
         # WAIT-OBSERVABLE additionally folds in fleet occupancy, since a
         # releaser has no fleet to report on. Budget unchanged.
-        2646,
-        2700,
+        # Raised for #1458: 2646 B became 2761 B, past the 2700 B ceiling
+        # by 61 B. The new sentence states that a leg a later run of the
+        # same check name superseded is excluded from `red`, matching
+        # `gh-pr:N:status` (pr_green.py disagreed with it before this fix).
+        # Nothing already in the file argued that point, so nothing was
+        # cut to make room; ceiling moved to 3050 B, ~10% headroom over
+        # the new size.
+        2761,
+        3050,
         "the pr_green.py wait, its four states, and the #1086 substring trap -- shared by a sub-manager merging and a releaser landing gate 3's own fix",
     ),
     # New for #1394: the loop had no owner anywhere for work that arrives from
@@ -589,7 +602,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # paragraph pointing at the new phases/inbound.md file, since inbound
         # work outranks the loop's own findings the same way an unmerged PR
         # or a red default branch already does. Budget unchanged.
-        34816,
+        # Re-baselined for #1409: 34816 B became 34905 B -- the short-lane
+        # reason list gained a fifth word, declined-for-cause (#1407).
+        # Budget unchanged; comfortably under it.
+        34905,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),
