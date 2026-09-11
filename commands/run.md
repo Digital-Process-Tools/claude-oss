@@ -63,16 +63,21 @@ Four states, and the fourth is the one that stops the loop:
 
 ## setup
 
-No `.oss.json`, and `next_action.py` has already confirmed a probe is safe to attempt. Read and
-follow `commands/setup.md` from here -- it measures the repo and writes the config; do not guess
-values by hand.
+No `.oss.json`, and `next_action.py` has already confirmed a probe is safe to attempt. Read
+and follow `commands/run/setup.md` from here -- it measures the repo and writes the config; do
+not guess values by hand.
 
 ## scaffold / install-audit / triage / curate / changelog / release
 
-Each keeps its own procedure, unchanged, at its own file -- `commands/scaffold.md`,
-`commands/install-audit.md`, `commands/triage.md`, `commands/curate.md`, `commands/changelog.md`,
-`commands/release.md`. Read and follow the one step 2 named (or the one `$ARGUMENTS` forced), then
-return to step 2 to ask again what is needed now.
+Each keeps its own procedure, unchanged, at its own file -- `commands/run/scaffold.md`,
+`commands/run/install-audit.md`, `commands/run/triage.md`, `commands/run/curate.md`,
+`commands/run/changelog.md`, `commands/release.md`. The first five moved out of `commands/`
+(#1389): the plugin harness discovers slash commands from top-level `commands/*.md` only, never
+recursively, so a file one directory down is not a picker entry at all -- reachable here, and by
+the forcing override above, never by typing `/oss:setup` and so on directly any more.
+`commands/release.md` stays where it is; see the picker note below for why. Read and follow the
+one step 2 named (or the one `$ARGUMENTS` forced), then return to step 2 to ask again what is
+needed now.
 
 ## dispatch
 

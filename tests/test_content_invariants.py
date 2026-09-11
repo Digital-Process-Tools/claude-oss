@@ -29,7 +29,12 @@ AGENTS = sorted((REPO_ROOT / "agents").glob("*.md"))
 #: manager's split (#547).
 DEVELOPER_PHASES = sorted((REPO_ROOT / "agents" / "developer").glob("*.md"))
 DEVELOPER = developer_docs.DeveloperBrief()
-COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md"))
+COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md")) + sorted(
+    (REPO_ROOT / "commands" / "run").glob("*.md")
+)
+#: Non-recursive by construction (#1389): a file moved into commands/run/ is
+#: demoted out of the slash picker while staying prose the loop still reads,
+#: so COMMANDS folds both in rather than silently narrowing coverage.
 #: A schema description is prose an agent reads with the same authority as a
 #: skill or an agent definition -- #783's own framing, and the reason
 #: `handback.md` points a brief at these fields rather than copying the list
@@ -925,7 +930,7 @@ def test_setup_probes_the_repo_without_preset_only_ops():
     Scoped to setup.md deliberately. Every other command runs against a repo setup has
     already configured, so a preset op there has its precondition met.
     """
-    text = (REPO_ROOT / "commands" / "setup.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "commands" / "run" / "setup.md").read_text(encoding="utf-8")
     offenders = [
         "setup.md:{}: {!r}".format(line, op) for line, op in _preset_ops_called(text)
     ]
@@ -988,7 +993,7 @@ def test_scaffold_documents_every_file_it_writes():
     sys.path.insert(0, str(REPO_ROOT / "scripts"))
     import scaffold
 
-    text = (REPO_ROOT / "commands" / "scaffold.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "commands" / "run" / "scaffold.md").read_text(encoding="utf-8")
     written = sorted(scaffold.TEMPLATES) + sorted(scaffold.OWNED)
     assert written, "scaffold.py declares no files -- this check would vacuously pass"
     missing = [name for name in written if name not in text]
@@ -1082,7 +1087,7 @@ def test_setup_writes_both_halves_and_excludes_only_the_local_one():
     re-derived `tag_pattern` by being asked, and a repo tagging v1.2.3 can acquire 1.2.4.
     """
     oss_config = _oss_config()
-    text = (REPO_ROOT / "commands" / "setup.md").read_text(encoding="utf-8")
+    text = (REPO_ROOT / "commands" / "run" / "setup.md").read_text(encoding="utf-8")
     assert oss_config.LOCAL_CONFIG_NAME in text, (
         "setup.md must name the machine-scoped half; without it the maintainer writes "
         "one file again"

@@ -57,7 +57,7 @@ Every line is one of the same three states doctor uses:
   says so rather than skipping silently: `owned files: not checked -- .oss.json was not found`.
 - **The rule layer**, reachable and not merely indexed — the same check `/oss:doctor` runs.
 
-If `.oss.json` is missing or does not validate, offer `/oss:setup`; do not run it unasked.
+If `.oss.json` is missing or does not validate, offer `/oss:run setup`; do not run it unasked.
 
 ## What this comment folds in — and what it leaves open (#286)
 

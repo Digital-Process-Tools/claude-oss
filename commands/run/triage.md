@@ -5,7 +5,7 @@ allowed-tools: Bash, Agent
 
 Delegate one sweep to the `triager` agent.
 
-Read `.oss.json` first for the repo slug. If it is missing, stop and say so — `/oss:setup` writes it.
+Read `.oss.json` first for the repo slug. If it is missing, stop and say so — `/oss:run setup` writes it.
 
 The agent labels and reports; it never touches code, never closes an issue, and never writes a
 `cohort-*` label. Those are the maintainer's acts.
