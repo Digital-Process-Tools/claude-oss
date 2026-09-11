@@ -95,3 +95,59 @@ def test_missing_repo_does_not_fork_a_refresh(monkeypatch, tmp_path):
     mod.check_statusline_unknowns(str(tmp_path), {"repo": ""}, now=NOW)
 
     assert calls == []
+
+
+def test_stale_warn_says_forked_when_a_fresh_refresh_actually_started(
+    monkeypatch, tmp_path
+):
+    """#1373's own reviewer round: the WARN text must not claim a fork "just"
+    happened unless `statusline.fork_refresh` actually reported starting
+    one -- must-fire half of the pair below."""
+    cache = {
+        "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
+        "default_branch_state": "green",
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": NOW - 5,
+    }
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
+    monkeypatch.setattr(
+        statusline,
+        "fork_refresh",
+        lambda root, repo, now=None, session_id=None: True,
+    )
+
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+
+    messages = [msg for _, msg in doctor.FINDINGS]
+    branch_msg = next(m for m in messages if m.startswith("statusline default-branch"))
+    assert "just forked a background refresh itself" in branch_msg, branch_msg
+    assert "none was started" not in branch_msg, branch_msg
+
+
+def test_stale_warn_does_not_claim_a_fork_when_none_started(monkeypatch, tmp_path):
+    """Must-not-fire pairing: when `fork_refresh` reports it did NOT start a
+    fresh process (busy lock, failed spawn, ...), the WARN must say so
+    rather than repeating the "just forked" claim regardless."""
+    cache = {
+        "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
+        "default_branch_state": "green",
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": NOW - 5,
+    }
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
+    monkeypatch.setattr(
+        statusline,
+        "fork_refresh",
+        lambda root, repo, now=None, session_id=None: False,
+    )
+
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+
+    messages = [msg for _, msg in doctor.FINDINGS]
+    branch_msg = next(m for m in messages if m.startswith("statusline default-branch"))
+    assert "none was started" in branch_msg, branch_msg
+    assert "just forked a background refresh itself" not in branch_msg, branch_msg

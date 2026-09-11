@@ -106,6 +106,16 @@ def test_malformed_api_ref_rejects_branch_with_question_mark():
     assert statusline._malformed_api_ref("owner/name", "ref?query=1") is True
 
 
+def test_malformed_api_ref_rejects_branch_with_hash():
+    """#1399 self-review finding: `branch` is not always the LAST path
+    segment (`_reading_from_check_runs` appends `/check-runs`,
+    `_reading_from_combined_status` appends `/status`), so a `#` inside it
+    would start a URL fragment and truncate/redirect whatever segment
+    follows it, the identical shape `?` was already refused for. Must-fire:
+    a `#`-carrying branch must be refused."""
+    assert statusline._malformed_api_ref("owner/name", "ref#frag") is True
+
+
 def test_malformed_api_ref_rejects_branch_with_dot_dot():
     assert statusline._malformed_api_ref("owner/name", "../../etc") is True
 

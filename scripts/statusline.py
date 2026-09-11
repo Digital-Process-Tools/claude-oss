@@ -1683,12 +1683,18 @@ def _malformed_repo(repo):
 
 
 #: A branch name may legitimately carry a slash (`release/1.0`) and sits as
-#: the LAST path segment in `"repos/{}/commits/{}/...".format(repo, branch)`,
-#: so this excludes it -- unlike `_REPO_RE`, which requires exactly one.
-#: Whitespace and `?` (which would start a bogus query string mid-path) are
-#: refused outright; `..` is checked separately in `_malformed_api_ref` below,
-#: matching claude-supertool's own split (#1035, upstream #2245).
-_BRANCH_UNSAFE_RE = re.compile(r"[\s?]")
+#: a path segment in `"repos/{}/commits/{}/...".format(repo, branch)` -- NOT
+#: always the last one, correcting this comment's own prior claim (self-review
+#: finding, #1399's own reviewer round): `_reading_from_check_runs` appends
+#: `/check-runs` after it and `_reading_from_combined_status` appends
+#: `/status`, so this excludes the slash unlike `_REPO_RE`, which requires
+#: exactly one. Whitespace, `?` and `#` (either of which would start a bogus
+#: query string or fragment mid-path, truncating or redirecting whatever
+#: segment follows `branch`) are refused outright -- `#` added alongside `?`
+#: for the identical reason `_REPO_QUERY_FRAGMENT_RE` above refuses both for
+#: `repo`; `..` is checked separately in `_malformed_api_ref` below, matching
+#: claude-supertool's own split (#1035, upstream #2245).
+_BRANCH_UNSAFE_RE = re.compile(r"[\s?#]")
 
 
 def _malformed_api_ref(repo, branch):
@@ -3057,14 +3063,23 @@ def _fork_refresh(root, repo, session_id=None):
     `.supertool.json`: a value this module cannot trust is treated as
     absent, never as a crash.
     """
+    # #1373's own reviewer round: this used to return nothing on every path,
+    # so a caller like `doctor_check_statusline_unknowns.py`'s
+    # `_maybe_fork_refresh` could not tell "a fresh refresh was actually
+    # started just now" from "nothing happened" (a busy lock, a lock write
+    # that failed, a `Popen` that could not start) -- and reported a WARN
+    # claiming a fork had "just" happened regardless of which one occurred.
+    # Returns `True` only when this call itself started a NEW detached
+    # process; `False` for every skip or failure below, so the caller's own
+    # message can stop overclaiming.
     lock = _lock_path(repo)
     try:
         lock.parent.mkdir(parents=True, exist_ok=True)
         if lock.exists() and time.time() - lock.stat().st_mtime < LOCK_STALE_AFTER:
-            return
+            return False
         lock.write_text(str(time.time()), encoding="utf-8")
     except OSError:
-        return
+        return False
     argv = [
         sys.executable,
         os.path.abspath(__file__),
@@ -3083,7 +3098,8 @@ def _fork_refresh(root, repo, session_id=None):
             start_new_session=True,
         )
     except (OSError, ValueError):
-        pass
+        return False
+    return True
 
 
 def fork_refresh(root, repo, now=None, session_id=None):
@@ -3102,8 +3118,15 @@ def fork_refresh(root, repo, now=None, session_id=None):
     staleness check reads the real wall clock via `time.time()`, the same
     as `_fork_refresh` always has, so a test driving `now` synthetically
     does not change which lock state this function sees.
+
+    Returns `_fork_refresh`'s own `True`/`False` (#1373's own reviewer
+    round) -- `True` only when THIS call started a fresh detached process,
+    `False` for a busy lock, a lock write that failed, or a `Popen` that
+    could not start -- so a caller like `doctor_check_statusline_unknowns.
+    py` can word its own message honestly instead of always claiming a
+    refresh was "just" forked.
     """
-    _fork_refresh(root, repo, session_id=session_id)
+    return _fork_refresh(root, repo, session_id=session_id)
 
 
 # ---------------------------------------------------------------------------- main
