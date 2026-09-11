@@ -106,6 +106,7 @@
         "tests/test_shipped_op_spellings.py",
         "tests/test_statusline_local_settings_642.py",
         "tests/test_statusline_windows_gap_487.py",
+        "tests/test_supertool_invocation_1409.py",
         "tests/test_swallow_census_383.py",
         "tests/test_triager_ranking_pointer_994.py",
         "tests/test_unattended_triggers_237.py",
