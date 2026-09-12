@@ -825,7 +825,7 @@ def _mcp_list_consumer_names(run=None, which=None, env=None):
     return channel_consumer_names(text), None
 
 
-def _drop_dead_plugin_consumers(names, liveness=None):
+def _drop_dead_plugin_consumers(names, liveness=None, run=None, which=None, env=None):
     """Drop any `plugin:`-declared consumer the harness positively reports as
     a FAILED transport (#1372, gate 3 round one for v0.31.0).
 
@@ -847,25 +847,49 @@ def _drop_dead_plugin_consumers(names, liveness=None):
     servers racing one socket. `could-not-ask`, `not-listed` and `connected`
     all keep the server counted.
 
-    Only `plugin:`-prefixed names are candidates. This is a liveness gate on
-    the CLAIM a `plugin:`-prefixed name makes -- that an installed plugin's
-    own `.mcp.json` declares it -- not on which surface(s) it happens to be
-    visible on: #1364 found that at least some harness versions ALSO surface
-    a plugin-declared server on `claude mcp list` itself, under this same
-    `plugin:`-prefixed resolvable name, so a name reaching here may already
-    carry its own `claude mcp list` status too. That does not change what
-    this gate does -- a `plugin:`-prefixed name is always liveness-checked
-    here, regardless of where it was seen.
+    **Callers must pass only the plugin-registry population here (#1378,
+    gate 3 round two finding 3), never a population merged with `claude mcp
+    list`'s own names.** A `claude mcp list` row is a server anyone with
+    `claude mcp add` can name; a bare string starting with `plugin:` proves
+    nothing about where it came from. The prefix check below is a filter
+    over an ALREADY-TRUSTED population (this function's own contract), not a
+    trust decision in itself -- probing a `claude mcp list` name on the
+    strength of its own spelling, and dropping it on a spoofed FAILED reply,
+    would silently disarm a real collision this census exists to catch. Any
+    plugin-declared consumer #1364 found ALSO surfaced under this same
+    resolvable name on `claude mcp list` is still protected: the dedup in
+    `channel_consumer_census_state` keys on the resolved name and keeps the
+    `claude mcp list` row (asked first), so that consumer's OWN connection
+    status decides it there rather than through a second, redundant ask here.
 
-    `liveness` is injected for testing and defaults to
-    `arm_target_liveness`, imported inside the function rather than at module
-    scope: `doctor_check_mcp_channel_connection` imports names back out of
-    THIS module, so a module-scope import here is a circular one.
+    `liveness` is injected for testing and defaults to `arm_target_liveness`,
+    imported inside the function rather than at module scope
+    (`doctor_check_mcp_channel_connection` imports names back out of THIS
+    module, so a module-scope import here is a circular one) -- wrapped in a
+    `try` (#1378 finding 4): an import that could not be resolved is not
+    evidence a consumer is dead, so it must read as `could-not-ask` (keeping
+    every name) rather than escape as a raw traceback out of a function
+    `doctor.py`'s own `main()` calls with no enclosing `except`. `run`/
+    `which`/`env` (#1378 finding 2) thread through to that default so a
+    caller who already injects them for the `claude mcp list` half is not
+    left with a second, real subprocess call it has no way to stub -- the
+    same reason `run`/`which`/`env` are injected everywhere else in this
+    module.
     """
     if liveness is None:
-        from doctor_check_mcp_channel_connection import arm_target_liveness
+        try:
+            from doctor_check_mcp_channel_connection import arm_target_liveness
+        except ImportError as exc:
+            _reason = "arm_target_liveness could not be imported ({})".format(exc)
 
-        liveness = arm_target_liveness
+            def liveness(_name, _reason=_reason):
+                return "could-not-ask", _reason
+
+        else:
+
+            def liveness(name, _fn=arm_target_liveness):
+                return _fn(name, run=run, which=which, env=env)
+
     kept = []
     for name in names:
         if not name.startswith("plugin:"):
@@ -971,9 +995,18 @@ def channel_consumer_census_state(
                 len(mcp_names), plugin_reason
             )
         )
-    names = _drop_dead_plugin_consumers(
-        list(mcp_names) + list(plugin_names), liveness=liveness
+    # #1378 finding 3: only the plugin-registry population is passed to the
+    # liveness gate -- never `mcp_names` merged in, which would let a
+    # `claude mcp list` row that merely happens to be NAMED with a `plugin:`
+    # prefix be liveness-probed and dropped on the strength of its own
+    # spelling alone. `run`/`which`/`env` (finding 2) thread through so the
+    # SAME stubs a caller already injected for the `claude mcp list` half
+    # above also govern this ask, rather than the default falling through to
+    # a real, unstubbable `claude mcp get`.
+    plugin_names = _drop_dead_plugin_consumers(
+        list(plugin_names), liveness=liveness, run=run, which=which, env=env
     )
+    names = list(mcp_names) + list(plugin_names)
     # #1364: widening `_MCP_LIST_LINE_RE` means `claude mcp list`'s own
     # population (`mcp_names`) can now report a plugin-provided server under
     # its RESOLVABLE name (`plugin:supertool:claude-channel`), while the
