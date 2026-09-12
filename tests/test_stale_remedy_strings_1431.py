@@ -41,6 +41,28 @@ def test_doctor_md_next_step_naming_uses_run_form():
     assert "name **`/oss:scaffold`** as the next step first" not in text
 
 
+def test_release_md_changelog_remedy_uses_run_form():
+    text = _text("commands/release.md")
+    assert (
+        "Fold the changelog if this repo uses fragments (`/oss:run changelog`)" in text
+    )
+    assert (
+        "Fold the changelog if this repo uses fragments (`/oss:changelog`)" not in text
+    )
+
+
+def test_release_md_curate_remedy_uses_run_form():
+    text = _text("commands/release.md")
+    assert "the remedy (`/oss:run curate`) beside it" in text
+    assert "the remedy (`/oss:curate`) beside it" not in text
+
+
+def test_overview_md_curate_cheat_sheet_row_drops_bare_form():
+    text = _text("docs/overview.md")
+    assert "`trap.d/`, then the curate pass" in text
+    assert "`trap.d/`, then `/oss:curate`" not in text
+
+
 def test_doctor_md_literal_generator_quotes_are_untouched():
     """The remaining bare `/oss:scaffold` mentions in commands/doctor.md are
     literal quotes of scripts/doctor.py's own generated remedy text -- pinned
