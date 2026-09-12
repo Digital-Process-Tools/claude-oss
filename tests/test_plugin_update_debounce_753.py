@@ -316,3 +316,44 @@ def test_print_state_renders_none_versions_as_empty_fields(
     plugin_update.main(["--root", str(tmp_path), "--print-state"])
     fields = capsys.readouterr().out.splitlines()[0].split("\t")
     assert fields == ["could-not-check", "", "", "offline"]
+
+
+def test_root_as_the_last_argv_token_does_not_raise_indexerror(monkeypatch):
+    """#1429: `argv[argv.index("--root") + 1] if "--root" in argv else
+    os.getcwd()` raises `IndexError` when `--root` is the very last token on
+    the command line, the identical pattern #1346 already fixed in
+    `statusline.py`. A caller passing `--root` with nothing after it is a
+    malformed invocation, not a crash."""
+    captured = {}
+
+    def fake_update(**kwargs):
+        captured["root"] = kwargs.get("root")
+        return {"state": "current", "at": time.time()}
+
+    monkeypatch.setattr(plugin_update, "read_receipt", lambda path=None: None)
+    monkeypatch.setattr(plugin_update, "update", fake_update)
+    monkeypatch.setattr(
+        plugin_update, "write_receipt", lambda document, path=None: None
+    )
+    # Must not raise -- the bug reproduced here as an uncaught IndexError.
+    plugin_update.main(["--root"])
+    assert captured["root"] != "--root"
+
+
+def test_caller_as_the_last_argv_token_is_the_positive_control(monkeypatch):
+    """`--caller` already used the bounds-checked form by hand
+    (`if idx + 1 < len(argv)`) before this fix -- proving it already survives
+    the same shape is the positive control for the `--root` fix above."""
+    captured = {}
+
+    def fake_update(**kwargs):
+        captured["caller"] = kwargs.get("caller")
+        return {"state": "current", "at": time.time()}
+
+    monkeypatch.setattr(plugin_update, "read_receipt", lambda path=None: None)
+    monkeypatch.setattr(plugin_update, "update", fake_update)
+    monkeypatch.setattr(
+        plugin_update, "write_receipt", lambda document, path=None: None
+    )
+    plugin_update.main(["--caller"])
+    assert captured["caller"] is None

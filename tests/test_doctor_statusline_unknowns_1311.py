@@ -23,6 +23,43 @@ def setup_function(_):
 NOW = 1_000_000.0
 
 
+def test_refresh_command_escapes_a_double_quote_in_project_dir():
+    """#1426: `_refresh_command` used to format `project_dir` straight into a
+    double-quoted shell string with no escaping -- a `"` anywhere in the
+    directory name terminates the quoting early, so a maintainer who pastes
+    the remedy runs something other than a statusline refresh. A directory
+    name containing a `"` is the reachable case named in the issue; asserting
+    the character never appears unescaped inside the quotes is the general
+    form of that check, not just this one example."""
+    remedy = mod._refresh_command('/tmp/some "quoted" dir')
+    # The whole point: an embedded `"` must not close either double-quoted
+    # segment early. If it did, `--refresh` (the second token after the
+    # first closing quote) would sit unquoted right after a bare directory
+    # fragment -- which is exactly the unescaped-output shape this replaces.
+    assert '"quoted"' not in remedy, remedy
+    assert '\\"quoted\\"' in remedy, remedy
+
+
+def test_refresh_command_is_unchanged_with_no_special_characters():
+    """Positive control: an ordinary path with no quote character renders
+    exactly as it did before -- this is not a switch to a different quoting
+    convention (e.g. POSIX single-quoting), only an escape for the one
+    character that could break the existing double-quote wrapping.
+
+    Self-review finding (auditor spawn, lane #1426): a hand-typed, forward-
+    slash-only literal here would silently mismatch on Windows, where
+    `Path("/tmp/plain/dir") / ".oss" / "statusline.py"` renders with
+    backslashes -- the expected `script` half is built the same way
+    `_refresh_command` itself builds it, rather than typed by hand, so this
+    assertion holds on every platform `_refresh_command` actually runs on."""
+    project_dir = "/tmp/plain/dir"
+    expected_script = Path(project_dir) / ".oss" / "statusline.py"
+    remedy = mod._refresh_command(project_dir)
+    assert remedy == 'python3 "{}" --refresh --root "{}"'.format(
+        expected_script, project_dir
+    )
+
+
 # --------------------------------------------------------------------------
 # channel_cause: the five real states plus the off-switch, each distinguishable.
 # --------------------------------------------------------------------------

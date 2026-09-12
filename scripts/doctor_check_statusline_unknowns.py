@@ -150,7 +150,29 @@ def _refresh_command(project_dir):
     if doctor.scaffold is None:
         return None
     script = Path(project_dir) / doctor.scaffold.OWNED_DIR / "statusline.py"
-    return 'python3 "{}" --refresh --root "{}"'.format(script, project_dir)
+    # #1426: `str(script)`/`project_dir` used to go straight into the
+    # double-quoted shell string below with no escaping -- a `"` anywhere in
+    # either interpolated path terminates that quoting early, so a
+    # maintainer who pastes the remedy runs something other than a
+    # statusline refresh. `shlex.quote()` is the wrong tool here: it wraps
+    # the whole value in single quotes, which is a different quoting
+    # convention than the double-quoted form every other remedy in this
+    # module already uses (and single quotes are not stripped by Windows'
+    # `cmd.exe`, where they would be passed into argv literally). Escaping
+    # only the one character that could break the existing double quotes
+    # keeps the remedy's shape identical for every path that does not
+    # contain one. Scope, stated rather than implied (self-review finding):
+    # this closes the quote-breaking case named in the issue, not general
+    # shell-metacharacter injection (`$`, a backtick) -- `project_dir` is a
+    # local filesystem path under the control of whoever set up the
+    # checkout, not attacker-supplied issue/PR text, so that residual gap
+    # requires an adversary who can already create arbitrarily-named
+    # directories on the machine running doctor.
+    quoted_script = str(script).replace('"', '\\"')
+    quoted_project_dir = str(project_dir).replace('"', '\\"')
+    return 'python3 "{}" --refresh --root "{}"'.format(
+        quoted_script, quoted_project_dir
+    )
 
 
 def channel_cause(config, cache, now, repo_missing=False):

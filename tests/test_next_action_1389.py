@@ -947,6 +947,38 @@ def test_record_skip_cli_fails_loudly_when_nothing_is_ranked(
     assert "FAIL:" in capsys.readouterr().out
 
 
+def test_record_skip_cli_traps_a_too_long_reason_as_fail_not_a_traceback(
+    tmp_path, monkeypatch, capsys
+):
+    """#1437: `_record_skip_cli`'s own docstring promises "Never raises past
+    this point: every failure is a printed FAIL:", but it only caught
+    `ValueError` -- `record_skip` -> `oss_state.append` raises `oss_state.
+    StateError` (a plain `Exception`, not a `ValueError`) when the composed
+    decision string exceeds `oss_state.MAX_DECISION` (200 chars). A
+    maintainer session writing free-form `--reason` prose (`commands/run.md`
+    hands it exactly that) got an uncaught traceback instead of the
+    documented `FAIL:` line."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"state_file": ".max/oss-watch.json"})
+    _quiet_inbound(monkeypatch, unruled=1)
+    monkeypatch.setattr(
+        next_action.release_trigger,
+        "compute",
+        lambda *a, **k: {
+            "state": release_trigger.STATE_FIRED,
+            "fired": ["merged_prs"],
+            "unevaluated": [],
+            "conditions": [],
+        },
+    )
+    too_long_reason = "x" * 250
+    rc = next_action.main(
+        ["--root", str(root), "--record-skip", "release", "--reason", too_long_reason]
+    )
+    assert rc != 0
+    assert "FAIL:" in capsys.readouterr().out
+
+
 # --- inbound repeat-suppression (#1433) -------------------------------------
 
 

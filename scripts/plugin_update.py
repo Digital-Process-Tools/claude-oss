@@ -934,9 +934,30 @@ def write_receipt(document, path=None):
     return path
 
 
+def _arg_value(argv, flag, default):
+    """The token following `flag` in `argv`, or `default` (#1429).
+
+    `flag` as the last token used to raise `IndexError` here --
+    `argv[argv.index(flag) + 1]` with no bounds check -- the identical
+    pattern #1346 fixed for `statusline.py`'s own two call sites via its
+    `_arg_value` helper. Not imported from there: `plugin_update.py` only
+    ever imports `statusline` lazily inside functions (never at module
+    scope, see `update`/`_update_one`), and this runs synchronously before
+    `bin/oss-workspace` execs `claude`, so a local, dependency-free helper
+    matches every other call site in this file rather than adding the first
+    module-scope import of a sibling script that already has its own
+    (unrelated) reasons to stay lazy.
+    """
+    if flag in argv:
+        i = argv.index(flag)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return default
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    root = argv[argv.index("--root") + 1] if "--root" in argv else os.getcwd()
+    root = _arg_value(argv, "--root", os.getcwd())
     if "--print-resolved-root" in argv:
         # A read, not an update -- deliberately does not call update()/write_receipt()
         # below, which refresh the marketplace and may modify the install. #677 needs
@@ -971,11 +992,7 @@ def main(argv=None):
     # #1154: `--caller launcher` is what `bin/oss-workspace` passes on its
     # synchronous, pre-`exec claude` call, so the receipt can say who ran it --
     # see `update()`'s own docstring for why that matters to `doctor.check_auto_update`.
-    caller = None
-    if "--caller" in argv:
-        idx = argv.index("--caller")
-        if idx + 1 < len(argv):
-            caller = argv[idx + 1]
+    caller = _arg_value(argv, "--caller", None)
     prior = read_receipt()
     if isinstance(prior, ReceiptUnreadable):
         prior = None

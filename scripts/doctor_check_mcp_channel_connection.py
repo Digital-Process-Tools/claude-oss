@@ -305,7 +305,16 @@ def check_mcp_channel_connection(
                 # third state here is the WARN below, unchanged -- the same
                 # direction every other arm in this module takes.
                 raw_state, source, age = (None, None, None)
-        if raw_state == "forwarding" and source not in (None, "cached-stale"):
+        if raw_state == "forwarding" and source not in (
+            None,
+            "cached-stale",
+            # #1437: a reading attributed to a session this check has no way
+            # to verify is its own must not earn the same trust as a plain
+            # `cached` reading -- doctor.py has no session identity to
+            # compare against, so every session-tagged cached reading is
+            # unknowable to it, never provably its own.
+            "cached-other-session",
+        ):
             aged = (
                 " ({:.0f}s old)".format(age)
                 if isinstance(age, (int, float)) and age
@@ -409,7 +418,10 @@ def check_channel_delivery(project_dir, resolve=None):
         resolve = resolve_channel_health_reading
     raw_state, source, age = resolve(project_dir)
     aged = " ({:.0f}s old)".format(age) if isinstance(age, (int, float)) and age else ""
-    if source in (None, "cached-stale"):
+    if source in (None, "cached-stale", "cached-other-session"):
+        # #1437: same reasoning as `check_mcp_channel_connection`'s own
+        # suppression guard above -- a reading this check cannot verify as
+        # its own session's is not a reading it can speak for either.
         # Neither arm establishes anything: `None` is no reading at all and
         # `cached-stale` is a reading too old to speak for the present. Both
         # are #764 NOTICEs, on the line this module draws throughout -- WARN
