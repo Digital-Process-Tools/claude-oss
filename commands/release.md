@@ -497,7 +497,7 @@ to carry, not only the release's own (#710). Name the paths the release actually
 folded changelog, the version-site files, anything else this run wrote — and stage those, or
 `git add` each one explicitly before a pathless commit.
 
-Fold the changelog if this repo uses fragments (`/oss:changelog`), and commit with
+Fold the changelog if this repo uses fragments (`/oss:run changelog`), and commit with
 `commit_subject` — or with `chore(release): {version}` when it is null, per the rule above. **Do
 not create the tag yet** — the release commit's own CI has to conclude first (#1266, below).
 
@@ -756,7 +756,7 @@ Three answers — `N waiting`, `none waiting`, `could-not-read` — and **none o
 A gate here would refuse a security fix over a typo somebody logged on Friday, and the ranking table
 already says a blocking-class finding releases immediately.
 
-So state the count in the release report, with the remedy (`/oss:curate`) beside it, and tag.
+So state the count in the release report, with the remedy (`/oss:run curate`) beside it, and tag.
 `could-not-read` is reported as unknown and never as zero.
 
 ## The tag is not the delivery

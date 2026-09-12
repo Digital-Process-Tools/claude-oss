@@ -101,7 +101,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # overage to be worth trimming something else in the same file to
     # absorb, so the ceiling moves to 24500 B, ~10% headroom over the new
     # size, rather than cutting anything.
-    "commands/tick.md": (22271, 24500),
+    # Re-baselined for #1431: 22271 B became 22275 B -- the "if .oss.json is
+    # missing" remedy now says "/oss:run setup" rather than the dead bare
+    # "/oss:setup" form. Ceiling unchanged; comfortably under.
+    "commands/tick.md": (22275, 24500),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at

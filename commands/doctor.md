@@ -59,7 +59,7 @@ was absent, so nothing below them is evidence either way. `clone` and `worktree_
 one person's disk and live in the untracked `.oss.local.json`, not in the committed `.oss.json`, so
 that is the file to look in when one of them is wrong.
 
-If `.oss.json` is missing, the fix is `/oss:setup`. Offer it; do not run it unasked — **unless** the
+If `.oss.json` is missing, the fix is `/oss:run setup`. Offer it; do not run it unasked — **unless** the
 report also says `the enclosing clone was not searched`. That line means the run was pointed at a
 tree it was not standing in, so the clone was never consulted and a worktree's config could be
 sitting there untouched. Re-run from inside the tree before offering to write anything.
@@ -129,7 +129,7 @@ documents.
 ## The `interpreter architecture`, `cpu topology` and `worker sizing` lines
 
 Three lines about the machine this process is running on rather than the repository, so they
-answer on a repo that has never run `/oss:setup` (#367).
+answer on a repo that has never been set up (`/oss:run setup`, #367).
 
 **`interpreter architecture`** — three states, and the third is the point:
 
@@ -289,8 +289,8 @@ one.
 No tier name is ever printed. `.supertool.json` is contributor-writable in a managed repo, and a
 tracked file must not get to write the diagnosis.
 
-`/oss:scaffold` asks the registration half of this at scaffold time and names the same block; the
-route half and the read-failure states are asked only here.
+The scaffold step asks the registration half of this at scaffold time and names the same block;
+the route half and the read-failure states are asked only here.
 
 ## The `channel MCP registration` line
 
@@ -455,9 +455,10 @@ This runs on every invocation rather than behind a flag or a slower clock.
 ## The `owned files` lines, and what to do about them
 
 Owned files — `.oss/README.md`, `.oss/assemble_changelog.py`,
-`.github/workflows/oss-changelog.yml` — are replaced wholesale by `/oss:scaffold`, so a fix
-shipped here reaches a repo only when somebody re-runs that command there. These lines are
-the only thing that tells a maintainer the re-run is worth doing, so read them as an answer
+`.github/workflows/oss-changelog.yml` — are replaced wholesale by the scaffold step
+(`/oss:run scaffold`), so a fix shipped here reaches a repo only when somebody re-runs it
+there. These lines are the only thing that tells a maintainer the re-run is worth doing, so
+read them as an answer
 to that one question rather than as a tidiness report. Seven things they can say:
 
 - **Nothing** — the copies match what the plugin ships today. There is no `owned files` line
@@ -465,14 +466,14 @@ to that one question rather than as a tidiness report. Seven things they can say
 - **`not in this repo. Run /oss:scaffold.`** — a gap. The repo was scaffolded before these
   files existed, or never scaffolded at all, and re-running writes them.
 - **`absent on purpose`**, at `OK` rather than `WARN` — this repo already runs a changelog
-  gate under another name, so `/oss:scaffold` declines the trio and will decline it again.
-  Do **not** relay this as something to fix (#126). `/oss:scaffold --force-owned` is the only
-  thing that changes it, and only a maintainer who checked the match by hand should pass it.
+  gate under another name, so the scaffold step declines the trio and will decline it again.
+  Do **not** relay this as something to fix (#126). Only its `--force-owned` flag changes
+  it, and only a maintainer who checked the match by hand should pass it.
 - **`would change what it does -- <names>`** — re-running changes behaviour, and the names
   are the regions: a YAML key path like `on.pull_request.types`, a Python definition, a
   Markdown heading. This is the one to act on. A repo scaffolded before the current release
   can have a changelog gate that is satisfied by *deleting* somebody's pending fragment, and
-  this is the line that says so. Offer `/oss:scaffold --apply`.
+  this is the line that says so. Offer to run the scaffold step with `--apply`.
 - **`would change comments and prose only -- nothing it does changes`** — a real difference
   with no behavioural consequence. Worth mentioning; not worth interrupting anything for.
 - **`could not be read` / `no comparison was made`** — the third state. Either the plugin's
@@ -541,7 +542,7 @@ dependency's own test fixtures satisfies nothing (#241). Five things it can say:
   Do not relay any of these as a pass or as a gap — an incomplete scan never settles this question,
   and a scan that found the right string in the wrong file has not looked where it matters.
 - **`this repo has no .claude/jit-context/*/01-oss/ …`**, at `OK` — nothing to read, so nothing to
-  warn about. `/oss:scaffold` writes the layer if you want it.
+  warn about. The scaffold step writes the layer if you want it.
 
 Two of the warnings are about CI rather than about setup, and neither is cosmetic:
 
@@ -566,12 +567,12 @@ verbatim for the two unambiguous, actionable cases -- an owned file missing enti
 with its changelog gate undecidable -- and ends the sentence two different ways depending on which
 case fired, `Run /oss:scaffold.` or `Run /oss:scaffold, which reports what it could not read.`; the
 derivation matches the shared prefix rather than either full sentence, so both are caught). If any
-`WARN` line carries it, name **`/oss:scaffold`** as the next step first, and say which lines it
+`WARN` line carries it, name **`/oss:run scaffold`** as the next step first, and say which lines it
 clears -- do not name `/oss:tick` while one of those is still open.
 
 Name **`/oss:tick`** once no `WARN` line carries that remedy: the report above is clean, or every
-`FAIL` and every remaining `WARN` is either informational or not something `/oss:scaffold` fixes. If
-`next_step()` instead returns `could-not-determine` -- `report_text` was empty, unreadable, or the
+`FAIL` and every remaining `WARN` is either informational or not something the scaffold step
+fixes. If `next_step()` instead returns `could-not-determine` -- `report_text` was empty, unreadable, or the
 run itself never completed (`VERDICT: could not run`) -- name neither command: say the diagnostic
 did not produce a report to derive a next step from, and offer to re-run it.
 

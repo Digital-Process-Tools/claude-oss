@@ -299,5 +299,5 @@ by the time step 7 would run. It stays here, unmoved.
 
 ## If `.oss.json` is missing
 
-Stop and say so. `/oss:setup` writes it. Do not proceed against guessed values — a guessed default
-branch merges into the wrong place, and it does it confidently.
+Stop and say so. `/oss:run setup` writes it. Do not proceed against guessed values — a guessed
+default branch merges into the wrong place, and it does it confidently.

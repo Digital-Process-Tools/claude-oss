@@ -169,7 +169,7 @@ Given something you just learned, one destination:
 | why a constant has that value | beside the constant, in the module |
 | the incident behind a rule | its issue: cite the number, never retell it |
 | a measurement about the field | a receipt under `docs/` |
-| something that cost time, not yet judged | `trap.d/`, then `/oss:curate` |
+| something that cost time, not yet judged | `trap.d/`, then the curate pass |
 
 The rule is the cost, not the subject. `CLAUDE.md` is re-read by every session
 forever, so a paragraph there is the most expensive prose in the repository. A
