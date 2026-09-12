@@ -43,29 +43,135 @@ def _flat(text):
     return " ".join(text.lower().split())
 
 
-def _prior_review_return():
+# The full 40-hex SHA, not the abbreviated form -- `git fetch <remote> <sha>` only
+# resolves against a remote (GitHub included) that allows fetching an arbitrary
+# reachable commit when given its FULL object id; an abbreviated one is refused
+# with "not our ref" even where the full form succeeds (#1491).
+_PRIOR_COMMIT = "f0cf75826c90fcbfef7f94d0360e28e11d797ac1"
+
+
+def _run_git(args):
+    """A single place for the `git` invocations this module's historical-read
+    helpers need, cross-platform-safe (list args, no shell) and resilient to
+    an unspawnable `git` binary or a non-UTF-8 byte in its stderr on any OS --
+    both raise `OSError`/`UnicodeDecodeError` uncaught otherwise, which is
+    exactly the "crash instead of skip" failure this fix exists to remove
+    (self-review finding, #1491). Returns the `CompletedProcess`, or re-raises
+    nothing: callers get a returncode-1, empty-output result on any spawn or
+    decode failure instead of an exception escaping this helper.
+    """
     import subprocess
 
-    out = subprocess.run(
-        ["git", "show", "f0cf758:agents/developer/review-return.md"],
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    try:
+        return subprocess.run(
+            ["git", *args],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as exc:
+        return subprocess.CompletedProcess(
+            args, returncode=1, stdout="", stderr=str(exc)
+        )
+
+
+_PRIOR_COMMIT_REACHABLE_REASON = None
+_PRIOR_COMMIT_CHECKED = False
+
+
+def _ensure_prior_commit_reachable():
+    """A CI checkout (`actions/checkout@v7`, no `fetch-depth` set) is shallow by
+    default and does not contain `_PRIOR_COMMIT`'s object, so a bare `git show`
+    fails with exit 128 (bad object) rather than returning the historical
+    content -- observed on macOS/3.12 in job #103498989883 (#1491). Fetch the one
+    commit on demand before reading it; if the fetch itself cannot succeed (no
+    network reachable, object unreachable from this remote for another reason),
+    return that reason instead of raising, so the caller can skip rather than
+    let a missing historical blob render as a red assertion failure
+    indistinguishable from a genuine regression.
+
+    Memoized at module scope: three tests each reach this through
+    `_prior_review_return()`/`_prior_spine()`, and a shallow-clone CI run should
+    pay for the reachability check (and possible fetch) once, not once per
+    test (self-review finding, #1491).
+
+    Returns None on success, or a string reason on failure.
+    """
+    global _PRIOR_COMMIT_REACHABLE_REASON, _PRIOR_COMMIT_CHECKED
+    if _PRIOR_COMMIT_CHECKED:
+        return _PRIOR_COMMIT_REACHABLE_REASON
+
+    def _settle(reason):
+        global _PRIOR_COMMIT_REACHABLE_REASON, _PRIOR_COMMIT_CHECKED
+        _PRIOR_COMMIT_REACHABLE_REASON = reason
+        _PRIOR_COMMIT_CHECKED = True
+        return reason
+
+    check = _run_git(["cat-file", "-e", f"{_PRIOR_COMMIT}^{{commit}}"])
+    if check.returncode == 0:
+        return _settle(None)
+
+    remote = _run_git(["remote"])
+    names = remote.stdout.split()
+    # Prefer `origin` when it is one of the configured remotes -- a fork or a
+    # checkout carrying both `origin` and `upstream` should not have this pick
+    # whichever name `git remote` happens to print first, which depends on
+    # config file order rather than any canonical "primary remote" notion
+    # (self-review finding, #1491). Falls back to the first listed remote, or
+    # the literal string "origin" if none are configured at all.
+    remote_name = "origin" if "origin" in names else (names[0] if names else "origin")
+
+    fetch = _run_git(["fetch", "--depth", "1", remote_name, _PRIOR_COMMIT])
+    if fetch.returncode != 0:
+        return _settle(
+            f"could not fetch {_PRIOR_COMMIT} from {remote_name!r} "
+            f"(shallow checkout, presumably no network or unreachable object): "
+            f"{fetch.stderr.strip()}"
+        )
+
+    recheck = _run_git(["cat-file", "-e", f"{_PRIOR_COMMIT}^{{commit}}"])
+    if recheck.returncode != 0:
+        return _settle(
+            f"{_PRIOR_COMMIT} still unreachable after fetch: {recheck.stderr.strip()}"
+        )
+    return _settle(None)
+
+
+def _prior_review_return():
+    reason = _ensure_prior_commit_reachable()
+    if reason is not None:
+        import pytest
+
+        pytest.skip(f"pre-change document unreadable in this checkout: {reason}")
+
+    out = _run_git(["show", f"{_PRIOR_COMMIT}:agents/developer/review-return.md"])
+    if out.returncode != 0:
+        import pytest
+
+        pytest.skip(
+            "pre-change document unreadable in this checkout even though the "
+            f"commit was reachable a moment ago: {out.stderr.strip()}"
+        )
     return out.stdout
 
 
 def _prior_spine():
-    import subprocess
+    reason = _ensure_prior_commit_reachable()
+    if reason is not None:
+        import pytest
 
-    out = subprocess.run(
-        ["git", "show", "f0cf758:agents/developer.md"],
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+        pytest.skip(f"pre-change document unreadable in this checkout: {reason}")
+
+    out = _run_git(["show", f"{_PRIOR_COMMIT}:agents/developer.md"])
+    if out.returncode != 0:
+        import pytest
+
+        pytest.skip(
+            "pre-change document unreadable in this checkout even though the "
+            f"commit was reachable a moment ago: {out.stderr.strip()}"
+        )
     return out.stdout
 
 
