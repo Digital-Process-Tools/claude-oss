@@ -57,10 +57,10 @@ def test_curate_route_arms_at_the_configured_threshold():
     config = _real_config()
     threshold = config["curate_route_threshold"]
 
-    def over_count(_repo_root):
+    def over_count(_repo_root, config=None, run=None, git_bin=None):
         return threshold + 1, "fixture: one over the real configured threshold"
 
-    def at_count(_repo_root):
+    def at_count(_repo_root, config=None, run=None, git_bin=None):
         return threshold, "fixture: exactly at the real configured threshold"
 
     real_curate_count = workspace_routes.curate_count
