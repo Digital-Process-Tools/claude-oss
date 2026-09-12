@@ -136,8 +136,13 @@ Seven answers, not three, and only one of them is the ordinary case:
   confirms the sweep actually ran (not a refusal, not an empty return):
 
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --triage-recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --decision "triage sweep recorded" \
+    --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --triage-recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   ```
+
+  `--triage-recorded` is an attachment to `--decision`, not its own mode flag -- `oss_state.py`'s
+  argparse requires one of the mutually exclusive mode flags (`--decision`, `--read`, ...) first, and
+  `--decision` itself requires `--at` alongside it.
 
 - **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
   names it — the same naming step 7 below always asked of a tick that ends blocked.

@@ -621,11 +621,22 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
                 "triage) and none of them is due"
             ),
             "not_due": not_due,
+            "config": config,
         }
     return {
         "state": RANKED,
         "candidates": candidates,
         "not_due": not_due,
+        # #1434: the config this call already loaded, so a caller that goes
+        # on to act on the top candidate (`_take_cli`, `_record_skip_cli`)
+        # never needs a second, independent `oss_config.load` just to read
+        # `state_file` back out of it. A second read taken moments later can
+        # diverge from the first -- the file removed or corrupted in
+        # between, or a future refactor that makes the two calls disagree --
+        # and that divergence used to fold into the same "no state_file
+        # configured" text a genuinely unconfigured repo produces, with no
+        # way for a caller to tell the two apart.
+        "config": config,
     }
 
 
@@ -792,20 +803,20 @@ def _resolve_ranked(root):
     return payload
 
 
-def _load_config_and_routes(root, config=None):
-    """The `(config, routes)` pair `_arm_route_source` needs -- resolved
-    once here rather than duplicated across the two CLI functions below."""
-    if config is None:
-        config, _problems = oss_config.load(Path(root) / ".oss.json")
-        config = config or {}
-    routes = _routes(root, config)
-    return config, routes
-
-
 def _take_cli(root, source):
     """The ordinary case: commit to `source`, which must be `rank()`'s own
     `candidates[0]` -- never raises past this point, the same `FAIL:`/exit
-    convention `_record_skip_cli` already uses."""
+    convention `_record_skip_cli` already uses.
+
+    #1434: uses `payload["config"]` -- the config `rank()` already loaded --
+    rather than an independent second `oss_config.load` call. A second,
+    separately-taken read could diverge from the first (the file removed or
+    corrupted in the moment between the two, or a future refactor making the
+    two calls disagree) and that divergence used to fold into the exact same
+    "no state_file configured" text a genuinely unconfigured repo produces,
+    with nothing to tell the two apart. Reading the config `rank()` already
+    resolved removes the second read entirely rather than merely re-wording
+    what it says when it disagrees."""
     payload = _resolve_ranked(root)
     if payload is None:
         return 1
@@ -817,7 +828,8 @@ def _take_cli(root, source):
             "--record-skip if this is a deliberate deviation".format(source, top_source)
         )
         return 1
-    config, routes = _load_config_and_routes(root)
+    config = payload["config"]
+    routes = _routes(root, config)
     _arm_route_source(root, config, routes, source)
     print("OK: took {0}".format(source))
     return 0
@@ -826,10 +838,16 @@ def _take_cli(root, source):
 def _record_skip_cli(root, taken_source, reason):
     """The CLI half of `record_skip` -- re-derives `rank()`'s own candidates
     fresh (a markdown procedure calling this has no other way to hand them
-    back in) and the `state_file` path from `.oss.json`, then delegates.
-    Never raises past this point: every failure is a printed `FAIL:` and a
-    non-zero exit, the same convention `main()`'s own JSON/receipt branches
-    use for a payload rather than an exception a shell caller has to catch.
+    back in), then delegates. Never raises past this point: every failure is
+    a printed `FAIL:` and a non-zero exit, the same convention `main()`'s own
+    JSON/receipt branches use for a payload rather than an exception a shell
+    caller has to catch.
+
+    #1434: reads `state_file` off `payload["config"]` -- the config
+    `_resolve_ranked`'s own `rank()` call already loaded -- rather than an
+    independent second `oss_config.load`. See `_take_cli`'s own docstring
+    for why a second, separately-taken read is the defect this removes
+    rather than merely re-words.
 
     Arms `taken_source`'s own receipt (a no-op for inbound/release) once the
     skip itself is recorded successfully -- the deviation is the decision to
@@ -839,8 +857,7 @@ def _record_skip_cli(root, taken_source, reason):
     payload = _resolve_ranked(root)
     if payload is None:
         return 1
-    config, _problems = oss_config.load(Path(root) / ".oss.json")
-    config = config or {}
+    config = payload["config"]
     state_file = config.get("state_file")
     if not isinstance(state_file, str) or not state_file.strip():
         print("FAIL: no state_file configured, so the skip could not be recorded")
@@ -851,7 +868,7 @@ def _record_skip_cli(root, taken_source, reason):
     except ValueError as exc:
         print("FAIL: {0}".format(exc))
         return 1
-    _config, routes = _load_config_and_routes(root, config=config)
+    routes = _routes(root, config)
     _arm_route_source(root, config, routes, taken_source)
     print("OK: recorded ({0})".format(entry["decision"]))
     return 0
@@ -859,6 +876,11 @@ def _record_skip_cli(root, taken_source, reason):
 
 def main(argv=None):
     args = _build_parser().parse_args(argv)
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="backslashreplace")
+        except (AttributeError, ValueError):  # pragma: no cover - very old Python
+            pass
     if args.record_skip is not None:
         if not args.reason:
             print("FAIL: --record-skip needs --reason")
