@@ -316,19 +316,33 @@ def _root_relative_path(path_str, root):
     can refuse to resolve a path that genuinely sits under `root` and
     fall back to comparing the raw, unresolved form instead -- which can
     then mis-render as a false `mutated` verdict on an unmutated
-    snapshot. The slice below still indexes into the *original*, un-
-    folded `norm_path` and uses `len(prefix)` from the original,
-    un-folded `prefix`, so the returned remainder is exactly the text
-    that was actually there, never the folded key used only to decide
-    whether the prefix matched."""
+    snapshot.
+
+    The compare is done **component by component** (split on `/`), never
+    as one folded substring compared by length (self-review finding,
+    oss:auditor spawn): `str.casefold()` is not length-preserving for
+    every character (`"ß".casefold()` is `"ss"`, one codepoint
+    folding to two), so a root spelled with such a character folding
+    equal to a differently-spelled live path would still leave a
+    length-based slice index computed from the *un-folded* prefix wrong
+    by the fold's own length delta. Comparing whole components and
+    reconstructing the remainder from the original, un-folded component
+    list sidesteps this entirely: no slice index is ever derived from a
+    folded string's own length."""
     if not root:
         return None
     norm_path = _normalize_snapshot_path(path_str)
     norm_root = _normalize_snapshot_path(str(root)).rstrip("/")
-    prefix = norm_root + "/"
-    if not _platform_path_key(norm_path).startswith(_platform_path_key(prefix)):
+    path_parts = norm_path.split("/")
+    root_parts = norm_root.split("/") if norm_root else []
+    if len(path_parts) <= len(root_parts):
         return None
-    return norm_path[len(prefix) :]
+    prefix_parts = path_parts[: len(root_parts)]
+    if [_platform_path_key(p) for p in prefix_parts] != [
+        _platform_path_key(p) for p in root_parts
+    ]:
+        return None
+    return "/".join(path_parts[len(root_parts) :])
 
 
 def _resolve_own_snapshot_path(own_snapshot_path, root):

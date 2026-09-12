@@ -81,3 +81,28 @@ def test_posix_matching_case_still_resolves(monkeypatch):
     path = "/home/dev/repo/scripts/foo.py"
 
     assert tree_snapshot._root_relative_path(path, root) == "scripts/foo.py"
+
+
+def test_windows_casefold_length_change_does_not_misalign_the_slice(monkeypatch):
+    """Must fire (self-review finding, oss:auditor spawn): `str.casefold()`
+    is not length-preserving for every character -- `"\\u00df".casefold()`
+    is `"ss"`, one codepoint folding to two. The first cut of this fix
+    compared `_platform_path_key(norm_path).startswith(_platform_path_key(
+    prefix))` but then sliced the UN-folded `norm_path` at `len(prefix)`,
+    the un-folded prefix's own length -- so a root spelled with `\\u00df`
+    (`Stra\\u00dfe`, 6 characters) matching a live path spelled `STRASSE`
+    (7 characters) folds equal for the `startswith` check, but the slice
+    index computed from the 6-character original prefix cuts one
+    character short into the 7-character `STRASSE`, returning
+    `/scripts/foo.py` (still carrying the stray `E`, with a leading `/`)
+    instead of `scripts/foo.py`. Fixed by comparing whole path components
+    (split on `/`) rather than a raw folded substring, and reconstructing
+    the remainder from the original, un-folded components -- immune to any
+    fold changing length, since no slice index is ever derived from a
+    folded string's own length."""
+    monkeypatch.setattr(tree_snapshot.sys, "platform", "win32")
+
+    root = "C:/Users/Stra\u00dfe"
+    path = "C:/Users/STRASSE/scripts/foo.py"
+
+    assert tree_snapshot._root_relative_path(path, root) == "scripts/foo.py"
