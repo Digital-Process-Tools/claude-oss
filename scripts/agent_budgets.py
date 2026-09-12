@@ -195,7 +195,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for #1409: 17104 B became 17270 B -- the short-lane
     # reason list gained a fifth word, declined-for-cause (#1407), and a
     # one-line note on what it needs. Budget unchanged; comfortably under.
-    "agents/sub-manager.md": (17270, 18800),
+    "agents/sub-manager.md": (17850, 18800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

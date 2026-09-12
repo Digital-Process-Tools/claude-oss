@@ -295,7 +295,7 @@ from being invisible.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 17,270 B | 18,800 B |
+| `agents/sub-manager.md` | 17,850 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 
@@ -420,6 +420,16 @@ it for a substantive judgment reason -- neither `board-exhausted` nor `no-adjace
 purpose. The short-lane reason list this file states was extended to match, since
 `test_spawn_token_fill_parity_828_867.py` pins it against `SHORT_REASONS` itself rather than a
 retyped copy.
+
+**#1469 re-baselined `agents/sub-manager.md` without raising its ceiling**: 17,270 B became
+17,850 B, still under the 18,800 B ceiling. A sub-manager spawned during a real tick read
+`agents/sub-manager.md`'s "read it the same way out of habit" line as an instruction to open
+`commands/tick.md`, whose first line is `Agent(subagent_type: "oss:sub-manager", ...)`, and spawned
+a second sub-manager underneath itself instead of running the tick -- three levels deep, one extra
+full context paid for nothing. That sentence is cut, and the "Run the tick" section now says
+outright that `commands/tick.md` is the scheduler's own spawn wrapper, never a script for the
+sub-manager to read or follow, naming the exact first-line spawn instruction so a sub-manager
+recognises it as already having happened to it rather than as something to repeat.
 
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
@@ -917,7 +927,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 22,271 B | 24,500 B |
+| `commands/tick.md` | 22,275 B | 24,500 B |
 | `commands/run.md` | 8,717 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
