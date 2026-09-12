@@ -60,7 +60,7 @@ def test_triage_md_orders_the_record_call_after_the_report_arrives():
     right below it already uses."""
     idx = TRIAGE_MD.find("--triage-recorded")
     assert idx != -1
-    window = TRIAGE_MD[max(0, idx - 700) : idx]
+    window = TRIAGE_MD[max(0, idx - 900) : idx]
     assert re.search(
         r"report(s|ed)? back|the report has arrived|once.*report", window, re.IGNORECASE
     )

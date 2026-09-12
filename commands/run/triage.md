@@ -60,8 +60,11 @@ Creating labels is your call, not the agent's.
 **Record the sweep the moment the agent reports back, or `--last-triage` never moves and
 `triage_trigger.py` re-ranks triage `due` forever (#1478)** — the triager itself never writes to
 the state file; it is Bash and TodoWrite only, and its report is labels applied plus proposed
-clusters, nothing about cadence. Once the agent's own final message confirms the sweep actually
-ran (not a refusal, not an empty return), run this from `<state_file>` in `.oss.local.json`:
+clusters, nothing about cadence. **A sweep that refused every apply still ran** — the same fact
+the status-line call below already states explicitly, and this call is gated on the identical
+question: not whether every label stuck, but whether the agent's own final message shows it
+actually swept the board (never a refusal to run at all, and never an empty return). Once that
+holds, run this from `<state_file>` in `.oss.local.json`:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --decision "triage sweep recorded" \
