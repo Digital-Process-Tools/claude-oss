@@ -1120,11 +1120,20 @@ permissions:
 # to review. `.github/dependabot.yml` (scaffolded alongside this file, `github-actions`
 # ecosystem) reads as coverage for that and is not: Dependabot will never bump `v7` to
 # `v7`, so a retag is live before any pull request exists. A SHA pin inverts that --
-# the SHA cannot move, and Dependabot bumps a SHA-pinned action just as readily,
-# rewriting both the SHA and its trailing `# vX.Y.Z` comment -- so this trades a
-# standing, invisible exposure for a reviewable weekly pull request. The comment is
-# not decoration: a bare 40-hex ref is unreadable, and without it nobody can tell a
+# the SHA cannot move, and once this template is scaffolded into a real workflow file,
+# Dependabot bumps a SHA-pinned action there just as readily, rewriting both the SHA
+# and its trailing `# vX.Y.Z` comment -- so this trades a standing, invisible exposure
+# for a reviewable weekly pull request, in every repository this reaches. The comment
+# is not decoration: a bare 40-hex ref is unreadable, and without it nobody can tell a
 # current pin from one several majors stale by looking.
+#
+# This template's own two pins, embedded here as a Python string rather than as a real
+# workflow file, are NOT covered by that same Dependabot watch -- `.github/dependabot.yml`
+# only reads `.github/workflows/*.yml` in a repo it is installed into, and this constant
+# is neither. They rot exactly as the pre-#1462 comment warned a template SHA would, and
+# only a maintainer manually re-pinning them (or a `doctor.py` check comparing them
+# against the live `v7` tag) catches that drift -- filed as a follow-up rather than
+# solved here.
 jobs:
   fragment:
     runs-on: ubuntu-latest

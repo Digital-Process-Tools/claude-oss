@@ -20,10 +20,13 @@ concurrency:
 permissions:
   contents: read
 
-# The actions used below are pinned to major tags rather than commit SHAs. Decided, not
-# missed: .github/dependabot.yml watches github-actions and raises the bumps in the open,
-# and SHA pins here would have to be carried by hand through every action release. The
-# same reasoning is written into the workflow the scaffold generates.
+# The actions used below are pinned to major tags rather than commit SHAs, for this
+# repository's own CI. Decided, not missed: .github/dependabot.yml watches github-actions
+# and raises the bumps in the open, and SHA pins here would have to be carried by hand
+# through every action release. This reasoning is NOT what the scaffolded workflow
+# (scripts/scaffold.py's CHANGELOG_WORKFLOW) uses any more -- #1462 pinned that template
+# to a SHA instead, because a repo the plugin scaffolds is not one whose own maintainer
+# necessarily notices a retagged action the way a repo with eyes on its own CI might.
 
 # The tool was vendored long before this gate existed, so the policy was written
 # down in a command doc and enforced by nobody. A convention with no check is a
