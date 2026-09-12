@@ -396,6 +396,39 @@ def test_check_reports_notice_when_the_watch_preset_is_plainly_disabled(monkeypa
     assert "watch" in message, message
 
 
+def test_check_reports_notice_for_a_disabled_preset_even_with_a_session_tagged_cache(
+    monkeypatch,
+):
+    """Self-review finding (Explore reviewer, lane #1426): `#1437`'s new
+    `cached-other-session` source was missing from this NOTICE arm's own
+    tuple -- a repo with `watch` plainly disabled in `.supertool.json` but
+    still holding an unexpired, session-tagged cached reading fell through
+    to the default WARN instead of the structurally-permanent NOTICE #764
+    created for exactly this "cannot ever answer until a config edit"
+    shape. The preset-disabled cause is unambiguous regardless of which
+    session took the reading."""
+    fake = _FakeStatusline(
+        cache={
+            "channel": {"raw_state": "forwarding", "session": "other"},
+            "channel_fetched_at": 100.0,
+        },
+        preset_declared=False,
+    )
+    monkeypatch.setattr(agreement, "statusline", fake)
+
+    def run(argv, **kw):
+        return _Completed(
+            0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n"
+        )
+
+    agreement.check_channel_health_agreement(
+        "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=150.0
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "NOTICE", message
+    assert "watch" in message, message
+
+
 def test_check_stays_warn_when_the_preset_state_is_merely_unknown(monkeypatch):
     """The must-not-fire control for the test above: `_watch_preset_declared`
     answering anything other than its own explicit `False` (unreadable, no

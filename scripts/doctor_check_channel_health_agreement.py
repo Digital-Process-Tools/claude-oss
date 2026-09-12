@@ -115,10 +115,16 @@ def resolve_channel_health_reading(
 ):
     """``(raw_state, source, age)`` for the health half of the comparison.
 
-    ``source`` is ``"probed"``, ``"cached"``, ``"cached-stale"`` or ``None``
-    (nothing usable at all). Only ``"probed"`` and ``"cached"`` carry a
-    ``raw_state`` a caller may compare against; the other two are always
-    ``could-not-compare`` upstream. ``age`` is the reading's own age in
+    ``source`` is ``"probed"``, ``"cached"``, ``"cached-stale"``,
+    ``"cached-other-session"`` (#1437 -- a cached reading carrying a
+    ``session`` this caller cannot verify as its own) or ``None`` (nothing
+    usable at all). Only ``"probed"`` and ``"cached"`` carry a ``raw_state``
+    a caller may COMPARE against; the other three are always
+    ``could-not-compare`` upstream. ``cached-other-session`` still carries a
+    real ``raw_state`` (for display, via ``_health_words``), it is just
+    never trusted for comparison -- the same distinction ``cached-stale``
+    already draws by keeping ``raw_state`` at ``None`` while
+    ``cached-other-session`` does not. ``age`` is the reading's own age in
     seconds -- ``0.0`` for a fresh probe, the real age for a cached one,
     ``None`` when there is nothing to age.
     """
@@ -302,7 +308,17 @@ def check_channel_health_agreement(
             "right -- {}".format(detail),
         )
         return
-    if health_source in (None, "cached-stale") and _preset_disabled(project_dir):
+    if health_source in (
+        None,
+        "cached-stale",
+        # #1437 self-review finding: the preset-disabled cause is
+        # unambiguous regardless of which session took the cached reading
+        # -- a repo with `watch` plainly disabled in `.supertool.json` can
+        # never produce a comparable `channel:health` reading no matter
+        # whose session cached one, so this NOTICE must fire for
+        # `cached-other-session` exactly as it does for the other two.
+        "cached-other-session",
+    ) and _preset_disabled(project_dir):
         doctor.report(
             "NOTICE",
             "channel census vs channel:health: could not compare -- the `watch` "

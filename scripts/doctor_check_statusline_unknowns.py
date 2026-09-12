@@ -161,7 +161,13 @@ def _refresh_command(project_dir):
     # `cmd.exe`, where they would be passed into argv literally). Escaping
     # only the one character that could break the existing double quotes
     # keeps the remedy's shape identical for every path that does not
-    # contain one.
+    # contain one. Scope, stated rather than implied (self-review finding):
+    # this closes the quote-breaking case named in the issue, not general
+    # shell-metacharacter injection (`$`, a backtick) -- `project_dir` is a
+    # local filesystem path under the control of whoever set up the
+    # checkout, not attacker-supplied issue/PR text, so that residual gap
+    # requires an adversary who can already create arbitrarily-named
+    # directories on the machine running doctor.
     quoted_script = str(script).replace('"', '\\"')
     quoted_project_dir = str(project_dir).replace('"', '\\"')
     return 'python3 "{}" --refresh --root "{}"'.format(

@@ -44,10 +44,19 @@ def test_refresh_command_is_unchanged_with_no_special_characters():
     """Positive control: an ordinary path with no quote character renders
     exactly as it did before -- this is not a switch to a different quoting
     convention (e.g. POSIX single-quoting), only an escape for the one
-    character that could break the existing double-quote wrapping."""
-    remedy = mod._refresh_command("/tmp/plain/dir")
-    assert remedy == (
-        'python3 "/tmp/plain/dir/.oss/statusline.py" --refresh --root "/tmp/plain/dir"'
+    character that could break the existing double-quote wrapping.
+
+    Self-review finding (auditor spawn, lane #1426): a hand-typed, forward-
+    slash-only literal here would silently mismatch on Windows, where
+    `Path("/tmp/plain/dir") / ".oss" / "statusline.py"` renders with
+    backslashes -- the expected `script` half is built the same way
+    `_refresh_command` itself builds it, rather than typed by hand, so this
+    assertion holds on every platform `_refresh_command` actually runs on."""
+    project_dir = "/tmp/plain/dir"
+    expected_script = Path(project_dir) / ".oss" / "statusline.py"
+    remedy = mod._refresh_command(project_dir)
+    assert remedy == 'python3 "{}" --refresh --root "{}"'.format(
+        expected_script, project_dir
     )
 
 
