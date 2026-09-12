@@ -140,6 +140,14 @@ invisible to the running loop until a tag is cut and installed. So:
   resolve the variable) just means this particular attribution is unavailable, not that nothing
   moved.
 
+**Read `cost` while the report is open (#1499).** `cost.state: measured` with
+`over_threshold: true` is a finding in its own right — the lane passed 400k context — and it routes
+like any other non-blocking row: a `trap.d/` fragment naming the lane, its `max_context`, `turns`
+and `bash_calls`, never an issue. `ambiguous`, `no-match` or `could-not-read` means the lane tried
+and the measurement did not land; carry the state into the handback. No `cost` key at all is a lane
+that did not run `scripts/agent_cost.py`, which is a `compliance` question for the report, not a
+number to estimate. Nothing is enforced at the threshold: report first, per #1499's decision 2.
+
 When the two disagree, **the clone is the authority** — it is the tree the work was done in and the
 tree the release will ship. Nothing distinguishes the two copies by name; both manifests read `oss`,
 so the disagreement is only visible if you know to look for it.

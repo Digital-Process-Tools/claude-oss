@@ -124,8 +124,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # claimed-clean review), documented in the new paragraph beside
         # "What the validator checks is shape, not truth." 18286 became
         # 18942. Ceiling unchanged, still under it.
-        18942,
-        19100,
+        # #1499: the lane completes its own report with
+        # scripts/agent_cost.py --into <report path> -- a measured `cost`
+        # block, never a typed one. 18942 became 19676, past the 19100
+        # ceiling by 576 B; raised to 21500, ~10% headroom.
+        19676,
+        21500,
         "the note, the JSON report and its validator, the pull request payload",
     ),
 }

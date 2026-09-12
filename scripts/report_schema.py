@@ -281,6 +281,11 @@ CONTRACT_FINGERPRINTS = {
     # outside a code span (rare, but not impossible -- a quoted shell example,
     # say) was valid under 12 and is refused under 13.
     13: "9d456ffb13d0104b3b9420b6f8cc5ec50427119914c72c36f183619bd94235e5",
+    # 14 (#1499): one optional key, `cost` -- the lane's own token spend as
+    # scripts/agent_cost.py measured it from the transcript -- and nothing
+    # else, back to the shape 5/7/8/10 had. ADDITIVE: no version-13 document
+    # carries the key, so none is refused under 14.
+    14: "e42ba0065e3bb281c3075305d4068c1c69254283dc176944fd99e8ceb032a925",
 }
 
 _TYPES = {

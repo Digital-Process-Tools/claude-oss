@@ -2610,14 +2610,49 @@ def test_schema_version_13_declares_its_relation_to_12():
     happened to carry a paired literal backslash-quote outside a code span was
     valid under 12 and is refused under 13 -- there is no way to scope the rule
     to something only a new document could spell, because the field (`body`)
-    is not new.
+    is not new. The historical record, not the current contract number -- see
+    the 10-test above for why this does not assert x-schema-version itself.
     """
     schema = _schema()
-    assert schema["x-schema-version"] == 13
     assert schema["x-schema-compatibility"]["13"] == "breaking"
 
 
-def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_13():
+def test_schema_version_14_declares_its_relation_to_13():
+    """#1499: one optional key, `cost`, carrying the lane's own token spend as
+    scripts/agent_cost.py measured it. ADDITIVE, the shape 5/7/8/10 had: no
+    version-13 document carries the key, so none is refused under 14.
+    """
+    schema = _schema()
+    assert schema["x-schema-version"] == 14
+    assert schema["x-schema-compatibility"]["14"] == "additive"
+
+
+def test_a_version_13_report_is_readable_under_14():
+    """The additive claim, exercised rather than declared: the shipped example
+    with its version set back to 13 and no cost block validates under 14."""
+    schema = _schema()
+    report = dict(_example(), schema_version=13)
+    assert report_schema.validate(report, schema) == []
+
+
+def test_a_cost_block_with_an_unknown_key_is_refused():
+    """Positive control for the block being validated at all, not merely
+    permitted: a pasted agent_cost.py output plus one stray key is refused."""
+    schema = _schema()
+    report = dict(
+        _example(),
+        cost={"state": "measured", "match": "fix/123", "max_context": 120000},
+    )
+    assert report_schema.validate(report, schema) == []
+    report["cost"]["bogus"] = 1
+    assert report_schema.validate(report, schema) == ["cost: unknown key 'bogus'"]
+    report = dict(_example(), cost={"state": "measured"})
+    assert report_schema.validate(report, schema) == [
+        "cost: missing required key 'match'"
+    ]
+
+
+def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_14():
     assert report_schema.contract_drift(_schema()) is None
 
 
