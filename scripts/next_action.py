@@ -984,7 +984,13 @@ def _record_skip_cli(root, taken_source, reason, state_file_override=None):
     state_path = str(Path(root) / state_file)
     try:
         entry = record_skip(state_path, payload["candidates"], taken_source, reason)
-    except ValueError as exc:
+    except (ValueError, oss_state.StateError) as exc:
+        # #1437: `oss_state.append` raises `oss_state.StateError` (a plain
+        # `Exception`, not a `ValueError`) when the composed decision string
+        # exceeds `oss_state.MAX_DECISION` or the state directory is
+        # unwritable -- this docstring's own "never raises past this point"
+        # promise held only for the narrower of the two exceptions record_skip
+        # can actually raise.
         print("FAIL: {0}".format(exc))
         return 1
     routes = _routes(root, config, git_bin=gh_which.safe_which("git"))

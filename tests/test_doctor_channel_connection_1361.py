@@ -198,6 +198,17 @@ def test_forwarding_is_the_only_ok_state():
     assert _levels() == ["OK"]
 
 
+def test_a_forwarding_reading_from_another_session_is_not_reported_as_delivering():
+    """#1437: the same `cached-other-session` source must not read as OK here
+    either -- doctor cannot verify the reading is its own session's, so it
+    falls into the same could-not-establish-anything bucket as `None` or
+    `cached-stale`, never the trustworthy `cached`/`probed` ones."""
+    conn.check_channel_delivery(
+        "/repo", resolve=lambda _d: ("forwarding", "cached-other-session", 12.0)
+    )
+    assert _levels() == ["NOTICE"]
+
+
 def test_nothing_established_is_a_notice_rather_than_work_nobody_can_do():
     """The line this module draws: WARN only where a fault is POSITIVELY
     established; NOTICE wherever nothing could be established at all.
@@ -403,6 +414,21 @@ def test_a_failed_row_beside_a_forwarding_consumer_is_not_a_fault():
     )
     assert _levels() == ["OK"]
     assert "forwarding" in _text()
+
+
+def test_a_failed_row_beside_a_forwarding_reading_from_another_session_still_warns():
+    """#1437: `resolve_channel_health_reading` reports `cached-other-session`
+    when the cached reading carries a `session` doctor cannot verify as its
+    own -- this must NOT suppress the WARN the same way a plain `cached`
+    reading does, because doctor has no session identity to compare against
+    and would otherwise trust every session's reading unconditionally."""
+    conn.check_mcp_channel_connection(
+        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _name: "/usr/bin/claude",
+        env=LAUNCHED,
+        resolve=lambda _root: ("forwarding", "cached-other-session", 4),
+    )
+    assert _levels() == ["WARN"]
 
 
 def test_a_failed_row_with_no_usable_health_reading_still_warns():

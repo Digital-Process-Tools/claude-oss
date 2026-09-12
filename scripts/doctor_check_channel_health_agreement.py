@@ -154,6 +154,19 @@ def resolve_channel_health_reading(
     )
     if age > limit:
         return None, "cached-stale", age
+    if channel.get("session"):
+        # #1437: this caller has no session identity of its own to compare
+        # against (see `resolve_channel_health_reading`'s own docstring
+        # note above, and `check_channel_health_agreement`'s
+        # `current_session=None`) -- `statusline.channel_status`'s own
+        # `session`/`current_session` guard therefore never fires for this
+        # path, however stale the cross-session attribution actually is. A
+        # cache written by `_fork_refresh`'s `--session-id` carries a real
+        # `session` value; a reading this module cannot verify as its OWN
+        # session's must not render identically to one with no session
+        # attribution at all, which two doctor consumers already treat as
+        # trustworthy enough to suppress a WARN or report a delivering OK.
+        return channel.get("raw_state"), "cached-other-session", age
     return channel.get("raw_state"), "cached", age
 
 

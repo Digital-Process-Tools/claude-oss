@@ -23,6 +23,34 @@ def setup_function(_):
 NOW = 1_000_000.0
 
 
+def test_refresh_command_escapes_a_double_quote_in_project_dir():
+    """#1426: `_refresh_command` used to format `project_dir` straight into a
+    double-quoted shell string with no escaping -- a `"` anywhere in the
+    directory name terminates the quoting early, so a maintainer who pastes
+    the remedy runs something other than a statusline refresh. A directory
+    name containing a `"` is the reachable case named in the issue; asserting
+    the character never appears unescaped inside the quotes is the general
+    form of that check, not just this one example."""
+    remedy = mod._refresh_command('/tmp/some "quoted" dir')
+    # The whole point: an embedded `"` must not close either double-quoted
+    # segment early. If it did, `--refresh` (the second token after the
+    # first closing quote) would sit unquoted right after a bare directory
+    # fragment -- which is exactly the unescaped-output shape this replaces.
+    assert '"quoted"' not in remedy, remedy
+    assert '\\"quoted\\"' in remedy, remedy
+
+
+def test_refresh_command_is_unchanged_with_no_special_characters():
+    """Positive control: an ordinary path with no quote character renders
+    exactly as it did before -- this is not a switch to a different quoting
+    convention (e.g. POSIX single-quoting), only an escape for the one
+    character that could break the existing double-quote wrapping."""
+    remedy = mod._refresh_command("/tmp/plain/dir")
+    assert remedy == (
+        'python3 "/tmp/plain/dir/.oss/statusline.py" --refresh --root "/tmp/plain/dir"'
+    )
+
+
 # --------------------------------------------------------------------------
 # channel_cause: the five real states plus the off-switch, each distinguishable.
 # --------------------------------------------------------------------------

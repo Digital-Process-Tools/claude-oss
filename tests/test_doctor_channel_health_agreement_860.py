@@ -210,6 +210,50 @@ def test_a_fresh_enough_cached_reading_is_reused_with_its_age(monkeypatch):
     assert age == 50.0
 
 
+def test_a_cached_reading_carrying_a_session_is_not_doctors_own(monkeypatch):
+    """#1437: `doctor.py` has no session identity of its own -- its
+    re-derivation always calls `statusline.channel_status` with
+    `current_session=None` (statusline.py's own docstring for that
+    function), so the `session and current_session and session !=
+    current_session` guard there never fires for doctor's path, whatever the
+    cache says. A cached reading written by `_fork_refresh`'s own
+    `--session-id` (statusline.py:refresh) carries a real `session` value --
+    doctor cannot verify it is its OWN session's reading, so this must not
+    render identically to a reading with no session attribution at all
+    (`source == "cached"`), which two doctor consumers
+    (`check_mcp_channel_connection`, `check_channel_delivery`) treat as
+    trustworthy enough to suppress a WARN or report OK on."""
+    fake = _FakeStatusline(
+        cache={
+            "channel": {"raw_state": "forwarding", "session": "some-other-session"},
+            "channel_fetched_at": 100.0,
+        }
+    )
+    monkeypatch.setattr(agreement, "statusline", fake)
+    raw_state, source, age = agreement.resolve_channel_health_reading(
+        "/repo", allow_probe=False, now=150.0
+    )
+    assert source == "cached-other-session", source
+    assert raw_state == "forwarding"
+    assert age == 50.0
+
+
+def test_a_cached_reading_with_no_session_key_is_the_positive_control(monkeypatch):
+    """Positive control for the case above: a cache written before #1362 (or
+    by a manual `--refresh` with no session, per statusline.py's own
+    `_fork_refresh` docstring) carries no `session` key at all -- that must
+    still resolve to the ordinary, trustworthy `cached` source, unchanged."""
+    fake = _FakeStatusline(
+        cache={"channel": {"raw_state": "forwarding"}, "channel_fetched_at": 100.0}
+    )
+    monkeypatch.setattr(agreement, "statusline", fake)
+    raw_state, source, age = agreement.resolve_channel_health_reading(
+        "/repo", allow_probe=False, now=150.0
+    )
+    assert source == "cached", source
+    assert raw_state == "forwarding"
+
+
 def test_a_cached_reading_older_than_its_own_interval_is_cached_stale(monkeypatch):
     """The #549/#550 lesson: an old reading must never render as though it were
     fresh. `age` still travels with the state so a caller can say how old."""
