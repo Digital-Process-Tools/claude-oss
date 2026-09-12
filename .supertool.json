@@ -100,7 +100,7 @@
       "watch_name": "Digital-Process-Tools-claude-oss",
       "radar_tiers": {
         "gh-prs": {
-          "pr_exclude_events": ["checks_pending", "checks_succeeded", "pr_opened", "conflicts_appeared"]
+          "pr_exclude_events": ["checks_pending", "checks_succeeded", "conflicts_appeared"]
         }
       }
     },
