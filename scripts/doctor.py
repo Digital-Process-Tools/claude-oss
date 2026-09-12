@@ -1739,6 +1739,16 @@ def _supertool_tree_identity_confirmed(directory, dependency_repos=None, run=Non
     there, failing to claim own-tree only costs a warning; here, the
     question is which code gets executed, so "could not tell" must decline
     rather than default to trusting the tree.
+
+    Returns ``(confirmed, reason)`` (#1481). Every inconclusive input above
+    used to collapse to a bare `False`, rendering identically to a genuinely
+    confirmed non-match (this tree's `origin` resolves and simply names a
+    different repository) -- the same defect class this repo is named
+    after, one function down from the fix (#1459) that introduced it.
+    `reason` is `None` for a confirmed answer, `True` or `False` alike, and
+    a stated string for every inconclusive one, so a caller
+    (`supertool_invocation`) can tell "not supertool" from "could not
+    confirm" rather than reading both as the same silence.
     """
     repos = (
         dependency_repositories(["supertool"])
@@ -1747,14 +1757,17 @@ def _supertool_tree_identity_confirmed(directory, dependency_repos=None, run=Non
     )
     expected = repos.get("supertool") if isinstance(repos, dict) else None
     if not expected:
-        return False
+        return False, "no installed supertool dependency to compare against"
     match = re.search(r"github\.com[:/]+([^/]+/[^/]+?)(?:\.git)?/?$", str(expected))
     if not match:
-        return False
-    slug, _reason = _origin_slug(directory, run=run)
+        return (
+            False,
+            "installed supertool dependency's own URL is not a recognised github.com remote",
+        )
+    slug, reason = _origin_slug(directory, run=run)
     if not slug:
-        return False
-    return slug.lower() == match.group(1).lower()
+        return False, reason
+    return slug.lower() == match.group(1).lower(), None
 
 
 def _own_supertool_tree(project_dir, dependency_repos=None, run=None):
@@ -1794,24 +1807,37 @@ def _own_supertool_tree(project_dir, dependency_repos=None, run=None):
     **#1459: bare existence of the two files is no longer sufficient.** Once the
     walk finds a directory carrying both, `_supertool_tree_identity_confirmed`
     must also agree that the tree's own git origin names claude-supertool's
-    repository before this returns anything but `(None, None)` -- see that
-    function's own docstring for why bare existence was never a safe test to
-    begin with. `dependency_repos` and `run` are dependency-injection seams
-    threaded through for tests; production callers leave both `None`.
+    repository before this returns anything but `(None, None, None)` -- see
+    that function's own docstring for why bare existence was never a safe
+    test to begin with. `dependency_repos` and `run` are dependency-injection
+    seams threaded through for tests; production callers leave both `None`.
+
+    **#1481: a third element, `decline_reason`.** Confirmation can fail two
+    different ways once a candidate directory is found -- a genuinely
+    confirmed non-match (this tree's own `origin` resolves and simply names
+    a different repository), or an inconclusive input
+    (`_supertool_tree_identity_confirmed` could not even ask the question:
+    no installed dependency to compare against, no readable `origin`, an
+    unrecognised remote form). `decline_reason` is `None` for the former --
+    keeping today's plain "not a supertool checkout" wording for a real
+    non-match -- and the stated reason string for the latter, so a caller
+    (`supertool_invocation`) can render the two differently instead of
+    reading both as the same silence.
     """
     directory = Path(os.path.realpath(str(project_dir)))
     while True:
         if _safe_is_file(directory / WATCH_CONFIG):
             core = directory / SUPERTOOL_CORE
             if not _safe_is_file(core):
-                return None, None
-            if not _supertool_tree_identity_confirmed(
+                return None, None, None
+            confirmed, decline_reason = _supertool_tree_identity_confirmed(
                 directory, dependency_repos=dependency_repos, run=run
-            ):
-                return None, None
-            return directory, core
+            )
+            if not confirmed:
+                return None, None, decline_reason
+            return directory, core, None
         if directory.parent == directory:
-            return None, None
+            return None, None, None
         directory = directory.parent
 
 
@@ -1839,12 +1865,26 @@ def supertool_invocation(project_dir, dependency_repos=None, run=None):
     `dependency_repos` and `run` are dependency-injection seams for tests,
     threaded straight through to `_own_supertool_tree`; production callers
     (`lane_setup.read_board`) leave both `None`.
+
+    **#1481: the inconclusive case gets its own words.** `_own_supertool_tree`
+    now also hands back a `decline_reason`, set only when a candidate
+    directory carrying both `.supertool.json` and `supertool.py` was found
+    but `_supertool_tree_identity_confirmed` could not even ask the
+    question (no installed dependency to compare against, no readable
+    `origin`, an unrecognised remote form) -- never for a genuinely
+    confirmed non-match, which keeps reading as the plain "not a supertool
+    checkout" below. Rendering both the same way used to make a real
+    supertool worktree with, say, the dependency absent from the plugin
+    cache indistinguishable from an ordinary managed repo -- read the
+    #1409 wrong-tree receipt with no trace of why it fired.
     """
-    root, core = _own_supertool_tree(
+    root, core, decline_reason = _own_supertool_tree(
         project_dir, dependency_repos=dependency_repos, run=run
     )
     if core is not None:
         return [sys.executable, str(core)], "own-tree: {0}".format(core)
+    if decline_reason:
+        return ["supertool"], "own-tree declined: {0}".format(decline_reason)
     return ["supertool"], "not a supertool checkout"
 
 
@@ -1953,7 +1993,13 @@ def supertool_entry_point(
       remedy, none of them "create one".
     """
     link = Path(project_dir) / SUPERTOOL_ENTRY
-    root, core = _own_supertool_tree(
+    # `_decline_reason` (#1481) is not consumed here: every state this
+    # function returns once `core is None` already treats the tree as an
+    # ordinary managed repo, which is the correct, safe behaviour whether
+    # the walk found no candidate directory at all or found one it could
+    # not confirm. `supertool_invocation` is the caller that renders the
+    # inconclusive case differently, for the reason its own docstring gives.
+    root, core, _decline_reason = _own_supertool_tree(
         project_dir, dependency_repos=dependency_repos, run=run
     )
     # #341: `os.path.lexists` swallows every `OSError`, not only `ENOENT` --

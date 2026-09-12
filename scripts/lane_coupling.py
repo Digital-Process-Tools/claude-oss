@@ -413,15 +413,23 @@ def extract_references(repo, source_text):
     # suite -- a docstring sentence can raise `OSError: [Errno 63] File
     # name too long` when stat'd, deep worktree paths make this worse, and
     # is-this-a-path is exactly what `.is_file()` is being asked here, not
-    # "did a directory walk succeed"). #1347 finding 1: the import-
-    # resolution loop right below it had no exception handling at all,
-    # before or after #1327's fix to the sibling glob loop -- an
-    # `OSError` there (a permission error during the underlying stat)
-    # propagated uncaught instead of rendering as an empty match, which
-    # would crash `extract_references` and transitively `doctor.py`'s own
-    # exit-0-always contract. Same catch shape as the literal-candidate
-    # loop above it: a stat failure on one candidate means only that
-    # candidate is unresolvable, not that the whole scan failed.
+    # "did a directory walk succeed"). #1347 finding 1 first gave the
+    # import-resolution loop right below it exception handling at all,
+    # matching this catch shape so a stat failure could not crash
+    # `extract_references` and transitively `doctor.py`'s own
+    # exit-0-always contract -- but that made a genuine `OSError` there
+    # render identically to "this module was never referenced" (#1427).
+    # This loop's own candidates are never free text: they are short,
+    # well-formed relative paths derived from an `import` statement
+    # (`scripts/foo.py`), so a stat-time `OSError` here does not carry the
+    # literal-candidate loop's "this probably wasn't a path at all"
+    # justification -- it is more plausibly a genuine access failure,
+    # the same call this module already makes for the glob-walk loop's own
+    # #1327 `OSError`. So `OSError` is now surfaced through `problems`
+    # here too; `ValueError` stays silent, since the candidate paths this
+    # loop builds are already well-formed and a `ValueError` from stat
+    # means only that this one candidate does not resolve, not that
+    # access to it failed.
     problems = []
     literals = _string_literal_candidates(tree) + _joined_path_candidates(tree)
     for literal in literals:
@@ -435,7 +443,10 @@ def extract_references(repo, source_text):
         for candidate in _candidate_paths_for_module(module_name):
             try:
                 is_file = (repo / candidate).is_file()
-            except (OSError, ValueError):
+            except OSError as exc:
+                problems.append("{}: {}".format(type(exc).__name__, exc))
+                continue
+            except ValueError:
                 continue
             if is_file:
                 found.add(candidate)

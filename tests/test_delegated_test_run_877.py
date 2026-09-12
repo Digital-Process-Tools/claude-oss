@@ -58,7 +58,11 @@ ALREADY_COVERED_ELSEWHERE = {"developer.md"}
 #: and none of those runs `test_command`. Its own description forbids the two
 #: sub-steps that could (dispatch goes to oss:sub-manager, release to
 #: oss:releaser), so there is no test-behaviour claim for it to make either.
-NO_TEST_CONCERN = {"triager.md", "scheduler-step.md"}
+#:
+#: `doctor.md` (#1457) joins it too: it runs `scripts/doctor.sh`, the repo
+#: diagnostic, never `test_command` -- there is no test suite in its own
+#: job description for a verdict-delegation rule to bind.
+NO_TEST_CONCERN = {"triager.md", "scheduler-step.md", "doctor.md"}
 
 #: filename -> the marker that must survive in the file, verbatim.
 REQUIRED_MARKER = {

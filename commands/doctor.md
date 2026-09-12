@@ -1,6 +1,6 @@
 ---
 description: Diagnose this repo's oss setup — config, dependencies, clone, worktree root, state file, watch channel, radar board.
-allowed-tools: Bash
+allowed-tools: Bash, Agent
 ---
 
 Run the diagnostic and relay its output verbatim:
@@ -13,6 +13,23 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --plugin-root "${CLAUDE_PLUGIN_RO
 downgrades one line to its third state. The launcher resolves the script from that path either
 way; the flag is the *invocation* saying which copy it resolved, which is a fact no script can
 observe about itself.
+
+## When `VERDICT:` is not `ok`, chase it (#1457)
+
+Relay every line first, exactly as printed above. If the final `VERDICT:` line is not `ok`, spawn
+the diagnostic chase agent rather than investigating each `WARN`/`FAIL` yourself, inline, in this
+session:
+
+```
+Agent(subagent_type: "oss:doctor")
+```
+
+It re-runs the same diagnostic in findings-only mode, on the shape `agents/scheduler-step.md`
+already uses for `/oss:run`'s own sub-steps -- `Bash` and `TodoWrite`, dies with its context -- and
+hands back one `repaired:`/`not-ours:`/`could-not-tell:` line per finding rather than leaving the
+hunt in this session for good. Relay its report the same way you relayed the raw diagnostic above.
+This is not a substitute for reading the rest of this file: the interpretation guidance below still
+applies to whatever the chase agent could not resolve.
 
 Add `--root <path>` to point it at a repo other than the one you are standing in. The flag wins over
 `CLAUDE_PROJECT_DIR`, and when the two disagree the run says so and names the tree it did **not**

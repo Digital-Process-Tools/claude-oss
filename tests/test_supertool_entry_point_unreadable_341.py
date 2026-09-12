@@ -150,8 +150,12 @@ def test_own_tree_walk_survives_is_file_raising_permission_error(monkeypatch, tm
 
     # Would raise here if the code did nothing -- this is the assertion that
     # makes the test worth having.
-    root, core = doctor._own_supertool_tree(str(denied))
-    assert (root, core) == (None, None), (root, core)
+    root, core, decline_reason = doctor._own_supertool_tree(str(denied))
+    assert (root, core, decline_reason) == (None, None, None), (
+        root,
+        core,
+        decline_reason,
+    )
 
     state, detail = doctor.supertool_entry_point(str(denied))
     assert state == "absent", (state, detail)
