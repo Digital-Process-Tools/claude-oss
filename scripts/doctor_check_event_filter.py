@@ -39,12 +39,29 @@ scaffolds once; `doctor` names the edit and leaves the decision to the session.
 Python 3.9 compatible.
 """
 
+import glob
 import json
+import os
 
 import doctor
 
 TIER = "gh-prs"
 KEY = "pr_exclude_events"
+
+#: The default-branch poller (#1508). It has no config knob: supertool's radar
+#: forks `gh-branch` subscribed to every key, and a poller keeps the filter it
+#: was forked with. The two keys a scheduler acts on; everything else the
+#: source emits (`went_not_green` while checks are pending, `no_run`,
+#: `unknown`, `branch_unreachable`) is a turn re-sending the whole scheduler
+#: context for a state the merge step already waits on.
+BRANCH_SOURCE = "gh-branch"
+BRANCH_KEEP = ["went_green", "went_failed"]
+#: supertool's own env names (presets/watch/naming.py): the slot directory
+#: outright, or the base a channel name derives it under (`/tmp` there;
+#: overridable here so a test never reads the real one).
+STATE_DIR_ENV = "SUPERTOOL_WATCH_STATE_DIR"
+STATE_BASE_ENV = "OSS_DOCTOR_WATCH_STATE_BASE"
+STATE_BASE = "/tmp"
 
 #: The initial blacklist #1499 decided on: the per-PR events a running tick
 #: already polls for. A repo widens it in its own `.supertool.json`.
@@ -87,6 +104,129 @@ def event_filter_state(project_dir):
     if not events:
         return "unfiltered", "{} is empty".format(KEY)
     return "ok", events
+
+
+def _slot_dir(project_dir):
+    """``(path, problem)`` -- the poller slot directory, or why it cannot be named."""
+    override = os.environ.get(STATE_DIR_ENV)
+    if override:
+        return override, None
+    names, problem, detail = doctor._declared_watch_names(project_dir)
+    if problem:
+        return None, detail
+    name = os.environ.get(doctor.WATCH_NAME_ENV) or None
+    if len(names) == 1:
+        name = next(iter(names))
+    if not name:
+        # The launcher derives one from .oss.json's repo when nothing declares
+        # it; the same derivation the `watch channel` line reads.
+        derivable, derived, why = doctor._derivable_watch_name(project_dir)
+        if derivable == "yes":
+            name = derived
+    if not name:
+        return (
+            None,
+            "no watch name: none declared in {}, {} unset, none derivable ({})".format(
+                doctor.WATCH_CONFIG, doctor.WATCH_NAME_ENV, why
+            ),
+        )
+    base = os.environ.get(STATE_BASE_ENV) or STATE_BASE
+    return "{}/supertool-watch-{}".format(base, name), None
+
+
+def branch_filter_state(project_dir):
+    """``(state, ref, detail)`` -- ``ok`` / ``unfiltered`` / ``not-armed`` /
+    ``could-not-read``, from the poller's own state file, never the config.
+
+    ``ref`` is the branch the state file names (``None`` when no file was
+    read). ``detail`` is the live ``only`` list for ``ok``, the reason otherwise.
+    """
+    slot_dir, problem = _slot_dir(project_dir)
+    if problem:
+        return "could-not-read", None, problem
+    pattern = os.path.join(
+        slot_dir, "supertool-watch-{}__*.state.json".format(BRANCH_SOURCE)
+    )
+    try:
+        paths = sorted(glob.glob(pattern))
+    except OSError as exc:
+        return "could-not-read", None, "{}: {}".format(slot_dir, exc)
+    if not paths:
+        if not os.path.isdir(slot_dir):
+            return "not-armed", None, "no slot directory at {}".format(slot_dir)
+        return (
+            "not-armed",
+            None,
+            "no {} state file under {}".format(BRANCH_SOURCE, slot_dir),
+        )
+    path = paths[0]
+    ref = os.path.basename(path)[
+        len("supertool-watch-{}__".format(BRANCH_SOURCE)) : -len(".state.json")
+    ]
+    try:
+        with open(path, encoding="utf-8") as handle:
+            document = json.load(handle)
+    except (OSError, ValueError) as exc:
+        return "could-not-read", ref, "{}: {}".format(path, exc)
+    only = document.get("only") if isinstance(document, dict) else None
+    if not isinstance(only, list):
+        return "could-not-read", ref, "{}: `only` is not a list".format(path)
+    live = [key for key in only if isinstance(key, str) and key]
+    if not live:
+        return (
+            "unfiltered",
+            ref,
+            "`only` is empty: every {} event lands".format(BRANCH_SOURCE),
+        )
+    extra = sorted(set(live) - set(BRANCH_KEEP))
+    missing = sorted(set(BRANCH_KEEP) - set(live))
+    if extra or missing:
+        parts = []
+        if extra:
+            parts.append("subscribed to {}".format(", ".join(extra)))
+        if missing:
+            parts.append("missing {}".format(", ".join(missing)))
+        return "unfiltered", ref, "; ".join(parts)
+    return "ok", ref, live
+
+
+def check_branch_filter(project_dir):
+    """#1508: is the default-branch poller subscribed to only what a scheduler acts on?"""
+    state, ref, detail = branch_filter_state(project_dir)
+    remedy = "supertool 'unwatch:{0}:{1}' 'watch:{0}:{1}:only={2}' before the next radar heal".format(
+        BRANCH_SOURCE, ref or "<default_branch>", ",".join(BRANCH_KEEP)
+    )
+    if state == "ok":
+        doctor.report(
+            "OK",
+            "branch filter: {} poller for {} emits only {} (read from its own state file).".format(
+                BRANCH_SOURCE, ref, ", ".join(detail)
+            ),
+        )
+        return
+    if state == "unfiltered":
+        doctor.report(
+            "WARN",
+            "branch filter: unfiltered -- {} poller for {} is {}. Each event is a turn "
+            "re-sending the whole scheduler context for a state the merge step already "
+            "waits on (#1508). A poller keeps the filter it was forked with: {}.".format(
+                BRANCH_SOURCE, ref, detail, remedy
+            ),
+        )
+        return
+    if state == "not-armed":
+        doctor.report(
+            "NOTICE",
+            "branch filter: not-armed -- {}. No default-branch poller runs here, so there is "
+            "nothing to filter; radar's next heal forks one subscribed to every key, so arm "
+            "it first: {}.".format(detail, remedy),
+        )
+        return
+    doctor.report(
+        "WARN",
+        "branch filter: could-not-read -- {}. UNKNOWN, not unfiltered: what the {} poller "
+        "emits has not been shown either way.".format(detail, BRANCH_SOURCE),
+    )
 
 
 def check_event_filter(project_dir):

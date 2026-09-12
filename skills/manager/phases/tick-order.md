@@ -201,6 +201,19 @@ tool, and you are gone by the time step 7 would run.
    case no pull request covers. `radar:--state` buys none of that: a tick that only probes has
    reported a fleet it also declined to bring up.
 
+   **Arm the default-branch poller before the heal, filtered (#1508).** Radar forks `gh-branch`
+   subscribed to every key, and a poller keeps the filter it was forked with -- so when `doctor`'s
+   `branch filter` line reads `unfiltered` or `not-armed`, run, before the bare `radar` above:
+
+   ```bash
+   supertool 'unwatch:gh-branch:<default_branch>' 'watch:gh-branch:<default_branch>:only=went_green,went_failed'
+   ```
+
+   `went_not_green` while checks are pending, `no_run`, `unknown` and `branch_unreachable` then never
+   reach the scheduler; the merge step already waits on the last merge to conclusion, and a red
+   default branch still arrives as `went_failed`. Reads `ok` afterwards from the poller's own state
+   file, not the config, which has no knob for it.
+
    **The heal has its own three outcomes, and they are not the probe's.** *Raised* — the tiers
    resolved and the board printed; report its counts. *Not configured* — no tier is registered, so
    the op refuses by design and names the fix. That is the correct state for a repo that never opted
@@ -282,11 +295,10 @@ tool, and you are gone by the time step 7 would run.
      needs its own. Note that `No active watchers` is the **expected** state right after a merge and
      the **defect** state right after an open — the same words for both, so the board's open count
      is what tells them apart, never the watcher list on its own.
-   - **The default branch went red under a squash** — and here there is **no poller to heal**.
-     Radar carries the default branch as a *member row*, answered by composing `gh-branch`'s own
-     `GREEN` / `NOT GREEN` / `NO RUN` / `UNKNOWN`, and `N watched` never counts it. Nothing can be
-     armed for it; it is re-answered on each radar run. So this case is fixed by reading the board
-     again and by nothing else, and no list of heal sites could ever have contained it.
+   - **The default branch went red under a squash** — the `gh-branch` poller radar forks (or the
+     filtered one armed above) delivers `went_failed`; the board's *member row* re-answers it on each
+     radar run as well, composed from `gh-branch`'s own `GREEN` / `NOT GREEN` / `NO RUN` / `UNKNOWN`,
+     and `N watched` never counts it.
 
    It cannot double-arm — a slot already alive is neither healed nor respawned — so err toward
    running it more often rather than less. It is not free: each bare `radar` is a board read.

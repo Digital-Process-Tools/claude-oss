@@ -3036,7 +3036,7 @@ from doctor_check_stale_branches import check_stale_branches
 # #497/#630 convention -- reads the same `.supertool.json` document
 # `check_radar_publish` reads, for the one key that keeps per-PR channel
 # events out of the scheduler session.
-from doctor_check_event_filter import check_event_filter
+from doctor_check_event_filter import check_branch_filter, check_event_filter
 
 from doctor_check_fragments_readme import (
     COMPATIBILITY_BULLET,
@@ -9653,6 +9653,9 @@ def main(argv=None):
     # #1499: same document, one key -- is the scheduler's per-PR event noise
     # filtered at the source? Right after the radar line it qualifies.
     check_event_filter(project_dir)
+    # #1508: the default-branch poller has no config knob at all; read what it
+    # was forked with from its own state file, beside the per-PR answer.
+    check_branch_filter(project_dir)
     # The name and the declaration are two more questions, and neither is whether
     # anything actually carries either into a session -- #621 was two clean OK
     # lines either side of the one artifact that does. Needs no config: the MCP

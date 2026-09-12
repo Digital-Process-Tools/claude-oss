@@ -104,7 +104,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for #1431: 22271 B became 22275 B -- the "if .oss.json is
     # missing" remedy now says "/oss:run setup" rather than the dead bare
     # "/oss:setup" form. Ceiling unchanged; comfortably under.
-    "commands/tick.md": (22275, 24500),
+    # Re-baselined for #1508: 22275 B became 22444 B -- step 7's paused
+    # resume names the poll-timer as the arm, since the per-PR pollers
+    # exclude checks_succeeded by design. Ceiling unchanged.
+    "commands/tick.md": (22444, 24500),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at
