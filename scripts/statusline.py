@@ -286,14 +286,20 @@ _WATCH_NAME_UNSAFE_RE = re.compile(r"[^A-Za-z0-9._-]")
 #: Excludes a backslash too, as of #897 -- `tests/test_statusline_watch_name_
 #: refusal_653.py::test_repo_re_pattern_matches_oss_configs_own_pattern` pins the
 #: two patterns together so this copy cannot drift from `oss_config.REPO_RE` again.
-_REPO_RE = re.compile(r"\A[^/\\\s]+/[^/\\\s]+\Z")
+#: `?` and `#` joined the excluded class for #1475, at the canonical
+#: `oss_config.REPO_RE` this copy is pinned against -- see that module's own
+#: comment above `REPO_RE` for why. `_REPO_QUERY_FRAGMENT_RE` below is now
+#: redundant for `repo` (this pattern alone refuses both), kept as an
+#: explicit, self-documenting second line of defense rather than deleted --
+#: `_malformed_repo`'s own docstring still describes both checks.
+_REPO_RE = re.compile(r"\A[^/\\\s?#]+/[^/\\\s?#]+\Z")
 
 #: `?` starts a query string and `#` starts a fragment the instant either
 #: appears inside a path segment `gh api` builds by plain string
-#: substitution -- `_REPO_RE` above forbids a slash, a backslash and
-#: whitespace within a segment but not these two (#1401). Used only by
-#: `_malformed_repo`, as a separate check rather than widened into
-#: `_REPO_RE` itself -- see that function's own docstring for why.
+#: substitution -- `_REPO_RE` above forbids a slash, a backslash, whitespace,
+#: `?` and `#` within a segment (#1401, widened into `_REPO_RE` itself by
+#: #1475). Kept as an explicit, named check inside `_malformed_repo` even
+#: though `_REPO_RE` alone now also refuses these two characters.
 _REPO_QUERY_FRAGMENT_RE = re.compile(r"[?#]")
 
 #: `.supertool.json`'s own filename, read but never written -- the same constant
@@ -1722,19 +1728,17 @@ def _malformed_repo(repo):
         return True
     if ".." in repo.split("/"):
         return True
-    # #1401: `_REPO_RE` forbids a slash, a backslash and whitespace WITHIN a
-    # segment but never excludes `?` or `#` -- both are legal characters
-    # inside an owner/name segment as far as that regex is concerned, and
-    # both start a new URL component (a query string, a fragment) the
-    # instant they appear inside a path segment `gh api` builds by plain
-    # string substitution rather than URL-encoding. `_BRANCH_UNSAFE_RE`
-    # above already refuses `?` for `branch` for exactly this reason
-    # (#1035); this closes the identical gap on `repo`, plus `#`, which
-    # that regex does not check either. Checked here rather than folded
-    # into `_REPO_RE` itself, which is pinned byte-for-byte against
-    # `oss_config.REPO_RE` (`tests/test_statusline_watch_name_refusal_653.
-    # py`) -- the same reason `".."` above is checked as a separate step
-    # rather than widening the regex.
+    # #1401 closed this gap with a separate check because `_REPO_RE` was, at
+    # the time, pinned byte-for-byte against `oss_config.REPO_RE`
+    # (`tests/test_statusline_watch_name_refusal_653.py`) and widening it
+    # here alone would have broken that pin. #1475 widened the excluded
+    # class at the canonical source instead -- `oss_config.REPO_RE` itself
+    # now excludes `?` and `#`, and this copy was updated to match, so
+    # `_REPO_RE.match(repo)` above already refuses both. This explicit
+    # check is redundant for `repo` as a result; kept rather than deleted,
+    # both as a second line of defense and because `_BRANCH_UNSAFE_RE`
+    # reuses the identical two characters for `branch`, which has no
+    # equivalent pinned pattern to fold them into.
     return bool(_REPO_QUERY_FRAGMENT_RE.search(repo))
 
 

@@ -69,7 +69,7 @@ OLD_PATTERNS = {
     # character class ever changes, OLD_PATTERNS must change with it." Only the
     # body tracks; the weak pre-#173 `^...$` anchor stays, which is the other
     # half `test_old_patterns_still_carry_the_weak_pre_173_anchor` pins.
-    "REPO_RE": r"^[^/\\\s]+/[^/\\\s]+$",
+    "REPO_RE": r"^[^/\\\s?#]+/[^/\\\s?#]+$",
 }
 
 
