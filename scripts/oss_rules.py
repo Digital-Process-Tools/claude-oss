@@ -916,6 +916,78 @@ silent revert of the fix. Cost to repair, once the snapshot names the file and t
 """
 
 
+#: #1499/#1502, promoted from this repository's own `tools/00-manual/` layer to the
+#: shipped one: two claude-remember developer lanes on 2026-09-12 spent 66% and 58%
+#: of their tool output on raw `sed -n`/`cat`/`grep` reads (156 and 102 calls), held
+#: in context for every later turn, because a `mode: block` rule that lives only in
+#: this checkout reaches no other repository. `requires: supertool` degrades both to
+#: advisory where the op they route to does not exist. Raw strings: the match
+#: patterns carry `\n` and character classes a normal literal would rewrite.
+TOOLS_RAW_READS = r"""---
+title: "A raw sed/cat/head/tail/grep read has no window cap and no receipt"
+description: "One lane read 462 KB through sed -n, cat and grep, every byte held to turn 1,132. supertool read/grep are capped, ranged and logged; the raw forms are refused at command position."
+tool: Bash
+match: ~(^|[;&])[[:space:]]*(sed[[:space:]]+-n|(cat|head|tail)[[:space:]]+[^<>|;&\n]*([;&\n]|$)|grep[[:space:]]+[^<>|;&\n]*([;&|\n]|$))
+mode: block
+requires: supertool
+---
+
+**Refused, not a dead end: resend the same question as the op below.**
+
+Every byte a read returns stays in this lane's context for every later turn.
+Measured on one lane (#1499): `sed -n` 105 calls / 277 KB, `cat` 26 / 130 KB,
+`grep` 126 / 55 KB -- 462 KB of uncapped raw reads, carried through 1,132 turns.
+`supertool read` caps at 20,000 bytes, takes a line range, and logs the call.
+
+| you typed | send instead |
+| --- | --- |
+| `sed -n 10,40p FILE`, `head -30 FILE`, `tail -20 FILE` | `read:FILE:10:40` |
+| `cat FILE` | `read:FILE` (whole file, capped -- add a range when you know it) |
+| `grep PAT FILE` | `read:FILE:::grep=PAT` (lines in one file) |
+| `grep -rn PAT DIR` | `grep:PAT:DIR:N:M` (N lines before, M after) |
+| `cat FILE1 FILE2` | `batch:@FILE` with one `read` per path |
+
+Matched only at command position -- the start of the call, or after `;` / `&&`: `x | grep PAT`
+and `cmd | sed -n` are filters over a result you already paid for and are not refused, and a
+line inside a heredoc body that happens to start with `cat` is content, not a command. `cat > FILE <<EOF` carries `>` and is a
+write -- `python-heredoc-writes-are-unvalidated.md` owns that one.
+
+**Not covered, on purpose:** `python3 -c` / `python3 -` that opens and prints a file, `awk`,
+`less`. A miss is the safe direction here; a wrong block teaches routing around it (#1221).
+"""
+
+TOOLS_HEREDOC_WRITES = r"""---
+title: "A python heredoc or cat > that writes a file skips every validator and is paid twice"
+description: "One lane sent 253 KB of python3 - <<EOF write payloads: no jsonlint, no ruff, no gitleaks, no rollback, and the payload re-sent on every later turn. edit:@- and paste:@- are the same bytes with a receipt."
+tool: Bash
+match: ~(^|[;&|])[[:space:]]*(cat[[:space:]]*>|python3?[[:space:]]+-[[:space:]][^\n]*<<[[:print:][:space:]]*(open[(][^\n]*['"][wa]['"]|write_text[(]|[.]write[(]))
+mode: block
+requires: supertool
+---
+
+**Refused, not a dead end: send the same bytes through `edit:@-` or `paste:@-`.**
+
+`.supertool.json` hooks `jsonlint`, `ruff`, `gitleaks` and `rollback_on_fail` into `edit`,
+`replace`, `replace_lines`, `paste`, `append` and `vim`. A `python3 - <<EOF` that calls
+`open(..., "w")` / `write_text(...)` / `.write(...)`, or a `cat > FILE <<EOF`, reaches the
+file through no op: nothing validates it, nothing rolls it back, and no receipt names what
+changed (#1075, #1055, #1333). Measured on one lane (#1499): 120 such heredocs, 253 KB of
+payload, each re-sent on every later turn.
+
+| you typed | send instead |
+| --- | --- |
+| `cat > PATH <<'EOF' ... EOF` (new file, or whole file) | `paste:@-` with `path` and `content` |
+| `python3 - <<'EOF'` that rewrites one region | `edit:@-` with `path`, `old`, `new` -- one payload per edit |
+| several regions in one file | `batch:@FILE`, one `{op = "edit", ...}` per region |
+| a script that must run to compute the content | run it to stdout, then `paste:@-` the result |
+
+`python3 - <<EOF` that only **reads** (analysis, a probe, printing JSON) is not matched:
+the write pattern has to appear in the body. Matched at command position only -- the start
+of the call, or after `;` / `&&` / `|` -- so a `paste:@-` payload whose *content* documents
+one of these forms is not refused. `echo`/`printf` redirects are not covered.
+"""
+
+
 def rules(
     repo_root=None, fragments_dir=None, untagged=None, gate=None, assembler=_DERIVE
 ):
@@ -964,6 +1036,8 @@ def rules(
             "merge-gate.md": TOOLS_MERGE_GATE,
             "pr-create-gate.md": TOOLS_PR_CREATE_GATE,
             "tree-snapshot-compare.md": TOOLS_TREE_SNAPSHOT,
+            "raw-file-reads-are-uncapped.md": TOOLS_RAW_READS,
+            "python-heredoc-writes-are-unvalidated.md": TOOLS_HEREDOC_WRITES,
             # Not a rule: no `tool:` and no `match:`, so `index_rows()` writes no row and
             # the dependency's builder skips the name outright. It ships so that the
             # recorded decision reaches every managed repo, not just this one -- the layer

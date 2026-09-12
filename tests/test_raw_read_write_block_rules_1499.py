@@ -3,9 +3,10 @@ writes that made one developer lane 761k tokens of context.
 
 Measured on lane #1069 (1,132 turns): `sed -n` 105 calls / 277 KB, `cat` 26 / 130 KB,
 `grep` 126 / 55 KB of uncapped raw reads, and 120 `python3 - <<EOF` write heredocs
-carrying 253 KB of payload past every validator. Both rules live in this repository's
-own `tools/00-manual/` layer for now -- enforcement first, promotion to the shipped
-`01-oss` layer or to supertool's tokenised `replaces` once the observed forms settle.
+carrying 253 KB of payload past every validator. Both rules first lived in this
+repository's own `tools/00-manual/` layer; measured on two claude-remember lanes
+(66% and 58% of tool output in raw reads, no rule reaching them), they now ship in
+`oss_rules.py`'s `01-oss` layer, and this file reads that rendered layer.
 
 Driven against the real installed hook, both directions, with the must-pass list
 carrying the forms a refusal must not reach: a filter after a pipe, a supertool op
@@ -24,10 +25,11 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "tests"))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import jit_hook_harness  # noqa: E402
 
-LAYER = REPO_ROOT / ".claude" / "jit-context" / "tools" / "00-manual"
+LAYER = REPO_ROOT / ".claude" / "jit-context" / "tools" / "01-oss"
 READS_RULE = "raw-file-reads-are-uncapped.md"
 WRITES_RULE = "python-heredoc-writes-are-unvalidated.md"
 READS_TITLE = "A raw sed/cat/head/tail/grep read has no window cap"
@@ -77,6 +79,16 @@ def test_both_rules_are_block_mode_and_need_supertool():
         assert "tool: Bash" in head, name
 
 
+def test_the_tracked_layer_is_what_oss_rules_renders():
+    """The checked-in 01-oss copy is `install()`'s output, never hand-edited: a
+    drift here is a rule this repo reads that no other repo receives (#577)."""
+    import oss_rules  # noqa: E402
+
+    shipped = oss_rules.rules(repo_root=REPO_ROOT)["tools"]
+    for name in (READS_RULE, WRITES_RULE):
+        assert _rule(name) == shipped[name], name
+
+
 def test_the_tracked_index_carries_both_rows():
     rows = (LAYER / "00-index.tsv").read_text(encoding="utf-8").splitlines()
     named = {row.split("\t")[2] for row in rows if row.strip()}
@@ -98,7 +110,7 @@ def _driven(tmp_path):
             "advisory, so a deny cannot be observed here"
         )
     project = tmp_path / "repo"
-    target = project / ".claude" / "jit-context" / "tools" / "00-manual"
+    target = project / ".claude" / "jit-context" / "tools" / "01-oss"
     shutil.copytree(LAYER, target)
     return bash, hook, project, version
 

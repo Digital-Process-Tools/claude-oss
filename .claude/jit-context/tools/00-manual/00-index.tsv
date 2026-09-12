@@ -4,8 +4,6 @@ Bash	~gh-run|gh-branch|gh-pr:[0-9]+:status	ci-evidence-is-about-one-commit.md	re
 Bash	~gh api rate_limit|rate limit exceeded	gh-rate-limit-reset-and-pollers.md	remind			
 Bash	~git-push	lane-branch-upstream.md	remind			
 Bash	~gh-pr-create|gh-pr-edit|gh-pr-merge	pr-body-closing-keywords.md	remind			
-Bash	~(^|[;&|])[[:space:]]*(cat[[:space:]]*>|python3?[[:space:]]+-[[:space:]][^\n]*<<[[:print:][:space:]]*(open[(][^\n]*['"][wa]['"]|write_text[(]|[.]write[(]))	python-heredoc-writes-are-unvalidated.md	block			supertool
-Bash	~(^|[;&])[[:space:]]*(sed[[:space:]]+-n|(cat|head|tail)[[:space:]]+[^<>|;&\n]*([;&\n]|$)|grep[[:space:]]+[^<>|;&\n]*([;&|\n]|$))	raw-file-reads-are-uncapped.md	block			supertool
 Bash	~/tmp/	refused-bash-call-is-all-or-nothing.md	remind			
 Bash	~release_publish	release-publish-execute-denied.md	remind			
 Bash	~gh-pr-merge	stacked-pr-cleanup-recovery.md	remind			
