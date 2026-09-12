@@ -246,3 +246,55 @@ actually still does. The underlying fragments (`1389.stale-launcher-docs-from-14
 30 fragment files map onto these 28 declines (`1339`, `1354`, `1405`, `1419` and `1421` each cluster
 two or four fragments into one bullet or one issue); together with the 3 promoted and 5 merged
 fragments (`1414` counted once, under merged) this accounts for all 36.
+
+## 2026-09-12 — 17 fragments, 1 promoted, 6 merged, 10 declined
+
+**Promoted.** `tools/00-manual/gh-rate-limit-reset-and-pollers.md` (from
+`1421.watcher-rate-limit-is-not-the-sessions-token`): read `rate_limit` against its own `reset`
+timestamp before concluding anything about credentials, count pollers per channel before blaming
+one, and a 403 "rate limit exceeded for user ID" beside a full `core` bucket is the secondary
+limit, which `rate_limit` does not track.
+
+**Merged.** `vocabulary/00-manual/self-hosted-plugin-resolution.md` gained two more instances of
+its own subject -- a `scaffold.py --apply` write, not just a read, regressed two tracked files when
+run from the pinned root (`1417.stale-plugin-copy-regressed-jit-rules`), and
+`cohort_citation_order.py` without `--claude-md` reads the pinned root's `CLAUDE.md` by default
+(`1459.cohort-citation-order-default-reads-the-plugin-copy`); `vocabulary/00-manual/worktree-writes
+-land-where-cwd-says.md` gained a fourth instance, ten consecutive `edit`/`paste` calls landing in
+the main clone before a routine `git status --short` caught it
+(`1440.cwd-resets-between-supertool-edit-calls`); `vocabulary/00-manual/jit-rules-and-subagents.md`
+gained the developer-lane-has-no-`SendMessage` clarification -- not a failure, the resume still
+works from the manager side (`1436.developer-lane-has-no-sendmessage`). Two fragments
+(`1459.gate3r1-merge-gate-contradicts-merge-phase`, `1459.gate3r1-merge-gate-hardcodes-main`)
+were not merged as new bullets but used to correct the existing `TOOLS_MERGE_GATE` rule
+(`scripts/oss_rules.py`, regenerated into `tools/01-oss/merge-gate.md`) directly: its own
+pre-merge `git fetch && git merge origin/main` instruction contradicted `skills/manager/phases/
+merge.md`'s #1085 policy (green-and-mergeable means merge, no pre-merge rebase, the squash's push
+run is the backstop) and hardcoded `main` rather than the repo's own default branch -- one fix
+closes both findings, since removing the offending instruction removes the hardcoding with it.
+
+**Already actioned or already stated elsewhere; the fragment is a record, not a new rule.**
+
+- `1390.dr-marker-cannot-tell-ours-from-not-ours` -- `vocabulary/00-manual/doctor-warning-
+  lifecycle.md` already names this exact incident (four WARNs, none the loop's or a maintainer's
+  to clear, pinning the statusline's `dr` marker) as the reason a WAIT-shaped third state exists
+  beside WARN/FAIL. Nothing here would add content.
+- `1438.raw-python-write-to-report-json` -- `tools/00-manual/a-write-outside-supertool-meets-no-
+  validator.md` already covers exactly this shape (a raw `python3 -c` JSON round-trip skipping
+  every supertool write validator), and the fragment names that file itself. A fourth confirming
+  instance with no new failure mode is not worth the growth.
+
+**One incident, a real defect or open design question, not a rule -- filed as an issue instead.**
+
+- `1399.oss-config-repo-re-and-cohort-freeze-slug-guard` -- filed as #1475.
+- `1405.next-action-reads-checkout-branch-not-default-branch` -- filed as #1476.
+- `1425.setup-still-carries-interactive-stops-under-oss-run` -- filed as #1477.
+- `1436.triage-step-does-not-record-its-own-sweep` -- filed as #1478.
+- `1455.doctor-verdict-count-flakes-run-to-run` -- filed as #1479.
+- `1459.gate3r1-pr-green-unresolved-runs-jobless`,
+  `1459.gate3r1-tree-snapshot-windows-case-compare` -- filed as #1480.
+- `1459.gate3r2-identity-check-collapses-could-not-tell` -- filed as #1481.
+
+17 fragment files map onto these entries (`1459` contributes six -- two merged as a single rule
+fix, one merged into `self-hosted-plugin-resolution.md`, and three bundled or filed singly as
+issues); together with the 1 promoted and 6 merged fragments this accounts for all 17.

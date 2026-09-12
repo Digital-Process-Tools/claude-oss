@@ -8,3 +8,4 @@ Bash	~release_publish	release-publish-execute-denied.md	remind
 Bash	~gh-pr-merge	stacked-pr-cleanup-recovery.md	remind			
 Bash	~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit	supertool-payload-forms.md	remind			
 Bash	~(until|while) |grep -q	waiting-on-a-status-line.md	remind			
+Bash	~gh api rate_limit|rate limit exceeded	gh-rate-limit-reset-and-pollers.md	remind			
