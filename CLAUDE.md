@@ -898,7 +898,7 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 22,271 B | 24,500 B |
-| `commands/run.md` | 8,400 B | 8,900 B |
+| `commands/run.md` | 8,717 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
@@ -956,6 +956,11 @@ back to "read and follow" prose for them); then 7,162 B became 8,041 B documenti
 `--take` CLI (below) alongside `--record-skip`, once the ordinary case -- taking `candidates[0]`
 -- also needed an explicit commitment call, not only a deviation. Ceiling moved to 8,900 B for the
 last of the three, ~10% headroom over the final size.
+
+**#1455 re-baselined `commands/run.md` without raising its ceiling**: 8,400 B became 8,717 B,
+still under the 8,900 B budget. Step 1's own `doctor.sh` call gained the new `--findings` flag
+(#1455's own findings-only mode) plus a sentence saying why the ordinary report no longer needs a
+`head`/`grep` filter a reader might otherwise reach for. No ceiling change needed.
 
 **A second follow-up review round on this same lane found a real regression in `rank()` itself
 (unchanged by #1414's own diff, but newly exposed by it): the curate/triage repeat-suppression

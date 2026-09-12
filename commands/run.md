@@ -28,13 +28,16 @@ No argument: run every step below in order.
 
 ## Step 1 -- diagnose and repair, never stop except for a named unsafe gap (#1390)
 
-Run the same diagnostic `/oss:doctor` runs:
+Run the same diagnostic `/oss:doctor` runs, in its findings-only mode (#1455) -- the only
+thing this step does with the report is relay every WARN/FAIL and act on each, and `--findings`
+prints exactly that (plus NOTICE/WAIT and the final VERDICT), so there is no report here to
+filter by hand with `head`/`grep` and no line a truncated pipe can silently drop:
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --root . --plugin-root "${CLAUDE_PLUGIN_ROOT}"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --root . --plugin-root "${CLAUDE_PLUGIN_ROOT}" --findings
 ```
 
-Relay every `WARN` and `FAIL` line, then act on each:
+Relay every line printed, then act on each:
 
 - **Ours to repair** -- an owned file that is missing or stale (`scripts/scaffold.py --apply`), a
   config gap `oss_config.py --probe`/`--build` can re-derive (folded into step 2's `setup` branch

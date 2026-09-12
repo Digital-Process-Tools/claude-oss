@@ -164,6 +164,17 @@ except ImportError:  # pragma: no cover - the module sits beside this file
 
 FINDINGS = []
 
+# #1455: `--findings` suppresses OK lines from being PRINTED -- never from being
+# counted. `_emit` still appends every state to FINDINGS regardless of this flag,
+# so the VERDICT arithmetic at the end of `main()`/`run_install_audit()` (which
+# reads FINDINGS, not stdout) is identical between an ordinary run and a
+# findings-only one on the same tree. Reset at the top of `main()` on every call
+# rather than left to whatever a previous call in the same process set it to --
+# `doctor.main()` is called more than once in-process by this file's own test
+# suite, and a mode flag that stuck from a prior call would silently narrow a
+# later "ordinary" run's own output.
+_FINDINGS_ONLY = False
+
 # Far above any message this file composes -- the only thing that can reach it is
 # foreign text, and a diagnostic line long enough to scroll a terminal is already
 # unreadable. Truncation is marked rather than silent: a finding cut off without
@@ -265,6 +276,13 @@ def _safe_print(line):
 
 def _emit(state, flat):
     FINDINGS.append((state, flat))
+    # #1455: OK is the one state that is never a finding -- everything else
+    # (NOTICE, WAIT, WARN, FAIL) is exactly what a caller told to "relay every
+    # WARN/FAIL" needs to see, plus the context a NOTICE/WAIT carries about why
+    # a WARN/FAIL is or is not gating the verdict. Suppressing anything past OK
+    # would hide findings from a mode whose whole point is showing findings.
+    if _FINDINGS_ONLY and state == "OK":
+        return
     _safe_print("{} {}".format(state, flat))
 
 
@@ -9085,10 +9103,11 @@ class _Parser(argparse.ArgumentParser):
 
 
 def parse_args(argv):
-    """``(root, plugin_root, install_audit, problems, worker_sizing)``.
+    """``(root, plugin_root, install_audit, problems, worker_sizing, findings_only)``.
 
-    Never exits and never raises. `worker_sizing` is appended rather than inserted so
-    the four existing positions keep meaning what every call site already reads them as.
+    Never exits and never raises. `worker_sizing` and `findings_only` are appended
+    rather than inserted so the existing positions keep meaning what every call site
+    already reads them as.
     """
     parser = _Parser(
         prog="doctor.py",
@@ -9124,6 +9143,15 @@ def parse_args(argv):
         "install complete, over the plugin and its declared dependencies rather than "
         "over the repo named by --root. Answerable before /oss:setup has ever run.",
     )
+    parser.add_argument(
+        "--findings",
+        action="store_true",
+        help="#1455: print only NOTICE/WAIT/WARN/FAIL lines plus the final VERDICT "
+        "line -- nothing a caller told to relay every WARN/FAIL has to filter out by "
+        "hand (a `head`/`grep` over the ordinary report can silently drop the very "
+        "lines it was reaching for). OK lines are still counted toward the verdict; "
+        "only whether they PRINT changes.",
+    )
     try:
         parsed = parser.parse_args(list(argv))
         return (
@@ -9132,6 +9160,7 @@ def parse_args(argv):
             parsed.install_audit,
             [],
             parsed.worker_sizing,
+            parsed.findings,
         )
     except ValueError as exc:
         return (
@@ -9142,6 +9171,7 @@ def parse_args(argv):
                 "argument: {}. Falling back to CLAUDE_PROJECT_DIR or the current "
                 "directory, so the tree below may not be the one you meant.".format(exc)
             ],
+            False,
             False,
         )
 
@@ -9280,9 +9310,22 @@ def main(argv=None):
     path as an unrecognised argument. A library entry point does not get to read the
     process's arguments; the script entry point at the bottom passes them in.
     """
-    root, plugin_root, install_audit, arg_problems, worker_sizing_mode = parse_args(
-        [] if argv is None else argv
-    )
+    (
+        root,
+        plugin_root,
+        install_audit,
+        arg_problems,
+        worker_sizing_mode,
+        findings_only,
+    ) = parse_args([] if argv is None else argv)
+
+    # #1455: reset on every call rather than only ever set to True. This module's
+    # own test suite calls `main()` more than once in the same process, and a flag
+    # left over from a prior `--findings` call would silently narrow a later
+    # "ordinary" run's own output -- the same reason FINDINGS itself needs an
+    # explicit `.clear()` between in-process calls.
+    global _FINDINGS_ONLY
+    _FINDINGS_ONLY = findings_only
 
     if worker_sizing_mode:
         # #1177: the subject here is the machine, not a tree, so this returns before
