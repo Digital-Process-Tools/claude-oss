@@ -448,6 +448,11 @@ TOOLS_INDEX_EXPECTED = {
     "merge-gate.md": ("Bash", "remind", ""),
     "pr-create-gate.md": ("Bash", "remind", ""),
     "tree-snapshot-compare.md": ("Bash", "remind", ""),
+    # #1499/#1502, promoted from this repo's own 00-manual layer once measured: two
+    # claude-remember lanes on 2026-09-12 spent 66% and 58% of their tool output on
+    # raw sed/cat/grep reads, because a rule that lives only here reaches no other repo.
+    "raw-file-reads-are-uncapped.md": ("Bash", "block", "supertool"),
+    "python-heredoc-writes-are-unvalidated.md": ("Bash", "block", "supertool"),
 }
 
 
