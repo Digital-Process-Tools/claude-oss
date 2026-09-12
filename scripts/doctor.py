@@ -3032,6 +3032,12 @@ from doctor_check_script_call_survey import check_script_call_survey
 # read instead of ancestry, and why this check reports rather than deletes.
 from doctor_check_stale_branches import check_stale_branches
 
+# scripts/doctor_check_event_filter.py (#1499), its own module per the same
+# #497/#630 convention -- reads the same `.supertool.json` document
+# `check_radar_publish` reads, for the one key that keeps per-PR channel
+# events out of the scheduler session.
+from doctor_check_event_filter import check_event_filter
+
 from doctor_check_fragments_readme import (
     COMPATIBILITY_BULLET,
     _fragments_directory,
@@ -9629,6 +9635,9 @@ def main(argv=None):
     # how a repo with a route to nowhere read as healthy (#191). Also needs no
     # config: both live in supertool's file.
     check_radar_publish(project_dir)
+    # #1499: same document, one key -- is the scheduler's per-PR event noise
+    # filtered at the source? Right after the radar line it qualifies.
+    check_event_filter(project_dir)
     # The name and the declaration are two more questions, and neither is whether
     # anything actually carries either into a session -- #621 was two clean OK
     # lines either side of the one artifact that does. Needs no config: the MCP
