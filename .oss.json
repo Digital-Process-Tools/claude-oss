@@ -78,6 +78,7 @@
         "tests/test_doctor_supertool_ops_582.py",
         "tests/test_finding_routing_1275.py",
         "tests/test_freshness.py",
+        "tests/test_gate3_round1_findings_1372.py",
         "tests/test_generated_file_injection.py",
         "tests/test_jit_agent_dispatch.py",
         "tests/test_jit_layer_readers.py",

@@ -73,8 +73,15 @@ import doctor
 from prose_script_refs import OP_TEXT_ROOTS, _tier2_windows, real_scripts
 
 #: A runner verb, inside the SAME documented-command-line window as a script
-#: mention, is what turns a bare name into an executing reference.
-_RUNNER_RE = re.compile(r"\b(python3?|bash|sh)\b")
+#: mention, is what turns a bare name into an executing reference. The
+#: negative lookbehind for `.` matters: plain `\b(python3?|bash|sh)\b` also
+#: matches the trailing "sh" inside any `.sh`-suffixed filename token
+#: (`refresh.sh`, `install.sh`) -- `\b` fires on the transition from `.`
+#: (non-word) to `s` (word) exactly as it does on real whitespace, so a
+#: window naming a script alongside an unrelated `.sh` file was misread as
+#: "called" with no real runner verb anywhere in it (self-review finding,
+#: reviewer spawn).
+_RUNNER_RE = re.compile(r"(?<!\.)\b(python3?|bash|sh)\b")
 
 #: `scripts/` immediately followed by an interpolation placeholder rather
 #: than a literal filename -- proof an ambiguous, runtime-rendered reference

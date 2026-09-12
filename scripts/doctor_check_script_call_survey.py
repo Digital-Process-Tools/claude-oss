@@ -9,7 +9,6 @@ be a deliberate human-run tool, and this check lists, it does not judge
 """
 
 import doctor
-from script_call_survey import survey
 
 
 def check_script_call_survey(plugin_root=None):
@@ -20,7 +19,21 @@ def check_script_call_survey(plugin_root=None):
     things this issue was filed over (triage-after-release, the curation
     threshold-route, the cohort-freeze marker, the manager-in-the-picker key
     mismatch) were each individually correct and simply never called.
+
+    `survey` is imported here, inside the function, rather than at module
+    scope: `doctor.py` imports THIS module (the #497/#630 convention every
+    check module follows), and `script_call_survey` itself imports `doctor`
+    (via `prose_script_refs`) -- a module-scope `from script_call_survey
+    import survey` here closes that into a circular import that crashes
+    only when `script_call_survey` happens to be imported before `doctor`
+    has finished its own top-level execution (an order-dependent failure a
+    test importing `script_call_survey` directly, rather than via `doctor`,
+    hits every time). Same convention `doctor_check_mcp_channel_
+    registration._drop_dead_plugin_consumers` already documents for the
+    identical shape.
     """
+    from script_call_survey import survey
+
     rows, roots, notes = survey(plugin_root)
     unreadable_roots = [
         "{}: {}".format(name, detail)
@@ -36,7 +49,16 @@ def check_script_call_survey(plugin_root=None):
         )
         return
     if not rows:
-        doctor.report("WARN", "script call survey: scripts/ could not be listed at all")
+        # Reached only when every root above read cleanly (the branch just
+        # above already returned on any `unreadable` root) and `scripts/`
+        # itself was successfully listed with zero `.py` files in it -- a
+        # real, empty-but-readable directory, never a read failure. Worded
+        # to say that plainly rather than reusing "could not be listed",
+        # which would misreport a genuinely empty scripts/ as unreadable
+        # (self-review finding).
+        doctor.report(
+            "NOTICE", "script call survey: scripts/ is empty -- no scripts to survey"
+        )
         return
     called = [name for name, state, _detail in rows if state == "called"]
     mentioned = [name for name, state, _detail in rows if state == "mentioned-only"]

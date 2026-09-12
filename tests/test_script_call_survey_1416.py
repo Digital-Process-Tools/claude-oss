@@ -73,6 +73,39 @@ def test_a_script_nobody_mentions_anywhere_is_also_mentioned_only(tmp_path):
     assert "not referenced anywhere" in detail
 
 
+def test_a_neighbouring_dot_sh_filename_does_not_forge_a_runner_verb(tmp_path):
+    """Must-fire (reviewer spawn finding): a bare word-boundary match on
+    "sh" also matches the trailing "sh" inside any .sh-suffixed filename
+    token, because a word boundary fires on the transition from "." (a
+    non-word character) to "s" (a word character) exactly as it does on
+    real whitespace. A window naming a script alongside an unrelated .sh
+    file, with no real runner verb anywhere in it, must not read as
+    `called`."""
+    root = _plugin(tmp_path)
+    (root / "scripts" / "foo.py").write_text("print(1)", encoding="utf-8")
+    (root / "commands" / "test.md").write_text(
+        "```" + chr(10) + "scripts/foo.py bin/refresh.sh" + chr(10) + "```" + chr(10),
+        encoding="utf-8",
+    )
+    rows, _roots, _notes = mod.survey(str(root))
+    state, detail = _rows_by_name(rows)["foo.py"]
+    assert state == "mentioned-only", detail
+
+
+def test_a_real_standalone_sh_invocation_is_still_called(tmp_path):
+    """Positive control: excluding the .sh-filename false positive must not
+    also blind the detector to a genuine `sh script.py` invocation."""
+    root = _plugin(tmp_path)
+    (root / "scripts" / "foo.py").write_text("print(1)", encoding="utf-8")
+    (root / "commands" / "test.md").write_text(
+        "```" + chr(10) + "sh scripts/foo.py" + chr(10) + "```" + chr(10),
+        encoding="utf-8",
+    )
+    rows, _roots, _notes = mod.survey(str(root))
+    state, detail = _rows_by_name(rows)["foo.py"]
+    assert state == "called", detail
+
+
 def test_an_import_from_another_script_is_called(tmp_path):
     root = _plugin(tmp_path)
     (root / "scripts" / "lib_mod.py").write_text("VALUE = 1", encoding="utf-8")
