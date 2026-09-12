@@ -295,12 +295,19 @@ def _route_already_seen(repo_root, config, route, signature, arm=True):
     return False, "armed ({0})".format(check["state"])
 
 
-def _routes(repo_root, config, gh=None, run=subprocess.run):
+def _routes(repo_root, config, gh=None, run=subprocess.run, git_bin=None):
     """One `workspace_routes.decide` call, shared by the curate and triage
     checks below -- each reads its own repo-declared threshold-vs-count
     result out of it. Calling `decide` twice would cost a second `gh issue
-    list` round trip for a fact the first call already has."""
-    _armed, results = workspace_routes.decide(repo_root, config, gh=gh, run=run)
+    list` round trip for a fact the first call already has.
+
+    `git_bin` (#1476) is threaded through to `workspace_routes.curate_count`,
+    which needs it to tell whether the checkout is standing on the
+    repository's own default branch before deciding whether to read the
+    working tree at all."""
+    _armed, results = workspace_routes.decide(
+        repo_root, config, gh=gh, run=run, git_bin=git_bin
+    )
     return results
 
 
@@ -575,7 +582,7 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
         )
 
     gh = gh if gh is not None else gh_which.safe_which("gh")
-    routes = _routes(repo_root, config, gh=gh, run=run)
+    routes = _routes(repo_root, config, gh=gh, run=run, git_bin=git_bin)
 
     by_source = {
         "inbound": _inbound_candidate(repo_root, config),

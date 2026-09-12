@@ -22,6 +22,7 @@ render identically the moment an unreadable directory is allowed to answer `0`.
 
 import os
 import re
+import subprocess
 import sys
 
 #: `<issue>.<slug>.md`. The issue number is what ties a fragment to the work that found the trap;
@@ -45,6 +46,16 @@ DIRNAME = "trap.d"
 #: non-fragment file appearing in this directory should be reported as one, which
 #: is what happens with no further change.
 OWNED_README = "README.md"
+
+
+def _decode(raw):
+    """Decode a subprocess's bytes for display. Never raises -- `git`'s own
+    stderr is free text nobody here authored."""
+    if raw is None:
+        return ""
+    if not isinstance(raw, bytes):
+        return raw
+    return raw.decode("utf-8", "replace")
 
 
 def _classify(name):
@@ -105,6 +116,84 @@ def waiting(root):
         "count": len(fragments),
         "fragments": fragments,
         "why": "{} fragment(s) waiting for /oss:curate".format(len(fragments)),
+    }
+
+
+def waiting_at_ref(root, ref, run=subprocess.run, git_bin=None, timeout=15):
+    """Same three states as `waiting()`, but read `ref`'s own committed tree
+    via `git ls-tree` rather than the working directory at `root` (#1476).
+
+    `next_action.py`/`workspace_routes.py` call this instead of `waiting()`
+    when the checkout is standing on a branch other than the repository's
+    own default branch: `waiting()` answers for whatever happens to be
+    checked out at `root` right now, which is the wrong question on a
+    shared checkout somebody else has switched to a feature branch --
+    #1476's own incident had a curate commit already pushed to `main`
+    while the checkout under a live session had meanwhile moved to a
+    branch cut before that commit, and the stale branch's own `trap.d/`
+    was read and reported as `main`'s.
+
+    `git ls-tree` exits 0 with empty output for a pathspec matching
+    nothing, so an absent `trap.d/` at `ref` and an empty one both render
+    as `none` -- the same collapse `waiting()` makes for the working tree.
+    Only a genuine git failure (an unresolvable `ref`, no such repository,
+    `git` not on PATH) is `could-not-read`; that failure must never be
+    read as `none`, or a checkout with no visibility into `ref` at all
+    would silently report a clean trap.d/ that was never actually checked.
+    """
+    command = [
+        git_bin or "git",
+        "-C",
+        str(root),
+        "ls-tree",
+        "-r",
+        "--name-only",
+        ref,
+        "--",
+        DIRNAME,
+    ]
+    try:
+        done = run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "state": "could-not-read",
+            "count": None,
+            "fragments": [],
+            "why": "{0} did not run ({1})".format(" ".join(command), exc),
+        }
+    if done.returncode != 0:
+        message = (_decode(done.stderr) or _decode(done.stdout)).strip()
+        return {
+            "state": "could-not-read",
+            "count": None,
+            "fragments": [],
+            "why": "{0} failed: {1}".format(
+                " ".join(command), message or "exit {0}".format(done.returncode)
+            ),
+        }
+    names = [line.strip() for line in _decode(done.stdout).splitlines() if line.strip()]
+    basenames = [os.path.basename(n) for n in names]
+    fragments = [
+        _classify(n)
+        for n in sorted(basenames)
+        if n.endswith(".md") and not n.startswith(".") and n != OWNED_README
+    ]
+    if not fragments:
+        return {
+            "state": "none",
+            "count": 0,
+            "fragments": [],
+            "why": "{0}/ at {1} holds no fragments".format(DIRNAME, ref),
+        }
+    return {
+        "state": "waiting",
+        "count": len(fragments),
+        "fragments": fragments,
+        "why": "{0} fragment(s) waiting for /oss:curate (at {1})".format(
+            len(fragments), ref
+        ),
     }
 
 

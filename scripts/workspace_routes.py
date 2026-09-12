@@ -132,10 +132,72 @@ def _count_state(count, threshold):
     return OVER if count > threshold else UNDER
 
 
-def curate_count(repo_root):
-    """(count_or_None, why). `count` is `None` only on `could-not-read`;
-    reuses `trap_curate.waiting`, the one place `trap.d/` is already listed
-    and classified, rather than a second copy of that scan."""
+def _current_branch(repo_root, run=subprocess.run, git_bin=None, timeout=10):
+    """(branch_name_or_None, why_or_None). `None` on a detached HEAD, on a
+    `git` failure, or when `git` cannot be run at all -- never a guessed
+    branch name."""
+    command = [
+        git_bin or "git",
+        "-C",
+        str(repo_root),
+        "rev-parse",
+        "--abbrev-ref",
+        "HEAD",
+    ]
+    try:
+        done = run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "{0} did not run ({1})".format(" ".join(command), exc)
+    if done.returncode != 0:
+        message = (_decode(done.stderr) or _decode(done.stdout)).strip()
+        return None, "{0} failed: {1}".format(
+            " ".join(command), message or "exit {0}".format(done.returncode)
+        )
+    branch = _decode(done.stdout).strip()
+    if not branch or branch == "HEAD":
+        return None, "HEAD is detached, so no current branch name is available"
+    return branch, None
+
+
+def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
+    """(count_or_None, why). `count` is `None` only on `could-not-read`.
+
+    #1476: a shared checkout can be standing on any branch when this runs,
+    and `trap.d/` at that branch's own working tree is not the same fact as
+    `trap.d/` on the repository's own default branch -- the incident this
+    closes had a curate commit already pushed to `main` while the checkout
+    itself had meanwhile moved to a feature branch cut before that commit,
+    and this reported the stale branch's own leftover fragments as though
+    they were `main`'s.
+
+    So: when `config` names a `default_branch` and the checkout is
+    genuinely standing on some OTHER branch, this reads `origin/
+    <default_branch>`'s own committed tree via `git ls-tree`
+    (`trap_curate.waiting_at_ref`) instead of the working directory --
+    never the wrong branch's disk state. When the checkout IS the default
+    branch (or when no `default_branch` is configured, or the current
+    branch cannot even be determined), this falls back to
+    `trap_curate.waiting`, the original working-tree read: reading the
+    default branch's own working tree still needs to see a just-committed,
+    not-yet-pushed curate run before the next push, which `git ls-tree
+    origin/<default_branch>` cannot -- and preserves this function's
+    original, no-config-passed behaviour used by every existing caller
+    that does not supply one."""
+    default_branch = (config or {}).get("default_branch")
+    if isinstance(default_branch, str) and default_branch.strip():
+        current, _why = _current_branch(repo_root, run=run, git_bin=git_bin)
+        if current is not None and current != default_branch:
+            result = trap_curate.waiting_at_ref(
+                repo_root,
+                "origin/{0}".format(default_branch),
+                run=run,
+                git_bin=git_bin,
+            )
+            if result["state"] == "could-not-read":
+                return None, result["why"]
+            return result["count"], result["why"]
     result = trap_curate.waiting(repo_root)
     if result["state"] == "could-not-read":
         return None, result["why"]
@@ -223,14 +285,18 @@ def _valid_threshold(value):
     return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
-def decide(repo_root, config, gh=None, run=subprocess.run):
+def decide(repo_root, config, gh=None, run=subprocess.run, git_bin=None):
     """Every route's own state, plus which one (if any) is armed to fire,
     in precedence order. Returns ``(armed_route_or_None, results)``, where
     ``results`` maps each name in `ROUTES` to a dict carrying at least
     ``configured`` (bool), and, when configured, ``state``/``count``/
     ``threshold``/``why``.
-    """
+
+    `git_bin` (#1476) is resolved through `gh_which.safe_which` once here,
+    the same way `gh` already is below, and threaded into `curate_count` so
+    it can tell which branch the checkout is standing on."""
     gh = gh if gh is not None else gh_which.safe_which("gh")
+    git_bin = git_bin if git_bin is not None else gh_which.safe_which("git")
     repo = (config or {}).get("repo")
     results = {}
 
@@ -253,7 +319,9 @@ def decide(repo_root, config, gh=None, run=subprocess.run):
             }
             continue
         if name == "curate":
-            count, why = curate_count(repo_root)
+            count, why = curate_count(
+                repo_root, config=config, run=run, git_bin=git_bin
+            )
         elif name == "release":
             count, why = release_count(repo_root, config)
         else:
