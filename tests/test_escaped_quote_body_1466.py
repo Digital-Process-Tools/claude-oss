@@ -107,6 +107,26 @@ def test_a_lone_backslash_quote_at_the_end_of_a_windows_path_does_not_fire():
     assert _body_errors(paired) != [], paired
 
 
+def test_two_unrelated_windows_paths_on_one_line_do_not_fire():
+    """Second-pass review finding: two lone backslash-quote sentinels can sit
+    near each other without belonging to the same quoted phrase at all -- two
+    separate Windows paths, each ending its own quoted segment. Requiring only
+    a pair count, with no constraint on what sits between the two sentinels,
+    still fired on this shape. The genuine defect's own quoted phrase never
+    contains a bare, unescaped quote inside it, so the content between a real
+    pair must never itself carry one."""
+    two_paths = (
+        'Moved the install directory from "C:{b}Old{b}" to "C:{b}New{b}".'
+        "\n\nCloses #1466\n"
+    ).format(b=chr(92))
+    assert _body_errors(two_paths) == [], _body_errors(two_paths)
+
+    # Must-fire control: a genuine single quoted phrase, double-escaped on
+    # both sides, still fires -- so the pass above is a narrowing and not the
+    # check going quiet.
+    assert _body_errors(DAMAGED_BODY) != []
+
+
 def test_the_check_runs_from_validate_pr_body_on_a_real_payload(tmp_path):
     """Wired, not merely defined. A checker nothing calls is this repository's
     own defect class one level up."""

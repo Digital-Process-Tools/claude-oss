@@ -1537,11 +1537,22 @@ def escaped_newline_body_errors(payload):
 #: doubles the escape on BOTH quotes delimiting a short phrase (\\"15 of 19\\"), never on
 #: one side alone. Reluctant so the match is the nearest pair, not the widest span, and
 #: bounded to one line so a paragraph break cannot join two unrelated occurrences.
+#: The content BETWEEN the pair also excludes a bare quote -- a second self-review
+#: round found that requiring only two lone backslash-quote sentinels nearby, with
+#: no constraint on what sits between them, still fired on two unrelated ordinary
+#: Windows paths quoted back to back ("C:\\Old\\" to "C:\\New\\"): each path's own
+#: trailing separator supplies one "lone" sentinel, and the pair-count alone cannot
+#: tell that shape from a single hand-typed double-escaped phrase. The genuine
+#: defect's own quoted phrase never contains a bare, unescaped quote character
+#: inside it -- if it did, the phrase would not have come from one JSON string in
+#: the first place -- so excluding a bare quote from the span is the same fact
+#: that makes the defect shape possible, not a heuristic added afterwards.
 _ESCAPED_QUOTE_PAIR = re.compile(
     re.escape(_BACKSLASH)
     + chr(34)
     + r"[^"
     + _REAL_NEWLINE
+    + chr(34)
     + r"]{1,200}?"
     + re.escape(_BACKSLASH)
     + chr(34)
