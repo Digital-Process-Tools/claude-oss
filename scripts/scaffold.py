@@ -309,7 +309,7 @@ SUPERTOOL_JSON = """{
       "watch_name": "__WATCH_NAME__",
       "radar_tiers": {
         "gh-prs": {
-          "pr_exclude_events": ["checks_pending", "checks_succeeded", "pr_opened", "conflicts_appeared"]
+          "pr_exclude_events": ["checks_pending", "checks_succeeded", "conflicts_appeared"]
         }
       }
     },
@@ -2709,7 +2709,6 @@ RADAR_REMEDY_CONFIG = {
                     "pr_exclude_events": [
                         "checks_pending",
                         "checks_succeeded",
-                        "pr_opened",
                         "conflicts_appeared",
                     ]
                 }

@@ -11,7 +11,7 @@ shared name -- `report`, `_supertool_document` -- is reached through
 The scheduler session (`/oss:run`) is supposed to stay flat and reached
 419-503k tokens of context in one overnight run, because every channel event
 the `gh-prs` radar tier emits -- `checks_pending`, `checks_succeeded`,
-`pr_opened`, `conflicts_appeared`, ... -- lands in that session as a turn, and
+`conflicts_appeared`, ... -- lands in that session as a turn, and
 a turn re-sends the whole scheduler context. 12 of the 17 events one scheduler
 received in a morning were per-PR noise the running tick already polls for.
 
@@ -65,10 +65,15 @@ STATE_BASE = "/tmp"
 
 #: The initial blacklist #1499 decided on: the per-PR events a running tick
 #: already polls for. A repo widens it in its own `.supertool.json`.
+#:
+#: Keys here must be ones `github-pr` (the per-PR poller) can emit -- radar
+#: refuses the WHOLE tier otherwise, zero pollers, and this check reports `ok`
+#: over it. `pr_opened` is a `github-pr-feed` event and shipped here for a day
+#: before supertool 0.61.0 refused it; `tests/test_event_filter_keys_1499.py`
+#: reads supertool's own events.json rather than a copy of the valid set.
 INITIAL_EXCLUDE = [
     "checks_pending",
     "checks_succeeded",
-    "pr_opened",
     "conflicts_appeared",
 ]
 
@@ -248,7 +253,7 @@ def check_event_filter(project_dir):
         doctor.report(
             "WARN",
             "event filter: unfiltered -- {} in {}. Every per-PR channel event "
-            "(checks_pending, checks_succeeded, pr_opened, conflicts_appeared, ...) then "
+            "(checks_pending, checks_succeeded, conflicts_appeared, ...) then "
             "lands in the scheduler session as a turn, and each turn re-sends the whole "
             "scheduler context; that is how one /oss:run session reached 419-503k tokens "
             "overnight (#1499). Set {} to {} in {} -- the running tick already polls for "

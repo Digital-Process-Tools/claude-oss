@@ -77,6 +77,7 @@
         "tests/test_doctor_install_audit_287.py",
         "tests/test_doctor_plugin_copy.py",
         "tests/test_doctor_supertool_ops_582.py",
+        "tests/test_event_filter_keys_1499.py",
         "tests/test_finding_routing_1275.py",
         "tests/test_freshness.py",
         "tests/test_gate3_round1_findings_1372.py",

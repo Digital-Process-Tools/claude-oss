@@ -30,7 +30,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import doctor  # noqa: E402
 import doctor_check_event_filter as dcef  # noqa: E402
 
-INITIAL = ["checks_pending", "checks_succeeded", "pr_opened", "conflicts_appeared"]
+INITIAL = ["checks_pending", "checks_succeeded", "conflicts_appeared"]
 
 
 @pytest.fixture(autouse=True)
