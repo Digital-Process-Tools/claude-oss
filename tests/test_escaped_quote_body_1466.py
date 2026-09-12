@@ -69,7 +69,7 @@ def test_the_check_fires_on_a_hand_typed_double_escape():
 def test_a_code_span_is_a_working_remedy_rather_than_an_unreachable_one():
     """Must-fire/must-not-fire pair. Without the must-fire half, the pass
     below could be a check that never looks at all."""
-    naked = "One line of prose mentioning {q} outside any code span.".format(
+    naked = "One line of prose mentioning {q}a phrase{q} outside any code span.".format(
         q=BACKSLASH_QUOTE
     )
     assert _body_errors(naked) != [], (
@@ -83,6 +83,28 @@ def test_an_ordinary_plain_quoted_body_passes():
     a phrase the ordinary way, with no backslash anywhere."""
     plain = 'Ran the suite and confirmed "15 of 19" checks passed.\n\nCloses #1466\n'
     assert _body_errors(plain) == []
+
+
+def test_a_lone_backslash_quote_at_the_end_of_a_windows_path_does_not_fire():
+    """Found on review (#1466's own self-review): a single, unpaired
+    backslash-quote is exactly what a quoted Windows path's trailing
+    separator looks like right before the closing quote mark -- and has
+    nothing to do with the double-escaped-JSON shape this check exists for.
+    The real defect always doubles the escape on BOTH sides of a quoted
+    phrase (see DAMAGED_BODY above); a lone occurrence must not fire."""
+    windows = (
+        'Set the install path to "C:{b}Windows{b}System32{b}" in the '
+        "config.\n\nCloses #1466\n"
+    ).format(b=chr(92))
+    assert _body_errors(windows) == [], _body_errors(windows)
+
+    # Must-fire control in the same fixture: a second, paired occurrence
+    # elsewhere in the same body still fires, so the pass above is a
+    # narrowing and not the check going quiet.
+    paired = windows + "Also saw {q}odd behaviour{q} in the logs.\n".format(
+        q=BACKSLASH_QUOTE
+    )
+    assert _body_errors(paired) != [], paired
 
 
 def test_the_check_runs_from_validate_pr_body_on_a_real_payload(tmp_path):

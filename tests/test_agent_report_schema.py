@@ -1024,6 +1024,26 @@ def _disk_mutations(tmp_path):
             ),
             tmp_path,
         ),
+        # #1466 (contract 13): a payload whose body carries a PAIRED literal
+        # backslash-quote outside a code span -- ordinary prose quoting a
+        # phrase verbatim, double-escaped on both sides on the way into the
+        # JSON source. Nothing else in this table can refuse it: the payload
+        # parses, matches the shape, and the closes claim is self-consistent.
+        # Only the content check can see it.
+        "pr-body-body-has-no-paired-backslash-quote-outside-a-code-span": (
+            _report_with_payload(
+                tmp_path,
+                payload={
+                    "title": "t",
+                    "body": "Ran the suite and confirmed {q}15 of 19{q} checks "
+                    "passed.".format(q=chr(92) + chr(34)),
+                    "head": "fix/123",
+                    "base": "main",
+                },
+                name="escaped-quote.pr.json",
+            ),
+            tmp_path,
+        ),
     }
 
 
@@ -2576,14 +2596,28 @@ def test_schema_version_12_declares_its_relation_to_11():
     #1298's own bump at 11: a version-11 report whose mechanism happened to be
     empty or near-empty was valid under 11 and is refused under 12 -- there is
     no way to scope the tightening to something only a new document could
-    spell, because the field itself is not new.
+    spell, because the field itself is not new. The historical record, not the
+    current contract number -- see the 10-test above for why this does not
+    assert x-schema-version itself.
     """
     schema = _schema()
-    assert schema["x-schema-version"] == 12
     assert schema["x-schema-compatibility"]["12"] == "breaking"
 
 
-def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_12():
+def test_schema_version_13_declares_its_relation_to_12():
+    """#1466: escaped_quote_body_errors, a fourth on-disk content check. BREAKING,
+    the same shape as #724's own bump at 9: a version-12 payload whose body
+    happened to carry a paired literal backslash-quote outside a code span was
+    valid under 12 and is refused under 13 -- there is no way to scope the rule
+    to something only a new document could spell, because the field (`body`)
+    is not new.
+    """
+    schema = _schema()
+    assert schema["x-schema-version"] == 13
+    assert schema["x-schema-compatibility"]["13"] == "breaking"
+
+
+def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_13():
     assert report_schema.contract_drift(_schema()) is None
 
 

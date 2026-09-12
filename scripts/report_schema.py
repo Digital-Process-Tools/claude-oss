@@ -273,6 +273,14 @@ CONTRACT_FINGERPRINTS = {
     # ran (x-convention still says so), but a report can no longer pair a
     # claimed-clean review with a mechanism string that describes nothing.
     12: "6a686c3970135d8e1bf73cd5383163b2cb58901b49ea3c6bca71ff122e40b00f",
+    # 13 (#1466): escaped_quote_body_errors -- a fourth on-disk content check --
+    # same shape as #724's bump at 9: the rule fires on `body`, a free-text
+    # field every prior contract already carried, so there is no way to scope
+    # it to something only a new document could spell. BREAKING: a version-12
+    # payload whose body happened to carry a paired literal backslash-quote
+    # outside a code span (rare, but not impossible -- a quoted shell example,
+    # say) was valid under 12 and is refused under 13.
+    13: "9d456ffb13d0104b3b9420b6f8cc5ec50427119914c72c36f183619bd94235e5",
 }
 
 _TYPES = {
@@ -1520,23 +1528,44 @@ def escaped_newline_body_errors(payload):
 #: -- spelled through chr() for the same reason _LINE_BREAK_ESCAPE is (#685, #724): no
 #: reader, and no payload carrying this source through another serialisation on its way
 #: to disk, has to count backslashes to know what it is.
-_ESCAPED_QUOTE = re.compile(re.escape(_BACKSLASH) + chr(34))
+#:
+#: Requires a PAIR, not a lone occurrence -- found on review (#1466's own self-review):
+#: a single backslash-quote is exactly the last character of an ordinary Windows path
+#: quoted in prose ("C:\\Windows\\System32\\"), which has nothing to do with the bug
+#: this check exists for and was a real false positive in the first draft. The actual
+#: defect this repository observed always comes in a matching PAIR: hand-typed JSON
+#: doubles the escape on BOTH quotes delimiting a short phrase (\\"15 of 19\\"), never on
+#: one side alone. Reluctant so the match is the nearest pair, not the widest span, and
+#: bounded to one line so a paragraph break cannot join two unrelated occurrences.
+_ESCAPED_QUOTE_PAIR = re.compile(
+    re.escape(_BACKSLASH)
+    + chr(34)
+    + r"[^"
+    + _REAL_NEWLINE
+    + r"]{1,200}?"
+    + re.escape(_BACKSLASH)
+    + chr(34)
+)
 
 
 def escaped_quote_body_errors(payload):
-    """#1466: a body carrying a literal backslash-quote outside a code span.
+    """#1466: a body carrying a paired literal backslash-quote outside a code span.
 
     Four developer lanes hand-typed a JSON payload where ordinary prose quoting a
     short phrase verbatim -- "15 of 19" was meant -- got double-escaped on the way
     into the JSON source, which decodes to a literal backslash sitting directly in
-    front of the quote character in the parsed body string. `gh-pr-create` already
-    refuses this shape and names the offending text, but only after the payload is
-    composed and the create call is attempted -- each refusal cost a resumed
-    session, a re-derived fix and a second create call. Same absence-detector shape
-    as `escaped_newline_body_errors` beside it: a finding is strong and a pass is
-    weak, because the rare body that genuinely means a literal backslash-quote
-    belongs in a code span, where a forge renders it verbatim and this check does
-    not look.
+    front of the quote character on BOTH sides of the phrase in the parsed body
+    string. `gh-pr-create` already refuses this shape and names the offending text,
+    but only after the payload is composed and the create call is attempted -- each
+    refusal cost a resumed session, a re-derived fix and a second create call. Same
+    absence-detector shape as `escaped_newline_body_errors` beside it: a finding is
+    strong and a pass is weak, because the rare body that genuinely means a literal
+    backslash-quote belongs in a code span, where a forge renders it verbatim and
+    this check does not look.
+
+    Requires a matching PAIR rather than a lone occurrence -- see
+    `_ESCAPED_QUOTE_PAIR`'s own docstring for the false positive this narrowing
+    removes (a Windows path's trailing separator sitting against a closing quote).
     """
     if not isinstance(payload, dict):
         return []
@@ -1544,18 +1573,18 @@ def escaped_quote_body_errors(payload):
     if not isinstance(body, str):
         return []
     prose = prose_of(body)
-    found = _ESCAPED_QUOTE.search(prose)
+    found = _ESCAPED_QUOTE_PAIR.search(prose)
     if found is None:
         return []
-    start = max(0, found.start() - 30)
-    context = prose[start : found.end() + 30]
+    start = max(0, found.start() - 15)
+    context = prose[start : found.end() + 15]
     return [
-        "pr_body.payload.body: a literal backslash-quote outside a code span "
-        "({}) -- the shape a hand-typed JSON payload produces when ordinary prose "
-        "quoting a phrase verbatim is double-escaped instead of written plainly. "
-        "gh-pr-create already refuses this shape; catching it here saves the round "
-        "trip (#1466). If the body genuinely means a literal backslash followed by "
-        "a quote, put it in a code span.".format(_one_line(context, 80))
+        "pr_body.payload.body: a paired literal backslash-quote outside a code "
+        "span ({}) -- the shape a hand-typed JSON payload produces when ordinary "
+        "prose quoting a phrase verbatim is double-escaped instead of written "
+        "plainly. gh-pr-create already refuses this shape; catching it here saves "
+        "the round trip (#1466). If the body genuinely means a literal backslash "
+        "followed by a quote, put it in a code span.".format(_one_line(context, 100))
     ]
 
 
