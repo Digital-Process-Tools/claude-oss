@@ -312,12 +312,19 @@ def _route_already_seen(repo_root, config, route, signature, arm=True):
     return False, "armed ({0})".format(check["state"])
 
 
-def _routes(repo_root, config, gh=None, run=subprocess.run):
+def _routes(repo_root, config, gh=None, run=subprocess.run, git_bin=None):
     """One `workspace_routes.decide` call, shared by the curate and triage
     checks below -- each reads its own repo-declared threshold-vs-count
     result out of it. Calling `decide` twice would cost a second `gh issue
-    list` round trip for a fact the first call already has."""
-    _armed, results = workspace_routes.decide(repo_root, config, gh=gh, run=run)
+    list` round trip for a fact the first call already has.
+
+    `git_bin` (#1476) is threaded through to `workspace_routes.curate_count`,
+    which needs it to tell whether the checkout is standing on the
+    repository's own default branch before deciding whether to read the
+    working tree at all."""
+    _armed, results = workspace_routes.decide(
+        repo_root, config, gh=gh, run=run, git_bin=git_bin
+    )
     return results
 
 
@@ -615,7 +622,7 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
         )
 
     gh = gh if gh is not None else gh_which.safe_which("gh")
-    routes = _routes(repo_root, config, gh=gh, run=run)
+    routes = _routes(repo_root, config, gh=gh, run=run, git_bin=git_bin)
 
     by_source = {
         "inbound": _inbound_candidate(repo_root, config),
@@ -764,6 +771,19 @@ def _arm_route_source(repo_root, config, routes, source):
     return None
 
 
+def _flatten(text):
+    """Same shape as `workspace_routes._flatten` (#1257/#1113): a `reason`/
+    `remedy` string here can now carry `git`'s own stderr, undecoded for
+    embedded newlines -- `trap_curate.waiting_at_ref`'s `could-not-read`
+    message and `workspace_routes._current_branch`'s failure message, both
+    new in #1476 -- and `receipt()` prints it directly into a line this
+    function's own caller reads by eye. An embedded newline would put that
+    forge-supplied text at column 0 of the next printed line, indented to
+    look like a new, unrelated entry (self-review finding, oss:auditor
+    spawn, #1476)."""
+    return " ".join(str(text).split())
+
+
 def receipt(payload):
     """One block a human reads, thresholds and evidence named rather than
     recalled -- same argument `release_trigger.receipt` makes for its own
@@ -771,17 +791,19 @@ def receipt(payload):
     state = payload["state"]
     lines = ["next-action: {0}".format(state)]
     if state == UNSAFE:
-        lines.append("  reason: {0}".format(payload["reason"]))
-        lines.append("  remedy: {0}".format(payload["remedy"]))
+        lines.append("  reason: {0}".format(_flatten(payload["reason"])))
+        lines.append("  remedy: {0}".format(_flatten(payload["remedy"])))
     elif state == DUE:
         lines.append("  next: {0}".format(payload["next"]))
-        lines.append("  reason: {0}".format(payload["reason"]))
+        lines.append("  reason: {0}".format(_flatten(payload["reason"])))
     elif state == NOTHING_DUE:
         lines.append("  next: dispatch")
-        lines.append("  reason: {0}".format(payload["reason"]))
+        lines.append("  reason: {0}".format(_flatten(payload["reason"])))
         for entry in payload.get("not_due", []):
             lines.append(
-                "  -- not due: {0} ({1})".format(entry["source"], entry["reason"])
+                "  -- not due: {0} ({1})".format(
+                    entry["source"], _flatten(entry["reason"])
+                )
             )
     elif state == RANKED:
         for entry in payload["candidates"]:
@@ -789,11 +811,15 @@ def receipt(payload):
                 entry["rank"] if entry["state"] == CANDIDATE_DUE else "could-not-tell"
             )
             lines.append(
-                "  {0}. {1}  -- {2}".format(marker, entry["source"], entry["reason"])
+                "  {0}. {1}  -- {2}".format(
+                    marker, entry["source"], _flatten(entry["reason"])
+                )
             )
         for entry in payload.get("not_due", []):
             lines.append(
-                "  -- not ranked: {0} ({1})".format(entry["source"], entry["reason"])
+                "  -- not ranked: {0} ({1})".format(
+                    entry["source"], _flatten(entry["reason"])
+                )
             )
     return "\n".join(lines)
 
@@ -873,7 +899,14 @@ def _take_cli(root, source):
         )
         return 1
     config = payload["config"]
-    routes = _routes(root, config)
+    # #1476 self-review (oss:auditor spawn): `rank()` resolves `git_bin`
+    # once via `gh_which.safe_which` and threads it through so
+    # `curate_count` can tell which branch is checked out; this second,
+    # independent `_routes` call (re-deriving what `rank()` already
+    # computed, since a CLI invocation has no other way to hand it back
+    # in) used to leave `git_bin` at its default `None` and make
+    # `workspace_routes.decide` re-resolve it from scratch instead.
+    routes = _routes(root, config, git_bin=gh_which.safe_which("git"))
     _arm_route_source(root, config, routes, source)
     print("OK: took {0}".format(source))
     return 0
@@ -913,7 +946,7 @@ def _record_skip_cli(root, taken_source, reason):
     except ValueError as exc:
         print("FAIL: {0}".format(exc))
         return 1
-    routes = _routes(root, config)
+    routes = _routes(root, config, git_bin=gh_which.safe_which("git"))
     _arm_route_source(root, config, routes, taken_source)
     print("OK: recorded ({0})".format(entry["decision"]))
     return 0

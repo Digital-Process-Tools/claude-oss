@@ -146,6 +146,169 @@ def test_curate_count_unreadable_directory_is_could_not_count(repo, monkeypatch)
     assert count is None, why
 
 
+# --- curate_count reads origin/<default_branch>, not whatever is checked
+# out (#1476) -----------------------------------------------------------------
+
+
+@pytest.fixture
+def repo_on_main(tmp_path):
+    """A real git repo, explicitly on a branch named `main`, with an
+    `origin/main` remote-tracking ref pointing at that same clean commit --
+    everything #1476's scenario needs to fake a shared checkout without a
+    real network fetch."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    env = _git_env()
+    done = _run(["git", "init", "--quiet", "."], cwd=root, env=env)
+    if done.returncode != 0:
+        pytest.skip("git init failed here: {0}".format(done.stderr.strip()))
+    _run(["git", "config", "user.email", "t@example.com"], cwd=root, env=env)
+    _run(["git", "config", "user.name", "t"], cwd=root, env=env)
+    (root / "README.md").write_text("hello\n")
+    _run(["git", "add", "."], cwd=root, env=env)
+    _run(["git", "checkout", "--quiet", "-B", "main"], cwd=root, env=env)
+    _run(["git", "commit", "--quiet", "-m", "initial"], cwd=root, env=env)
+    # Fake `origin/main` without a real remote: a plain ref pointing at the
+    # same, trap.d/-free commit -- exactly what a genuinely clean default
+    # branch looks like from `git ls-tree`.
+    _run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=root,
+        env=env,
+    )
+    return root
+
+
+def test_curate_count_on_a_stale_branch_reads_origin_default_branch_not_the_checkout(
+    repo_on_main,
+):
+    """The paired 'must not fire' half: the checkout has moved to a feature
+    branch cut before origin/main's own clean state, and that feature
+    branch's own working tree carries two leftover trap.d/ fragments.
+    #1476's own incident: reading the checkout's disk state reported this
+    branch's stale fragments as though they belonged to main."""
+    root = repo_on_main
+    env = _git_env()
+    _run(["git", "checkout", "--quiet", "-b", "fix/999"], cwd=root, env=env)
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.a.md").write_text("x\n")
+    (root / "trap.d" / "2.b.md").write_text("x\n")
+    _run(["git", "add", "trap.d"], cwd=root, env=env)
+    _run(["git", "commit", "--quiet", "-m", "stale fragments"], cwd=root, env=env)
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count == 0, why
+    assert "origin/main" in why, why
+
+
+def test_curate_count_on_the_default_branch_itself_still_counts_real_fragments(
+    repo_on_main,
+):
+    """Positive control for the case above: the checkout genuinely IS the
+    default branch and genuinely has fragments waiting -- this must still
+    report them, reading the working tree exactly as before (so a
+    just-committed, not-yet-pushed curate run is still visible)."""
+    root = repo_on_main
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.a.md").write_text("x\n")
+    (root / "trap.d" / "2.b.md").write_text("x\n")
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count == 2, why
+
+
+def test_curate_count_with_no_default_branch_configured_keeps_reading_the_checkout(
+    repo,
+):
+    """Back-compat: a caller that passes no `config` (or one with no
+    `default_branch`) gets exactly the original, no-branch-awareness
+    behaviour -- unchanged from before #1476."""
+    (repo / "trap.d").mkdir()
+    (repo / "trap.d" / "1.a.md").write_text("x\n")
+    count, why = workspace_routes.curate_count(str(repo), config={})
+    assert count == 1, why
+
+
+def test_curate_count_on_a_stale_branch_with_no_resolvable_origin_ref_is_could_not_count(
+    tmp_path,
+):
+    """Third state: standing on a non-default branch with no `origin/
+    <default_branch>` ref to read at all must report `could-not-count`
+    (`None`), never silently fall back to the wrong branch's own disk
+    state and never a guessed `0`."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    env = _git_env()
+    done = _run(["git", "init", "--quiet", "."], cwd=root, env=env)
+    if done.returncode != 0:
+        pytest.skip("git init failed here: {0}".format(done.stderr.strip()))
+    _run(["git", "config", "user.email", "t@example.com"], cwd=root, env=env)
+    _run(["git", "config", "user.name", "t"], cwd=root, env=env)
+    (root / "README.md").write_text("hello\n")
+    _run(["git", "add", "."], cwd=root, env=env)
+    _run(["git", "checkout", "--quiet", "-B", "fix/999"], cwd=root, env=env)
+    _run(["git", "commit", "--quiet", "-m", "initial"], cwd=root, env=env)
+    # No origin/main ref exists anywhere in this repo.
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count is None, why
+
+
+def test_curate_count_when_current_branch_cannot_be_determined_is_could_not_count(
+    repo_on_main, monkeypatch
+):
+    """Self-review finding (Explore reviewer, #1476): an earlier version of
+    this function fell back to the working-tree read whenever the current
+    branch could not be determined at all, silently reintroducing the exact
+    bug this closes. A repository this could not look at must not read the
+    same as one that is genuinely fine."""
+    root = repo_on_main
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.a.md").write_text("x\n")
+
+    def _boom(repo_root, run=None, git_bin=None, timeout=10):
+        return None, "rev-parse did not run (boom)"
+
+    monkeypatch.setattr(workspace_routes, "_current_branch", _boom)
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count is None, why
+
+
+def test_waiting_at_ref_does_not_descend_into_a_subdirectory(repo_on_main):
+    """Self-review finding (Explore reviewer, #1476): `waiting()` lists
+    `trap.d/`'s immediate entries only via `os.listdir`; `waiting_at_ref`
+    must count the same shape, not a recursive `git ls-tree -r`, or the
+    two readers of the same fact could disagree with nothing about the
+    real backlog having changed."""
+    import trap_curate
+
+    root = repo_on_main
+    env = _git_env()
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "sub").mkdir()
+    (root / "trap.d" / "1.a.md").write_text("x\n")
+    (root / "trap.d" / "sub" / "2.b.md").write_text("y\n")
+    _run(["git", "add", "trap.d"], cwd=root, env=env)
+    _run(["git", "commit", "--quiet", "-m", "nested fragment"], cwd=root, env=env)
+    _run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=root,
+        env=env,
+    )
+
+    result = trap_curate.waiting_at_ref(str(root), "origin/main")
+    assert result["count"] == 1, result
+    assert result["fragments"][0]["name"] == "1.a.md", result
+
+
 # --- release_count -----------------------------------------------------------
 
 
