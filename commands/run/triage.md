@@ -57,10 +57,30 @@ Creating labels is your call, not the agent's.
 
 ## When the agent reports back
 
+**Record the sweep the moment the agent reports back, or `--last-triage` never moves and
+`triage_trigger.py` re-ranks triage `due` forever (#1478)** — the triager itself never writes to
+the state file; it is Bash and TodoWrite only, and its report is labels applied plus proposed
+clusters, nothing about cadence. **A sweep that refused every apply still ran** — the same fact
+the status-line call below already states explicitly, and this call is gated on the identical
+question: not whether every label stuck, but whether the agent's own final message shows it
+actually swept the board (never a refusal to run at all, and never an empty return). Once that
+holds, run this from `<state_file>` in `.oss.local.json`:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --decision "triage sweep recorded" \
+  --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --triage-recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+`--triage-recorded` is an attachment to `--decision`, not its own mode flag — `oss_state.py`'s
+argparse requires one of the mutually exclusive mode flags (`--decision`, `--read`, ...) first, and
+`--decision` itself requires `--at` alongside it. This is the same call `commands/tick.md`'s own
+post-release triage step already makes (#855, #1386); this procedure is the other place a sweep
+completes and was making no such call at all.
+
 A completed sweep can relabel issues, which is exactly the kind of event that falsifies the
 board half of the status line's cache — the same reasoning `/oss:release` already applies to the
 `latest` half the moment a Release is created (#549). Once the agent's report has arrived —
-whatever it says, including a sweep that refused every apply — run this once, from this
+whatever it says, including a sweep that refused every apply — run this once too, from this
 orchestrating session's own repo root, never from inside the agent's own Bash grant:
 
 ```bash
