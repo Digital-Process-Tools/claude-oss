@@ -166,6 +166,17 @@ So, in order:
 The unresolved name is itself a finding about the plugin, not just an obstacle to route around.
 Report it even when the fallback ran cleanly.
 
+**A name that fails to resolve is not the only way a spawn fails, and the two are not the same
+outcome (#1468).** Observed: a lane whose `Agent` tool was refused, absent from its own grant, or
+erroring identically on every `subagent_type` it tried -- not one name failing while another
+succeeds, but the tool itself unreachable one level down, even though the dispatching session's own
+`Agent` tool worked throughout. That is total unavailability, not a resolution failure, and step 2
+above is not a remedy for it: re-dispatching to `general-purpose` hits the identical wall that
+stopped `Explore` and `oss:auditor`, so a second identical failure is not new evidence and is not
+worth spending a turn on. Report `not-checked` per `agents/developer/review.md`'s own clause instead
+of `could not run`, with the verbatim refusal or error text in `review.spawn_error` -- and never let
+either failure mode read back as a clean review with nothing behind it.
+
 ## Fixing a finding is a new diff, and sometimes a new subject (#1047)
 
 **A review's subject is the diff at the instant it ran; the fix for its findings is a later diff,

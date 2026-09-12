@@ -291,7 +291,7 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 41,227 B | 44,100 B |
+| `agents/developer.md` | 41,443 B | 44,100 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
@@ -346,6 +346,15 @@ Report format section now requires every finding to open with a list marker
 `scripts/review_return.py` already recognises, closing the gap that let a compliant auditor state
 a real finding as bare prose under a class label and have it read back as `could-not-classify`.
 13,273 B became 14,046 B; the ceiling stays at 15,600 B, ~1,550 B of headroom left.
+
+**#1468 re-baselined `agents/developer.md` without raising its ceiling**: 41,227 B became
+41,443 B. The pointer sentence to `agents/developer/review-return.md` used to name only one way a
+self-review spawn can fail -- a `subagent_type` that does not resolve -- after a live lane reported
+its own nested `Agent` tool totally unavailable (neither `Explore` nor `oss:auditor` could be
+spawned, while the dispatching sub-manager's own `Agent` tool worked throughout), which is a
+different failure with a different documented outcome (`not-checked`, not `could not run`). The
+sentence now names both before a lane opens the phase file itself. Nothing already in the file
+argued that point, so nothing was cut to make room; still comfortably under the 44,100 B ceiling.
 
 **#1048 raised `agents/sub-manager.md`'s ceiling from 17,000 B to 18,700 B**, after trimming the
 new paragraph once to fit as much of it as possible: a sub-manager closed a handback promising its
@@ -439,7 +448,7 @@ only the lane can report.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer/review.md` | 12,272 B | 13,500 B |
-| `agents/developer/review-return.md` | 12,465 B | 13,700 B |
+| `agents/developer/review-return.md` | 13,418 B | 13,700 B |
 | `agents/developer/report.md` | 18,942 B | 19,100 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
@@ -487,6 +496,17 @@ two more real bugs inside it. The new section names the mechanized half of the t
 unmechanized third (a guard's behaviour changing) as judgement rather than pretending to derive
 it. Nothing already in the file argued that point, so nothing was cut to make room; the ceiling
 carries the same ~10% headroom the other re-baselines in this table use.
+
+**#1468 re-baselined `agents/developer/review-return.md` without raising its ceiling**: 12,465 B
+became 13,418 B, still under the 13,700 B budget. "When the spawn itself fails" used to document
+only a `subagent_type` that does not resolve, with a `general-purpose` re-dispatch as the remedy. A
+live lane reported a different failure one level down: the `Agent` tool itself refused every spawn
+regardless of name, while the dispatching sub-manager's own `Agent` tool kept working throughout
+the same session. The new paragraph says the two are not the same outcome and that the
+`general-purpose` fallback is not a remedy for the second one -- it hits the identical wall -- so
+the report should read `not-checked` with the verbatim error in `review.spawn_error`, per
+`agents/developer/review.md`'s own #1383 clause, rather than `could not run`. Nothing already in
+the file argued that point, so nothing was cut to make room.
 
 **#1114: `tests/test_baseline_matches_disk_1014.py` did not cover `developer_phases.DOCUMENTS`,
 and its two rows had already drifted from disk by the time the gap was found.** #1014 closed

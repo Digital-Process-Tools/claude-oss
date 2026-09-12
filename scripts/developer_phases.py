@@ -101,7 +101,20 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # judgement rather than pretending to derive it. Nothing already
         # in the file argued that point, so nothing was cut to make room;
         # ceiling raised to 13700 B, ~10% headroom over the new size.
-        12465,
+        # Re-baselined for #1468, without raising the ceiling: 12465 B
+        # became 13418 B. "When the spawn itself fails" used to state only
+        # a name-resolution failure and its `general-purpose` fallback; a
+        # new paragraph names the separate case where the `Agent` tool
+        # itself is unreachable one level down (observed alongside #1383,
+        # in a nested spawn context, with the dispatching session's own
+        # `Agent` tool unaffected) and says not to spend the one permitted
+        # re-spawn on a fallback that hits the identical wall -- report
+        # `not-checked` with `review.spawn_error`, per
+        # agents/developer/review.md's own #1383 clause, instead of
+        # `could not run`. Nothing already in the file argued that point,
+        # so nothing was cut to make room; still comfortably under the
+        # 13700 B ceiling.
+        13418,
         13700,
         "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails, when a fix-for-a-finding needs its own pass",
     ),

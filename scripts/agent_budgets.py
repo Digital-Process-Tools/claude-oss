@@ -67,7 +67,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # the exact confusion #1391 set out to remove now that SKILL.md no
     # longer publishes into the picker. Reworded to name the manager loop
     # without slash notation. Ceiling unchanged; comfortably under it.
-    "agents/developer.md": (41227, 44100),
+    # Re-baselined for #1468: 41227 B became 41443 B. The review-return
+    # pointer sentence now names a second, distinct failure mode -- the
+    # `Agent` tool being totally unavailable one level down, rather than one
+    # subagent_type name failing to resolve -- so a lane reading only the
+    # spine still knows the two are not the same outcome before it opens
+    # agents/developer/review-return.md's own new section. Ceiling
+    # unchanged; comfortably under it.
+    "agents/developer.md": (41443, 44100),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
