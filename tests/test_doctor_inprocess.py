@@ -460,7 +460,13 @@ def test_quiet_main_does_not_isolate_latest_skew_from_ambient_cache_1428(
         ),
         encoding="utf-8",
     )
+    # `statusline.cache_dir()` reads LOCALAPPDATA first on Windows and never
+    # consults XDG_CACHE_HOME there (test_plugin_update_invalidates_latest_
+    # 1381.py's own `_pin_cache` documents the same fact) -- pin both so this
+    # reproduction is not silently vacuous on the windows-latest CI leg,
+    # which is the very platform #1428 asked to confirm or rule out.
     monkeypatch.setenv("XDG_CACHE_HOME", str(ambient_home_cache))
+    monkeypatch.setenv("LOCALAPPDATA", str(ambient_home_cache))
 
     _quiet_main(monkeypatch, tmp_path)
     present = tmp_path / "present"
