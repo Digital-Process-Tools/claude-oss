@@ -893,7 +893,8 @@ def _record_skip_cli(root, taken_source, reason):
     for why a second, separately-taken read is the defect this removes
     rather than merely re-words.
 
-    Arms `taken_source`'s own receipt (a no-op for inbound/release) once the
+    Arms `taken_source`'s own receipt (a no-op only for `release`; #1433
+    made `inbound` a real receipt too, same as `curate`/`triage`) once the
     skip itself is recorded successfully -- the deviation is the decision to
     act on `taken_source` instead of the top candidate, so the moment that
     decision is on record is also the moment `taken_source` counts as

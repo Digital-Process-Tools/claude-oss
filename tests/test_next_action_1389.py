@@ -842,9 +842,16 @@ def test_take_cli_refuses_a_source_that_is_not_the_top_candidate(tmp_path, monke
 def test_take_cli_on_an_inbound_or_release_top_candidate_is_a_harmless_no_op(
     tmp_path, monkeypatch
 ):
-    """Positive control: `--take` on a source with no receipt of its own
-    (inbound, release) must still succeed -- it is a uniform commitment
-    step, not one that only makes sense for curate/triage."""
+    """Positive control: `--take` must still succeed on a source that ends
+    up writing no receipt -- a uniform commitment step, not one that only
+    makes sense for curate/triage. `release` never has a receipt of its
+    own; `inbound` gained one at #1433, but this fixture's config carries
+    no `state_file` (`_write_config(root)` with no extra), so
+    `_route_already_seen` fails open here too -- for a different reason
+    than `release`'s, not because `inbound` still has no mechanism at all.
+    See `test_taking_inbound_arms_it_so_the_next_read_does_not_repeat_due_
+    forever` for the state_file-configured case where `--take inbound`
+    really does write and later suppress a receipt."""
     root = _git_repo(tmp_path)
     _write_config(root)
     _quiet_inbound(monkeypatch, unruled=1)
