@@ -102,7 +102,7 @@ def test_windows_casefold_length_change_does_not_misalign_the_slice(monkeypatch)
     folded string's own length."""
     monkeypatch.setattr(tree_snapshot.sys, "platform", "win32")
 
-    root = "C:/Users/Stra\u00dfe"
-    path = "C:/Users/STRASSE/scripts/foo.py"
+    root = "C:/repos/Stra\u00dfe"
+    path = "C:/repos/STRASSE/scripts/foo.py"
 
     assert tree_snapshot._root_relative_path(path, root) == "scripts/foo.py"
