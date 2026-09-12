@@ -43,11 +43,82 @@ def _flat(text):
     return " ".join(text.lower().split())
 
 
+# The full 40-hex SHA, not the abbreviated form -- `git fetch <remote> <sha>` only
+# resolves against a remote (GitHub included) that allows fetching an arbitrary
+# reachable commit when given its FULL object id; an abbreviated one is refused
+# with "not our ref" even where the full form succeeds (#1491).
+_PRIOR_COMMIT = "f0cf75826c90fcbfef7f94d0360e28e11d797ac1"
+
+
+def _ensure_prior_commit_reachable():
+    """A CI checkout (`actions/checkout@v7`, no `fetch-depth` set) is shallow by
+    default and does not contain `_PRIOR_COMMIT`'s object, so a bare `git show`
+    fails with exit 128 (bad object) rather than returning the historical
+    content -- observed on macOS/3.12 in job #103498989883 (#1491). Fetch the one
+    commit on demand before reading it; if the fetch itself cannot succeed (no
+    network reachable, object unreachable from this remote for another reason),
+    return that reason instead of raising, so the caller can skip rather than
+    let a missing historical blob render as a red assertion failure
+    indistinguishable from a genuine regression.
+
+    Returns None on success, or a string reason on failure.
+    """
+    import subprocess
+
+    check = subprocess.run(
+        ["git", "cat-file", "-e", f"{_PRIOR_COMMIT}^{{commit}}"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if check.returncode == 0:
+        return None
+
+    remote = subprocess.run(
+        ["git", "remote"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    remote_name = remote.stdout.split()[0] if remote.stdout.split() else "origin"
+
+    fetch = subprocess.run(
+        ["git", "fetch", "--depth", "1", remote_name, _PRIOR_COMMIT],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if fetch.returncode != 0:
+        return (
+            f"could not fetch {_PRIOR_COMMIT} from {remote_name!r} "
+            f"(shallow checkout, presumably no network or unreachable object): "
+            f"{fetch.stderr.strip()}"
+        )
+
+    recheck = subprocess.run(
+        ["git", "cat-file", "-e", f"{_PRIOR_COMMIT}^{{commit}}"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    if recheck.returncode != 0:
+        return (
+            f"{_PRIOR_COMMIT} still unreachable after fetch: {recheck.stderr.strip()}"
+        )
+    return None
+
+
 def _prior_review_return():
     import subprocess
 
+    reason = _ensure_prior_commit_reachable()
+    if reason is not None:
+        import pytest
+
+        pytest.skip(f"pre-change document unreadable in this checkout: {reason}")
+
     out = subprocess.run(
-        ["git", "show", "f0cf758:agents/developer/review-return.md"],
+        ["git", "show", f"{_PRIOR_COMMIT}:agents/developer/review-return.md"],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -59,8 +130,14 @@ def _prior_review_return():
 def _prior_spine():
     import subprocess
 
+    reason = _ensure_prior_commit_reachable()
+    if reason is not None:
+        import pytest
+
+        pytest.skip(f"pre-change document unreadable in this checkout: {reason}")
+
     out = subprocess.run(
-        ["git", "show", "f0cf758:agents/developer.md"],
+        ["git", "show", f"{_PRIOR_COMMIT}:agents/developer.md"],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
