@@ -1113,20 +1113,27 @@ permissions:
   contents: read
   pull-requests: read
 
-# The actions below are pinned to major tags, not commit SHAs, and that is a decision.
-# A SHA written into this template ships to every repository scaffolded after it and can
-# only be refreshed by editing the plugin, so it rots into a stale pin the receiving repo
-# cannot see is stale, while a tag keeps receiving upstream fixes. `.github/dependabot.yml`
-# is scaffolded alongside this file and moves the tags where a maintainer can review it.
+# The actions below are pinned to a commit SHA, not a moving major tag (#1462).
+# `actions/checkout@v7` is repointed by its publisher on every v7.x release, so an
+# unpinned tag runs whatever code that publisher pushes next, under the receiving
+# repository's own token, with no commit and no pull request anywhere in that repo
+# to review. `.github/dependabot.yml` (scaffolded alongside this file, `github-actions`
+# ecosystem) reads as coverage for that and is not: Dependabot will never bump `v7` to
+# `v7`, so a retag is live before any pull request exists. A SHA pin inverts that --
+# the SHA cannot move, and Dependabot bumps a SHA-pinned action just as readily,
+# rewriting both the SHA and its trailing `# vX.Y.Z` comment -- so this trades a
+# standing, invisible exposure for a reviewable weekly pull request. The comment is
+# not decoration: a bare 40-hex ref is unreadable, and without it nobody can tell a
+# current pin from one several majors stale by looking.
 jobs:
   fragment:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
