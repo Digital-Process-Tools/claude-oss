@@ -140,17 +140,32 @@ def waiting_at_ref(root, ref, run=subprocess.run, git_bin=None, timeout=15):
     `git` not on PATH) is `could-not-read`; that failure must never be
     read as `none`, or a checkout with no visibility into `ref` at all
     would silently report a clean trap.d/ that was never actually checked.
+
+    Deliberately NOT `-r` (self-review finding, Explore reviewer, #1476):
+    `waiting()` lists `trap.d/`'s immediate entries only via
+    `os.listdir`, never descending into a subdirectory. A recursive
+    `ls-tree -r` here would count fragments one level deeper than the
+    working-tree reader ever would, so the two readers of "the same
+    fact" -- a working tree and a ref -- could disagree even when
+    nothing about the real backlog changed, purely from which one was
+    asked. `trap.d/` is flat by convention (`<issue>.<slug>.md` only),
+    so this keeps both readers looking at exactly the same shape.
     """
     command = [
         git_bin or "git",
         "-C",
         str(root),
         "ls-tree",
-        "-r",
         "--name-only",
         ref,
         "--",
-        DIRNAME,
+        # A trailing slash is load-bearing: `ls-tree <ref> -- trap.d` (no
+        # slash) names the DIRECTORY ENTRY ITSELF as a pathspec and returns
+        # exactly one line, "trap.d", never its contents -- confirmed
+        # against a real repo before this landed. `trap.d/` lists that
+        # directory's own immediate entries instead, one level deep,
+        # matching `os.listdir`'s own non-recursive shape.
+        DIRNAME + "/",
     ]
     try:
         done = run(

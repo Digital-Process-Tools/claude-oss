@@ -172,23 +172,42 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     and this reported the stale branch's own leftover fragments as though
     they were `main`'s.
 
-    So: when `config` names a `default_branch` and the checkout is
-    genuinely standing on some OTHER branch, this reads `origin/
-    <default_branch>`'s own committed tree via `git ls-tree`
-    (`trap_curate.waiting_at_ref`) instead of the working directory --
-    never the wrong branch's disk state. When the checkout IS the default
-    branch (or when no `default_branch` is configured, or the current
-    branch cannot even be determined), this falls back to
-    `trap_curate.waiting`, the original working-tree read: reading the
-    default branch's own working tree still needs to see a just-committed,
-    not-yet-pushed curate run before the next push, which `git ls-tree
-    origin/<default_branch>` cannot -- and preserves this function's
-    original, no-config-passed behaviour used by every existing caller
-    that does not supply one."""
+    So: when `config` names a `default_branch`, this decides which tree to
+    read by first asking which branch is actually checked out, and never
+    guesses:
+
+    - the checkout IS the default branch -> read the working tree
+      (`trap_curate.waiting`), so a just-committed, not-yet-pushed curate
+      run stays visible before it is pushed;
+    - the checkout is standing on some OTHER, known branch -> read
+      `origin/<default_branch>`'s own committed tree via `git ls-tree`
+      (`trap_curate.waiting_at_ref`) instead of the working directory --
+      never the wrong branch's disk state;
+    - the current branch could not even be determined (self-review
+      finding, Explore reviewer, #1476: an earlier version of this
+      function fell back to the working-tree read here too, silently
+      reintroducing the exact bug this closes whenever `git rev-parse
+      --abbrev-ref HEAD` itself failed to run) -> `could-not-count`,
+      never a guessed read of whichever tree happens to be on disk. This
+      module's own docstring already states the rule this follows: "a
+      repository this could not look at must not read the same as one
+      that is genuinely fine."
+
+    When no `default_branch` is configured at all, this preserves the
+    function's original, no-config-passed behaviour -- an unconditional
+    working-tree read -- used by every existing caller that does not
+    supply one."""
     default_branch = (config or {}).get("default_branch")
     if isinstance(default_branch, str) and default_branch.strip():
-        current, _why = _current_branch(repo_root, run=run, git_bin=git_bin)
-        if current is not None and current != default_branch:
+        current, why = _current_branch(repo_root, run=run, git_bin=git_bin)
+        if current is None:
+            return None, (
+                "the checked-out branch could not be determined, so whether "
+                "trap.d/ belongs to {0} could not be told ({1})".format(
+                    default_branch, why
+                )
+            )
+        if current != default_branch:
             result = trap_curate.waiting_at_ref(
                 repo_root,
                 "origin/{0}".format(default_branch),

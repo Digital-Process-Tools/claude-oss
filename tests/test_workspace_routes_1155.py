@@ -260,6 +260,55 @@ def test_curate_count_on_a_stale_branch_with_no_resolvable_origin_ref_is_could_n
     assert count is None, why
 
 
+def test_curate_count_when_current_branch_cannot_be_determined_is_could_not_count(
+    repo_on_main, monkeypatch
+):
+    """Self-review finding (Explore reviewer, #1476): an earlier version of
+    this function fell back to the working-tree read whenever the current
+    branch could not be determined at all, silently reintroducing the exact
+    bug this closes. A repository this could not look at must not read the
+    same as one that is genuinely fine."""
+    root = repo_on_main
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.a.md").write_text("x\n")
+
+    def _boom(repo_root, run=None, git_bin=None, timeout=10):
+        return None, "rev-parse did not run (boom)"
+
+    monkeypatch.setattr(workspace_routes, "_current_branch", _boom)
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count is None, why
+
+
+def test_waiting_at_ref_does_not_descend_into_a_subdirectory(repo_on_main):
+    """Self-review finding (Explore reviewer, #1476): `waiting()` lists
+    `trap.d/`'s immediate entries only via `os.listdir`; `waiting_at_ref`
+    must count the same shape, not a recursive `git ls-tree -r`, or the
+    two readers of the same fact could disagree with nothing about the
+    real backlog having changed."""
+    import trap_curate
+
+    root = repo_on_main
+    env = _git_env()
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "sub").mkdir()
+    (root / "trap.d" / "1.a.md").write_text("x\n")
+    (root / "trap.d" / "sub" / "2.b.md").write_text("y\n")
+    _run(["git", "add", "trap.d"], cwd=root, env=env)
+    _run(["git", "commit", "--quiet", "-m", "nested fragment"], cwd=root, env=env)
+    _run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=root,
+        env=env,
+    )
+
+    result = trap_curate.waiting_at_ref(str(root), "origin/main")
+    assert result["count"] == 1, result
+    assert result["fragments"][0]["name"] == "1.a.md", result
+
+
 # --- release_count -----------------------------------------------------------
 
 
