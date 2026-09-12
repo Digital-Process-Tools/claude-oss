@@ -427,15 +427,18 @@ def _states_the_membership_rule_rather_than_a_list(text):
     )
 
 
-def _says_the_default_branch_has_no_poller_to_heal(text):
+def _says_the_default_branch_poller_delivers_went_failed(text):
     """The fact that decides rule-versus-list, rather than a preference.
 
     Radar carries the default branch as a member row composed from `gh-branch`'s
-    four states; `N watched` never counts it. So the red-default-branch case has
-    nothing to arm, and no list of heal sites can ever cover it -- only reading
-    the board again does.
+    four states; `N watched` never counts it. Since supertool #2024 radar also
+    forks a `gh-branch` poller for it, and #1508 arms that poller filtered
+    (`only=went_green,went_failed`) before the heal -- so the red-default-branch
+    case is delivered as `went_failed`, and the member row re-answers it on each
+    board read. The earlier form of this predicate pinned "no poller to heal",
+    true before #2024 and false after.
     """
-    return bool(re.search(r"no poller to heal", text, re.I)) and bool(
+    return bool(re.search(r"delivers `went_failed`", text)) and bool(
         re.search(r"`N watched` never counts it", text)
     )
 
@@ -806,9 +809,9 @@ TICK_FACTS = [
         r"changed what is open|not a list of places",
     ),
     (
-        "the default branch has no poller to heal",
-        _says_the_default_branch_has_no_poller_to_heal,
-        r"no poller to heal|`N watched` never counts it",
+        "the default branch's poller delivers went_failed",
+        _says_the_default_branch_poller_delivers_went_failed,
+        r"delivers `went_failed`|`N watched` never counts it",
     ),
     (
         "the tick ends on the board's own coverage tokens",

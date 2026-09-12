@@ -82,6 +82,8 @@ OP_INVENTORY = {
     "paste": None,
     "radar": "watch",
     "read": None,
+    "unwatch": "watch",
+    "watch": "watch",
 }
 
 # `supertool` / `./supertool`, then each whitespace-separated quoted argument. The
