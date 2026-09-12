@@ -14,11 +14,15 @@ import doctor
 def check_script_call_survey(plugin_root=None):
     """#1416: for every `scripts/<name>.py`, does anything under `commands/`,
     `agents/`, `skills/`, `bin/` or another script actually RUN it, or only
-    describe it in prose? A `NOTICE`, never a `WARN`/`FAIL` -- this is the
-    forcing function that makes the class visible, not a gate: the four
-    things this issue was filed over (triage-after-release, the curation
-    threshold-route, the cohort-freeze marker, the manager-in-the-picker key
-    mismatch) were each individually correct and simply never called.
+    describe it in prose? The per-script tally itself is always a `NOTICE`,
+    never a `WARN`/`FAIL` -- this is the forcing function that makes the
+    class visible, not a gate: the four things this issue was filed over
+    (triage-after-release, the curation threshold-route, the cohort-freeze
+    marker, the manager-in-the-picker key mismatch) were each individually
+    correct and simply never called. A `WARN` is still possible, but only
+    for the survey's OWN plumbing failing (a scanned root unreadable) --
+    never as a verdict on any one script's call state (self-review finding,
+    second-pass reviewer).
 
     `survey` is imported here, inside the function, rather than at module
     scope: `doctor.py` imports THIS module (the #497/#630 convention every
