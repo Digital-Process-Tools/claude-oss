@@ -281,7 +281,19 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description="Is a post-release triage sweep due? due / not-due / could-not-tell."
     )
-    parser.add_argument("--repo", default=".", help="repository root (default: cwd)")
+    parser.add_argument(
+        "--repo",
+        "--root",
+        dest="repo",
+        default=".",
+        help=(
+            "repository root (default: cwd) -- `--root` is accepted as an "
+            "alias (#1435): next_action.py and statusline.py spell the "
+            "identical concept `--root`, and the mismatch cost a refused "
+            "call the first time a caller used the wrong one for this "
+            "script."
+        ),
+    )
     parser.add_argument("--config", default=None, help="path to .oss.json")
     parser.add_argument(
         "--state-file",

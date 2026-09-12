@@ -333,8 +333,8 @@ _PR_RELEVANT_EVENTS = frozenset(("pull_request", "pull_request_target"))
 
 
 def _runs_on_commit(gh, run, owner, repo, sha):
-    """``[(run_id, name, event), ...]`` for every Actions run GitHub has
-    recorded against ``sha``, or ``None`` when the read failed.
+    """``[(run_id, name, event, status), ...]`` for every Actions run GitHub
+    has recorded against ``sha``, or ``None`` when the read failed.
 
     This is the distinction #1400 asks for: a workflow declared in
     `.github/workflows/` whose trigger genuinely did not fire for this event
@@ -347,6 +347,20 @@ def _runs_on_commit(gh, run, owner, repo, sha):
     path filter or a conditional job. ``event`` rides along so a caller can
     tell a run irrelevant to this PR (a `push` to the same sha) from one
     that actually belongs to its rollup.
+
+    ``status`` (#1480) rides along too: a run whose own ``status`` is
+    already ``"completed"`` is settled regardless of what its jobs listing
+    says -- confirmed against a real run (a `push`-triggered `tests` run on
+    this repository's own history, cancelled while still queued: `status`
+    `completed`, `conclusion` `cancelled`, `.../jobs?filter=all` reporting
+    `{"jobs": []}` permanently, not merely for the transient window
+    `_run_has_jobs`'s own docstring documents for a partial re-run). Only
+    the one terminal value, `"completed"`, is checked for -- GitHub's own
+    transient vocabulary is not closed (`queued`, `in_progress`, and an
+    undocumented `pending` have all been observed for this same field
+    elsewhere in this repository's own history, per this file's `--wait`
+    loop precedent) and enumerating the open side is a bet that list never
+    grows.
     """
     if not owner or not repo or not sha:
         return None
@@ -375,7 +389,14 @@ def _runs_on_commit(gh, run, owner, repo, sha):
             continue
         run_id = str(entry.get("id") or "").strip()
         if run_id:
-            result.append((run_id, str(entry.get("name") or ""), entry.get("event")))
+            result.append(
+                (
+                    run_id,
+                    str(entry.get("name") or ""),
+                    entry.get("event"),
+                    entry.get("status"),
+                )
+            )
     return result
 
 
@@ -434,15 +455,27 @@ def _unresolved_runs(gh, run, owner, repo, sha, rollup_run_ids):
     its job state, and counting it would both report a false pending and
     spend part of the reconciliation budget on a run that has nothing to do
     with this PR.
+
+    A run already reported ``"completed"`` (#1480) is excluded from
+    consideration entirely, regardless of its own job count: a run
+    cancelled while still queued reaches `status: completed` and reports
+    zero jobs from `.../jobs?filter=all` permanently, not merely for the
+    transient window `_run_has_jobs` exists to paper over, and nothing
+    distinguishes that state from a genuinely still-in-flight run once only
+    the job count is read. `status` missing entirely (a run object shaped
+    like #1400's own original reproduction) is treated as "not confirmed
+    completed" and still checked the old way, so that reproduction's own
+    positive control is unaffected.
     """
     commit_runs = _runs_on_commit(gh, run, owner, repo, sha)
     if commit_runs is None:
         return None
     uncovered = [
         (run_id, name)
-        for run_id, name, event in commit_runs
+        for run_id, name, event, status in commit_runs
         if run_id not in rollup_run_ids
         and (event is None or event in _PR_RELEVANT_EVENTS)
+        and status != "completed"
     ]
     if len(uncovered) > _MAX_UNRESOLVED_RUN_CHECKS:
         return None

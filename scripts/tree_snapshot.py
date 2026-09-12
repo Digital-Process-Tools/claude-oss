@@ -275,6 +275,27 @@ def _normalize_snapshot_path(path):
     return normalized
 
 
+def _platform_path_key(text):
+    """`text`, case-folded when this module believes it is running on
+    Windows, unchanged everywhere else (#1480).
+
+    `sys.platform` is read fresh on every call rather than cached at
+    import time, purely so a test can monkeypatch it and exercise the
+    Windows branch on any host -- confirming the mechanism does not
+    require an actual Windows machine, only the reasoning that a real one
+    can hand this module two differently-cased spellings of the same
+    root (a drive letter's case, or a short-name spelling) at all, which
+    stays reasoned rather than observed here.
+
+    Case-folding is scoped to that one platform on purpose: a POSIX
+    filesystem is not guaranteed case-insensitive (ext4 and most Linux
+    setups are case-sensitive), so folding case unconditionally would
+    make two genuinely different paths compare equal there."""
+    if sys.platform.startswith("win"):
+        return text.casefold()
+    return text
+
+
 def _root_relative_path(path_str, root):
     """String-only: strip `root` as a literal prefix off `path_str`, when
     `path_str` is absolute and actually sits under `root`, returning the
@@ -287,13 +308,25 @@ def _root_relative_path(path_str, root):
     Returns ``None`` when `root` is falsy, or `path_str` is not absolute,
     or does not sit under `root` -- "cannot resolve", never "does not
     match": the caller falls back to comparing the raw, unresolved form.
-    """
+
+    The prefix compare itself goes through `_platform_path_key` (#1480):
+    on Windows, `--before`'s recorded root and the live root can differ
+    only in case (a drive letter, a short-name spelling) and still name
+    the same directory, so a bare, case-sensitive `str.startswith` there
+    can refuse to resolve a path that genuinely sits under `root` and
+    fall back to comparing the raw, unresolved form instead -- which can
+    then mis-render as a false `mutated` verdict on an unmutated
+    snapshot. The slice below still indexes into the *original*, un-
+    folded `norm_path` and uses `len(prefix)` from the original,
+    un-folded `prefix`, so the returned remainder is exactly the text
+    that was actually there, never the folded key used only to decide
+    whether the prefix matched."""
     if not root:
         return None
     norm_path = _normalize_snapshot_path(path_str)
     norm_root = _normalize_snapshot_path(str(root)).rstrip("/")
     prefix = norm_root + "/"
-    if not norm_path.startswith(prefix):
+    if not _platform_path_key(norm_path).startswith(_platform_path_key(prefix)):
         return None
     return norm_path[len(prefix) :]
 
