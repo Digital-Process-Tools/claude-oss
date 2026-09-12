@@ -1516,6 +1516,49 @@ def escaped_newline_body_errors(payload):
     ]
 
 
+#: A backslash immediately followed by a literal double quote -- chr(92) then chr(34)
+#: -- spelled through chr() for the same reason _LINE_BREAK_ESCAPE is (#685, #724): no
+#: reader, and no payload carrying this source through another serialisation on its way
+#: to disk, has to count backslashes to know what it is.
+_ESCAPED_QUOTE = re.compile(re.escape(_BACKSLASH) + chr(34))
+
+
+def escaped_quote_body_errors(payload):
+    """#1466: a body carrying a literal backslash-quote outside a code span.
+
+    Four developer lanes hand-typed a JSON payload where ordinary prose quoting a
+    short phrase verbatim -- "15 of 19" was meant -- got double-escaped on the way
+    into the JSON source, which decodes to a literal backslash sitting directly in
+    front of the quote character in the parsed body string. `gh-pr-create` already
+    refuses this shape and names the offending text, but only after the payload is
+    composed and the create call is attempted -- each refusal cost a resumed
+    session, a re-derived fix and a second create call. Same absence-detector shape
+    as `escaped_newline_body_errors` beside it: a finding is strong and a pass is
+    weak, because the rare body that genuinely means a literal backslash-quote
+    belongs in a code span, where a forge renders it verbatim and this check does
+    not look.
+    """
+    if not isinstance(payload, dict):
+        return []
+    body = payload.get("body")
+    if not isinstance(body, str):
+        return []
+    prose = prose_of(body)
+    found = _ESCAPED_QUOTE.search(prose)
+    if found is None:
+        return []
+    start = max(0, found.start() - 30)
+    context = prose[start : found.end() + 30]
+    return [
+        "pr_body.payload.body: a literal backslash-quote outside a code span "
+        "({}) -- the shape a hand-typed JSON payload produces when ordinary prose "
+        "quoting a phrase verbatim is double-escaped instead of written plainly. "
+        "gh-pr-create already refuses this shape; catching it here saves the round "
+        "trip (#1466). If the body genuinely means a literal backslash followed by "
+        "a quote, put it in a code span.".format(_one_line(context, 80))
+    ]
+
+
 def validate_pr_body(report, schema=None, base_dir=None):
     """Open the pull request payload the report says it wrote, and check its shape.
 
@@ -1596,6 +1639,7 @@ def validate_pr_body(report, schema=None, base_dir=None):
     errors.extend(closing_body_errors(node.get("closes"), payload.get("body")))
     errors.extend(no_close_body_errors(payload))
     errors.extend(escaped_newline_body_errors(payload))
+    errors.extend(escaped_quote_body_errors(payload))
     errors.extend(below_bar_body_errors(report, payload.get("body")))
     return errors
 
