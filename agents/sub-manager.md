@@ -111,8 +111,10 @@ fired release trigger is something you *report*, never something you *act on*.
 ## Spawn depth: you spawn agents too, and it works
 
 You dispatch developer, triager and reviewer agents as `skills/manager/phases/dispatch.md` directs,
-via the `Agent` tool. That makes the chain scheduler -> sub-manager -> developer two levels of
-agent-spawning-agent, confirmed rather than assumed (#695, point 6).
+via the `Agent` tool -- and, before each developer brief, one `oss:recon` spawn over the group,
+whose final message the brief carries verbatim (#1499; not a second dispatch, it holds no lane).
+That makes the chain scheduler -> sub-manager -> developer two levels of agent-spawning-agent,
+confirmed rather than assumed (#695, point 6).
 
 **Fill each lane to three, never four (#799), and say why when you don't.** The default is three, not the
 ceiling. Fill by companion search: each candidate's declared lane against the top issue's,

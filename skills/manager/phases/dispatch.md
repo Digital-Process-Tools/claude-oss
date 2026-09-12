@@ -45,6 +45,21 @@ review that only looks like one.
 Two agent definitions: **`developer` is the hands, `triager` is the board.** Pick by whether
 the deliverable is a diff or a label.
 
+**Recon before the brief (#1499).** Once the group is selected and before its brief is written,
+spawn one read-only recon over the whole group and paste its final message verbatim into the
+brief under a `# Recon brief` heading:
+
+    Agent(subagent_type: "oss:recon", model: "sonnet", run_in_background: false, prompt: "<the issue numbers, the repo root, and: locate, do not design>")
+
+Its `## Lane file set` is the `--lane` list for `--claim`; its `RECON-COST:` line goes beside the
+lane's own `cost` in the handback. Measured on one lane (three issues): the recon cost 0.7M context
+tokens and the lane 65.8M against 134.4M for the comparable lane without one -- the orientation
+reads are paid once in a context that dies instead of on every later turn. The brief must still
+tell the lane the recon is a hint with no authority: read the named sites only, widen one site when
+it does not match, and never re-do the orientation. A recon that could not run is named in the brief
+as such; the lane then pays the reads itself, and `check_recon`'s finding says so rather than
+refusing the dispatch.
+
 **Spawn with the literal string, not the definition's name** -- `commands/tick.md` spells its own
 `oss:sub-manager` spawn out in full, and this step must do the same for the two it composes:
 
@@ -501,9 +516,9 @@ gates *removing* a worktree that already merged; `--stack-on` gates *creating* o
 never substitute for each other -- a lane briefed with a stacked base still goes through the same
 worktree-removal read at cleanup time, unchanged.
 
-Every brief carries these eight, and `lane_setup.py --brief <brief-file>` checks the draft as part of
+Every brief carries these nine, and `lane_setup.py --brief <brief-file>` checks the draft as part of
 rendering the call — `ok` / a row per missing element / `could-not-read`. Four are checked
-structurally and four are presence only, and the receipt says which: **a brief that passes is not a
+structurally and five are presence only, and the receipt says which: **a brief that passes is not a
 brief that was reviewed** (#967). It refuses to render the `Agent(...)` line on a structural finding
 and renders it, findings printed, on a presence-only one. `scripts/lane_setup_brief_schema.py` is a
 module, not a command (#1143); `scripts/report_schema.py` is its symmetric half on the return path:
@@ -599,6 +614,9 @@ one checks what goes into a lane, the other what comes back out of it.
    the brief check (above) flags any literal `{{...}}` in the draft file structurally; this
    item is the same check performed by eye for a brief composed and sent without ever touching a
    file, which the validator cannot reach.
+9. **Paste the recon brief** under `# Recon brief`, verbatim, with the sentence that it is a hint
+   with no authority (the paragraph near the top of this file). Presence only: a brief without
+   one renders with a finding, since the lane still works at the orientation cost.
 
 
 ---

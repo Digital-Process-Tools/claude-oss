@@ -74,7 +74,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # spine still knows the two are not the same outcome before it opens
     # agents/developer/review-return.md's own new section. Ceiling
     # unchanged; comfortably under it.
-    "agents/developer.md": (41443, 44100),
+    # Re-baselined for #1499: 41443 B became 42116 B -- one paragraph
+    # under "Where you work" tells a lane to start from the brief's
+    # "# Recon brief" section, reading only the sites it names, rather
+    # than re-doing the orientation a recon spawn already paid for.
+    # Ceiling unchanged; comfortably under it.
+    "agents/developer.md": (42116, 44100),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
@@ -199,7 +204,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # longer sends the sub-manager to commands/tick.md; it names that
     # file's own first-line spawn instruction explicitly instead. Ceiling
     # unchanged; comfortably under.
-    "agents/sub-manager.md": (17850, 18800),
+    # Re-baselined for #1499: 17850 B became 18021 B -- the spawn-depth
+    # section names the oss:recon spawn that precedes each developer
+    # brief, and says it is not a second dispatch. Ceiling unchanged.
+    "agents/sub-manager.md": (18021, 18800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -249,6 +257,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # step 1 that still ran the hunt by hand. Budgeted from the day it was
     # added, the same posture #1389 and #1414 already take for a new file.
     "agents/doctor.md": (6064, 6700),
+    # #1499: new file. A developer lane used to start with thirty
+    # orientation reads it then carried for three hundred turns; measured
+    # on one three-issue lane, 134.4M context tokens against 65.8M for the
+    # same shape briefed from a read-only recon spawn's summary (the recon
+    # itself cost 0.7M). This agent is that spawn: locate, never design,
+    # die with the context. Budgeted from the day it was added.
+    "agents/recon.md": (3936, 4400),
 }
 
 

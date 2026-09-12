@@ -42,6 +42,8 @@ Docs: the changelog fragment always; docs_targets if this reaches a user.
 
 Live worktrees right now: ../wt-121 (issue #121), ../wt-122 (issue #122).
 
+Recon brief: start from the sites it names, not from whole-file reads.
+
 When you are done: commit, do not push, do not open a PR, do not comment on the issue.
 """
 
@@ -79,6 +81,7 @@ def test_a_complete_brief_passes():
         ("TDD in this order", "tdd"),
         ("Docs:", "docs"),
         ("Live worktrees", "worktrees"),
+        ("Recon brief", "recon"),
         ("do not push", "publishing"),
     ],
 )
@@ -107,7 +110,7 @@ def test_every_check_runs_even_after_one_fails():
     for one fix at a time."""
     payload = brief_schema.check_text("nothing useful here at all")
     assert len(payload["missing"]) >= 5
-    assert len(payload["elements"]) == 8
+    assert len(payload["elements"]) == 9  # #1499 added `recon`
 
 
 # ------------------------------------------- the checks that catch a degraded element
@@ -195,7 +198,7 @@ def test_the_receipt_says_a_pass_is_not_a_review():
 
 def test_a_brief_of_keywords_alone_still_passes_and_that_is_the_known_limit():
     """Recorded deliberately rather than asserted as good behaviour: a document
-    that name-drops all eight, in separate paragraphs, passes. That is the
+    that name-drops all nine, in separate paragraphs, passes. That is the
     ceiling of what a text check can do and it is why the receipt refuses to
     call a pass a review.
 
@@ -213,6 +216,7 @@ def test_a_brief_of_keywords_alone_still_passes_and_that_is_the_known_limit():
         "test red fix green fail\n\n"
         "changelog\n\n"
         "worktree\n\n"
+        "recon\n\n"
         "do not push\n"
     )
     assert brief_schema.check_text(keywords)["state"] == brief_schema.STATE_OK
