@@ -57,12 +57,21 @@ maintainer's real release forever. That is automatic. What you do need to run is
 
 ## Run the tick
 
-Load the loop itself and follow it exactly as `/oss:tick` documents, phase by phase -- dispatch,
-handback, review, merge, accounting:
+Load the manager skill and run its phases yourself, inside this context -- dispatch, handback,
+review, merge, accounting:
 
 ```
 Skill(manager)
 ```
+
+**`commands/tick.md` is the scheduler's own spawn wrapper, never a script for you to read or
+follow.** Its very first instruction is `Agent(subagent_type: "oss:sub-manager", ...)` -- the
+scheduler spawning you. That spawn already happened; you are the sub-manager it produced. Reading
+that file as your own instructions and acting on its first line spawns a second `oss:sub-manager`
+underneath you, one extra full context paying for nothing (#1469) -- three levels deep, scheduler,
+sub-manager, sub-manager, developers, with the middle one doing nothing but relay. You do not need
+`commands/tick.md` at all: everything you run is in `skills/manager/phases/tick-order.md` and
+`skills/manager/phases/*.md`, below.
 
 **Before you open `skills/manager/phases/tick-order.md` at all: read it in bounded chunks from the
 first call, never a bare `cat` or a Bash-tool read of the whole file.** It carries your own order of
@@ -70,8 +79,6 @@ operations (#1037) and is past this harness's output-truncation threshold on its
 full read comes back as a preview plus a saved-file pointer, not the content, and recovering the rest
 costs a second call (#940). Use `supertool 'read:skills/manager/phases/tick-order.md:OFFSET:LIMIT'`,
 sized well under the truncation point, for every read of that file from your very first one.
-`commands/tick.md` itself is much smaller post-split and does not need this care, but read it the
-same way out of habit.
 
 **The dispatch-selection call itself is short enough to state directly, so here it is, never
 truncated even if the bounded read above is skipped (#1179):**

@@ -105,6 +105,7 @@
         "tests/test_select_issues_lane_labels_1129.py",
         "tests/test_select_issues_lane_other_1130.py",
         "tests/test_shipped_op_spellings.py",
+        "tests/test_stale_remedy_strings_1431.py",
         "tests/test_statusline_local_settings_642.py",
         "tests/test_statusline_windows_gap_487.py",
         "tests/test_supertool_invocation_1409.py",
