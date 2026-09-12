@@ -71,6 +71,7 @@
         "tests/test_developer_brief_duties.py",
         "tests/test_dispatch_order_798_799.py",
         "tests/test_docs_state_slug_grammar_308.py",
+        "tests/test_doctor_check_event_filter_1499.py",
         "tests/test_doctor_check_vanished_worktree_845.py",
         "tests/test_doctor_inprocess.py",
         "tests/test_doctor_install_audit_287.py",

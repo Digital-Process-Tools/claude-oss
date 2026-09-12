@@ -3032,6 +3032,12 @@ from doctor_check_script_call_survey import check_script_call_survey
 # read instead of ancestry, and why this check reports rather than deletes.
 from doctor_check_stale_branches import check_stale_branches
 
+# scripts/doctor_check_event_filter.py (#1499), its own module per the same
+# #497/#630 convention -- reads the same `.supertool.json` document
+# `check_radar_publish` reads, for the one key that keeps per-PR channel
+# events out of the scheduler session.
+from doctor_check_event_filter import check_event_filter
+
 from doctor_check_fragments_readme import (
     COMPATIBILITY_BULLET,
     _fragments_directory,
@@ -3274,9 +3280,24 @@ WATCH_PRESET = "watch"
 # worse than a board they have to turn on. Composed from the constants above so a drift
 # in one of them reaches the remedy rather than leaving it confidently telling a
 # maintainer to add a key that no longer exists.
+# #1499: the tier carries `pr_exclude_events` so the remedy does not clear this
+# check's WARN by creating `doctor_check_event_filter`'s.
 RADAR_REMEDY_CONFIG = {
     "presets": [WATCH_PRESET],
-    "ops": {RADAR_OP: {RADAR_TIERS_KEY: {"gh-prs": {}}}},
+    "ops": {
+        RADAR_OP: {
+            RADAR_TIERS_KEY: {
+                "gh-prs": {
+                    "pr_exclude_events": [
+                        "checks_pending",
+                        "checks_succeeded",
+                        "pr_opened",
+                        "conflicts_appeared",
+                    ]
+                }
+            }
+        }
+    },
 }
 
 # Rendered from the mapping above rather than typed, so the line a maintainer
@@ -9629,6 +9650,9 @@ def main(argv=None):
     # how a repo with a route to nowhere read as healthy (#191). Also needs no
     # config: both live in supertool's file.
     check_radar_publish(project_dir)
+    # #1499: same document, one key -- is the scheduler's per-PR event noise
+    # filtered at the source? Right after the radar line it qualifies.
+    check_event_filter(project_dir)
     # The name and the declaration are two more questions, and neither is whether
     # anything actually carries either into a session -- #621 was two clean OK
     # lines either side of the one artifact that does. Needs no config: the MCP

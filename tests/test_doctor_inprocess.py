@@ -783,11 +783,21 @@ def _fully_configured(root):
     # needed and each is silent about the other, so a fixture carrying one of them
     # is a repo whose board publishes nothing -- which is exactly the state this
     # suite would then be calling `VERDICT: ok`.
+    # #1499: the tier carries `pr_exclude_events` too, or `check_event_filter`
+    # WARNs `unfiltered` on a fixture claiming to be fully configured -- the same
+    # move #990 made for `labels.filed_by_loop`. The list is the scaffold's own
+    # default, read from the remedy constant rather than retyped here.
     (root / doctor.WATCH_CONFIG).write_text(
         json.dumps(
             {
                 "presets": [doctor.WATCH_PRESET],
-                "ops": {"radar": {"radar_tiers": {"gh-prs": {}}}},
+                "ops": {
+                    "radar": {
+                        "radar_tiers": doctor.RADAR_REMEDY_CONFIG["ops"]["radar"][
+                            "radar_tiers"
+                        ]
+                    }
+                },
             }
         ),
         encoding="utf-8",
