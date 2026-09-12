@@ -19,16 +19,28 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import doctor  # noqa: E402,F401
 import doctor_check_mcp_channel_connection as conn  # noqa: E402
 import doctor_check_mcp_channel_registration as reg  # noqa: E402
+import scaffold  # noqa: E402
 import statusline  # noqa: E402
 import trap_curate  # noqa: E402
 
 CONSUMER = "/x/notifiers/claude-channel/channel.ts"
 
 
+def _owned_trap_names():
+    """The trap.d/ file name(s) `scaffold.OWNED` actually declares -- derived
+    rather than hardcoded (#1378 finding 5), so a rename of the one that
+    exists today AND scaffold.py coming to own a second file in trap.d/ are
+    both reflected in the fixture below without editing this test."""
+    prefix = scaffold.TRAP_DIR + "/"
+    return sorted(
+        key[len(prefix) :] for key in scaffold.OWNED if key.startswith(prefix)
+    )
+
+
 # ------------------------------------------------- finding 1: the parity
 
 
-def test_the_two_trap_counters_agree_on_a_directory_holding_the_owned_readme(
+def test_the_two_trap_counters_agree_on_a_directory_holding_every_owned_trap_file(
     tmp_path,
 ):
     """`statusline._trap_count`'s own docstring claims it matches
@@ -37,13 +49,23 @@ def test_the_two_trap_counters_agree_on_a_directory_holding_the_owned_readme(
 
     The visible harm: a fully drained `trap.d/` renders `trap 1` on the status
     line forever, with no fragment anyone can delete to clear it, while
-    doctor's own trap-queue check says `none waiting` in the same run."""
+    doctor's own trap-queue check says `none waiting` in the same run.
+
+    The owned name(s) written to disk come from `scaffold.OWNED` (#1378
+    finding 5) rather than a hardcoded "README.md" literal -- a fixture that
+    pins the literal catches a RENAME of the owned file but not scaffold.py
+    coming to own a second one in this same directory, since it would never
+    write that second file to disk at all."""
     d = tmp_path / "trap.d"
     d.mkdir()
-    (d / "README.md").write_text("owned\n", encoding="utf-8")
+    owned = _owned_trap_names()
+    assert owned, "scaffold.OWNED declares no trap.d/ owned file at all"
+    for name in owned:
+        (d / name).write_text("owned\n", encoding="utf-8")
     (d / "904.a-slug.md").write_text("frag\n", encoding="utf-8")
 
     assert statusline._trap_count(tmp_path) == trap_curate.waiting(tmp_path)["count"]
+    assert statusline._trap_count(tmp_path) == 1
 
 
 def test_a_drained_trap_directory_counts_zero_on_both(tmp_path):
@@ -52,7 +74,8 @@ def test_a_drained_trap_directory_counts_zero_on_both(tmp_path):
     counters return the same wrong number would satisfy that test alone."""
     d = tmp_path / "trap.d"
     d.mkdir()
-    (d / "README.md").write_text("owned\n", encoding="utf-8")
+    for name in _owned_trap_names():
+        (d / name).write_text("owned\n", encoding="utf-8")
 
     assert statusline._trap_count(tmp_path) == 0
     assert trap_curate.waiting(tmp_path)["count"] == 0

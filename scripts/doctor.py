@@ -2976,6 +2976,11 @@ from doctor_check_trap_queue import check_trap_queue
 # check exists and what it does not claim to fix.
 from doctor_check_vanished_worktree import check_vanished_worktrees
 
+# scripts/doctor_check_script_call_survey.py (#1416), its own module per the
+# same #497/#630 convention -- a fact about the plugin, not the project, so
+# it needs no config, the same shape check_agent_dispatch already is.
+from doctor_check_script_call_survey import check_script_call_survey
+
 # scripts/doctor_check_stale_branches.py (#1046), its own module per the same
 # #497/#630 convention -- see that module's docstring for why the tracker is
 # read instead of ancestry, and why this check reports rather than deletes.
@@ -9519,6 +9524,9 @@ def main(argv=None):
     # a defect in the loop's own tooling gets filed is the one board no derivation over
     # the dependencies can produce (#292).
     check_loop_repository()
+    # Same shape again: a fact about the plugin's own scripts/ and how the rest of the
+    # plugin invokes them, needing no config (#1416).
+    check_script_call_survey()
 
     # Declared dependencies install automatically; they do not configure themselves,
     # and the unconfigured state is the one that still appears to work.

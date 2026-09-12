@@ -1810,6 +1810,19 @@ if [ "$channel_ready" -eq 1 ]; then
         # empty listing.
         if mcp_list_output=$(claude mcp list 2>&1); then
             export OSS_WORKSPACE_MCP_LIST_OUTPUT="$mcp_list_output"
+        else
+            # #1378 (gate 3 round two, v0.31.0): a failed ask must still
+            # OVERWRITE this name in THIS process's own environment, never
+            # merely skip setting it. An inherited value -- a parent shell's
+            # profile, or a caller that exported this same name before
+            # invoking this launcher -- would otherwise survive untouched and
+            # be replayed to the census heredoc below as though it were a
+            # fresh answer from this launch. That heredoc has no way to tell
+            # "computed here, just now" from "inherited, arbitrarily stale",
+            # so the guarantee has to be made here: whatever this launch's
+            # own ask produced -- succeeded or failed -- is what this name
+            # holds, every time.
+            export OSS_WORKSPACE_MCP_LIST_OUTPUT=""
         fi
         census_report=$("$python_bin" - "$plugin_root/scripts" "$repo_root" <<'CHANNEL_CENSUS'
 import sys
