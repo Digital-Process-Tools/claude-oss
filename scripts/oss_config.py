@@ -252,7 +252,16 @@ SECRET_RE = re.compile(
 # walk the write target outside the clone. GitHub's own repo-name rules already exclude
 # a backslash, so this tightens the pattern to match what a real value can be rather
 # than adding a second check the derivation site would need to remember to call.
-REPO_RE = re.compile(r"\A[^/\\\s]+/[^/\\\s]+\Z")
+#
+# `?` and `#` joined the excluded class for #1475: both were still legal to each
+# run, and both start a new URL component (a query string, a fragment) the instant
+# they appear inside a REST path segment built by plain string substitution rather
+# than URL-encoded -- `statusline._malformed_repo` and `doctor._malformed_repo`
+# each closed this exact gap in their own standalone copies for #1401, and
+# `cohort_freeze._resolve_repo_slug` routes a tracked, contributor-editable
+# `.oss.json`'s `repo` straight through this function alone before building
+# several such paths during release tagging, with no copy of its own to catch it.
+REPO_RE = re.compile(r"\A[^/\\\s?#]+/[^/\\\s?#]+\Z")
 
 
 def repo_problem(value):

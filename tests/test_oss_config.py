@@ -151,6 +151,30 @@ def test_a_plain_owner_slash_name_is_still_accepted():
     assert oss_config.repo_problem("owner/name") is None
 
 
+@pytest.mark.parametrize("value", ["o/n?x", "o/n#x"])
+def test_repo_containing_query_or_fragment_characters_is_refused(value):
+    """#1475: `REPO_RE` excluded `/`, whitespace and a backslash (#897) but never
+    `?` or `#` -- both legal to the old character class and both able to start a
+    bogus query string or URL fragment the instant they appear inside a REST
+    path segment `gh api` builds by plain string substitution, never
+    URL-encoded. `cohort_freeze._resolve_repo_slug` routes a tracked,
+    contributor-editable `.oss.json`'s `repo` field through this exact
+    function before folding it into several such paths during release
+    tagging (`repos/{repo}/git/refs/tags/...`, `.../issues`, `.../labels`) --
+    the same class #1401 already closed in `statusline._malformed_repo` and
+    `doctor._malformed_repo`'s own standalone copies, left open here at the
+    one function every consumer is meant to be pinned against.
+    """
+    assert oss_config.repo_problem(value) is not None
+
+
+def test_a_plain_owner_slash_name_is_still_accepted_alongside_query_fragment_refusal():
+    """Must-not-fire control, paired in the same fixture as the must-fire
+    cases above per this repo's own convention: an ordinary slug must still
+    be accepted."""
+    assert oss_config.repo_problem("owner/name") is None
+
+
 def test_config_may_not_carry_a_secret():
     """No key in this schema holds a credential. An unknown key that looks like one
     is refused rather than ignored, because a config file is committed.
