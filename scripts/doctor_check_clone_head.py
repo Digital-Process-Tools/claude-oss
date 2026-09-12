@@ -199,7 +199,7 @@ def check_clone_head(project_dir, config, run=None):
     if state == "on-other":
         branch, remote = detail["branch"], detail["remote"]
         default = config.get("default_branch")
-        # #1367: both arms below used to name the branch and stop. Every other
+        # #1369: both arms below used to name the branch and stop. Every other
         # WARN in the same report carries something the reading agent can
         # execute, and this repository's own doctor rule says the remedy has to
         # be runnable rather than only clickable -- a bare statement of which
