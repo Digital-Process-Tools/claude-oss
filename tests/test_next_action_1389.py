@@ -842,9 +842,16 @@ def test_take_cli_refuses_a_source_that_is_not_the_top_candidate(tmp_path, monke
 def test_take_cli_on_an_inbound_or_release_top_candidate_is_a_harmless_no_op(
     tmp_path, monkeypatch
 ):
-    """Positive control: `--take` on a source with no receipt of its own
-    (inbound, release) must still succeed -- it is a uniform commitment
-    step, not one that only makes sense for curate/triage."""
+    """Positive control: `--take` must still succeed on a source that ends
+    up writing no receipt -- a uniform commitment step, not one that only
+    makes sense for curate/triage. `release` never has a receipt of its
+    own; `inbound` gained one at #1433, but this fixture's config carries
+    no `state_file` (`_write_config(root)` with no extra), so
+    `_route_already_seen` fails open here too -- for a different reason
+    than `release`'s, not because `inbound` still has no mechanism at all.
+    See `test_taking_inbound_arms_it_so_the_next_read_does_not_repeat_due_
+    forever` for the state_file-configured case where `--take inbound`
+    really does write and later suppress a receipt."""
     root = _git_repo(tmp_path)
     _write_config(root)
     _quiet_inbound(monkeypatch, unruled=1)
@@ -938,3 +945,70 @@ def test_record_skip_cli_fails_loudly_when_nothing_is_ranked(
     )
     assert rc != 0
     assert "FAIL:" in capsys.readouterr().out
+
+
+# --- inbound repeat-suppression (#1433) -------------------------------------
+
+
+def test_rank_alone_never_arms_the_inbound_receipt(tmp_path, monkeypatch):
+    """The same discipline #1405/#1414 gave curate and triage: a plain,
+    repeated `rank()` read must never persist an inbound repeat-suppression
+    receipt on its own -- only an explicit `--take`/`--record-skip`
+    commitment may. Without this, an unanswered external pull request would
+    keep firing forever, exactly the defect #1433 names."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"state_file": ".max/oss-watch.json"})
+    _quiet_inbound(monkeypatch, unruled=1)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+
+    first = next_action.rank(root)
+    assert _candidate(first, "inbound")["state"] == next_action.CANDIDATE_DUE
+
+    second = next_action.rank(root)
+    assert _candidate(second, "inbound")["state"] == next_action.CANDIDATE_DUE
+
+    third = next_action.rank(root)
+    assert _candidate(third, "inbound")["state"] == next_action.CANDIDATE_DUE
+
+
+def test_taking_inbound_arms_it_so_the_next_read_does_not_repeat_due_forever(
+    tmp_path, monkeypatch
+):
+    """The must-fire-again half's positive control lives right below --
+    this is the must-not-fire-forever half: `--take inbound` is the
+    commitment that arms the receipt."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"state_file": ".max/oss-watch.json"})
+    _quiet_inbound(monkeypatch, unruled=1)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+
+    first = next_action.rank(root)
+    assert _candidate(first, "inbound")["state"] == next_action.CANDIDATE_DUE
+
+    rc = next_action.main(["--root", str(root), "--take", "inbound"])
+    assert rc == 0
+
+    second = next_action.rank(root)
+    assert _candidate(second, "inbound") is None, second
+
+
+def test_a_changed_inbound_reading_re_arms(tmp_path, monkeypatch):
+    """Positive control for the test above: the same repo, taken once, but
+    the outside count actually changes before the next read -- it must
+    fire again, proving the suppression is keyed to the reading, not to a
+    route that simply never fires twice."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"state_file": ".max/oss-watch.json"})
+    _quiet_inbound(monkeypatch, unruled=1)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+
+    first = next_action.rank(root)
+    assert _candidate(first, "inbound")["state"] == next_action.CANDIDATE_DUE
+    assert next_action.main(["--root", str(root), "--take", "inbound"]) == 0
+
+    _quiet_inbound(monkeypatch, unruled=2)
+    second = next_action.rank(root)
+    assert _candidate(second, "inbound")["state"] == next_action.CANDIDATE_DUE
