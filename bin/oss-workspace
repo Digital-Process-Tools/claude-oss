@@ -1656,7 +1656,8 @@ else
 channel_registered=0
 registered_command=""
 registered_args=""
-# #1432: `mcp_get_status`/`channel_entry` used to be exported here too
+# #1432: `channel_entry` (and, until a shellcheck SC2034 fix on the same
+# lane, a captured `mcp_get_status`) used to be exported here too
 # (`OSS_WORKSPACE_MCP_CHECKED`/`_STATUS`/`_OUTPUT`), so `scripts/doctor.py`'s
 # own registration check could read this answer instead of shelling out to
 # `claude mcp get` a second time in the same session-open (#629: `claude` is
@@ -1665,12 +1666,11 @@ registered_args=""
 # separate process, started after this one has already exited, so the export
 # has had no reachable reader since. `channel_registered`/`registered_command`/
 # `registered_args` below are this script's OWN plain shell variables, read
-# directly a few lines down for this launch's own arming decision; only the
-# env relay to a process that can no longer see it is gone.
-mcp_get_status=1
+# directly a few lines down for this launch's own arming decision; the exit
+# status itself is not one of them -- nothing here ever branched on it once
+# the export was gone, so it is not captured any more either.
 if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
     channel_registered=1
-    mcp_get_status=0
     # `[ \t]` rather than a POSIX character class: a class inside an awk program
     # still writes a doubled bracket into the file, and the guard that keeps this
     # script out of bash test syntax matches on the characters, not on the context.
@@ -1678,8 +1678,6 @@ if channel_entry=$(claude mcp get "$CHANNEL_SERVER" 2>/dev/null); then
     # claude's output is where that difference shows up.
     registered_command=$(printf '%s\n' "$channel_entry" | awk '/^[ \t]*Command:/ { sub(/^[ \t]*Command:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit }')
     registered_args=$(printf '%s\n' "$channel_entry" | awk '/^[ \t]*Args:/ { sub(/^[ \t]*Args:[ \t]*/, ""); sub(/[ \t\r]+$/, ""); print; exit }')
-else
-    mcp_get_status=$?
 fi
 
 channel_ready=0
