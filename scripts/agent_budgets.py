@@ -235,6 +235,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # decline, matching the fourth outcome curate.md itself gained. Ceiling
     # unchanged; comfortably under it.
     "agents/scheduler-step.md": (5162, 5700),
+    # #1457: new file. `/oss:run`'s own step 1 used to run `doctor.sh`
+    # inline and chase every WARN/FAIL in the scheduler's own long-lived
+    # session -- fine for a scripted repair, but a line that needs
+    # investigation (a stale clone HEAD, a rate-limit mystery across
+    # pollers) then lands permanently in that session's context, the exact
+    # erosion #1414 already closed for the six commands/run/*.md sub-steps
+    # via agents/scheduler-step.md. This agent is the same move for the one
+    # step 1 that still ran the hunt by hand. Budgeted from the day it was
+    # added, the same posture #1389 and #1414 already take for a new file.
+    "agents/doctor.md": (6064, 6700),
 }
 
 

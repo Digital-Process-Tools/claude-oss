@@ -162,7 +162,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # on its own, its pull request is the review -- so the spawn never has
     # to infer that from the absence of an instruction to stop and ask.
     # Ceiling unchanged; still comfortably under it.
-    "commands/run.md": (8717, 8900),
+    # Re-baselined DOWN for #1457: 8717 B became 8246 B. Step 1's own
+    # inline WARN/FAIL chase (run doctor.sh, then two hand-written bullets
+    # for "ours to repair" vs "not ours") replaced with a spawn of the new
+    # agents/doctor.md, the same move #1414 already made for the six
+    # commands/run/*.md sub-steps -- a line that needs investigation no
+    # longer sits permanently in this session's own context. Replacing
+    # rather than appending shrank the file; ceiling unchanged.
+    "commands/run.md": (8246, 8900),
 }
 
 

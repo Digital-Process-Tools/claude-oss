@@ -292,16 +292,19 @@ def test_extract_references_reports_oserror_mid_glob_walk_not_silently_empty(
     assert "permission" in problem.lower()
 
 
-def test_extract_references_reports_oserror_mid_import_resolution_not_a_crash(
+def test_extract_references_reports_oserror_mid_import_resolution_1427(
     tmp_path, monkeypatch
 ):
-    """#1347 finding 1: the import-resolution loop calling
-    `(repo / candidate).is_file()` has no exception handling at all, before
-    or after #1327's fix to the sibling glob loop -- an `OSError` there (a
-    permission error during the underlying stat) propagated uncaught rather
-    than rendering as `problem is not None`, which would crash
-    `extract_references` and transitively `doctor.py`'s own exit-0-always
-    contract."""
+    """#1347 finding 1 first gave the import-resolution loop exception
+    handling at all (before that it crashed `extract_references` outright).
+    #1427 is the maintainer call on what that handling should do: this
+    loop's candidates (`scripts/foo.py`-shaped, module-derived relative
+    paths) are short and well-formed, unlike the literal-candidate loop's
+    free-text string literals just above it -- so a stat-time `OSError`
+    here is more plausibly a genuine access failure than a "this wasn't a
+    path" outcome, and is now surfaced via `problems.append`, matching the
+    glob-walk loop's own #1327 precedent, rather than swallowed identically
+    to an ordinary unresolved import."""
     (tmp_path / "scripts").mkdir()
     source = "import select_issues_overlap\n"
 
@@ -312,11 +315,15 @@ def test_extract_references_reports_oserror_mid_import_resolution_not_a_crash(
 
     monkeypatch.setattr(RealPath, "is_file", _boom)
     # The call itself completing (rather than raising `PermissionError`) is
-    # the assertion: the pre-fix loop had no exception handling at all, so
-    # this line crashed `extract_references` outright rather than returning.
+    # still asserted implicitly: a crash would fail this test before the
+    # assertions below ever ran.
     refs, problem = lane_coupling.extract_references(tmp_path, source)
     assert refs == []
-    assert problem is None
+    assert problem is not None, (
+        "a genuine OSError during import-candidate resolution must be "
+        "reported, not indistinguishable from 'module never referenced'"
+    )
+    assert "permission" in problem.lower()
 
 
 def test_extract_references_import_resolving_nothing_is_still_the_must_not_fire_control(

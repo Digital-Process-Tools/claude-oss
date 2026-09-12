@@ -28,24 +28,19 @@ No argument: run every step below in order.
 
 ## Step 1 -- diagnose and repair, never stop except for a named unsafe gap (#1390)
 
-Run the same diagnostic `/oss:doctor` runs, in its findings-only mode (#1455) -- the only
-thing this step does with the report is relay every WARN/FAIL and act on each, and `--findings`
-prints exactly that (plus NOTICE/WAIT and the final VERDICT), so there is no report here to
-filter by hand with `head`/`grep` and no line a truncated pipe can silently drop:
+Spawn the diagnostic chase agent rather than running `doctor.sh` and chasing each WARN/FAIL line
+inline in this session (#1457) -- the same reasoning #1414 already gives for the six
+`commands/run/*.md` sub-steps: a line that needs investigation, not a scripted repair, would
+otherwise sit permanently in this session's own context for the rest of what may be an
+hours-long, many-tick run.
 
-```bash
-bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --root . --plugin-root "${CLAUDE_PLUGIN_ROOT}" --findings
+```
+Agent(subagent_type: "oss:doctor")
 ```
 
-Relay every line printed, then act on each:
-
-- **Ours to repair** -- an owned file that is missing or stale (`scripts/scaffold.py --apply`), a
-  config gap `oss_config.py --probe`/`--build` can re-derive (folded into step 2's `setup` branch
-  below, since a missing `.oss.json` is exactly that gap), a rule layer that is indexed but not
-  installed. Repair it and say what changed.
-- **Not ours** -- a missing binary, a permission this session lacks, a repository setting nobody
-  here can flip. Report it, mark that capability unavailable for the rest of this run, and carry on.
-  A gap makes *some* work impossible; it does not make all work impossible.
+Relay its report -- one `repaired:`/`not-ours:`/`could-not-tell:` line per WARN/FAIL it chased.
+For a `not-ours:` line, mark that capability unavailable for the rest of this run: a gap makes
+*some* work impossible, not all of it.
 
 **This step never stops the session by itself.** The one thing that can stop `/oss:run` is step 2
 reporting `unsafe`, immediately below -- so an unrepairable gap is named once, at the point that

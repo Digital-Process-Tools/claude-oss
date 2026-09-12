@@ -298,6 +298,17 @@ from being invisible.
 | `agents/sub-manager.md` | 17,270 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
+| `agents/doctor.md` | 6,064 B | 6,700 B |
+
+**#1457 adds `agents/doctor.md`, a new file rather than growing an existing one.** `/oss:run`'s own
+step 1 used to run `doctor.sh` inline and chase every `WARN`/`FAIL` line in the scheduler's own
+long-lived session -- fine for a scripted repair, but a line that needed investigation (a stale
+clone HEAD, a rate-limit mystery across pollers reading one channel) then landed permanently in
+that session's context, the same erosion #1414 already closed for the six `commands/run/*.md`
+sub-steps via `agents/scheduler-step.md`. This agent closes the one step 1 that still ran the hunt
+by hand: `Bash` and `TodoWrite` only, and it reports `repaired:` / `not-ours:` / `could-not-tell:`
+per line rather than the generic `ok`/finding/`skipped`-`unknown` label a caller would have had to
+re-translate. Budgeted from the day it was added, the same posture #1389 and #1414 already take.
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
@@ -918,7 +929,7 @@ spendable again without anybody choosing to.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 22,271 B | 24,500 B |
-| `commands/run.md` | 8,717 B | 8,900 B |
+| `commands/run.md` | 8,246 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
 picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
@@ -981,6 +992,13 @@ last of the three, ~10% headroom over the final size.
 still under the 8,900 B budget. Step 1's own `doctor.sh` call gained the new `--findings` flag
 (#1455's own findings-only mode) plus a sentence saying why the ordinary report no longer needs a
 `head`/`grep` filter a reader might otherwise reach for. No ceiling change needed.
+
+**#1457 re-baselined `commands/run.md` DOWN, without raising its ceiling**: 8,717 B became
+8,246 B. Step 1's inline WARN/FAIL chase (run `doctor.sh`, then two hand-written bullets for
+"ours to repair" vs "not ours") is replaced by a spawn of the new `agents/doctor.md` -- the same
+move #1414 already made for the six `commands/run/*.md` sub-steps, so a WARN/FAIL line that needs
+investigation no longer sits permanently in this session's own context. Replacing rather than
+appending shrank the file; ceiling unchanged.
 
 **A second follow-up review round on this same lane found a real regression in `rank()` itself
 (unchanged by #1414's own diff, but newly exposed by it): the curate/triage repeat-suppression
