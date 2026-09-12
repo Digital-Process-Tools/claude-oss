@@ -5,7 +5,7 @@ Runs an open-source repo as its maintainer: triage, delegate, review, merge on g
 ![claude-oss — triage, build, review, merge, ship](docs/oss.png)
 
 [![Tests](https://github.com/Digital-Process-Tools/claude-oss/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/Digital-Process-Tools/claude-oss/actions/workflows/tests.yml)
-![Version](https://img.shields.io/badge/version-0.33.0-orange)
+![Version](https://img.shields.io/badge/version-0.33.1-orange)
 ![Python](https://img.shields.io/badge/python-3.9%2B-blue)
 ![OS](https://img.shields.io/badge/os-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-Community-green)

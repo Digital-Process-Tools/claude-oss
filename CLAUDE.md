@@ -1011,14 +1011,13 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.33.0`, and it was written inside the v0.33.0 release commit.**
+**The marker below names `v0.33.1`, and it was written inside the v0.33.1 release commit.**
 
-**Delta, taken two ways that agree.** The range is `v0.32.0..HEAD` at `35558ced`: `git rev-list
---count v0.32.0..HEAD` returns **16**. `gh-prs:state=merged,merged-since=v0.32.0` returns **14**
-merged pull requests -- `#1443`, `#1444`, `#1445`, `#1446`, `#1447`, `#1449`, `#1424`, `#1450`,
-`#1452`, `#1451`, `#1456`, `#1454`, `#1461`, `#1465`. The two-commit gap is direct pushes carrying no
-trailing `(#N)` -- the `v0.32.0` release commit itself and one launcher commit -- named as such by
-the op's own output rather than inferred here. Both numbers are reported rather than one being
+**Delta, taken two ways that agree.** The range is `v0.33.0..HEAD` at `b1371d5`: `git rev-list
+--count v0.33.0..HEAD` returns **11**. `gh-prs:state=merged,merged-since=v0.33.0` returns **11**
+merged pull requests -- `#1470`, `#1471`, `#1472`, `#1448`, `#1473`, `#1474`, `#1482`, `#1484`,
+`#1483`, `#1485`, `#1486`. The two counts agree exactly (cross-check `RAN and AGREED`); no direct
+push carrying no trailing `(#N)` sits in this range. Both numbers are reported rather than one being
 silently preferred.
 
 **One workflow is declared and produced no run on this commit, and that is not a gap.** `changelog`
@@ -1027,58 +1026,55 @@ does not re-run at the tag: unrepeated, not unchecked. Gate 1's coverage came fr
 `CodeQL`, and from a **dispatched full matrix** rather than the push run alone -- this repository
 reduces its push/pull_request matrix and reserves all twelve OS x Python legs for
 `workflow_dispatch` with `full_matrix: true` (#1246), so the push run is never the whole picture
-here. Run `34636426513` on `35558ced`, 14 legs, `conclusion=success`; 22 legs across 3 runs green
+here. Run `34668389997` on `244962f`, 14 legs, `conclusion=success`; 22 legs across 2 runs green
 on that commit in total.
 
-**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-a3cefee77a71`,
-over `v0.32.0..HEAD` at `1d749041`, 14 commits): 5 findings, one in a blocking row.
-`gate3_disposition.py --round 1 --verdict findings --blocking yes` returned `stop-tag`. The blocking
-finding (`executes`): `doctor.supertool_invocation`'s own-tree walk trusted bare existence of
-`.supertool.json` beside `supertool.py` -- and `.supertool.json` is a scaffolded default in every
-managed repo's root, so a `supertool.py` added by an ordinary pull request was enough to make
-`lane_setup.read_board` hand that file to `sys.executable`, in the maintainer's own session, on every
-board read of every tick. Filed as `#1459`, fixed and merged as `#1461` before round two: the walk
-now also requires the tree's own git `origin` to name the repository the installed `supertool`
-dependency's manifest declares. The fix's first push was CI-red on a second, un-swept call site
-(`supertool_entry_point`) and fixed forward on the same branch before merging. The four non-blocking
-findings (`merge-gate.md` hardcoding `origin/main`; the same rule contradicting `merge.md`'s
-no-pre-merge-rebase policy; `pr_green.py` holding `pending` forever on a jobless completed run;
-`tree_snapshot.py` comparing paths case-sensitively on Windows) were landed as `trap.d/1459.gate3r1-
-*.md` via `#1465`.
+**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-0c628bb6fc093764`,
+over `v0.33.0..HEAD` at `244962ff`, 10 commits): **3 findings, none in a blocking row**, all ranked
+`misreports`. `gate3_disposition.py --round 1 --verdict findings --blocking no` returned `stop-tag`
+regardless -- round one always stops the tag, blocking or not, so the maintainer gets a chance to
+fix before round two runs. The three findings (the WAIT-vs-WARN split in
+`doctor_check_mcp_channel_connection.py` keyed on an env sentinel whose only writer #1474 had just
+removed; a jit-context rule still describing four env relays #1474 cut to one; `pr_green.py`'s
+`_superseded_flags` supersedes by check name alone, not `(workflow, name)`) were routed to
+`trap.d/1474.doctor-mcp-channel-wait-sentinel-dead.md`, `trap.d/1474.jit-rule-restates-removed-env-
+relays.md` and `trap.d/1458.pr-green-supersede-keyed-on-name-not-workflow.md` via PR #1486, merged
+before round two.
 
-Round two (dispatch token `gate3-r2-fcf88543b7a6`, over the range re-derived at `35558ced` after
-both merges, 16 commits): the auditor re-derived independently, exercised the round-one fix against
-three scratch trees on the production path (a stray `supertool.py` with a `claude-oss` origin, one
-with no origin, one with a genuine `claude-supertool` origin -- only the last was trusted), and
-returned **2 findings, none in a blocking row**. `gate3_disposition.py --round 2 --verdict findings
---blocking no` returned `carry-forward-and-proceed`. One finding (`misreports`: the new identity
-check renders every "could not tell" input the same as "not supertool") went to
-`trap.d/1459.gate3r2-identity-check-collapses-could-not-tell.md`, carried in this commit. The other
-came back `unranked` and was ranked here before the cap reached it: `#1443` made the curate pass
-decide alone on the premise that "the pull request is the review", and `merge.md` has no arm that
-distinguishes a loop-authored curate PR from any other green one -- so nothing makes that review
-happen. Fits no row, so it was filed as `#1467` per `findings.md`'s routing rule; it does not block.
-2 of 4 classes were `read` rather than `exercised`; the test suite was reasoned, not run, by the
-auditor.
+Round two (dispatch token `gate3-r2-c044551201dee01c`, over the range re-derived at `b1371d5` after
+PR #1486 merged, 11 commits): the auditor re-derived independently, reproduced all three round-one
+findings at HEAD (confirming each was already routed and not to be re-filed) and found **2 new,
+non-blocking findings**, both `misreports`: `doctor_check_auto_update.py`'s `could-not-check` arm
+demotes every cause to `WAIT ... settles on the next SessionStart check`, though only one of its
+four causes (an unreadable install record) is actually self-healing; and `doctor.py`'s VERDICT line
+counts `NOTICE` but not `WAIT`, so a run with only WAIT findings renders `VERDICT: ok`
+indistinguishable from a clean run. `gate3_disposition.py --round 2 --verdict findings --blocking
+no` returned `carry-forward-and-proceed`. Both new findings were routed to
+`trap.d/1448.doctor-could-not-check-demoted-to-wait.md` and
+`trap.d/1448.doctor-verdict-line-does-not-count-wait.md`, carried in this commit. One shared
+limitation the round-one `pr_green.py` fragment named (keying by check name alone) was checked
+against `claude-supertool`'s own `_checks.github_superseded` and found to match it byte-for-shape --
+the fragment stays valid as a shared-limitation note, no new action. 2 of 4 classes were `read`
+rather than `exercised`; the test suite was reasoned, not run, by the auditor.
 
-**Cohort freeze: cohort-29 at 20.** Per #1122's rule this marker cites a cohort that has already
+**Cohort freeze: cohort-30 at 34.** Per #1122's rule this marker cites a cohort that has already
 finished freezing, never this release's own -- the freeze runs after the tag and this commit is
-written before it. The state file records `cohort-29` as `measured` at **20**, frozen at the
-`v0.32.0` tag (`0c7473f`, 2026-09-11T10:02Z), with two routes that first disagreed (`cutoff_scan:
-20`, `label_filter: 18`, recorded as `unknown` rather than taking the lower number) and agreed at
-**20** on the re-count a minute later. `cohort_citation_order.py --state .max/claude-oss-watch.json
---at <now>` was run against this paragraph before committing; its answer is quoted in the release
+written before it. The state file records `cohort-30` as `measured` at **34**, frozen at the
+`v0.33.0` tag (2026-09-11T19:34:52Z), with two routes that first disagreed (`cutoff_scan: 34`,
+`label_filter: 31`, recorded as `unknown` rather than taking the lower number) and agreed at **34**
+on the re-count a minute later. `cohort_citation_order.py --state .max/claude-oss-watch.json --at
+<now>` was run against this paragraph before committing; its answer is quoted in the release
 report.
 
-**The reach probe was NOT re-derived at `v0.32.0`** -- it is still `v0.21.0`'s, measured at
+**The reach probe was NOT re-derived at `v0.33.0`** -- it is still `v0.21.0`'s, measured at
 `c565488`, eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of
 the field readings were not either: the owned-files table, the two installs and the `doctor` run are
-still `v0.17.0`'s, measured at `ad38b93` and now carried through **sixteen** tags (`v0.18.0` through
-`v0.33.0`). `#1127` tracks re-deriving them. A sixteenth release disclosing the identical,
+still `v0.17.0`'s, measured at `ad38b93` and now carried through **seventeen** tags (`v0.18.0`
+through `v0.33.1`). `#1127` tracks re-deriving them. A seventeenth release disclosing the identical,
 unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low priority
 against everything else this loop spends a tick on, or the disclosure is not actually driving anyone
 to close it. Both are worth naming and neither is decided here -- the honest content of this
-paragraph is the count itself, sixteen releases running, not a conclusion drawn from it. **The
+paragraph is the count itself, seventeen releases running, not a conclusion drawn from it. **The
 readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
 marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release
 commit, per this section's own stated exception, so a developer lane does not have to catch the gap

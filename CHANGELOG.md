@@ -7,6 +7,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.1] - 2026-09-12
+
+### Fixed
+
+- `bin/oss-workspace` drops three dead env relays (`OSS_WORKSPACE_MCP_CHECKED`/`_STATUS`/`_OUTPUT`,
+  `OSS_WORKSPACE_CENSUS_CHECKED`/`_REPORT`, `OSS_WORKSPACE_CHANNEL_ARM_TARGET`) and one dead
+  sentinel (`OSS_WORKSPACE_MCP_LIST_CHECKED`): their one intended reader was this launcher's own
+  synchronous `doctor.sh` call, which #1392 already moved into the session's own `/oss:run` step 1
+  -- a separate, later process nothing here has been able to reach since. `OSS_WORKSPACE_MCP_LIST_
+  OUTPUT` is kept: it still has a real, same-process consumer (the #1361 census heredoc), unlike
+  its three siblings (#1432).
+
+- `scripts/next_action.py`'s `_take_cli`/`_record_skip_cli` used to load `.oss.json` twice: once
+  inside `rank()` to confirm the payload was ranked, then again, independently, just to read
+  `state_file` back out. A second read taken moments later could diverge from the first (the file
+  removed or corrupted in between, or a future refactor making the two calls disagree), and that
+  divergence folded into the same "no state_file configured" text a genuinely unconfigured repo
+  produces, with nothing to tell the two apart. `rank()` now exposes the config it already loaded
+  in its own payload, and both CLI functions reuse it instead of loading a second time (#1434).
+
+- Gate 3's v0.32.0 round-one audit (dispatch token gate3-r1-90bae15e5253) found four small,
+  independent defects, all fixed together: `scripts/cohort_freeze_record.py` and
+  `scripts/next_action.py` did not reconfigure stdout/stderr to `backslashreplace` before
+  printing `gh`/`git`-authored text, unlike their siblings `release_trigger.py` and
+  `triage_trigger.py`; `skills/manager/phases/inbound.md` still claimed the statusline's
+  unruled-issue/unreviewed-pull-request count was "left for a lane that can measure it" after
+  `statusline.inbound_reading`/`_inbound_field` already shipped it (#1406); `commands/tick.md`'s
+  own `--triage-recorded` call could not run as written, since it is an attachment to
+  `--decision` rather than its own mode flag; and `scripts/triage_trigger.py`'s `_load_config`
+  read `.oss.json` with a raw `json.load` instead of `oss_config.load`, so it never merged
+  `.oss.local.json` and reported "no state file configured" on repos where one was, in the half
+  it never read (#1436).
+
+- Confirmed #1438's own drift no longer reproduces, and pinned the gap that let
+  it slip past unnoticed. `tests/test_baseline_matches_disk_1014.py` already covered
+  `command_budgets.BUDGETS` from its own #1014 origin onward -- the 77 B overage a
+  lane observed in `commands/tick.md` (against a stale 18,276 B baseline CLAUDE.md's
+  own table cited at the time) was independently corrected by later re-baselines
+  (#1386/#1402, #1421) before this issue was worked, and re-measuring `commands/tick.md`
+  (21,939 B) and `commands/run.md` (8,400 B) against disk now shows both matching
+  `scripts/command_budgets.py`'s declared baselines and CLAUDE.md's own table row
+  exactly. No production code changed. Added a regression test,
+  `test_declared_pairs_covers_command_budgets`, pinning that `_declared_pairs()`'s
+  own merge of `command_budgets.BUDGETS` stays wired -- without it, deleting that one
+  `pairs.update(...)` call would leave `test_declared_baselines_match_disk` passing
+  vacuously (nothing to report a mismatch on) rather than failing loudly, which is
+  exactly the absence-reads-as-clean defect this repository is named after.
+
+- `doctor.py` gains a fifth level, `WAIT`, for a reading that settles on its own -- a cache
+  clock running out, an install record read mid-rewrite, a channel consumer that only a
+  launched session can bind. `WAIT` still prints in every report, but never gates `VERDICT:`
+  and never fills the statusline's `dr` marker, so a WARN nothing can clear no longer pins
+  `dr` at `usable with gaps` forever for a reading that was never anyone's to act on. Four
+  checks are reclassified: the auto-update cached-reading gap (only when a fresh check right
+  now answers cleanly), the channel census vs `channel:health` comparison (only when the
+  census itself answered), the channel MCP connection check (only when the session was not
+  opened through `bin/oss-workspace`), and the statusline channel cache staleness check. Each
+  keeps its WARN for the case where the same reading is a real fault (#1440).
+
+- `doctor.sh`/`doctor.py` gain `--findings`: print only `NOTICE`/`WAIT`/`WARN`/`FAIL` lines plus
+  the final `VERDICT` line, so a caller told to relay every WARN/FAIL no longer has to filter the
+  full report by hand with `head`/`grep` -- a filter that silently dropped a real WARN and a
+  scaffold gap in the incident this closes. `commands/run.md`'s own step 1 now calls it with
+  `--findings` instead. OK lines are still counted toward the VERDICT arithmetic; only whether
+  they print changes (#1455).
+
+- `pr_green.py` no longer reads a check-run conclusion (e.g. `CANCELLED`) as a failure when a
+  later run of the same check name superseded it -- it now applies the identical supersession
+  rule `gh-pr:N:status` already uses, so the two tools agree about the same pull request at the
+  same instant. A superseded leg is still disclosed on the printed line, never silently dropped
+  (#1458).
+
+- The status line's plugin-currency reading (`plug`) folded to `unknown` for every declared
+  plugin the instant a `latest` comparison crossed its own refresh interval, even though the
+  background refresh it triggers can take up to ~60s to land -- showing `plug 0check 4unknown`
+  for roughly a minute every hour on data that was correct a second earlier and correct again
+  once the refresh landed. `gather()` now keeps rendering the last-known comparison while a
+  refresh is merely due, and folds to `unknown` only when a refresh was attempted and failed
+  (recorded in the cache as `latest_refresh_failed_at`) or once a reading is well past due --
+  past twice its own refresh interval (#1464).
+
+- `scripts/report_schema.py`'s `validate_pr_body` now catches a pull request payload
+  body carrying a literal backslash-quote outside a code span -- the shape a
+  hand-typed JSON payload produces when ordinary prose quoting a phrase verbatim is
+  double-escaped instead of written plainly. `gh-pr-create` already refused this
+  shape, but only after the payload was composed and the create call attempted; four
+  developer lanes hit it across two ticks despite two existing prose warnings, each
+  costing a resumed session and a second create call. The new check runs at report
+  validation time, before the sub-manager ever calls `gh-pr-create` (#1466).
+
+- The scaffolded merge-gate rule (`TOOLS_MERGE_GATE`, generated into
+  `tools/01-oss/merge-gate.md`) told a lane to run `git fetch && git merge origin/main` and to
+  check `main` specifically before merging, directly contradicting the loop's own merge policy
+  (green-and-mergeable means merge, no pre-merge rebase, and the repo's actual default branch may
+  not be `main`). Both are fixed in the same change, since removing the offending instruction
+  removes the hardcoded branch name with it (#1459, #1482).
+
+### Security
+
+- The scaffolded changelog gate workflow (`.github/workflows/oss-changelog.yml`,
+  written by `/oss:scaffold --apply` into every repository this plugin scaffolds) pinned
+  `actions/checkout` and `actions/setup-python` to a moving major tag (`@v7`) rather than a
+  commit SHA. A tag is repointed by its publisher on any release, so the code that ran under
+  the receiving repository's own `GITHUB_TOKEN` could change with no commit and no pull
+  request anywhere in that repo to review -- and `.github/dependabot.yml`'s `github-actions`
+  watch never catches it, since Dependabot will never bump `v7` to `v7` (#1462). Both actions
+  are now pinned to the commit SHA behind their current `v7` release, each with a trailing
+  `# vX.Y.Z` comment; Dependabot bumps a SHA-pinned action just as readily, rewriting both the
+  SHA and the comment.
+
 ## [0.33.0] - 2026-09-11
 
 ### Added
@@ -10925,7 +11035,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.33.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.33.1...HEAD
+[0.33.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.33.1
 [0.33.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.33.0
 [0.32.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.32.0
 [0.31.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.31.0
