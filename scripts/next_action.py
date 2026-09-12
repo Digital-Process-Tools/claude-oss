@@ -73,7 +73,10 @@ phase that acts on this answer, not to the one naming it.
 
 **No writes except one, narrow receipt**, the same `workspace_route_check`
 mechanism the first cut used for curate and triage's own repeat-suppression
-(see `_route_already_seen`) -- unchanged by this rewrite. `release_trigger`
+(see `_route_already_seen`) -- unchanged by this rewrite, and now also armed
+for `inbound` (#1433): an unresolved external issue or pull request must not
+report `due` identically forever, the same defect class `_curate_candidate`
+and `_triage_candidate` were already built to close. `release_trigger`
 and `triage_trigger` still need no such receipt: completing either action
 moves the underlying signal itself.
 
@@ -81,6 +84,20 @@ moves the underlying signal itself.
 docstring states why: a real count needs a per-thread walk this change does
 not build. It reports `None` rather than a guessed `0` -- never silently
 included in the inbound candidate's own due/not-due decision.
+
+**Still reads `statusline.inbound_reading`'s coarser signal, not
+`inbound_triage.py`'s per-item classification (#1433).** #1433 asked whether
+fixing the repeat-suppression gap above genuinely depends on first switching
+this module's own inbound candidate to `inbound_triage.classify_pr`/
+`is_inbound_issue` for a richer reading -- this module is not vendored and
+could import that module directly, unlike `statusline.py`, which is
+(#653/#1394's own docstrings state why). It does not: repeat-suppression only
+needs a signature to compare against its own last-seen value, and the coarse
+`unruled_issues`/`unreviewed_prs` counts already provide one. The dependency
+#1433's own issue text guessed at is not real for that reason, so this
+rewrite builds suppression against the existing counts and leaves "should
+`next_action.py` and the vendored statusline read two different inbound
+signals" as its own, separate design question rather than deciding it here.
 
 Python 3.9 compatible.
 """
@@ -317,13 +334,23 @@ def _fresh_inbound_reading(repo):
     return statusline.inbound_reading(repo, issues_total, prs_total)
 
 
-def _inbound_candidate(repo_root, config):
+def _inbound_candidate(repo_root, config, arm=False):
     """#1405's fourth source, and the composition gap it names: an
     unanswered outside pull request or an unruled outside issue used to
     render identically to nothing pending at all. `unanswered_comments` is
     never part of this decision -- `statusline.inbound_reading` always
     reports it as `None`, and folding a `None` into `0` here would be
-    exactly the false-zero this module is named after avoiding."""
+    exactly the false-zero this module is named after avoiding.
+
+    `arm=False` by default (#1433, same reasoning as `_curate_candidate`'s
+    own): `rank()` evaluates every source every call, so this candidate's
+    own signature must not be recorded as "already routed" just for having
+    been looked at. `rank()` itself never passes `arm=True` -- only
+    `_arm_route_source`, called from `_take_cli` or `_record_skip_cli` at
+    the moment a caller commits to `inbound`, ever does. Without this, an
+    unresolved external issue or pull request would report `due`
+    identically forever, the same permanent-divert defect
+    `_curate_candidate`/`_triage_candidate` were already built to close."""
     repo = config.get("repo")
     if not repo:
         return {
@@ -343,13 +370,26 @@ def _inbound_candidate(repo_root, config):
     unruled = reading.get("unruled_issues") or 0
     unreviewed = reading.get("unreviewed_prs") or 0
     if unruled + unreviewed > 0:
+        signature = "unruled:{0},unreviewed:{1}".format(unruled, unreviewed)
+        seen, seen_detail = _route_already_seen(
+            repo_root, config, "inbound", signature, arm=arm
+        )
+        if not seen:
+            return {
+                "source": "inbound",
+                "state": CANDIDATE_DUE,
+                "reason": "{0} outside issue(s) unruled, {1} outside pull request(s) unreviewed".format(
+                    unruled, unreviewed
+                ),
+                "evidence": dict(reading, receipt=seen_detail),
+            }
         return {
             "source": "inbound",
-            "state": CANDIDATE_DUE,
-            "reason": "{0} outside issue(s) unruled, {1} outside pull request(s) unreviewed".format(
-                unruled, unreviewed
+            "state": CANDIDATE_NOT_DUE,
+            "reason": "unchanged since the last time this reading was routed ({0})".format(
+                seen_detail
             ),
-            "evidence": reading,
+            "evidence": dict(reading, receipt=seen_detail),
         }
     return {
         "source": "inbound",
@@ -706,10 +746,12 @@ def _arm_route_source(repo_root, config, routes, source):
     caller has decided -- ordinarily or by a deliberate skip -- which source
     it is about to act on.
 
-    A no-op, returning `None`, for `inbound` and `release`: neither has a
-    receipt of this kind (`inbound` has none at all; `release`'s own
-    self-resolving signal is the merged-PR count itself, per `rank()`'s own
-    module docstring). Never raises -- a receipt write failing here is
+    A no-op, returning `None`, for `release` only: its own self-resolving
+    signal is the merged-PR count itself, per `rank()`'s own module
+    docstring, so it needs no receipt of this kind. `inbound` joined
+    `curate`/`triage` in using this mechanism at #1433: an unresolved
+    external issue or pull request must not report `due` identically
+    forever either. Never raises -- a receipt write failing here is
     exactly as fail-open as every other `_route_already_seen` call in this
     module, named in the returned candidate's own `evidence.receipt` field
     rather than propagated."""
@@ -717,6 +759,8 @@ def _arm_route_source(repo_root, config, routes, source):
         return _curate_candidate(repo_root, config, routes, arm=True)
     if source == "triage":
         return _triage_candidate(repo_root, config, routes, arm=True)
+    if source == "inbound":
+        return _inbound_candidate(repo_root, config, arm=True)
     return None
 
 
