@@ -47,6 +47,14 @@ the three values that are a path on one machine and nobody else's.
 measurement — `git symbolic-ref refs/remotes/origin/HEAD` and `git remote -v` cost one call between
 them.
 
+**Start from the brief's `# Recon brief` section when it carries one (#1499).** A read-only spawn
+already walked the code; its sites, tests and file set are where you begin, not whole-file reads
+or tree-wide greps for the same concepts. Open only the sites it names, in `read:PATH:START:COUNT`
+windows sized to the edit, and only when you are about to edit or test that site. It is a hint
+with no authority: when a site does not match (a pull request landed in between; symbols are
+authoritative, line numbers are not), read that one site wider and say so in your report. Every
+read you carry is re-sent on every later turn; the report's `cost` block is where that shows.
+
 Cut your own worktree; **never work in the main clone**, because someone else's session may be
 reading it, and in some repos the clone is symlinked onto a binary on PATH.
 

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Does a developer brief carry the elements dispatch requires? -- #967, #1022.
+"""Does a developer brief carry the elements dispatch requires? -- #967, #1022, #1499.
 
 A lane's *report* is validated by `scripts/report_schema.py`. Its *brief* --
 the artefact dispatch actually produces, and the only thing the developer ever
 reads -- was validated by nothing, and `skills/manager/phases/dispatch.md` line
-"Every brief carries these:" lists eight mandatory elements checked by a
-session re-reading its own draft.
+"Every brief carries these:" lists nine mandatory elements checked by a
+session re-reading its own draft (eight until #1499 added `recon`).
 
-Every one of the eight is there because a brief shipped without it:
+Every one of them is there because a brief shipped without it:
 
   * `paste` is named in the supertool block because a brief that omitted it
     "read as correct" for six deliveries (#250) -- an op named and later
@@ -24,8 +24,8 @@ Each was fixed by strengthening the prose, and none of them was checked.
 
 ## The risk this script carries, stated first
 
-**A brief that passes is not a good brief.** Only four of the eight can be
-checked in a way that catches the failure actually observed; the other four are
+**A brief that passes is not a good brief.** Only four of the nine can be
+checked in a way that catches the failure actually observed; the other five are
 presence checks, and presence is not quality. A tool reporting `ok` on a brief
 nobody read is worse than no tool, because it moves the missing review out of
 sight -- this repository's own defect class, produced by the thing meant to
@@ -33,13 +33,13 @@ catch it.
 
 So the receipt separates the two, always, in both directions: every element
 says whether it was checked `structurally` (a claim about what the text does)
-or by `presence` (a claim only that a section exists). `ok` means "the eight
+or by `presence` (a claim only that a section exists). `ok` means "the nine
 are there", never "this brief is good", and the receipt's own last line says
 so rather than leaving it to be inferred.
 
 ## States
 
-  ok               all eight elements found
+  ok               all nine elements found
   findings         one row per element missing or degraded, named individually
   could-not-read   the file could not be opened or decoded. Never `ok`, and
                    never a findings row either: "this brief is missing item 4"
@@ -271,6 +271,27 @@ def check_worktrees(text):
     )
 
 
+def check_recon(text):
+    """#1499 decision 4: a lane starts from a recon spawn's brief, not from
+    the orientation reads it would otherwise carry for the whole lane.
+    Presence only -- a brief without one still works, at the orientation
+    cost the recon exists to remove."""
+    lowered = _outside_supertool(text).lower()
+    if "recon" not in lowered:
+        return _finding(
+            "recon",
+            "no recon brief; the lane will pay the orientation reads itself and "
+            "carry them for every later turn (#1499)",
+            PRESENCE,
+        )
+    return _found(
+        "recon",
+        PRESENCE,
+        "presence only: whether the recon brief names the right sites is not "
+        "checkable from the developer brief",
+    )
+
+
 def check_publishing(text):
     """The one check that can fail on a brief that *has* the clause.
 
@@ -328,6 +349,7 @@ CHECKS = (
     check_tdd,
     check_docs,
     check_worktrees,
+    check_recon,
     check_publishing,
     check_placeholder,
 )
@@ -386,4 +408,3 @@ def receipt(payload):
         )
     )
     return "\n".join(lines)
-

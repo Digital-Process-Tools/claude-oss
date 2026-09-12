@@ -252,6 +252,7 @@ agents/release-auditor.md   the whole delta since the last tag, once per release
 agents/sub-manager.md       one tick, then dies with its context; never tags, never publishes
 agents/releaser.md          one release, fresh context; the only spawn holding tag-and-publish authority
 agents/scheduler-step.md    one /oss:run sub-step (setup scaffold install-audit triage curate changelog), then dies with its context (#1414)
+agents/recon.md             read-only reconnaissance over one lane's issues before its brief is written; the lane starts from its summary (#1499)
 commands/*.md               the picker: /oss:run /oss:doctor /oss:tick /oss:release
 commands/run/*.md           demoted out of the picker (#1389): setup scaffold triage curate changelog install-audit, reached via /oss:run's own procedure or its forcing override
 scripts/oss_config.py       read, validate and derive .oss.json
@@ -291,14 +292,27 @@ from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 41,443 B | 44,100 B |
+| `agents/developer.md` | 42,116 B | 44,100 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 17,850 B | 18,800 B |
+| `agents/sub-manager.md` | 18,021 B | 18,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
+| `agents/recon.md` | 3,936 B | 4,400 B |
+
+**#1499 adds `agents/recon.md`, a new file rather than growing an existing one.** A developer lane
+used to open its first thirty files itself and carry every one of those reads for the rest of the
+lane -- 57% of one night's context tokens were sent in calls made past 200k. The recon spawn pays
+those reads once, in a context that dies, and hands the lane a summary: sites by symbol, a verdict
+per claim (`confirmed-by-read` / `already-shipped` / `could-not-tell`), nearest tests, siblings,
+the lane file set, open questions. Measured on one three-issue lane: 65.8M context tokens with a
+recon (0.7M for the recon itself) against 134.4M for the comparable lane without one; max context
+345k against 503k. One sample, different issues, so directional rather than proven -- the report's
+`cost` block on every later lane is what turns it into a measurement. `agents/developer.md` and
+`agents/sub-manager.md` each grew one paragraph for it (re-baselined above, neither ceiling moved),
+and `scripts/lane_setup_brief_schema.py` gained a ninth, presence-only element, `recon`.
 
 **#1457 adds `agents/doctor.md`, a new file rather than growing an existing one.** `/oss:run`'s own
 step 1 used to run `doctor.sh` inline and chase every `WARN`/`FAIL` line in the scheduler's own
@@ -560,7 +574,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,893 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 55,309 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 56,678 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,922 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 34,905 B | 36,000 B |

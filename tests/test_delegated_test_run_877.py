@@ -62,7 +62,10 @@ ALREADY_COVERED_ELSEWHERE = {"developer.md"}
 #: `doctor.md` (#1457) joins it too: it runs `scripts/doctor.sh`, the repo
 #: diagnostic, never `test_command` -- there is no test suite in its own
 #: job description for a verdict-delegation rule to bind.
-NO_TEST_CONCERN = {"triager.md", "scheduler-step.md", "doctor.md"}
+#:
+#: `recon.md` (#1499) joins it: read-only reconnaissance that is told never
+#: to run the suite -- the lane it briefs runs `test_command`, not the recon.
+NO_TEST_CONCERN = {"triager.md", "scheduler-step.md", "doctor.md", "recon.md"}
 
 #: filename -> the marker that must survive in the file, verbatim.
 REQUIRED_MARKER = {

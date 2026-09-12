@@ -290,7 +290,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # supertool's own checkout, and points at the new
         # `doctor.supertool_invocation` detection rather than editing the
         # blockquote itself. Budget unchanged; comfortably under it.
-        55309,
+        # Re-baselined for #1499: 55309 B became 56678 B -- a paragraph
+        # spawning oss:recon before each brief, and a ninth brief element
+        # naming where its output goes. Budget unchanged; 722 B headroom.
+        56678,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
