@@ -9,3 +9,4 @@ Bash	~gh-pr-merge	stacked-pr-cleanup-recovery.md	remind
 Bash	~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit	supertool-payload-forms.md	remind			
 Bash	~(until|while) |grep -q	waiting-on-a-status-line.md	remind			
 Bash	~gh api rate_limit|rate limit exceeded	gh-rate-limit-reset-and-pollers.md	remind			
+Bash	~gh-pr:[0-9]+:status|gh-branch|gh-job:	sub-manager-hand-polls-ci.md	remind			
