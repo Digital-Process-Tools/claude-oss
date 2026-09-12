@@ -618,7 +618,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1409: 34816 B became 34905 B -- the short-lane
         # reason list gained a fifth word, declined-for-cause (#1407).
         # Budget unchanged; comfortably under it.
-        34905,
+        # Re-baselined for #1508: 34905 B became 35539 B -- step 2's heal now
+        # arms the default-branch poller filtered (only=went_green,went_failed)
+        # before the bare radar, and the "no poller to heal" prose that
+        # predated supertool #2024 is corrected. Budget unchanged; 461 B left.
+        35539,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

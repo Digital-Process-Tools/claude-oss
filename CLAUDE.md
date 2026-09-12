@@ -577,7 +577,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | `skills/manager/phases/dispatch.md` | 56,678 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,922 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
-| `skills/manager/phases/tick-order.md` | 34,905 B | 36,000 B |
+| `skills/manager/phases/tick-order.md` | 35,539 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
@@ -964,7 +964,7 @@ spendable again without anybody choosing to.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 22,275 B | 24,500 B |
+| `commands/tick.md` | 22,444 B | 24,500 B |
 | `commands/run.md` | 8,246 B | 8,900 B |
 
 **#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
