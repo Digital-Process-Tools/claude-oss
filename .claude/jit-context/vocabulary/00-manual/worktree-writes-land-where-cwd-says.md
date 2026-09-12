@@ -41,6 +41,16 @@ very lane assigned to investigate it.
   clean. A verdict that is impossible is worth more than one that is
   merely surprising.
 
+- **It ran for ten consecutive `edit`/`paste` calls across six files before anyone
+  noticed (#1440).** The first Bash call of the lane chained `cd <worktree> && git worktree
+  add ...`, and the `supertool` call right after it -- still inside the same `cd <worktree> &&
+  ...` line -- reported `[branch: fix/1440]`. Every later call that dropped the `cd` prefix, on
+  the assumption the shell's cwd carried over, silently landed in the **main clone** instead,
+  each one reporting `[branch: main]` in its own footer. Only a routine `git status --short` in
+  the worktree, finding the files missing there, surfaced it. Recovery: `git diff -- <files> >
+  patch` in the polluted tree, `git apply` in the correct worktree, `git checkout -- <files>` in
+  the polluted one -- clean because the base commit was identical in both trees.
+
 For `tree_snapshot` specifically -- where to write the before-snapshot,
 what `compare` already defaults to, and why `could-not-compare` is not
 `clean` -- see `tools/00-manual/tree-snapshot-compare.md`, which owns

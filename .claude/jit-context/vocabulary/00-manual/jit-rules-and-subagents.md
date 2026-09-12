@@ -51,3 +51,12 @@ This bites hardest here specifically: the rules most worth firing in this reposi
 about a **habit** -- how to write prose, how to shape a payload, what a third state is for -- and a
 habit is exactly what a single reminder does not fix. The rules that survive one showing are the
 ones about a fact you either know or do not.
+
+**A dispatched `oss:developer` lane reporting "I have no `SendMessage` tool" is not a failure of
+the resume, and should not be misread as `agent-unreachable` (#1436).** `agents/developer.md`'s
+own frontmatter grants Bash, TodoWrite, Skill and Agent -- deliberately no `SendMessage`, since a
+developer lane reports back through its own completion rather than messaging anyone. Sending
+`SendMessage` to that lane from the sub-manager side still resumed it successfully (the same
+task-id/agentId round trip a sub-manager already reads for the first completion), and the lane
+picked up the new instruction and acted on it even though it had no way to reply the same way --
+it used its own ordinary finish-and-report path instead.
