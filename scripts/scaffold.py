@@ -308,7 +308,9 @@ SUPERTOOL_JSON = """{
     "radar": {
       "watch_name": "__WATCH_NAME__",
       "radar_tiers": {
-        "gh-prs": {}
+        "gh-prs": {
+          "pr_exclude_events": ["checks_pending", "checks_succeeded", "pr_opened", "conflicts_appeared"]
+        }
       }
     },
     "unwatch": {
@@ -2692,9 +2694,28 @@ WATCH_PRESET = "watch"
 # `tests/test_scaffold.py::test_scaffolds_own_radar_remedy_satisfies_both_checkers`
 # writes THIS mapping to disk and asks BOTH checkers about the result. Asserting that
 # the two strings match would pass just as happily on two remedies that fix nothing.
+#
+# #1499: the tier ships with `pr_exclude_events` set -- the per-PR channel events a
+# running tick already polls for, which otherwise each land in the scheduler session
+# as a turn. The template above carries the same list; `doctor_check_event_filter`
+# reports `unfiltered` on a tier registered without it, so a remedy printing a bare
+# `{}` would clear one WARN by creating the next.
 RADAR_REMEDY_CONFIG = {
     "presets": [WATCH_PRESET],
-    "ops": {RADAR_OP: {RADAR_TIERS_KEY: {"gh-prs": {}}}},
+    "ops": {
+        RADAR_OP: {
+            RADAR_TIERS_KEY: {
+                "gh-prs": {
+                    "pr_exclude_events": [
+                        "checks_pending",
+                        "checks_succeeded",
+                        "pr_opened",
+                        "conflicts_appeared",
+                    ]
+                }
+            }
+        }
+    },
 }
 
 RADAR_REMEDY = (

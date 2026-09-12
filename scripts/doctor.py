@@ -3280,9 +3280,24 @@ WATCH_PRESET = "watch"
 # worse than a board they have to turn on. Composed from the constants above so a drift
 # in one of them reaches the remedy rather than leaving it confidently telling a
 # maintainer to add a key that no longer exists.
+# #1499: the tier carries `pr_exclude_events` so the remedy does not clear this
+# check's WARN by creating `doctor_check_event_filter`'s.
 RADAR_REMEDY_CONFIG = {
     "presets": [WATCH_PRESET],
-    "ops": {RADAR_OP: {RADAR_TIERS_KEY: {"gh-prs": {}}}},
+    "ops": {
+        RADAR_OP: {
+            RADAR_TIERS_KEY: {
+                "gh-prs": {
+                    "pr_exclude_events": [
+                        "checks_pending",
+                        "checks_succeeded",
+                        "pr_opened",
+                        "conflicts_appeared",
+                    ]
+                }
+            }
+        }
+    },
 }
 
 # Rendered from the mapping above rather than typed, so the line a maintainer

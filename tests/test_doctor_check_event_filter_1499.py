@@ -138,6 +138,45 @@ def test_could_not_read_when_the_document_is_not_an_object(tmp_path):
     assert "could-not-read" in message
 
 
+def test_a_fresh_scaffold_is_filtered_by_default(tmp_path):
+    """#1499 decision D6: the blacklist ships as a scaffolded default. A repo
+    `scaffold.apply` just wrote must come back `OK` from this check, or every
+    fresh install starts life with a WARN nothing but a hand edit clears -- the
+    positive control for the hand-written `{}` registration above, which stays
+    `unfiltered` because it is the pre-#1499 shape a repo may still carry.
+    """
+    import scaffold
+
+    config = {
+        "repo": "owner/name",
+        "default_branch": "main",
+        "clone": str(tmp_path),
+        "worktree_root": str(tmp_path / "wt"),
+        "branch_pattern": "fix/{issue}",
+        "test_command": "pytest",
+        "version_sites": ["README.md"],
+        "changelog_dir": None,
+        "docs_targets": ["README.md"],
+        "labels": {"priority": [], "lanes": []},
+        "state_file": ".max/oss-watch.json",
+    }
+    scaffold.apply(tmp_path, config, plugin_root=REPO_ROOT)
+    written = json.loads((tmp_path / ".supertool.json").read_text(encoding="utf-8"))
+    assert (
+        written["ops"]["radar"]["radar_tiers"]["gh-prs"]["pr_exclude_events"] == INITIAL
+    )
+    dcef.check_event_filter(tmp_path)
+    state, message = _only()
+    assert state == "OK", message
+    # And the remedy `check_radar_publish` prints for a repo with no tier at all
+    # carries the same default, so pasting it does not land straight in WARN.
+    remedy = doctor.RADAR_REMEDY_CONFIG["ops"]["radar"]["radar_tiers"]["gh-prs"]
+    assert remedy["pr_exclude_events"] == INITIAL
+    assert (
+        scaffold.RADAR_REMEDY_CONFIG["ops"]["radar"]["radar_tiers"]["gh-prs"] == remedy
+    )
+
+
 def test_this_repo_is_filtered():
     """Dogfood: the repo carrying this check sets the key with the initial value."""
     dcef.check_event_filter(REPO_ROOT)
