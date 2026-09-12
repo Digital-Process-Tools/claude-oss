@@ -550,8 +550,10 @@ comes back: `fixed`, `refused`, `argued-down`, `report-for-filing` with its requ
 **Then read `agents/developer/review-return.md` when the final messages arrive.** It carries
 `scripts/review_return.py` and the framed heredoc that keeps a quoted terminator from ending the
 stream in your own session (#404), the six verdicts and which of them are `returned-nothing` in the
-report, the one permitted re-spawn that does not erase the first outcome, and what to do when the
-spawn name does not resolve (#81).
+report, the one permitted re-spawn that does not erase the first outcome, what to do when the
+spawn name does not resolve (#81), and the separate case where the `Agent` tool itself is totally
+unavailable one level down rather than one name failing to resolve (#1468) -- distinguish the two
+before choosing between `could not run` and `not-checked`.
 
 **A review that did not execute must never render as a review that found nothing.** That holds for
 both spawns, for an empty final message from either one, and for each of the auditor's classes
