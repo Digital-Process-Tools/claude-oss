@@ -27,6 +27,7 @@ import doctor  # noqa: E402
 import spawn_guard  # noqa: E402
 import oss_config  # noqa: E402
 import scaffold  # noqa: E402
+import statusline  # noqa: E402
 
 # Captured before any test's autouse fixture can monkeypatch the module
 # attribute -- `_watch_name_accepted_by_default` below replaces
@@ -293,11 +294,26 @@ UNMEASURED_LABELS = (
 )
 
 
-def _quiet_main(monkeypatch):
+def _quiet_main(monkeypatch, tmp_path):
     """Stub the boundaries that reach the network or the user's home directory.
 
     main() is the only place the four checks are wired together, so the pairing has to
     run it -- but not its probes.
+
+    #1428: `statusline.cache_dir()` -- read by `check_latest_skew`, otherwise
+    unstubbed below -- resolves XDG_CACHE_HOME or the real `~/.cache` when
+    nothing overrides it, so a stray file left there by an earlier, unrelated
+    run (any prior process that ever wrote a cache entry keyed on this
+    suite's shared placeholder repo "owner/name") changes what this pairing
+    reports, with nothing about the fixture itself in play. Confirmed on a
+    real machine: a real `~/.cache/oss-statusline/owner-name.json` with no
+    `latest["owner/name"]` entry made this exact pairing fail locally while
+    every CI leg -- whose `~/.cache` starts empty on every fresh checkout --
+    stayed green (see `test_quiet_main_does_not_isolate_latest_skew_from_
+    ambient_cache_1428` for the reproduction). `cache_dir` is isolated to
+    this test's own `tmp_path` below for the same reason every other stub
+    in this function exists: this pairing is about the fixture's config,
+    never about whatever this machine's real home directory happens to hold.
 
     #1318: `_quiet_main` is used by exactly one test (`test_main_labels_
     every_config_dependent_check_unmeasured_and_still_measures_them`), and
@@ -315,6 +331,9 @@ def _quiet_main(monkeypatch):
     each of these checks keeps its OWN dedicated unit test elsewhere in
     this file exercising it for real.
     """
+    monkeypatch.setattr(
+        statusline, "cache_dir", lambda: tmp_path / "isolated-cache-1428"
+    )
     monkeypatch.setattr(doctor, "check_tool", lambda *a, **k: None)
     monkeypatch.setattr(doctor, "check_memory", lambda *a, **k: None)
     monkeypatch.setattr(doctor, "check_jit_rules", lambda *a, **k: None)
@@ -382,7 +401,7 @@ def test_main_labels_every_config_dependent_check_unmeasured_and_still_measures_
 
     Without the second half, "said not checked" is satisfied by a run that said nothing.
     """
-    _quiet_main(monkeypatch)
+    _quiet_main(monkeypatch, tmp_path)
     missing = tmp_path / "missing"
     missing.mkdir()
 
@@ -404,6 +423,58 @@ def test_main_labels_every_config_dependent_check_unmeasured_and_still_measures_
     assert "not checked" not in found, found
     for label in ("clone", "worktree_root", "state_file"):
         assert [ln for ln in found.splitlines() if label + ":" in ln], label
+
+
+def test_quiet_main_does_not_isolate_latest_skew_from_ambient_cache_1428(
+    tmp_path, monkeypatch, capsys
+):
+    """#1428: a stray real cache file left behind by an earlier, unrelated
+    run -- at `cache_dir()/<slug>.json`, carrying no `latest[repo]` entry for
+    the fixture's own placeholder repo -- must not change what this pairing
+    reports. `_quiet_main`'s own docstring promises to stub every boundary
+    that reaches the user's home directory, but `check_latest_skew` reads
+    `statusline.cache_dir()` (XDG_CACHE_HOME, or ~/.cache) directly and is
+    not among the stubs -- so ambient machine state, not this test's own
+    fixture, ends up deciding whether "not checked" appears.
+
+    Confirmed on a real machine before this fix: a real
+    `~/.cache/oss-statusline/owner-name.json` -- written at some earlier
+    point by something unrelated to this test, since the placeholder repo
+    "owner/name" is shared by fixtures across this whole suite -- carried a
+    `latest` map with no `owner/name` key, which made this exact pairing
+    (`test_main_labels_every_config_dependent_check_unmeasured_and_still_
+    measures_them`, just above) fail on that machine while every CI leg
+    (whose `~/.cache` starts empty on every fresh checkout) stayed green.
+    Nothing in `doctor_check_latest_skew.py`'s own plugin-source-repo logic
+    differs between the two environments -- only the stray file does.
+    """
+    ambient_home_cache = tmp_path / "ambient-home" / ".cache"
+    stray = ambient_home_cache / "oss-statusline"
+    stray.mkdir(parents=True)
+    (stray / "owner-name.json").write_text(
+        json.dumps(
+            {
+                "latest": {"Digital-Process-Tools/claude-remember": "0.31.0"},
+                "latest_fetched_at": 1789194332.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    # `statusline.cache_dir()` reads LOCALAPPDATA first on Windows and never
+    # consults XDG_CACHE_HOME there (test_plugin_update_invalidates_latest_
+    # 1381.py's own `_pin_cache` documents the same fact) -- pin both so this
+    # reproduction is not silently vacuous on the windows-latest CI leg,
+    # which is the very platform #1428 asked to confirm or rule out.
+    monkeypatch.setenv("XDG_CACHE_HOME", str(ambient_home_cache))
+    monkeypatch.setenv("LOCALAPPDATA", str(ambient_home_cache))
+
+    _quiet_main(monkeypatch, tmp_path)
+    present = tmp_path / "present"
+    present.mkdir()
+    _config(present)
+    assert doctor.main(["--root", str(present)]) == 0
+    found = capsys.readouterr().out
+    assert "not checked" not in found, found
 
 
 def test_a_root_that_does_not_exist_never_widens_to_the_cwds_clone(
