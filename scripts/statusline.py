@@ -3346,11 +3346,19 @@ def _arg_value(argv, flag, default):
     hand-rolled the same broken ``argv[argv.index(flag) + 1]`` independently.
     One helper, used by both, so a trailing flag with nothing after it falls
     back to ``default`` instead of crashing.
+
+    ``flag`` may be a single string or a tuple/list of equivalent spellings
+    (#1435): ``next_action.py`` and this file spell the repo-root concept
+    ``--root``; ``triage_trigger.py`` and ``cohort_freeze_record.py`` spell
+    it ``--repo``. A caller passing either wins here too, rather than only
+    for the argparse-based scripts.
     """
-    if flag in argv:
-        i = argv.index(flag)
-        if i + 1 < len(argv):
-            return argv[i + 1]
+    flags = (flag,) if isinstance(flag, str) else tuple(flag)
+    for candidate in flags:
+        if candidate in argv:
+            i = argv.index(candidate)
+            if i + 1 < len(argv):
+                return argv[i + 1]
     return default
 
 
@@ -3385,7 +3393,7 @@ def main(argv=None):
                 stream.reconfigure(errors="backslashreplace")
             except (AttributeError, ValueError):  # pragma: no cover - very old Python
                 pass
-        root = _arg_value(argv, "--root", ".")
+        root = _arg_value(argv, ("--root", "--repo"), ".")
         repo = repo_config(root).get("repo")
         if repo and mark_board_stale(repo):
             print("mark-stale: marked {} stale".format(repo))
@@ -3401,7 +3409,7 @@ def main(argv=None):
             )
         return 0
     if "--refresh" in argv:
-        root = _arg_value(argv, "--root", ".")
+        root = _arg_value(argv, ("--root", "--repo"), ".")
         # #1362 -- forwarded by `_fork_refresh` so the detached process can
         # record whose render triggered it; absent for a manual `--refresh`.
         session_id = _arg_value(argv, "--session-id", None)

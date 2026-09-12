@@ -406,8 +406,16 @@ def main(argv=None):
     )
     parser.add_argument(
         "--repo",
+        "--root",
+        dest="repo",
         default=".",
-        help="repository root (reads .oss.json for `repo`) or an owner/name slug",
+        help=(
+            "repository root (reads .oss.json for `repo`) or an owner/name "
+            "slug -- `--root` is accepted as an alias (#1435): "
+            "next_action.py and statusline.py spell the identical concept "
+            "`--root`, and the mismatch cost a refused call the first time "
+            "a caller used the wrong one for this script."
+        ),
     )
     parser.add_argument("--tag", required=True, help="the tag to freeze, e.g. v0.31.0")
     parser.add_argument(

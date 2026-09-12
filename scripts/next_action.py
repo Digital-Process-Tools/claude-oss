@@ -826,8 +826,31 @@ def receipt(payload):
 
 def _build_parser():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--root", default=".", help="repository root (default: cwd)")
+    parser.add_argument(
+        "--root",
+        "--repo",
+        dest="root",
+        default=".",
+        help=(
+            "repository root (default: cwd) -- `--repo` is accepted as an alias "
+            "(#1435): other scripts here (triage_trigger.py, "
+            "cohort_freeze_record.py) spell the identical concept `--repo`, and "
+            "the mismatch cost a refused call the first time a caller used the "
+            "wrong one for this script."
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="emit the payload as JSON")
+    parser.add_argument(
+        "--state-file",
+        default=None,
+        help=(
+            "override the state file `--record-skip`/`--take` write to and "
+            "read from, instead of the path `.oss.json`'s own `state_file` "
+            "names under `--root` (#1435). Lets the write path be pointed at "
+            "a scratch file in isolation rather than only exercised against "
+            "the live one."
+        ),
+    )
     parser.add_argument(
         "--record-skip",
         metavar="TAKEN_SOURCE",
@@ -873,7 +896,7 @@ def _resolve_ranked(root):
     return payload
 
 
-def _take_cli(root, source):
+def _take_cli(root, source, state_file_override=None):
     """The ordinary case: commit to `source`, which must be `rank()`'s own
     `candidates[0]` -- never raises past this point, the same `FAIL:`/exit
     convention `_record_skip_cli` already uses.
@@ -886,7 +909,13 @@ def _take_cli(root, source):
     "no state_file configured" text a genuinely unconfigured repo produces,
     with nothing to tell the two apart. Reading the config `rank()` already
     resolved removes the second read entirely rather than merely re-wording
-    what it says when it disagrees."""
+    what it says when it disagrees.
+
+    `state_file_override` (#1435) points the receipt write at a different
+    path than `.oss.json`'s own `state_file` -- a shallow copy of `config`
+    with that one key replaced, never a mutation of `payload["config"]`
+    itself, so a caller inspecting `payload` afterwards still sees the real
+    configured value."""
     payload = _resolve_ranked(root)
     if payload is None:
         return 1
@@ -899,6 +928,9 @@ def _take_cli(root, source):
         )
         return 1
     config = payload["config"]
+    if state_file_override is not None:
+        config = dict(config)
+        config["state_file"] = state_file_override
     # #1476 self-review (oss:auditor spawn): `rank()` resolves `git_bin`
     # once via `gh_which.safe_which` and threads it through so
     # `curate_count` can tell which branch is checked out; this second,
@@ -912,7 +944,7 @@ def _take_cli(root, source):
     return 0
 
 
-def _record_skip_cli(root, taken_source, reason):
+def _record_skip_cli(root, taken_source, reason, state_file_override=None):
     """The CLI half of `record_skip` -- re-derives `rank()`'s own candidates
     fresh (a markdown procedure calling this has no other way to hand them
     back in), then delegates. Never raises past this point: every failure is
@@ -931,11 +963,20 @@ def _record_skip_cli(root, taken_source, reason):
     skip itself is recorded successfully -- the deviation is the decision to
     act on `taken_source` instead of the top candidate, so the moment that
     decision is on record is also the moment `taken_source` counts as
-    committed to, the same as `_take_cli`'s own ordinary case."""
+    committed to, the same as `_take_cli`'s own ordinary case.
+
+    `state_file_override` (#1435), like `_take_cli`'s own parameter of the
+    same name, diverts both the `record_skip` write below and the later
+    `_arm_route_source` call to a different path than `.oss.json`'s own
+    `state_file` -- via a shallow copy of `config`, never a mutation of
+    `payload["config"]` itself."""
     payload = _resolve_ranked(root)
     if payload is None:
         return 1
     config = payload["config"]
+    if state_file_override is not None:
+        config = dict(config)
+        config["state_file"] = state_file_override
     state_file = config.get("state_file")
     if not isinstance(state_file, str) or not state_file.strip():
         print("FAIL: no state_file configured, so the skip could not be recorded")
@@ -963,9 +1004,14 @@ def main(argv=None):
         if not args.reason:
             print("FAIL: --record-skip needs --reason")
             return 1
-        return _record_skip_cli(args.root, args.record_skip, args.reason)
+        return _record_skip_cli(
+            args.root,
+            args.record_skip,
+            args.reason,
+            state_file_override=args.state_file,
+        )
     if args.take is not None:
-        return _take_cli(args.root, args.take)
+        return _take_cli(args.root, args.take, state_file_override=args.state_file)
     payload = rank(args.root)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))

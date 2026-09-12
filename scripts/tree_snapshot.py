@@ -275,6 +275,27 @@ def _normalize_snapshot_path(path):
     return normalized
 
 
+def _platform_path_key(text):
+    """`text`, case-folded when this module believes it is running on
+    Windows, unchanged everywhere else (#1480).
+
+    `sys.platform` is read fresh on every call rather than cached at
+    import time, purely so a test can monkeypatch it and exercise the
+    Windows branch on any host -- confirming the mechanism does not
+    require an actual Windows machine, only the reasoning that a real one
+    can hand this module two differently-cased spellings of the same
+    root (a drive letter's case, or a short-name spelling) at all, which
+    stays reasoned rather than observed here.
+
+    Case-folding is scoped to that one platform on purpose: a POSIX
+    filesystem is not guaranteed case-insensitive (ext4 and most Linux
+    setups are case-sensitive), so folding case unconditionally would
+    make two genuinely different paths compare equal there."""
+    if sys.platform.startswith("win"):
+        return text.casefold()
+    return text
+
+
 def _root_relative_path(path_str, root):
     """String-only: strip `root` as a literal prefix off `path_str`, when
     `path_str` is absolute and actually sits under `root`, returning the
@@ -287,15 +308,41 @@ def _root_relative_path(path_str, root):
     Returns ``None`` when `root` is falsy, or `path_str` is not absolute,
     or does not sit under `root` -- "cannot resolve", never "does not
     match": the caller falls back to comparing the raw, unresolved form.
-    """
+
+    The prefix compare itself goes through `_platform_path_key` (#1480):
+    on Windows, `--before`'s recorded root and the live root can differ
+    only in case (a drive letter, a short-name spelling) and still name
+    the same directory, so a bare, case-sensitive `str.startswith` there
+    can refuse to resolve a path that genuinely sits under `root` and
+    fall back to comparing the raw, unresolved form instead -- which can
+    then mis-render as a false `mutated` verdict on an unmutated
+    snapshot.
+
+    The compare is done **component by component** (split on `/`), never
+    as one folded substring compared by length (self-review finding,
+    oss:auditor spawn): `str.casefold()` is not length-preserving for
+    every character (`"ß".casefold()` is `"ss"`, one codepoint
+    folding to two), so a root spelled with such a character folding
+    equal to a differently-spelled live path would still leave a
+    length-based slice index computed from the *un-folded* prefix wrong
+    by the fold's own length delta. Comparing whole components and
+    reconstructing the remainder from the original, un-folded component
+    list sidesteps this entirely: no slice index is ever derived from a
+    folded string's own length."""
     if not root:
         return None
     norm_path = _normalize_snapshot_path(path_str)
     norm_root = _normalize_snapshot_path(str(root)).rstrip("/")
-    prefix = norm_root + "/"
-    if not norm_path.startswith(prefix):
+    path_parts = norm_path.split("/")
+    root_parts = norm_root.split("/") if norm_root else []
+    if len(path_parts) <= len(root_parts):
         return None
-    return norm_path[len(prefix) :]
+    prefix_parts = path_parts[: len(root_parts)]
+    if [_platform_path_key(p) for p in prefix_parts] != [
+        _platform_path_key(p) for p in root_parts
+    ]:
+        return None
+    return "/".join(path_parts[len(root_parts) :])
 
 
 def _resolve_own_snapshot_path(own_snapshot_path, root):
