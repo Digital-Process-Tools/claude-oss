@@ -307,7 +307,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # to "a real difference is evidence" and named trivial spelling
         # differences (case, trailing separator, slash vs backslash) to
         # ignore first. Ceiling unchanged.
-        17249,
+        # #1499: read the report's optional `cost` block -- over_threshold
+        # is a trap.d finding, a non-measured state is carried into the
+        # handback, an absent key is a compliance question. 17249 became
+        # 17922. Ceiling unchanged, 78 B of headroom left.
+        17922,
         18000,
         "a lane reported back: reading the report, pushing, opening the pull request",
     ),

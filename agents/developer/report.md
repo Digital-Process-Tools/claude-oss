@@ -142,6 +142,20 @@ or not.
    as a claim that nothing moved — an older schema copy that predates this field cannot spell it at
    all.
 
+   **Complete the report with what this lane cost (#1499).** After the report file is written and
+   before you validate it:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_cost.py" --into <report path>
+   ```
+
+   Type the literal path, not `$REPORT`: a shell variable never reaches the transcript, and the
+   fallback to the file's basename is a wider match than the path. It finds your own transcript by
+   that string — one only your calls name — measures
+   `max_context`, `turns` and `bash_calls`, and writes the block into `cost` itself, whatever its
+   `state`: `ambiguous` and `no-match` are answers too. Never type the numbers. Exit `2` means the
+   report could not be written; say so as a `tooling:` item.
+
 3. Reply with the absolute path and **at most two lines** — the same sentence you put in `summary`,
    plus anything that genuinely cannot wait a turn: a permission block, a refusal you expect an
    argument about.

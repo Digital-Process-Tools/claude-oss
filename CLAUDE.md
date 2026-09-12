@@ -470,7 +470,7 @@ only the lane can report.
 | --- | --- | --- |
 | `agents/developer/review.md` | 12,272 B | 13,500 B |
 | `agents/developer/review-return.md` | 13,418 B | 13,700 B |
-| `agents/developer/report.md` | 18,942 B | 19,100 B |
+| `agents/developer/report.md` | 19,676 B | 21,500 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
 
@@ -491,6 +491,13 @@ a claimed-clean `review.findings`, which is literally no evidence at all. `schem
 schema.json` gained a `minLength` (20) on `mechanism` (contract 12, breaking, the same shape as
 #1298's own bump at 11), and the new paragraph documents it beside the existing "shape, not truth"
 disclaimer. Nothing already in the file argued that point, so nothing was cut to make room.
+
+**#1499 raised `agents/developer/report.md`'s ceiling from 19,100 B to 21,500 B**: 18,942 B became
+19,676 B, past the old ceiling by 576 B. The new paragraph tells a lane to complete its own report
+with `scripts/agent_cost.py --into <report path>` -- a `cost` block measured from the lane's own
+transcript (max context, turns, Bash calls) rather than typed, the first of #1499's report-first
+steps. Nothing already in the file argued that point, so nothing was cut to make room; the ceiling
+carries the same ~10% headroom the other re-baselines in this table use.
 
 **#1275 raised `agents/developer/review.md`'s ceiling from 10,500 B to 11,600 B**: 10,132 B became
 10,576 B, past the old ceiling by 76 B. Both self-review spawns (the `Explore` reviewer and
@@ -554,7 +561,7 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,893 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 55,309 B | 57,400 B |
-| `skills/manager/phases/handback.md` | 17,249 B | 18,000 B |
+| `skills/manager/phases/handback.md` | 17,922 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 34,905 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
@@ -575,6 +582,11 @@ leaving it as a bare, uncaused schema mismatch. A self-review auditor spawn foun
 first worded ("a difference means...") could misread a trivially-respelled but identical path (case,
 a trailing separator, slash vs. backslash) as a version change; 17,116 B became 17,249 B naming those
 to ignore first and softening the verdict to "a real difference is evidence".
+
+**#1499 re-baselined `skills/manager/phases/handback.md` without raising its ceiling**: 17,249 B
+became 17,922 B, 78 B under the 18,000 B budget. One paragraph tells a sub-manager how to read the
+report's new `cost` block: `over_threshold` is a `trap.d/` finding, a non-measured state is carried
+into the handback, an absent key is a compliance question -- never a number to estimate.
 
 **#1275 raised `skills/manager/phases/findings.md`'s ceiling from 10,300 B to 12,400 B**: 9,326 B
 became 11,222 B, past the old ceiling by 922 B. The new "Routing a finding" section states where a
