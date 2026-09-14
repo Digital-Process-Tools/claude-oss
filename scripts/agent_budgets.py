@@ -79,7 +79,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # "# Recon brief" section, reading only the sites it names, rather
     # than re-doing the orientation a recon spawn already paid for.
     # Ceiling unchanged; comfortably under it.
-    "agents/developer.md": (42116, 44100),
+    # Re-baselined for #1535: 42116 B became 43514 B -- the spawn payload is
+    # now the issue numbers and the worktree and nothing else, so the
+    # orientation a brief used to hand over (the issue text, the live-worktree
+    # list, the guard set, the recon spawn) is stated here as the lane's own
+    # work. #1499's "start from the brief's Recon brief section" paragraph is
+    # rewritten in the same diff to name the lane's own spawn, since no brief
+    # carries that section any more. Ceiling unchanged.
+    "agents/developer.md": (43639, 44100),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
@@ -215,7 +222,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # call. Nothing already in the file argued that point, so nothing was
     # cut to make room; the ceiling moves to 21000 B, ~10% headroom over the
     # new size.
-    "agents/sub-manager.md": (19460, 21000),
+    # Re-baselined for #1535: 19460 B became 20047 B -- two paragraphs, one
+    # saying the rendered `prompt` is the whole spawn payload and no brief is
+    # composed, one saying recon is the lane's own spawn rather than this
+    # agent's. Ceiling unchanged; 953 B headroom.
+    "agents/sub-manager.md": (20047, 21000),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -271,7 +282,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # same shape briefed from a read-only recon spawn's summary (the recon
     # itself cost 0.7M). This agent is that spawn: locate, never design,
     # die with the context. Budgeted from the day it was added.
-    "agents/recon.md": (3936, 4400),
+    # Re-baselined for #1535: 3936 B became 4121 B -- the caller moved. A lane
+    # spawns its own recon and keeps the summary where it is used; a dispatcher
+    # may still spawn one for part 5 (the lane file set) alone, which it needs
+    # before the lane exists, until #1532 retires the registry. Ceiling
+    # unchanged; 279 B headroom.
+    "agents/recon.md": (4121, 4400),
 }
 
 

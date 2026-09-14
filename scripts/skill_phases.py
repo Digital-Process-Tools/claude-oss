@@ -296,7 +296,16 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1530: 56678 B became 56696 B -- the group's
         # own bound restated as the shared lane label rather than file
         # adjacency. Budget unchanged; 704 B headroom.
-        56696,
+        # Re-baselined DOWN for #1535, on top of #1530's 56696 B -- eight of the
+        # nine brief elements retired (each was a restatement of
+        # agents/developer.md, which every lane holds on every turn), replaced
+        # by the two-fact spawn payload and the composed-prompt schema. The
+        # supertool blockquote stays, for a spawn whose own definition does not
+        # carry the write route. The recon section is rewritten in the same
+        # diff: the lane spawns its own, and only the `## Lane file set` read
+        # survives on this side, until #1532 retires the registry that needs
+        # it. Net 56696 B -> 56754 B. Budget unchanged; 646 B headroom.
+        56754,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
