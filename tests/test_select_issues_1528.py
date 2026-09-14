@@ -1,21 +1,15 @@
-"""#1528 -- lane labels already declare the file partition: a same-lane
-overlap must be reported as information a caller can act on, never used to
-silently exclude a candidate from selection.
+"""#1528 -- lane labels already declare the file partition: a candidate whose
+own declared files overlap the fleet's already-held file set must not be
+dropped outright any more.
 
-Before this fix, `select()` dropped a candidate outright the moment its
-declared files touched anything in the fleet's held set, with disposition
-`lane-collision` -- the whole analysis (which files, held by whom) was
-computed and then thrown away along with the candidate itself. That is the
-issue's own worked example, reproduced here without a live board: two
-issues resolving to the same lane label, one of them already running, and
-the other one silently never offered as a candidate at all.
-
-The fix keeps the candidate in `candidates`, still `eligible`, and attaches
-an `overlap` field naming the held files and (when the payload carries a
-`held` map) who already holds them. `overlap` is `None` for the ordinary,
-disjoint case -- the positive control every "must report overlap" case
-needs beside it, per this repo's own rule that a negative assertion needs a
-positive one in the same fixture.
+Narrowed scope (maintainer directive, mid-lane): the per-candidate `overlap`
+field this fix originally built (naming which files, and who holds them) is
+removed again in this same lane's own follow-up commit. #1530 is deleting
+the whole per-issue file-set declaration apparatus this field would have
+fed (`lane_patterns`, its label fallback, the held-set derivation) in a
+separate lane, so this one does not invest in a field only to have it
+deleted again. The one thing that survives is the actual deliverable: the
+candidate is no longer excluded.
 """
 
 import sys
@@ -49,18 +43,17 @@ def _resolve(repo, patterns):
     return {"patterns": [], "files": list(patterns)}
 
 
-def test_overlap_is_reported_not_dropped():
-    """The issue's own headline claim: a candidate whose files are already
-    held stays a candidate, with the overlap named -- it is no longer
-    excluded outright."""
+def test_an_overlapping_candidate_is_not_dropped():
+    """The issue's own headline claim, and the actual deliverable of this
+    lane: a candidate whose declared files overlap the fleet's held set
+    stays a candidate rather than being excluded outright. The issue's own
+    worked example: #1526's files (`CLAUDE.md`, ...) are already held by
+    lane #1499 -- both resolve to `lane-prose` -- and #1526 must still be
+    offered as a candidate."""
     payload = {
         "declared": DECLARED,
         "issues": [_issue(1526, ["priority-high"], lane_patterns=["CLAUDE.md"])],
         "held_files": ["CLAUDE.md", "agents/developer.md"],
-        "held": {
-            "CLAUDE.md": ["lane #1499"],
-            "agents/developer.md": ["lane #1499"],
-        },
     }
     result = select_issues.select(
         payload, checker=_no_op_checker, resolve_lane=_resolve
@@ -69,36 +62,31 @@ def test_overlap_is_reported_not_dropped():
     assert result["dropped"] == []
     numbers = [c["number"] for c in result["candidates"]]
     assert 1526 in numbers
-    candidate = result["candidates"][0]
-    assert candidate["disposition"] == "eligible"
-    assert candidate["overlap"] == {
-        "files": ["CLAUDE.md"],
-        "holders": ["lane #1499"],
-    }
+    assert result["candidates"][0]["disposition"] == "eligible"
 
 
-def test_no_overlap_reports_none_the_positive_control():
-    """Pair to the test above: a candidate that names no held file must
-    report `overlap: None`, never an empty-but-present structure that could
-    be mistaken for "checked, nothing found" by a caller that only tests
-    truthiness."""
+def test_a_disjoint_candidate_is_unaffected_the_positive_control():
+    """Pair to the test above: a candidate with no overlap at all must
+    still select cleanly -- proving the fix did not accidentally start
+    admitting every candidate regardless of the other, unrelated filters
+    (assigned, stale, unrankable) this module still enforces."""
     payload = {
         "declared": DECLARED,
         "issues": [_issue(1, ["priority-high"], lane_patterns=["scripts/free.py"])],
         "held_files": ["scripts/held.py"],
-        "held": {"scripts/held.py": ["lane #99"]},
     }
     result = select_issues.select(
         payload, checker=_no_op_checker, resolve_lane=_resolve
     )
     assert result["state"] == "candidates", result
-    assert result["candidates"][0]["overlap"] is None
+    assert result["dropped"] == []
+    assert result["candidates"][0]["number"] == 1
 
 
 def test_lane_collision_disposition_no_longer_produced():
     """`lane-collision` used to be a real disposition in `dropped` -- the
     mechanism this issue removes. Nothing in `select()` produces it any
-    more; an overlapping candidate is `eligible` with `overlap` set."""
+    more, for any input."""
     payload = {
         "declared": DECLARED,
         "issues": [_issue(1, ["priority-high"], lane_patterns=["scripts/held.py"])],
@@ -109,22 +97,20 @@ def test_lane_collision_disposition_no_longer_produced():
     )
     dispositions = [d["disposition"] for d in result["dropped"]]
     assert "lane-collision" not in dispositions
-    assert result["candidates"][0]["overlap"]["files"] == ["scripts/held.py"]
+    assert result["state"] == "candidates"
 
 
-def test_overlap_holders_absent_when_no_held_map_given():
-    """A caller offering only `held_files` (every test/caller written before
-    this field existed) still gets the overlapping files named -- just with
-    an empty `holders` list rather than a crash or a guess."""
+def test_no_overlap_field_is_attached_to_a_candidate():
+    """This lane's own narrowed scope, pinned: `select()` must not surface
+    an `overlap` key on a candidate at all -- that surface was removed in
+    this same lane's follow-up commit rather than shipped, per the
+    maintainer's directive that #1530 owns building any replacement."""
     payload = {
         "declared": DECLARED,
-        "issues": [_issue(1, ["priority-high"], lane_patterns=["scripts/held.py"])],
-        "held_files": ["scripts/held.py"],
+        "issues": [_issue(1526, ["priority-high"], lane_patterns=["CLAUDE.md"])],
+        "held_files": ["CLAUDE.md"],
     }
     result = select_issues.select(
         payload, checker=_no_op_checker, resolve_lane=_resolve
     )
-    assert result["candidates"][0]["overlap"] == {
-        "files": ["scripts/held.py"],
-        "holders": [],
-    }
+    assert "overlap" not in result["candidates"][0]

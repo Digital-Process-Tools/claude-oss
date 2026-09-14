@@ -80,9 +80,9 @@ def test_lanes_read_ok_absent_is_not_a_failure_the_positive_control():
 
 def test_lanes_read_ok_true_with_a_real_overlap_still_finds_it():
     """`lanes_read_ok: True` alongside a genuine, populated `held_files` must
-    still run the overlap check normally -- the new check does not
+    still leave a same-lane candidate eligible -- the new check does not
     accidentally short-circuit the existing path. #1528: the candidate
-    stays a candidate; the overlap is reported, not dropped."""
+    stays a candidate, no longer dropped."""
 
     def resolve(repo, patterns):
         return {"patterns": [], "files": list(patterns)}
@@ -96,7 +96,7 @@ def test_lanes_read_ok_true_with_a_real_overlap_still_finds_it():
     result = select_issues.select(payload, checker=_no_op_checker, resolve_lane=resolve)
     assert result["state"] == "candidates"
     assert result["dropped"] == []
-    assert result["candidates"][0]["overlap"]["files"] == ["scripts/held.py"]
+    assert result["candidates"][0]["number"] == 1
 
 
 # ---------------------------------------------------------------------------

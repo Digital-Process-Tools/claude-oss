@@ -212,10 +212,13 @@ def test_an_assigned_issue_is_dropped_and_named():
     assert result["dropped"][0]["disposition"] == "assigned"
 
 
-def test_a_lane_overlap_is_reported_not_dropped_1528():
+def test_a_lane_overlap_is_not_dropped_1528():
     """#1528: a candidate whose files overlap the held set stays a
-    candidate -- the overlap is information the caller acts on, never a
-    silent exclusion."""
+    candidate -- no longer a silent exclusion. Narrowed scope (mid-lane
+    maintainer directive): no `overlap` field is built here any more --
+    see tests/test_select_issues_1528.py for that surface's own removal,
+    and #1530 for the follow-up removing the file-set declaration this
+    would have fed."""
 
     def resolve(repo, patterns):
         return {"patterns": [], "files": list(patterns)}
@@ -229,7 +232,6 @@ def test_a_lane_overlap_is_reported_not_dropped_1528():
     assert result["state"] == "candidates"
     assert result["dropped"] == []
     assert result["candidates"][0]["disposition"] == "eligible"
-    assert result["candidates"][0]["overlap"]["files"] == ["scripts/held.py"]
 
 
 def test_a_refused_lane_pattern_forces_could_not_select_998():
