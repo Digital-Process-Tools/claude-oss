@@ -63,6 +63,10 @@ import select_issues_companions  # noqa: E402
 import select_issues_rank  # noqa: E402
 
 DECLARED = {
+    # #1530: grouping is by lane LABEL now, so this fixture's board has to
+    # declare the lane axis it labels its issues on -- without it every
+    # candidate lands in `ungrouped` and no group exists to assert about.
+    "lanes": ["lane-dispatch", "lane-doctor"],
     "filed_by_loop": "filed-by-loop",
     "priority": ["priority-high", "priority-medium", "priority-low"],
 }
@@ -89,15 +93,16 @@ def _no_op_checker(numbers, mode, run=None, repo=None):
 
 def _board_of_31_open_issues(lead_files):
     """31 open issues -- the exact count #1044's own reproduction names.
-    #2 and #3 each declare, in backticks in their own body, a file that
-    lands inside the dispatched lane's claimed set (`lead_files`); #4-#30
-    each declare a file of their own that overlaps nothing -- board noise a
-    truthful sweep must stay clear of, the "must not fire" half of this
-    fixture's own pairing."""
+    #2 and #3 carry the SAME lane label as the lead (#1530: a shared lane
+    label is what makes two candidates one lane, replacing the declared-file
+    overlap sweep this fixture used to drive); #4-#30 carry no lane label at
+    all -- board noise a truthful grouping must stay clear of, the "must not
+    fire" half of this fixture's own pairing. Their bodies still declare a
+    file each, which now feeds staleness only."""
     issues = [
         _issue(
             1,
-            ["priority-high"],
+            ["priority-high", "lane-dispatch"],
             lane_patterns=lead_files,
             # Every OTHER issue's own body must declare a real path (#851) --
             # an issue with an empty/undeclared body reads as `undetermined`
@@ -108,10 +113,18 @@ def _board_of_31_open_issues(lead_files):
         )
     ]
     issues.append(
-        _issue(2, ["priority-medium"], body="touches `{0}`".format(lead_files[0]))
+        _issue(
+            2,
+            ["priority-medium", "lane-dispatch"],
+            body="touches `{0}`".format(lead_files[0]),
+        )
     )
     issues.append(
-        _issue(3, ["priority-medium"], body="touches `{0}`".format(lead_files[1]))
+        _issue(
+            3,
+            ["priority-medium", "lane-dispatch"],
+            body="touches `{0}`".format(lead_files[1]),
+        )
     )
     for n in range(4, 31):
         issues.append(
@@ -167,7 +180,10 @@ def test_1044_control_a_genuinely_isolated_lead_on_the_same_board_reports_none(
     issues.append(
         _issue(
             31,
-            ["priority-high"],
+            # The only issue on this board carrying `lane-doctor`: it enters
+            # grouping, matches nobody, and comes out as the real `none`
+            # state -- which is the state `no-adjacent` is derived from.
+            ["priority-high", "lane-doctor"],
             lane_patterns=["scripts/truly_isolated_1044.py"],
             body="touches `scripts/truly_isolated_1044.py`",
         )
