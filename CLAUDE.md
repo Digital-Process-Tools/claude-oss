@@ -353,26 +353,13 @@ only the lane can report.
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
 
-**#1114: `tests/test_baseline_matches_disk_1014.py` did not cover `developer_phases.DOCUMENTS`,
-and its two rows had already drifted from disk by the time the gap was found.** #1014 closed
-this exact gap for `agent_budgets.BUDGETS`, `skill_phases.DOCUMENTS` and `command_budgets.
-BUDGETS` -- a fourth module with the identical `check()` shape existed already and was not
-added to the comparison. Extended rather than re-derived; both rows above matched disk again
-by the time this landed, so no number in the table changed.
-
 ## The manager skill is a spine plus one file per phase
 
-`skills/manager/SKILL.md` is not an agent definition, and #491 said so — so nothing counted it, and
-it grew to 122,423 B, the largest file here and 1.6x `agents/developer.md`. It is loaded whole by
-`Skill(manager)`, which `commands/tick.md` and `commands/release.md` both open with: ~31k tokens
-standing in a session's context for the whole of every tick and every release, whether or not that
-session ever reached the phase a given paragraph governs.
-
-So the loop's prose is split. The **spine** carries what is decided every tick — authority, the
-config read, the op table, untrusted input, the hazards, loop mechanics, state —
-plus one directive block per phase. Each **phase file** under `skills/manager/phases/` carries that
-phase's argument: the incident behind a rule, the measurement, the approach tried and rejected. A
-`/oss:release` session no longer loads the dispatch, handback and review material at all.
+`Skill(manager)` loads `skills/manager/SKILL.md` whole, on every tick and every release. So the
+**spine** carries only what is decided every tick — authority, the config read, the op table,
+untrusted input, the hazards, loop mechanics, state — plus one directive block per phase. Each
+**phase file** under `skills/manager/phases/` carries that phase's own argument, read when the loop
+enters it: a `/oss:release` session never loads dispatch, handback or review at all.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
@@ -391,76 +378,55 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
 
-**#1162 adds a new phase file, `ci-green.md` (2,454 B), rather than growing an existing one.** The
-`pr_green.py` wait and its #1086 substring trap used to live only inline in `agents/sub-manager.md`;
-now shared by that file and `agents/releaser.md`, each holding a one-line pointer instead. Same
-reasoning as `tick-order.md`'s own addition: a new subject earns a new file rather than being
-folded into `merge.md`, whose own row moved from 13,985 B to 14,230 B for the one pointer sentence
-it gained in place of restating anything.
+**A new subject earns a new phase file; a new paragraph in an existing one has to be paid for by a
+cut, or by a ceiling raised in the same diff with a sentence saying what was weighed.**
 
-**#1136 cut the rationale out of the loop's own markdown: 581,678 B became 480,591 B across 23 files, -17.4%.** The rule applied, written down as `.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`: **a loop markdown file is an operator's manual for the tools its phase runs.** The rule, the call, every state and every payload field stay; the measurement that justified a constant belongs beside the constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each rule keeps a bare issue citation for provenance. `dispatch.md`'s selection band was the worked example -- 14,240 B to 6,601 B, prose still explaining how to drive by hand the four scripts `select_issues.py` had already composed (#970, #1068, #1129). Every ceiling came down with its measurement rather than being left where it was (#958, #960). Four content guards refused cuts that went too far and every one was right: the bundle cap rule, the #499 citation, the `27m36s` threshold, and an unhyphenated `could not tell` -- each restored as a rule, without its narrative.
+**A loop markdown file is an operator's manual for the tools its phase runs** (#1136, and
+`.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`). The rule, the call, every
+state and every payload field stay; the measurement that justified a constant belongs beside the
+constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each
+rule keeps a bare issue citation for provenance. A ceiling comes down with its measurement, never
+left where it was — headroom nobody chose to spend is spent anyway.
 
-**#958's own reasoning, because the rejected alternative is the interesting half.** Moving that
-prose to `.claude/jit-context/` was weighed and refused: jit's shown-set dedup is keyed on
+**Loop prose may not move to `.claude/jit-context/` (#958).** jit's shown-set dedup is keyed on
 `session_id`, and a spawned agent inherits its parent's, so scheduler, sub-manager and every lane
 are one session — a directive moved there reaches the sub-manager only when nothing earlier in the
-session tripped the same match. That is a rule that silently did not run, which is the defect class
-at the top of this file, so jit is for knowledge that fires on touching a file or a term and never
-for a directive a phase depends on. The split was chosen on the same test #725 and #694 used to
-*decline* one: those were each one subject wearing two names, and ranking a finding genuinely is not
-the same subject as choosing what to dispatch. The spine's budget came down with the measurement
-rather than staying at 64,600 B — a ceiling left 9,849 B above the file is a saving that can be
-spent again without anybody choosing to.
+session tripped the same match. That is a rule that silently did not run, the defect class at the top
+of this file: jit is for knowledge that fires on touching a file or a term, never for a directive a
+phase depends on. Split a file only when it holds two subjects — not one subject wearing two names.
 
-**The split's own defect is that an unread phase file is a rule that did not run, and that renders
-exactly like a rule with nothing to say.** Nothing in this repository can observe whether a reader
-opened one — so the spine asks each phase to state `read` / `not-read` with a reason /
-`could-not-read` beside its own result, and the enforceable half is narrower and named as such:
-`skill_phases.check()` reports `unreferenced` for a phase file the spine has stopped naming, because
-a file the spine never names is one the loop can never reach.
+**An unread phase file is a rule that did not run, and renders exactly like a rule with nothing to
+say.** Nothing here can observe whether a reader opened one, so the spine asks each phase to state
+`read` / `not-read` with a reason / `could-not-read` beside its own result. The enforceable half is
+narrower: `skill_phases.check()` reports `unreferenced` for a phase file the spine has stopped
+naming, because a file the spine never names is one the loop can never reach.
 
-**A content check over the loop reads the set, never the spine.** `scripts/manager_docs.py` is the
-one place that derives it, from disk rather than from a list, and every guard that used to open
-`skills/manager/SKILL.md` goes through it — `checklist_skew.py`'s coverage derivation included, which
-now matches `skills/manager/phases/*.md` alongside `agents/*.md` for exactly the reason #547 records.
-A guard left pinned to the spine would have gone quietly narrower than its own subject at the moment
-of the split, which is the shape this whole file is about.
+**A content check over the loop reads the set, never the spine.** `scripts/manager_docs.py` derives
+it from disk; every guard that used to open `skills/manager/SKILL.md` goes through it,
+`checklist_skew.py`'s coverage derivation included (#547). A guard pinned to the spine would have
+gone quietly narrower than its own subject at the moment of the split.
 
-No agent is granted `Read`, `Grep` or `Glob`. Reads go through supertool via `Bash`, which is
-what makes the batching instruction binding rather than advisory. The triager is additionally denied
-`Edit` and `Write`.
+**No agent is granted `Read`, `Grep` or `Glob`** — reads go through supertool via `Bash`. The
+triager is additionally denied `Edit` and `Write`.
 
-**That denial is real for the harness tools and empty for the route this repository actually
-uses.** `Bash` is total, and every write in this system goes through `Bash` — so a withheld `Edit`
-closes one door in a room with no walls. "Prose is a request, frontmatter is the boundary" was the
-reasoning written down beside that grant, and the second half of it does not hold for effects: the
-frontmatter bounds which *tools* exist, not what they reach. #251 is the instance — an audit spawn
-whose definition summarised it as *annotates, never blocks*, a claim about its output, ran an acting
-op against the live watch channel of the session that had dispatched it.
+**That denial is real for the harness tools and empty for the route this repository actually uses.**
+`Bash` is total and every write goes through it, so a withheld `Edit` closes one door in a room with
+no walls: frontmatter bounds which *tools* exist, not what they reach (#251 — an audit spawn
+summarised as *annotates, never blocks* ran an acting op against the dispatching session's live watch
+channel). So every `Bash`-granted agent carries a section saying the grant is total, **labelled as
+advice rather than as a boundary**, pointing at supertool's own `ops:roster` rather than carrying a
+list of its own; `tests/test_agent_grant_is_total.py` holds that shape and cannot hold the behaviour.
+A per-agent allow-list would be a second copy of a classification the dependency already publishes.
+The enforceable half lives upstream and is filed there.
 
-So every agent granted `Bash` carries a section saying the grant is total and **labelled as advice
-rather than as a boundary**, and pointing at supertool's own published op classification
-(`ops:roster`) rather than carrying a list of its own. `tests/test_agent_grant_is_total.py` holds
-that shape. It does not, and cannot, hold the behaviour: there is no read-only `Bash` to grant, and
-a per-agent allow-list of permitted op strings would be a second copy of a classification the
-dependency already publishes — which is the thing the top of this file forbids. The enforceable half
-lives upstream, in supertool, and is filed there rather than reimplemented here.
-
-- **A rule body written into somebody else's repo and the copy this repository's own sessions
-  read are not the same fact by construction, and nothing used to compare them.** The supertool
-  rule exists twice: `.claude/jit-context/tools/01-oss/supertool-required.md`, which this
-  repository reads, and `TOOLS_SUPERTOOL` in `scripts/oss_rules.py`, which is what a scaffolded
-  repository receives. #570 is the demonstration: the `requires:` paragraph went stale in both at once, and it was only
-  caught because one lane happened to hold both files. `tests/test_supertool_rule_sync_577.py`
-  compares the two bodies now, normalised for line endings and trailing whitespace only, so a
-  Windows checkout's CRLF is never read as drift, with a control pair proving it catches a
-  one-sided edit and passes an edit made identically to both. Derivation -- generating one copy
-  from the other at import or build time, which removes the class rather than guarding it -- was
-  weighed and declined for #577: it would change how the rule layer is assembled for a single
-  pair, where a comparison test costs one file and answers the same question. The two directions
-  are not symmetric and the guard treats them identically on purpose: a stale `.md` here is a rule
-  this repository's sessions read and would eventually notice; a stale `TOOLS_SUPERTOOL` is a rule
-  shipped into somebody else's repository, where nobody here will ever see it go wrong.
+- **The supertool rule exists twice and the two copies are not one fact.**
+  `.claude/jit-context/tools/01-oss/supertool-required.md` is what this repository reads;
+  `TOOLS_SUPERTOOL` in `scripts/oss_rules.py` is what a scaffolded repository receives, and they went
+  stale together once already (#570). `tests/test_supertool_rule_sync_577.py` compares the bodies,
+  normalised for line endings and trailing whitespace only. The directions are not symmetric and the
+  guard treats them identically on purpose: a stale copy here is a rule our own sessions would
+  eventually notice, a stale `TOOLS_SUPERTOOL` is a rule shipped into somebody else's repository
+  where nobody here will ever see it go wrong.
 
 ## Command files have a size budget too (#940)
 
