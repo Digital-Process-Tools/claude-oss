@@ -9,6 +9,13 @@ it is worth keeping. `/oss:curate` decides that later. You do not need to be sur
 The maintainer loop for an open-source repo, as a Claude Code plugin: triage the tracker, decide
 what is worth building, delegate it, review hard, merge on green, release.
 
+**It survives only if it does not consume more than the work requires.** Everything below is
+downstream of that. An unattended loop spends real quota on every turn of every agent it spawns,
+and one overnight run consumed roughly 70% of the subscription it was running on (#1499). A loop
+that is expensive is a loop that gets switched off, and that is the one failure mode nothing else
+in this document can recover from. The next section is the constraint; read it before anything else
+here.
+
 Default branch `main`. Tests: `pip install -r requirements-dev.txt` once, then
 `python3 -m pytest tests/ -q` (`pytest-cov` is required by `addopts` in `pyproject.toml`; the bare
 command fails before a test runs without it). CI is 13 legs: 3 OS × Python 3.9–3.12, plus shellcheck.
@@ -18,6 +25,62 @@ The CI matrix is what the code is demonstrated on; `requires-python` is what it 
 matrix's lowest entry, the README badge, the `Python X.Y compatible` docstring line under
 `scripts/` and the oldest `python3.N` in `doctor.sh`'s walk are derived from it, and
 `tests/test_python_floor_410.py` holds them together.
+
+## Token economy, which is the constraint the rest of this file is shaped around
+
+**Cost is tokens per issue resolved** -- manager, sub-manager, auditor and developer summed -- not
+tokens per tick. The denominator is the issue. `tick_cost` in `skills/manager/phases/accounting.md`
+measures the per-tick half because that is what is observable from inside a tick; it is the proxy,
+and this is the number.
+
+**Most of what a session spends is context it has already sent.** Every turn re-sends everything
+before it, so a turn's price tracks its position in the session rather than the work it does. Four
+consequences, each one a decision a session takes differently for having read it.
+
+**The floor is paid before turn one, by every agent, forever.** A `/oss:run` scheduler holds roughly
+45k tokens before its first turn of work: this file loaded whole, `skills/manager/SKILL.md` via
+`Skill(manager)`, the session-start hook output, the command file, plus the system prompt, tool
+schemas, agent and skill listings, `MEMORY.md`, and a 2-7 KB jit-context rule per matching tool
+call accumulating over the session. Nothing is leaking; that is simply the price of admission. It
+is also why a byte added to an always-loaded file is not one byte, it is one byte times every
+agent times every tick from now on.
+
+**The coordination layer is where the money actually goes, and the design intends the opposite.**
+Measured over one `/oss:run` window on 2026-09-14 (`loop_cost_report.py`, 1,077 records, 0
+malformed):
+
+| kind | agents | context sent | max ctx | share |
+| --- | --- | --- | --- | --- |
+| main-session | 4 | 63,037,196 | 320,667 | 35% |
+| scheduler-step | 2 | 41,768,762 | 306,361 | 23% |
+| releaser | 1 | 19,743,603 | 278,078 | 11% |
+| developer | 4 | 10,013,357 | 98,071 | 6% |
+| other (a misclassified sub-manager) | 3 | 44,050,893 | 289,239 | 25% |
+
+The four developer lanes -- the thing this whole repository exists to run -- are 6%. The
+coordination around them is 59%, and 51% of all context sent left at a call-time context of
+200-300k. One sub-manager reached 289,239 before dispatching a single lane. That window was
+unusually coordination-heavy (a release, a curate pass, a triage sweep), so treat the ratio as
+indicative rather than standing; what does not depend on the window is that a spawn whose whole
+purpose is to read one command file and die reached 306,361.
+
+**A read is the largest cost a lane controls, and a capped read is not a whole file.** `read:` caps
+at 20,000 B, so a bare read of a large file pages: one lane spent ~68k tokens returning 272,756 B
+over 18 reads, seven of them exactly at the cap, to walk two scripts it needed one function from.
+**Locate with `grep:PATTERN:PATH`, then `read:PATH:START:LEN` over the range it named.** Batch the
+reads you already know you need into one `batch:@-`; batching buys turns rather than bytes, and
+turns are where the re-send cost is. **Never re-read what is in context**: a file this lane already
+read, a brief it wrote, a file it just edited (`edit` returns the result), a `--help` whose call
+shape the brief states. A file outside the worktree costs the same, so prefix `cwd:PATH` rather
+than printing it through `python3 -c`, which has no cap and no range.
+
+**A lane carries three issues, not one.** One issue per lane is the under-filled state: the lane
+pays its own floor either way, so the second and third issue are close to free against a
+denominator that triples. The bound is file disjointness, not ambition.
+
+**The four byte-budget tables below exist for this reason and no other.** A definition re-read on
+every turn of every lane multiplies straight into the numerator, so growth in an always-loaded file
+has to be visible. Replace, do not append.
 
 ## What this is for, which is what a tick ranks against
 
@@ -32,11 +95,8 @@ Six consequences:
   own diff, what the lane does better for it. A tick that spends its context on loop bookkeeping and
   dispatches nothing has done no work.
 
-- **Cost is tokens per issue resolved** (manager, sub-manager and developer summed), not tokens per
-  tick. That is why a lane carries three issues rather than one, bounded by file disjointness, and
-  why `agents/*.md` and the manager phase files carry byte budgets: a definition re-read on every
-  turn of every lane multiplies straight into the numerator. `tick_cost` in
-  `skills/manager/phases/accounting.md` is the per-tick proxy.
+- **Cost is tokens per issue resolved**, per the section above, which is what ranks a tick before
+  anything else in this list does.
 
 - **Two minutes to installed, two minutes to useful.** Install is `/plugin install` plus a reload;
   any step that sends a maintainer to a document first has failed. Somebody opening a repository this
@@ -104,15 +164,6 @@ or fixes never reach anyone. That is why `apply()` returns `created` and `replac
 - **Do not run the full suite locally.** It is slow and answers a weaker question than CI does: this
   repository's expensive failures have repeatedly been on the OS or interpreter axis a local run
   cannot reach. Run the lane's own tests plus the guards a change touches, push, and let CI answer.
-
-- **A read is the largest cost a lane controls, and a capped read is not a whole file.** `read:` caps
-  at 20,000 B, so a bare read of a large file pages. **Locate with `grep:PATTERN:PATH`, then
-  `read:PATH:START:LEN` over the range it named.** Batch the reads you already know you need into one
-  `batch:@-`: every turn re-sends everything before it, so batching buys turns, which is where a
-  long lane's real cost is. **Never re-read what is in context**: a file this lane already read, a
-  brief it wrote, a file it just edited (`edit` returns the result) and a `--help` whose call shape
-  the brief states are all already paid for. A file outside the worktree costs the same: prefix
-  `cwd:PATH` rather than printing it through `python3 -c`, which has no cap and no range.
 
 - **A green run on your own platform is the weakest evidence available** about the platform it was
   not run on. Say which cross-platform claims are observed and which are reasoned. The interpreter
@@ -209,11 +260,8 @@ docs/autonomy.md            what "autonomous in somebody else's repo" would take
 
 ## Agent definitions have a size budget
 
-Every byte in `agents/*.md` is re-read on every turn of every lane that runs it, so growth there is
-never free. `scripts/agent_budgets.py` declares the budget; `tests/test_agent_definition_budget_491.py`
-fails when a file crosses it. **Replace, don't append**: pay for a new paragraph by cutting one, or
-raise the number in the same diff with a sentence saying what was weighed. The budget cannot judge
-whether a paragraph earns its size; it only stops growth from being invisible.
+`scripts/agent_budgets.py` declares the budget; `tests/test_agent_definition_budget_491.py` fails
+when a file crosses it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
@@ -231,8 +279,9 @@ whether a paragraph earns its size; it only stops growth from being invisible.
 `lane_setup.py --claim` call shape: a measured tick paged two phase files three times each hunting
 for it. Nothing already in the file argued that point, so nothing was cut to make room.
 
-A trim that removes a still-live trap costs a whole extra review round, which will not show up next
-to the token count it saved. The budget is a visible number, not a mandate to shrink.
+The budget cannot judge whether a paragraph earns its size; it only stops growth from being
+invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
+show up next to the token count it saved, so the number is a visible one, not a mandate to shrink.
 
 `agent_budgets.py` measures `len(path.read_bytes())`. `.gitattributes` (`* text=auto eol=lf`) pins
 every text file to LF on checkout, so the byte count means the same thing on every CI platform.
@@ -276,7 +325,7 @@ enters it.
 | `skills/manager/phases/inbound.md` | 6,799 B | 6,900 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces
-them, on the same replace-don't-append terms as the agent budgets.
+them.
 
 - **A new subject earns a new phase file; a new paragraph in an existing one has to be paid for by a
   cut, or by a ceiling raised in the same diff with a sentence saying what was weighed.**
@@ -316,8 +365,7 @@ them, on the same replace-don't-append terms as the agent budgets.
 ## Command files have a size budget too
 
 `commands/*.md` sits outside both budgets above. `scripts/command_budgets.py` names the budgeted
-files; `tests/test_command_budgets_940.py` holds them against the real on-disk size, same
-replace-don't-append terms as the other two tables.
+files; `tests/test_command_budgets_940.py` holds them against the real on-disk size.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
