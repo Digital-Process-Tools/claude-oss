@@ -24,5 +24,15 @@ success output gave no indication anything was wrong.
 - **`/tmp/*` scratch paths are not reliably private to one session or one call.** Use this
   session's own scratchpad directory instead, which the developer brief already directs writes
   toward.
+- **The session scratchpad directory itself is not immune (#1466).** A lane
+  staged a commit message there, verified it with a read, then called
+  `git-commit` referencing that path -- and the commit that landed carried a
+  different issue's message verbatim. Reasoned cause: a concurrent lane in
+  the same tick overwrote the path between the verify and the commit. Caught
+  only by a routine `git log -1` after committing, nothing mechanical caught
+  it. **Read the file again, right before the call that consumes it, when a
+  concurrent lane could have touched the same path** -- the scratchpad is
+  per-session, not per-lane, and this repo runs several lanes concurrently.
 
-Routed via /oss:curate from `trap.d/1345.tmp-toml-collision-blocked-heredoc.md`.
+Routed via /oss:curate from `trap.d/1345.tmp-toml-collision-blocked-heredoc.md`
+and `trap.d/1466.scratchpad-overwritten-mid-lane.md`.

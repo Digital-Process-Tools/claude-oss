@@ -41,3 +41,32 @@ drifted again; fix it there rather than adding a second correction here.
 Every check still owes its own third state -- `WARN ... could not be determined`, never folded into
 either answer. A permission-limited read that cannot see a setting must not render as a setting
 confirmed absent; `branch protection` already does this and is the model.
+
+**Three concrete instances of test 1 above, all from doctor's own WAIT arm
+(#1448, #1474):**
+
+- **A `could-not-check` demoted to WAIT needs an actual clock to settle it,
+  not just a readable install record.** `doctor_check_auto_update.py`
+  answered only "is `installed_plugins.json` readable right now" and used
+  that single fact to demote *every* `could-not-check` to WAIT. Three of
+  the four `could-not-check` causes (marketplace refresh failed, every
+  update call failed, an undeterminable opt-out) can have a perfectly
+  readable install record and no clock coming to settle them -- a standing,
+  actionable WARN prints as WAIT and never gets counted.
+- **A dead sentinel makes a real WARN unreachable, permanently, with no
+  trace.** `doctor_check_mcp_channel_connection.py`'s WAIT/WARN split reads
+  an env sentinel whose only writer was removed by a later change as "dead,
+  never read" -- true for that writer, false for this reader. The condition
+  is now always true, the WAIT arm always fires, the WARN arm (a real gap:
+  something should have bound the socket and did not) is unreachable, and
+  nothing anywhere records that this happened. **Before removing an env
+  relay as a dead writer, grep for every reader too** (`grep -rn NAME`,
+  not just `grep -rn` the export site) -- a stale claim about consumers is
+  the exact shape the defect class at the top of `CLAUDE.md` names.
+- **The VERDICT line's own tally does not count WAIT.** `doctor.py` appends
+  `", N notice(s)"` to VERDICT when NOTICE findings exist but says nothing
+  about WAIT, so a run whose only findings are WAIT lines still prints a
+  bare `VERDICT: ok` -- indistinguishable from a run with no findings at
+  all from the one-line summary alone. The individual WAIT lines still
+  print, so `--findings` or the full report still shows them; only the
+  one-line tail-read is blind to them.

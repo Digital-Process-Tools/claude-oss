@@ -42,3 +42,13 @@ the tool came from against the tree it was asked about.
 
 `skills/manager/phases/tick-order.md` already draws this distinction for `doctor.py`. It is the same
 distinction, and it applies to every script the loop runs against itself.
+
+- **A lane's own report validated `ok` at one schema version against its
+  branch's `report_schema.py`, and `UNVALIDATABLE` at an older one against
+  the resolved installed plugin cache (#1460).** This repo is the plugin's
+  own source, so the checkout can run ahead of the pinned installed cache
+  mid-development -- expected here, not a defect in the report or the
+  validator. Whoever reviews a report in this repo: validate against the
+  branch's own `scripts/report_schema.py` (run it from inside the lane's
+  worktree), never the resolved plugin-root copy, when the two disagree on
+  schema version.

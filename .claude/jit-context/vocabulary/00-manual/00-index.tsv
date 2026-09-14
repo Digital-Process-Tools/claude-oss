@@ -1,3 +1,8 @@
+shallow	could-not-tell-shallow-clone.md	generic
+could-not-tell	could-not-tell-shallow-clone.md	
+release delta	could-not-tell-shallow-clone.md	
+is-shallow-repository	could-not-tell-shallow-clone.md	
+unshallow	could-not-tell-shallow-clone.md	
 oss doctor	doctor-warning-lifecycle.md	
 doctor warning	doctor-warning-lifecycle.md	
 doctor verdict	doctor-warning-lifecycle.md	

@@ -298,3 +298,64 @@ closes both findings, since removing the offending instruction removes the hardc
 17 fragment files map onto these entries (`1459` contributes six -- two merged as a single rule
 fix, one merged into `self-hosted-plugin-resolution.md`, and three bundled or filed singly as
 issues); together with the 1 promoted and 6 merged fragments this accounts for all 17.
+
+## 2026-09-14 -- 31 fragments, 7 promoted, 14 merged, 9 declined and filed, 1 deferred
+
+**Promoted.** `paths/00-manual/counter-scripts-silent-gaps.md` (from
+`1499.agent-cost-unreadable-transcript-dropped-silently`,
+`1499.loop-cost-report-drops-unparseable-timestamp-silently`,
+`1499.lane-setup-brief-schema-recon-check-no-word-boundary`,
+`1508.doctor-event-filter-reports-one-poller-as-all`,
+`1429.arg-value-last-token-indistinguishable-from-absent`,
+`1433.next-action-inbound-suppression-count-only-signature` -- six independent instances of
+one shape, a scripts/*.py counter or check dropping or misreporting an input silently);
+`vocabulary/00-manual/could-not-tell-shallow-clone.md` (from
+`1493.shared-clone-went-shallow-mid-run`).
+
+**Merged.** `paths/00-manual/launcher-prompt-selection.md` corrected (`1474.jit-rule-restates-
+removed-env-relays` -- three of the four env relays it described are gone entirely, not merely
+dead plumbing pending a decision); `tools/00-manual/refused-bash-call-is-all-or-nothing.md`
+gained a third instance (`1466.scratchpad-overwritten-mid-lane` -- the session scratchpad itself
+is not immune to a concurrent lane's write); `paths/00-manual/test-fixture-pitfalls.md` gained
+an `XDG_CACHE_HOME` bullet folding three incidents into one lesson
+(`1428.stray-real-cache-pollution-broader-than-one-test`,
+`1499.test-leaks-statusline-cache-into-real-home`,
+`1508.quiet-main-leaks-real-channel-health-cache`); `tools/00-manual/ci-evidence-is-about-one-
+commit.md` gained three bullets (`1458.pr-green-status-condition-narrower-than-docstring-
+claims`, `1458.pr-green-supersede-keyed-on-name-not-workflow`,
+`1499.gh-branch-codeql-job-list-empty-on-first-read`); `tools/00-manual/sub-manager-hand-polls-
+ci.md` gained two bullets (`1499.pr-green-repo-flag-not-honoured`,
+`1349.overnight-quota-2B-cache-read-context-growth` -- a much larger measurement of the same
+subject plus a duplicate-sub-manager finding); `paths/00-manual/doctor-check-contract.md` gained
+three concrete WAIT-arm instances of its own test 1 (`1448.doctor-could-not-check-demoted-to-
+wait`, `1448.doctor-verdict-line-does-not-count-wait`, `1474.doctor-mcp-channel-wait-sentinel-
+dead`); `vocabulary/00-manual/self-hosted-plugin-resolution.md` gained a fourth instance
+(`1460.report-schema-cache-vs-branch-skew`). Three fragments carried a per-machine absolute
+path in violation of the naming convention (`1460`, `1493`, `1499.pr-green-repo-flag-not-
+honoured`); each was redacted to a placeholder in the promoted/merged text before the source
+fragment was deleted, never copied verbatim.
+
+**One incident, a real defect or open design question, not a rule -- filed as an issue
+instead.**
+
+- `1378.session-open-cost-unmemoised-liveness` -- filed as #1516.
+- `1426.refresh-command-escape-incomplete-for-backslash-adjacent-quotes` -- filed as #1517.
+- `1457.auto-mode-classifier-outage-stalls-lane` -- filed as #1518 (does not fit any jit
+  trigger: it needs to be read before a rate-limit refusal happens, not matched by a file, tool
+  or keyword after the fact).
+- `1462.scaffold-template-shas-unwatched-by-dependabot` -- filed as #1519.
+- `1469.pretooluse-agent-hook-field-confirmed` -- filed as #1520 (a research note toward a
+  future feature, not a recurring trap).
+- `1475.doctor-stale-comment-repo-problem`, `1475.oss-config-repo-re-still-accepts-dot-
+  segments` -- filed together as #1521 (one root file, two related findings).
+- `1476.curate-count-reads-stale-origin-default-branch` -- filed as #1522.
+- `1474.wait-text-claims-launcher-is-only-arming-route` -- a 31st fragment that appeared mid-
+  pass (a concurrent tick's own finding, on the same WAIT arm as `1474.doctor-mcp-channel-wait-
+  sentinel-dead` above) -- filed as #1523.
+
+**Deferred.** `1476.record-skip-dispatch-target` -- the fragment itself names three unresolved
+design shapes for `record_skip`'s `dispatch` gap and asks `/oss:curate` to weigh them; none is
+this pass's call to make alone. Left in `trap.d/`, unchanged.
+
+31 fragment files (30 present at pass start, plus one written mid-pass by a concurrent tick) map
+onto 7 promoted, 14 merged, 8 issues covering 9 fragments, and 1 deferred.
