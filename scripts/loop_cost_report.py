@@ -18,15 +18,30 @@ Each line is one JSON record. Only records with `type == "assistant"` and a
 is what the API was sent on that call and what the quota is charged for.
 `output_tokens` is kept separately.
 
-A transcript's kind is read off its first `type == "user"` record, in this
-order (`classify`): `spawn token` -> `sub-manager`, `run one release` ->
-`releaser`, `read and follow` -> `scheduler-step`, a file that is not under
-`subagents/` -> `main-session`, `issue`/`lane` in the first 300 characters ->
-`developer`, `audit`/`review` in the first 200 characters -> `audit-review`,
-else `other`. These are the phrases the loop's own spawn prompts carry today
-(`commands/tick.md`, `commands/run.md`, `skills/manager/phases/dispatch.md`);
-a spawn prompt that stops carrying its phrase lands in `other`, which is
-visible in the table rather than silently folded into a neighbour.
+A transcript's kind (`classify`) is read primarily off `attributionAgent` --
+the `subagent_type` Claude Code itself records on every record of a spawned
+agent's own transcript, present from spawn time and never guessed at. Known
+values map directly: `oss:sub-manager` -> `sub-manager`, `oss:releaser` ->
+`releaser`, `oss:scheduler-step` -> `scheduler-step`, `oss:developer` ->
+`developer`, `oss:auditor`/`oss:release-auditor` -> `audit-review`; any other
+declared agent (`Explore`, `general-purpose`, `oss:triager`, `oss:recon`,
+`oss:doctor`, `claude-code-guide`, a forked session, ...) -> `other`, visible
+in the table rather than silently folded into a neighbour. A file that is not
+under `subagents/` is always `main-session`, regardless of what it carries.
+
+`attributionAgent` is absent from transcripts recorded before this field
+existed, and from a `main-session` transcript always (#1526) -- for those,
+`classify` falls back to sniffing the first `type == "user"` record's prompt
+for a literal phrase, in this order: `spawn token` -> `sub-manager`, `run one
+release` -> `releaser`, `read and follow` -> `scheduler-step`, `issue`/`lane`
+in the first 300 characters -> `developer`, `audit`/`review` in the first 200
+characters -> `audit-review`, else `other`. This is the entire prior
+behaviour, kept only as the fallback: a real sub-manager whose prompt lacked
+`spawn token` fell through this chain to `other` -- worse, if the prompt
+named an issue or a lane early (as every dispatch brief does), it fell
+through to `developer` instead, inflating the very number used to argue the
+lanes are the product (#1526). The declared attribution cannot drift this
+way.
 
 ## Three states, never two
 
@@ -80,6 +95,19 @@ BANDS = (
 
 DEFAULT_DEFECT_AT = 400_000
 
+#: `attributionAgent` -> `KINDS`, for the spawned agent kinds this loop names
+#: a dedicated row for. Anything spawned but not listed here (`Explore`,
+#: `general-purpose`, `oss:triager`, `oss:recon`, `oss:doctor`, a forked
+#: session, ...) reads `other` rather than being guessed into a neighbour.
+ATTRIBUTION_MAP = {
+    "oss:sub-manager": "sub-manager",
+    "oss:releaser": "releaser",
+    "oss:scheduler-step": "scheduler-step",
+    "oss:developer": "developer",
+    "oss:auditor": "audit-review",
+    "oss:release-auditor": "audit-review",
+}
+
 
 def default_projects_dir():
     return Path.home() / ".claude" / "projects"
@@ -123,9 +151,14 @@ def _text_of(content):
     return ""
 
 
-def classify(first_prompt, subagent):
-    """The agent kind a transcript's first user prompt names -- see the module
-    docstring for the order, which is the order the phrases are checked in."""
+def classify(first_prompt, subagent, attribution_agent=None):
+    """The agent kind for one transcript -- see the module docstring for the
+    two-tier order: the declared `attributionAgent` first, a fallback prompt
+    sniff only when that is unavailable (#1526)."""
+    if not subagent:
+        return "main-session"
+    if attribution_agent:
+        return ATTRIBUTION_MAP.get(attribution_agent, "other")
     text = first_prompt or ""
     lowered = text.lower()
     if "spawn token" in lowered:
@@ -134,8 +167,6 @@ def classify(first_prompt, subagent):
         return "releaser"
     if "read and follow" in lowered:
         return "scheduler-step"
-    if not subagent:
-        return "main-session"
     head_300 = lowered[:300]
     if "issue" in head_300 or "lane" in head_300:
         return "developer"
@@ -176,6 +207,7 @@ def read_transcript(path, since):
         "output": 0,
         "bands": {name: 0 for name, _, _ in BANDS},
         "first_prompt": None,
+        "attribution_agent": None,
     }
     malformed = []
     try:
@@ -196,6 +228,10 @@ def read_transcript(path, since):
                 continue
             kind = record.get("type")
             message = record.get("message")
+            if summary["attribution_agent"] is None:
+                declared = record.get("attributionAgent")
+                if isinstance(declared, str) and declared.strip():
+                    summary["attribution_agent"] = declared
             if kind == "user" and summary["first_prompt"] is None:
                 text = (
                     _text_of(message.get("content"))
@@ -312,7 +348,9 @@ def measure(projects_dir, since, repo_dir=None, defect_at=DEFAULT_DEFECT_AT):
                     malformed.append({"transcript": rel, "line": number, "why": reason})
             if summary is None or summary["records"] == 0:
                 continue
-            kind = classify(summary["first_prompt"], subagent)
+            kind = classify(
+                summary["first_prompt"], subagent, summary["attribution_agent"]
+            )
             bucket = kinds.setdefault(kind, _empty_kind())
             bucket["agents"] += 1
             bucket["records"] += summary["records"]

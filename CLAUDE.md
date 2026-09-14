@@ -306,11 +306,19 @@ from being invisible.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 18,021 B | 18,800 B |
+| `agents/sub-manager.md` | 19,460 B | 21,000 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 3,936 B | 4,400 B |
+
+**#1526 raised `agents/sub-manager.md`'s ceiling from 18,800 B to 21,000 B**: 18,021 B became
+19,460 B, past the old ceiling by 660 B. A measured tick paged `tick-order.md` and `dispatch.md`
+three times each (66,441 B combined) hunting for the `lane_setup.py --claim` call shape before
+dispatching a single lane; the shape is now literal here, beside the `select_issues.py` call #1179
+already put in this file for the identical reason. Nothing already in the file argued that point,
+so nothing was cut to make room; the ceiling carries the same ~10% headroom the other re-baselines
+in this table use.
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes

@@ -4275,6 +4275,57 @@ def test_handback_releases_a_lane_that_returned_no_commit():
     )
 
 
+#: #1526: `agents/sub-manager.md` legitimately carries the literal
+#: `lane_setup.py --claim` call now -- it IS the manager (its own
+#: frontmatter runs the maintainer's tick), not a worker the manager spawns.
+#: A live tick paged `tick-order.md` and `dispatch.md` three times each
+#: hunting for this exact call shape before making one malformed one, and
+#: #1179 already put `select_issues.py` in this same file for the identical
+#: reason. #461's boundary is about `agents/developer.md` and the other
+#: worker agents it spawns -- never about the manager's own agent file.
+_MANAGER_ROLE_AGENTS = {REPO_ROOT / "agents" / "sub-manager.md"}
+
+
+def _agent_definition_claim_findings(path, text):
+    """One path's findings against #461/#964/#1069/#1526's boundary.
+
+    Shared between the main sweep below and its own regression test
+    (#1526's own self-review), so a regression in this logic is caught by
+    BOTH -- the regression test calls this exact function on a poisoned
+    text, rather than restating the predicate as a parallel copy that could
+    drift from what the sweep actually runs.
+    """
+    findings = []
+    # The bare --add-assignee/--remove-assignee substring check stays live
+    # for every agents/*.md file without exception, `_MANAGER_ROLE_AGENTS`
+    # included: those flags have no legitimate use in ANY agent definition
+    # (the manager's own claim flow never spells them out literally, it goes
+    # through lane_setup.py), so an exclusion here would have been a second,
+    # broader carve-out nothing argued for.
+    if "--add-assignee" in text or "--remove-assignee" in text:
+        findings.append(
+            "{} names a raw assignee flag -- lane_setup.py's --claim/--release "
+            "wrap these; nothing in agents/*.md should spell them out "
+            "directly (#461, #964, #1069, #1526)".format(path)
+        )
+    if path in _MANAGER_ROLE_AGENTS:
+        return findings
+    # #1069: a bare `lane_setup.py` mention is no longer forbidden -- the
+    # developer legitimately runs it, with neither flag, for its own
+    # setup facts (agents/developer.md). What must never appear is that
+    # script paired with --claim/--release on the same line.
+    claim_call_with_flag = any(
+        _CLAIM_CALL in line and any(flag in line for flag in _CLAIM_FLAGS)
+        for line in text.splitlines()
+    )
+    if claim_call_with_flag:
+        findings.append(
+            "{} names an assignee claim/release call -- those belong to the "
+            "manager, not to the developer it spawns (#461, #964, #1069)".format(path)
+        )
+    return findings
+
+
 def test_developer_definition_makes_no_forge_writes_for_the_claim():
     """#461 is explicit: nothing goes in agents/developer.md. It stops at a commit
     and makes no forge writes, and that boundary is worth more than the call it
@@ -4285,6 +4336,13 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
     this is paired with a positive control: the manager skill *is* expected to
     carry both flags (that is the whole point of #461), and if it does not, the
     substring test below is not measuring what it claims to.
+
+    `agents/sub-manager.md` is excluded from the claim/release pairing check
+    below (#1526) but not from the raw-assignee-flag check -- see
+    `_agent_definition_claim_findings`: it is the manager's own agent file,
+    not a worker the manager spawns, so it is held to the same
+    positive-control expectation as the manager skill itself, checked
+    separately just below.
     """
     manager_text = MANAGER_SKILL.read_text(encoding="utf-8")
     assert "--claim" in manager_text and "--release" in manager_text, (
@@ -4292,24 +4350,54 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
         "claim modes -- the negative check below over agents/*.md would then "
         "pass whether or not it is actually looking at anything (#461, #964)"
     )
+    sub_manager_text = (REPO_ROOT / "agents" / "sub-manager.md").read_text(
+        encoding="utf-8"
+    )
+    assert "--claim" in sub_manager_text, (
+        "positive control failed: agents/sub-manager.md no longer carries the "
+        "literal lane_setup.py --claim call it was given for #1526 -- the "
+        "exclusion below would then be excluding nothing"
+    )
     for path in AGENTS:
         text = path.read_text(encoding="utf-8")
-        # #1069: a bare `lane_setup.py` mention is no longer forbidden -- the
-        # developer legitimately runs it, with neither flag, for its own
-        # setup facts (agents/developer.md). What must never appear is that
-        # script paired with --claim/--release on the same line.
-        claim_call_with_flag = any(
-            _CLAIM_CALL in line and any(flag in line for flag in _CLAIM_FLAGS)
-            for line in text.splitlines()
-        )
-        assert (
-            "--add-assignee" not in text
-            and "--remove-assignee" not in text
-            and not claim_call_with_flag
-        ), (
-            "{} names an assignee claim/release call -- those belong to the "
-            "manager, not to the developer it spawns (#461, #964, #1069)".format(path)
-        )
+        findings = _agent_definition_claim_findings(path, text)
+        assert not findings, "; ".join(findings)
+
+
+def test_the_manager_role_exclusion_still_catches_a_raw_assignee_flag():
+    """#1526's own self-review found this: `_MANAGER_ROLE_AGENTS` had been
+    excluded from the ENTIRE loop body above, not only the claim/release
+    pairing check it was introduced for -- which meant a raw
+    `--add-assignee`/`--remove-assignee` string landing in
+    `agents/sub-manager.md` would have gone uncaught, silently, with no test
+    proving it either way.
+
+    A first draft of this test reimplemented the substring check as its own
+    local closure rather than calling `_agent_definition_claim_findings`,
+    which meant it could never detect a regression of the exact bug it was
+    written for -- restoring the old, wider exclusion would still pass this
+    test unchanged, because the two checks were never connected (found by
+    two independent reviewers in #1526's own second self-review round). This
+    calls the real, shared function instead, so a regression here fails
+    both this test and the sweep above identically.
+    """
+    sub_manager_path = REPO_ROOT / "agents" / "sub-manager.md"
+    sub_manager_text = sub_manager_path.read_text(encoding="utf-8")
+    # Must-not-fire: the real file, through the real function, is clean today.
+    assert _agent_definition_claim_findings(sub_manager_path, sub_manager_text) == []
+    # Must-fire, same function: proves the clean result above is a real
+    # absence rather than the manager-role exclusion having swallowed the
+    # whole check -- which is exactly the regression this test exists to
+    # catch, and exactly what the first draft above could not have caught.
+    poisoned = sub_manager_text + "\n--add-assignee test\n"
+    findings = _agent_definition_claim_findings(sub_manager_path, poisoned)
+    assert findings, (
+        "a raw --add-assignee flag injected into agents/sub-manager.md's own "
+        "text was not caught by _agent_definition_claim_findings -- the "
+        "manager-role exclusion has widened past the claim/release pairing "
+        "check it was scoped to (#1526)"
+    )
+    assert any("raw assignee flag" in f for f in findings), findings
 
 
 # The heading and the write rows exactly as this document carried them before

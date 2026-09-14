@@ -92,6 +92,26 @@ dispatch-selection step names, past that file's default read window. It takes no
 `< /dev/null` guards a stray stdin read rather than one this call needs today. Do not `ls`/`find`
 for the script -- it is this line.
 
+**The claim call is just as short, and its stdout is the `Agent(...)` call to paste -- never compose
+one by hand (#539, #989, #1143):**
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane <pattern> [--lane <pattern> ...] [--claim-also <N> ...]
+```
+
+Run it from the clone, before `git worktree add` -- that is where `.oss.local.json` is present and
+`worktree_root` resolves. `--claim` refuses without `--lane` (#788); pass the same `--lane` patterns
+the candidate was already probed with, and never pass `--claim` on an earlier disjointness probe
+(#705) -- that leaves a phantom record behind that can block a later `--derive-held` call for hours.
+**Repeat `--claim-also <N>` for every further issue bundled into this same lane** -- `dispatch.md`'s
+own *Run a fleet, not a queue* names bundling as the better pattern once a further issue's files fall
+inside a lane's already-claimed set, and the flag is what claims and registers each one alongside the
+primary in the same call rather than a second, separate one. Its stdout renders the resolved base,
+the branch and worktree, the condensed board, and this lane's `description`/`Agent(...)` call
+together -- paste that verbatim as the dispatch (`skills/manager/phases/dispatch.md`'s *Run a fleet,
+not a queue* has the full convention). With this and the selection call above, dispatching a lane
+needs no read of `tick-order.md` or `dispatch.md` at all.
+
 Then follow your own order of operations at `skills/manager/phases/tick-order.md` -- steps 1
 through 6, and "What ends a tick" (#1037). Nothing about *how* a tick runs changes because you are
 the one running it rather than a human-invoked session: the state file read, the board read, the
