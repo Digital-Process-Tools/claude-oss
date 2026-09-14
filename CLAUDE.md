@@ -173,10 +173,14 @@ separately rather than one list.
   over 18 reads, seven of them exactly at the cap, to walk two scripts it needed one function from
   (measured 2026-09-14, four lanes, peaks 272k-313k). **Locate with `grep:PATTERN:PATH`, then
   `read:PATH:START:LEN` over the range it named.** Batch the reads you already know you need into one
-  `batch:@-`. Never re-read what is in context: a brief this lane wrote, a file it just edited (`edit`
-  returns the result), a `--help` whose call shape the brief states. A file outside the worktree costs
-  the same -- prefix `cwd:PATH` rather than reaching for `python3 -c "print(open(...).read())"`, which
-  has no cap and no range.
+  `batch:@-` -- five lanes averaged 1.22 ops per call, 338 of 409 calls carrying exactly one, and
+  batching buys turns rather than bytes: every turn re-sends everything before it, which is where a
+  250k-context lane's real cost is. **Never re-read what is in context** -- the largest single item
+  measured, 1.26 MB over 47 paths across those five lanes, `scripts/select_issues.py` alone read 39
+  times for 444,962 B -- so a file this lane already read, a brief it wrote, a file it just edited
+  (`edit` returns the result) and a `--help` whose call shape the brief states are all already paid
+  for. A file outside the worktree costs the same -- prefix `cwd:PATH` rather than reaching for
+  `python3 -c "print(open(...).read())"`, which has no cap and no range.
 
 - **A green run on your own platform is the weakest evidence available** about the platform it was
   not run on. Say which cross-platform claims are observed and which are reasoned. The interpreter is
