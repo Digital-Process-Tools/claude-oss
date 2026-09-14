@@ -212,7 +212,11 @@ def test_an_assigned_issue_is_dropped_and_named():
     assert result["dropped"][0]["disposition"] == "assigned"
 
 
-def test_a_lane_collision_is_dropped_and_named():
+def test_a_lane_overlap_is_reported_not_dropped_1528():
+    """#1528: a candidate whose files overlap the held set stays a
+    candidate -- the overlap is information the caller acts on, never a
+    silent exclusion."""
+
     def resolve(repo, patterns):
         return {"patterns": [], "files": list(patterns)}
 
@@ -222,9 +226,10 @@ def test_a_lane_collision_is_dropped_and_named():
         "held_files": ["scripts/held.py"],
     }
     result = select_issues.select(payload, checker=_no_op_checker, resolve_lane=resolve)
-    assert result["state"] == "none-available"
-    assert result["dropped"][0]["disposition"] == "lane-collision"
-    assert "scripts/held.py" in result["dropped"][0]["why"]
+    assert result["state"] == "candidates"
+    assert result["dropped"] == []
+    assert result["candidates"][0]["disposition"] == "eligible"
+    assert result["candidates"][0]["overlap"]["files"] == ["scripts/held.py"]
 
 
 def test_a_refused_lane_pattern_forces_could_not_select_998():

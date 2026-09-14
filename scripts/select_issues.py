@@ -30,8 +30,11 @@ read, and name which one went dark instead.
 pattern matched -- the defect is already fixed) / `unrankable`
 (`select_issues_rank.rank` could not place it -- an undeclared label axis, or a
 non-loop issue whose `author_association` this payload never carried, most
-often) / `lane-collision` (its own declared files overlap a lane already
-claimed).
+often). #1528: a candidate whose own declared files overlap the fleet's
+held set is NOT dropped any more -- it stays `eligible`, and carries an
+`overlap` field naming the held files and, when the payload's `held` map
+says so, who already holds them. The dispatch decision stays with the
+caller.
 
 ## What this deliberately does NOT do
 
@@ -45,7 +48,7 @@ reading one the issue's own author already wrote down. An issue with none
 of `lane_patterns`, a body-declared path (#1135) or a mapped `lane-*`
 label (#1129) is simply never checked for staleness or collision, which is
 the correct answer for an issue nobody has looked at that closely yet, not
-a silent `stale: no` or `lane-collision: no`.
+a silent `stale: no` or `overlap: None`.
 
 **#1129 adds one narrow, declared exception to that rule, never a second
 way to guess.** An issue with no `lane_patterns` of its own falls back to
@@ -200,9 +203,9 @@ render the same way; giving the second one a shared pseudo-lane with
 `select()` call -- it is accounted for once, fleet-wide, in
 `select_fleet`'s own top-level `dropped` list, in the identical
 `{"number", "disposition", "why"}` shape `select()`'s own per-lane
-`dropped` already uses for `stale`/`assigned`/`lane-collision`: one more
-disposition value (`"no-lane-label"`), never a new structure. It is input
-to `/oss:triage`, not to a developer.
+`dropped` already uses for `stale`/`assigned`: one more disposition value
+(`"no-lane-label"`), never a new structure. It is input to `/oss:triage`,
+not to a developer.
 
 **`STATE_COULD_NOT_SELECT` from #970 now covers the fetch too.** A failed
 or mis-shaped read of either the board or the held set forces
@@ -305,6 +308,32 @@ def _translate_author_association(raw):
     if raw in _EXTERNAL_ASSOCIATIONS:
         return "external"
     return None
+
+
+def _overlap_info(files, held_map):
+    """#1528: the overlap between one candidate's own declared files and
+    the fleet's held set, rendered as information rather than as the
+    exclusion it used to be. `files` is `lane_overlap`'s own return value
+    for this candidate (`[]`/`None` both read as "nothing held"), and
+    `held_map` is the optional `file -> [holder, ...]` payload field
+    (`None` -> `{}`, matching every caller that predates it).
+
+    Returns `None` when `files` is falsy -- the common case, and the one a
+    caller must be able to tell apart from a real, checked, empty overlap
+    by more than a length check, per this repo's own three-states rule.
+    Otherwise `{"files": [...], "holders": [...]}`; `holders` is the
+    union of whatever `held_map` names for each overlapping file, in
+    first-seen order, and stays `[]` (never a guess) when `held_map` has
+    nothing to say about any of them.
+    """
+    if not files:
+        return None
+    holders = []
+    for f in files:
+        for h in held_map.get(f, []):
+            if h not in holders:
+                holders.append(h)
+    return {"files": list(files), "holders": holders}
 
 
 def _could_not_select(why, dropped=None):
@@ -671,6 +700,13 @@ def select(
         return _could_not_select("lanes: {0}".format(why))
 
     held_files = set(payload.get("held_files") or [])
+    # #1528: file -> [holder, ...], the richer form `derive_held_set`
+    # itself produces (`select_fleet` threads it through as `"held"`,
+    # parallel to the flattened `"held_files"` set) -- absent for a caller
+    # that only ever offered `held_files` (every test/caller written
+    # before this field existed), which still gets the overlapping files
+    # named, just not attributed to a holder.
+    held_map = payload.get("held") or {}
     repo = payload.get("repo")
 
     # #1013 review round: `select_issues_rank.order()` computes its own stable-sort
@@ -709,6 +745,13 @@ def select(
     # cases (no lane label, an uncovered one, no declared mapping, or an
     # ambiguous match across two differently-mapped labels on one issue).
     lane_patterns_source_by_number = {}
+    # #1528: the overlap `lane_overlap` found between a candidate's own
+    # declared files and the fleet's held set -- `[]` when nothing is held,
+    # or when the candidate's own lane pattern never resolved to a check
+    # at all (no `lane_patterns`). Read by `_overlap_info` below, once the
+    # assignee sweep has decided which candidates actually survive to
+    # become a `candidates` entry.
+    overlap_by_number = {}
     # #1130: independent of `lane_patterns`/`lane_patterns_source` above --
     # a `lane-other` issue has no file set by definition (it is always
     # `None`, same as "no lane label at all"), so this is the one signal
@@ -828,21 +871,18 @@ def select(
                     )
                 )
                 continue
-            if held_files:
-                overlap = select_issues_overlap.lane_overlap(
-                    resolved["files"], held_files
-                )
-                if overlap:
-                    dropped.append(
-                        {
-                            "number": number,
-                            "disposition": "lane-collision",
-                            "why": "overlaps already-claimed file(s): {0}".format(
-                                ", ".join(overlap)
-                            ),
-                        }
-                    )
-                    continue
+            # #1528: overlap with the held set used to drop the candidate
+            # outright (`lane-collision`) the moment any file matched --
+            # the analysis (which files, held by whom) was computed and
+            # then thrown away along with the candidate. A same-lane
+            # overlap is information a caller can act on (group with the
+            # holder, run in order, or dispatch anyway), never a silent
+            # exclusion -- see the candidate's own `overlap` field, below.
+            overlap_by_number[number] = (
+                select_issues_overlap.lane_overlap(resolved["files"], held_files)
+                if held_files
+                else []
+            )
             resolved_files_by_number[number] = resolved["files"]
             lane_patterns_source_by_number[number] = lane_patterns_source
 
@@ -922,6 +962,12 @@ def select(
                     # `_group_candidates` to route this candidate to a
                     # deliberate solo group instead of `ungrouped`.
                     "is_lane_other": is_lane_other_by_number.get(number, False),
+                    # #1528: `None` when this candidate names no file the
+                    # fleet already holds -- the ordinary, disjoint case --
+                    # never an empty-but-present structure a caller could
+                    # mistake for "checked, nothing found" by truthiness
+                    # alone. See `_overlap_info`'s own docstring.
+                    "overlap": _overlap_info(overlap_by_number.get(number), held_map),
                 }
             )
 
@@ -1287,10 +1333,10 @@ def select_fleet(
                           every issue on the board carrying none of the
                           keys `lanes` iterates. The identical shape
                           `select()`'s own per-lane `dropped` already uses
-                          for `stale`/`assigned`/`lane-collision`/etc, one
-                          more disposition value rather than a new
-                          structure (#1130's own settlement of the earlier
-                          `no-lane-label` pseudo-lane). Always present,
+                          for `stale`/`assigned`/etc, one more disposition
+                          value rather than a new structure (#1130's own
+                          settlement of the earlier `no-lane-label`
+                          pseudo-lane). Always present,
                           `[]` when the fetch itself failed or nothing
                           qualifies -- never a missing key.
     """
@@ -1338,7 +1384,8 @@ def select_fleet(
 
     issues = board.get("issues") or []
     issues_by_number = {row.get("number"): row for row in issues}
-    held_files = sorted((held.get("held") or {}).keys())
+    held_map = held.get("held") or {}
+    held_files = sorted(held_map.keys())
 
     # Maintainer correction (#1146, #1130): the fleet is the declared lane
     # labels PLUS `labels.lane_other` -- read from config, never hardcoded,
@@ -1363,6 +1410,9 @@ def select_fleet(
             "declared": declared,
             "issues": filtered_issues,
             "held_files": held_files,
+            # #1528: threaded through so `select()` can name who already
+            # holds an overlapping file, not only which files overlap.
+            "held": held_map,
             "board_read_ok": True,
             "lanes_read_ok": True,
         }
@@ -1413,7 +1463,7 @@ def select_fleet(
     # any `select()` call (no group, no body); it is accounted for once,
     # fleet-wide, in the same `{"number", "disposition", "why"}` shape
     # `select()`'s own per-lane `dropped` list already uses for `stale` /
-    # `assigned` / `lane-collision` -- one more disposition value, not a
+    # `assigned` -- one more disposition value, not a
     # new structure.
     fleet_label_set = set(fleet_labels)
     dropped = [
