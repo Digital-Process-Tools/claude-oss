@@ -293,7 +293,17 @@ def test_wait_polls_while_all_pending_then_returns_the_first_actionable():
     )
     sleeps = []
     entry = pr_green.wait_for_first_actionable(
-        [1], "gh", run, workflows_dir=None, interval=45, sleep=sleeps.append
+        [1],
+        "gh",
+        run,
+        workflows_dir=None,
+        interval=45,
+        sleep=sleeps.append,
+        # #1492: a healthy-budget stub -- the cadence stays fixed for as
+        # long as GitHub's shared REST rate limit is not running low. The
+        # low-budget backoff case lives in
+        # tests/test_pr_green_ratelimit_1492.py.
+        rate_limit_reader=lambda: (5000, 5000),
     )
     assert entry["state"] == pr_green.STATE_GREEN
     assert len(run.calls) == 3
