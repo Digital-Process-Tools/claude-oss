@@ -777,6 +777,18 @@ def wait_for_first_actionable(
         if rate_limit_reader is not None:
             remaining, limit = rate_limit_reader()
             wait_interval = _rate_limit_backoff(interval, remaining, limit)
+            if timeout is not None:
+                # Self-review (#1492): a backed-off interval must never widen
+                # how far a `--timeout` caller can be kept waiting past the
+                # deadline it asked for. Pre-backoff, the worst-case overshoot
+                # was one `interval` (the check above only runs again after
+                # `sleep` returns); left uncapped here, a low-budget backoff
+                # could push that to 4x `interval`, exactly when the caller
+                # most needs a prompt, bounded PENDING handback. Capping to
+                # the base `interval` whenever a timeout is set keeps the
+                # original overshoot bound and simply forgoes the extra
+                # back-off for that one poll.
+                wait_interval = min(wait_interval, interval)
         sleep(wait_interval)
 
 
@@ -956,6 +968,25 @@ def main(argv=None, run=None):
     workflows_dir = os.path.join(str(args.project_dir), ".github", "workflows")
 
     if args.wait:
+        # Self-review (#1492): a `(None, None)` read (could not check) and a
+        # genuinely healthy budget both leave the cadence unchanged, so an
+        # operator watching a long `--wait` run has no way to tell "healthy,
+        # no backoff needed" from "the rate-limit read is broken for this
+        # whole session" -- one stderr note the first time a read fails is
+        # enough to make that distinguishable without spamming every poll.
+        rate_limit_warned = [False]
+
+        def _cli_rate_limit_reader():
+            remaining, limit = _read_core_rate_limit(gh, run)
+            if remaining is None and not rate_limit_warned[0]:
+                sys.stderr.write(
+                    "note: could not read GitHub's rate limit (`gh api "
+                    "rate_limit`); polling at the fixed --interval cadence, "
+                    "unable to back off\n"
+                )
+                rate_limit_warned[0] = True
+            return remaining, limit
+
         entry = wait_for_first_actionable(
             numbers,
             gh,
@@ -963,7 +994,7 @@ def main(argv=None, run=None):
             workflows_dir=workflows_dir,
             interval=args.interval,
             timeout=args.timeout,
-            rate_limit_reader=lambda: _read_core_rate_limit(gh, run),
+            rate_limit_reader=_cli_rate_limit_reader,
         )
         if entry is None:
             sys.stdout.write(

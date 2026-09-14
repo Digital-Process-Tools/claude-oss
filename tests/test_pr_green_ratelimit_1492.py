@@ -172,6 +172,66 @@ def test_wait_backs_off_when_the_budget_is_low():
     assert sleeps == [180, 180]
 
 
+def test_wait_caps_backoff_to_the_base_interval_when_timeout_is_set():
+    """Self-review finding: a backed-off interval must never widen how far a
+    `--timeout` caller can be kept waiting past the deadline it asked for --
+    pre-backoff the worst-case overshoot was one base `interval`, and an
+    uncapped 4x backoff would have made that worse exactly in the low-budget
+    case this fix targets."""
+    pending_rows = [_row("tests", "tests", status="IN_PROGRESS", conclusion=None)]
+    run = _run_sequence(
+        [
+            (0, _rollup_json(1, "fix/1", "a", pending_rows), ""),
+            (0, _rollup_json(1, "fix/1", "a", pending_rows), ""),
+        ]
+    )
+    clock = iter([0.0, 10.0, 999.0])
+    sleeps = []
+    entry = pr_green.wait_for_first_actionable(
+        [1],
+        "gh",
+        run,
+        workflows_dir=None,
+        interval=45,
+        timeout=20,
+        sleep=sleeps.append,
+        clock=lambda: next(clock),
+        rate_limit_reader=lambda: (100, 5000),  # 2% remaining -- would be 4x uncapped
+    )
+    assert entry is None
+    assert sleeps == [45]
+
+
+def test_cli_wait_warns_once_to_stderr_when_the_rate_limit_read_fails(
+    monkeypatch, capsys
+):
+    """Self-review finding (auditor): a failed rate-limit read and a healthy
+    budget both leave the poll cadence unchanged, so without this note an
+    operator has no way to tell them apart from a --wait run's own output."""
+    pending_rows = [_row("tests", "tests", status="IN_PROGRESS", conclusion=None)]
+    green_rows = [_row("tests", "tests")]
+    run = _run_sequence(
+        [
+            (0, _rollup_json(1, "fix/1", "a", pending_rows), ""),
+            (1, "", "gh: not authenticated"),  # the rate_limit read itself
+            (0, _rollup_json(1, "fix/1", "a", pending_rows), ""),
+            (1, "", "gh: not authenticated"),
+            (0, _rollup_json(1, "fix/1", "a", green_rows), ""),
+        ]
+    )
+    monkeypatch.setattr(
+        pr_green.gh_which, "safe_which", lambda name, path=None: "/usr/bin/gh"
+    )
+    # #1492: `main()` never overrides `wait_for_first_actionable`'s `sleep`
+    # default -- that default is bound to `time.sleep` at function-definition
+    # time, so patching the `time` module's own attribute afterwards would
+    # not reach it. `--interval 0` keeps the test from actually sleeping.
+    rc = pr_green.main(["1", "--wait", "--interval", "0"], run=run)
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert captured.err.count("could not read GitHub's rate limit") == 1
+
+
 def test_wait_with_no_rate_limit_reader_is_unaffected():
     """Backward-compatible default: omitting rate_limit_reader entirely
     keeps the original fixed cadence, unconditionally."""
