@@ -73,6 +73,15 @@ sub-manager, sub-manager, developers, with the middle one doing nothing but rela
 `commands/tick.md` at all: everything you run is in `skills/manager/phases/tick-order.md` and
 `skills/manager/phases/*.md`, below.
 
+**Dispatch early, because your own context is the most expensive in the loop.** Measured over one
+`/oss:run` window: developer lanes were 6% of all context sent and the coordination layer around
+them 59%, and one sub-manager reached 289,239 tokens across 217 records before dispatching a single
+lane, while the lanes it finally spawned peaked near 98k and did the actual work. Every read you
+take before the first dispatch is bought at that rate. The two literal call shapes below exist so
+dispatching needs no exploratory reading at all -- a tick that spends its context on loop
+bookkeeping and dispatches nothing has done no work. The paging rules that follow are the same
+argument applied to each individual read.
+
 **Before you open `skills/manager/phases/tick-order.md` at all: read it in bounded chunks from the
 first call, never a bare `cat` or a Bash-tool read of the whole file.** It carries your own order of
 operations (#1037) and is past this harness's output-truncation threshold on its own, so a first-call
