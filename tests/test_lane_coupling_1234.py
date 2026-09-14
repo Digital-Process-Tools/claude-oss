@@ -30,27 +30,13 @@ same fixture, per this repo's own rule that a negative assertion needs a
 positive control.
 """
 
-import json
 import sys
 from pathlib import Path
-
-import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import lane_coupling  # noqa: E402
-
-
-def _real_lane_patterns():
-    # #1530: this repo retired `labels.lane_patterns` from its own
-    # `.oss.json` -- dispatch grouping keys on the lane LABEL directly now,
-    # never on a per-issue file set derived from it. `lane_coupling.py`
-    # itself is unaffected (a repo that still declares the key gets the
-    # identical check); `None` is the honest, already-tested "not
-    # configured" reading for THIS repo's own tree, never a crash.
-    config = json.loads((REPO_ROOT / ".oss.json").read_text(encoding="utf-8"))
-    return config["labels"].get("lane_patterns")
 
 
 def _scaffold_two_lane_repo(tmp_path):
@@ -535,27 +521,19 @@ def test_non_utf8_test_file_is_unreadable_not_a_crash(tmp_path):
     assert "tests/test_bad_encoding.py" in files
 
 
-@pytest.mark.skipif(
-    _real_lane_patterns() is None,
-    reason="#1530: this repo retired labels.lane_patterns -- the incident "
-    "fixture (tests/test_lane_pattern_coverage_1201.py) that demonstrated "
-    "it was retired with it. lane_coupling.py itself is unaffected; this "
-    "regression guard applies only to a repo that still declares the key.",
-)
-def test_real_repo_finds_the_1201_incident():
-    """The definitive check: run against this repo's own real .oss.json
-    and its own real test suite, the mechanism finds
-    `tests/test_lane_pattern_coverage_1201.py` spanning lane-prose
-    (CLAUDE.md/scripts/skill_phases.py/etc, referenced as literal strings)
-    and lane-dispatch (`scripts/select_issues_overlap.py`, referenced via
-    `import select_issues_overlap`) -- the exact shape #1201's own
-    incident was about, discovered mechanically rather than by a human
-    noticing a merge conflict after the fact."""
-    result = lane_coupling.lane_coupling_report(REPO_ROOT, _real_lane_patterns())
-    files = dict(result["spans"])
-    assert "tests/test_lane_pattern_coverage_1201.py" in files
-    lanes_hit = set(
-        lane for lane, _refs in files["tests/test_lane_pattern_coverage_1201.py"]
-    )
-    assert "lane-prose" in lanes_hit
-    assert "lane-dispatch" in lanes_hit
+# #1530: `test_real_repo_finds_the_1201_incident` (the real-repo verification
+# that this mechanism finds #1201's own incident on this repo's live tree)
+# is deleted rather than skipped -- unlike the sibling real-repo tests in
+# test_lane_coupling_allowlist_1244.py and test_doctor_check_lane_coupling_
+# 1244.py, its own assertion depends on a SPECIFIC fixture file,
+# tests/test_lane_pattern_coverage_1201.py, which this same change deleted
+# outright as part of retiring lane_pattern_coverage.py. A `skipif` keyed on
+# labels.lane_patterns returning would not self-heal here: the file it
+# asserts on is gone regardless, so the test would resume running and fail
+# immediately rather than pass. The mechanism it exercised (finding a
+# cross-lane span from literal references) stays covered by
+# test_single_lane_test_does_not_span_the_must_not_fire_control and
+# test_two_lane_test_spans_the_must_fire_case above, against synthetic
+# fixtures; nothing now verifies it against this repo's own real, live
+# tree, which is the gap this deletion leaves open and named in #1530's
+# own pull request body.
