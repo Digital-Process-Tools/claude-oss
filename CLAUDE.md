@@ -82,6 +82,22 @@ read, a brief it wrote, a file it just edited (`edit` returns the result), a `--
 shape the brief states. A file outside the worktree costs the same, so prefix `cwd:PATH` rather
 than printing it through `python3 -c`, which has no cap and no range.
 
+**A test run is paid once and re-sent forever, so do not replay it.** A suite's output lands in
+context and is re-sent on every turn after it, so re-running a suite to confirm a result already in
+context buys nothing and costs the whole output again. Run the lane's own tests plus the guards its
+diff touches, watch them go red before the fix and green after, and push. That is the whole local
+obligation. CI's 13 legs answer everything else -- three operating systems and four interpreters in
+parallel, which no local run reaches at any price -- and this repository's expensive failures have
+repeatedly been on exactly the axis a local run cannot see. A green local suite is not a stronger
+signal than a green partial one; it is the same signal, bought several times.
+
+**Trusting CI means reading its answer, not assuming it.** The cheap habit and the defect class this
+plugin is named after point in opposite directions here, so both halves are required: do not re-run
+what CI will run, and do not report a result nobody read. Name the commit the reading came from --
+a check that passed on a tree without your change renders identically to one that passed because of
+it -- and say `could-not-tell` when the run has not reported yet. "Pushed and assumed green" is the
+one way this rule turns into the thing this file spends its first page warning about.
+
 **A lane carries three issues, not one.** One issue per lane is the under-filled state: the lane
 pays its own floor either way, so the second and third issue are close to free against a
 denominator that triples. The bound is file disjointness, not ambition.
@@ -169,9 +185,8 @@ or fixes never reach anyone. That is why `apply()` returns `created` and `replac
 - **Dogfood before believing.** Running the tool on this repo has found more real bugs than the
   suite has. The suite passes absolute temp paths; users do not.
 
-- **Do not run the full suite locally.** It is slow and answers a weaker question than CI does: this
-  repository's expensive failures have repeatedly been on the OS or interpreter axis a local run
-  cannot reach. Run the lane's own tests plus the guards a change touches, push, and let CI answer.
+- **Do not run the full suite locally**, per the token economy section: it is slow, it answers a
+  weaker question than CI does, and its output is re-sent for the rest of the session.
 
 - **A green run on your own platform is the weakest evidence available** about the platform it was
   not run on. Say which cross-platform claims are observed and which are reasoned. The interpreter
