@@ -249,6 +249,13 @@ guess in your favour, and not a guess against you either. `TICK-ENDS:` is requir
 the scheduler must be able to tell a sub-manager that ran a whole tick and found nothing to do
 (`TICK: completed`, idle) from one that never got to speak (empty message).
 
+**Optional: report your own token spend (#1499).** Before writing your handback, run
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_cost.py" --match "<your spawn token>"` -- the token
+your first brief stated is already unique to this spawn -- and add its one-line `agent-cost: ...`
+output as a `COST:` line inside whichever template above you use. `tick_handback.py` never lets
+it block classification: a `measured`, `ambiguous` or `no-match` result is equally fine to include,
+and omitting the line entirely is fine too.
+
 **Validate your own draft before you send it (#1048).** Remembering the rule under pressure is not
 the fix; checking the draft is. Before ending your turn with any final message meant as a handback,
 run it through the same tool the scheduler will:

@@ -96,6 +96,7 @@ def _verdict(state, reason, **extra):
         "gate": None,
         "wait_dispatch": None,
         "wait_observable": None,
+        "cost": None,
     }
     out.update(extra)
     return out
@@ -162,6 +163,11 @@ def classify(message):
             quoted=header_line,
         )
     tail = text[header.end() :]
+    # #1499: an optional one-line COST: self-report, the same field and the
+    # same "missing or duplicated both fold to absent" rule tick_handback.py
+    # gives it -- see that module for the reasoning; reused via _th rather
+    # than a second copy.
+    cost = _th._find_optional_field(_th._COST, tail)
 
     if declared == "released":
         match, count = _th._find_field(_TAG, tail)
@@ -185,6 +191,7 @@ def classify(message):
             declared="released",
             tag=tag,
             quoted=header_line,
+            cost=cost,
         )
 
     if declared == "refused":
@@ -209,6 +216,7 @@ def classify(message):
             declared="refused",
             gate=gate,
             quoted=header_line,
+            cost=cost,
         )
 
     if declared == "could-not-run":
@@ -233,6 +241,7 @@ def classify(message):
             declared="could-not-run",
             detail=detail,
             quoted=header_line,
+            cost=cost,
         )
 
     # declared == "paused" -- the only remaining alternative in _RELEASE
@@ -280,6 +289,7 @@ def classify(message):
         wait_observable=wait_observable,
         gate=gate,
         quoted=header_line,
+        cost=cost,
     )
 
 
@@ -344,6 +354,8 @@ def main(argv=None):
         print("  wait_dispatch: {0}".format(verdict["wait_dispatch"]))
     if verdict["wait_observable"]:
         print("  wait_observable: {0}".format(verdict["wait_observable"]))
+    if verdict["cost"]:
+        print("  cost: {0}".format(verdict["cost"]))
     if verdict["quoted"]:
         print("  quoted: {0}".format(verdict["quoted"]))
     return EXIT_CODES[verdict["state"]]
