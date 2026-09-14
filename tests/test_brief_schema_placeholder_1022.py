@@ -11,9 +11,15 @@ already returned, and found `SendMessage` unavailable to correct it -- so the
 only reachable moment to catch this is before the call, on the composed
 text (see trap.d/1022.brief-placeholder-not-substituted.md).
 
-`brief_schema.py` already validates a brief's draft file before the spawn
-(#967), so a structural check for a literal `{{...}}` marker slots into the
-existing, already-run mechanism rather than inventing a new one.
+`lane_setup_brief_schema` validates the composed prompt before the spawn, so a
+structural check for a literal double-brace marker slots into the existing,
+already-run mechanism rather than inventing a new one.
+
+#1535 retired the eight restatement elements this check used to sit beside, and
+with them the `GOOD` brief this file imported. `GOOD` is now the target spawn
+payload itself -- the issue numbers and the worktree, nothing else -- which is
+a stronger fixture for this check than the long brief was: nothing else in the
+text can mask or supply a placeholder.
 """
 
 from __future__ import annotations
@@ -26,7 +32,8 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import lane_setup_brief_schema as brief_schema  # noqa: E402
 
-from test_brief_schema_967 import GOOD  # noqa: E402
+#: The whole spawn payload a developer lane gets (#1535).
+GOOD = "Issues 1526 and 1528. Your worktree is /tmp/wt/1526."
 
 
 def test_a_leftover_placeholder_marker_is_a_finding():

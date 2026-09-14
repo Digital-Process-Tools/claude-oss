@@ -78,9 +78,9 @@ of `lane_setup_worktree.py` (the base commit, branch, worktree path and
 their occupancy checks), `lane_setup_patterns.py` (cross-cutting guard
 lookup, and the disjointness report a lane brief reads), `lane_setup_claim.py`
 (the lane registry, held-set derivation, and the claim/release logic below)
-or `lane_setup_brief_schema.py` (whether a composed brief carries dispatch's
-eight required elements, checked before `--claim` renders an `Agent(...)`
-line -- #1143). Every name is imported here and re-exported at module level,
+or `lane_setup_brief_schema.py` (whether the composed prompt carries the two
+per-lane facts and no leftover template marker, checked before `--claim`
+renders an `Agent(...)` line -- #1143, #1535). Every name is imported here and re-exported at module level,
 so `lane_setup.<name>` keeps working for every existing caller.
 `resolve_lane`/`lane_overlap` and `suggest_companions` moved to
 `select_issues_overlap.py`/`select_issues_companions.py` instead --
@@ -109,14 +109,15 @@ wrong number, worse than the retype it replaces. `--label` is unchanged and
 stays the path for a lane composed some other way -- it still takes its
 issue list as an explicit argument, never derived from a claim.
 
-`compose_claim_label` is the one function both call sites route through. It
-also runs `lane_setup_brief_schema.check_path` on `--brief` whenever a
-subagent type is given: a **structural** finding (one of the four elements
-that can fail for the reason it exists, not just for being absent) refuses
-to render the `Agent(...)` line at all; a **presence-only** finding is
-printed and the line renders anyway, because presence is not quality and a
-schema pass is not a review (`lane_setup_brief_schema`'s own reasoning,
-unchanged).
+`compose_claim_label` is the one function both call sites route through.
+Given a subagent type it also **composes the prompt** (#1535) -- `lane_prompt`'s
+two facts, plus whatever `--brief` names, appended -- and runs
+`lane_setup_brief_schema.check_text` over the whole composed string before the
+`Agent(...)` line is rendered. All three elements are structural now, so any
+finding refuses the render; there is no presence-only tier left to print and
+carry on from. A schema pass is still not a review: it says the two facts are
+there and no template marker survived, never that dispatching this lane is a
+good idea.
 
 ## Claim in both senses, in one call (#1069)
 
@@ -341,8 +342,48 @@ def _quote_for_call(text):
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def lane_prompt(issues, worktree):
+    """The whole spawn payload for a developer lane: the issue numbers and the
+    worktree, and nothing else (#1535).
+
+    Everything else a lane was briefed with -- supertool, the TDD order, the
+    publishing clause, pushback, untrusted input -- is in `agents/developer.md`,
+    which is that lane's system prompt and is re-sent on every turn. Restating
+    it per lane cost ~7,900 B per spawn and told the reader nothing it was not
+    already holding.
+
+    An underivable worktree is **named as underivable**, never omitted: a prompt
+    that simply does not mention a worktree reads exactly like one for a lane
+    that is meant to cut its own, and two lanes cutting their own is how two
+    agents end up in the same files.
+    """
+    numbers = sorted(issues)
+    if not numbers:
+        raise FleetLabelError(
+            "lane_prompt: no issues -- a lane with nothing to work on is not a "
+            "lane, and composing a prompt around an empty bundle would dispatch "
+            "one. `compose_claim_label` returns `no-claimed-issues` before "
+            "reaching here; this is the refusal for any other caller (#1535)"
+        )
+    if len(numbers) == 1:
+        head = "Issue {0}.".format(numbers[0])
+    else:
+        head = "Issues {0} and {1}.".format(
+            ", ".join(str(n) for n in numbers[:-1]), numbers[-1]
+        )
+    if not worktree:
+        return "{0} Your worktree could not be derived -- say so and stop.".format(head)
+    return "{0} Your worktree is {1}.".format(head, worktree)
+
+
 def agent_call(
-    primary_issue, issues, phrase, subagent_type, model=None, run_in_background=False
+    primary_issue,
+    issues,
+    phrase,
+    subagent_type,
+    model=None,
+    run_in_background=False,
+    prompt=None,
 ):
     """Render the whole literal ``Agent(...)`` invocation for one dispatched lane (#989).
 
@@ -363,9 +404,10 @@ def agent_call(
     the same way an omitted issue bundle already refuses, rather than rendering a
     call that quietly spawns the wrong agent.
 
-    ``prompt`` is never composed here -- the brief is lane-specific text only the
-    caller can write -- so the rendered call carries a placeholder the caller fills
-    in, the same way ``fleet_label`` never composes the phrase for the caller.
+    ``prompt``, when given, is rendered into the call verbatim (#1535) -- for a
+    developer lane that is `lane_prompt`'s two facts and nothing else. Without
+    one the call still carries the ``<brief>`` placeholder, for a caller
+    dispatching an agent whose own definition does not carry its instructions.
     """
     label = fleet_label(primary_issue, issues, phrase)
 
@@ -385,7 +427,11 @@ def agent_call(
         "run_in_background: {}".format("true" if run_in_background else "false")
     )
     parts.append('description: "{}"'.format(_quote_for_call(label)))
-    parts.append('prompt: "<brief>"')
+    parts.append(
+        'prompt: "{}"'.format(_quote_for_call(prompt))
+        if prompt
+        else 'prompt: "<brief>"'
+    )
 
     return "Agent({})".format(", ".join(parts))
 
@@ -460,6 +506,7 @@ def compose_claim_label(
     model=None,
     run_in_background=False,
     brief_path=None,
+    worktree=None,
 ):
     """Render this ``--claim`` call's own fleet-view label -- or, with
     ``subagent_type``, the whole ``Agent(...)`` call -- from the issues this
@@ -470,8 +517,15 @@ def compose_claim_label(
     ``state``, ``text`` (``None`` unless ``state`` is ``rendered``), ``held``
     (the issue numbers this call derived) and ``brief`` (the raw
     `lane_setup_brief_schema` payload, or ``None`` when ``subagent_type`` was
-    never given -- a caller must never have to guess whether the brief was
+    never given -- a caller must never have to guess whether the prompt was
     skipped or genuinely clean).
+
+    **The prompt is composed here, not by the caller (#1535).** `lane_prompt`
+    renders the two facts a lane cannot read anywhere else -- the issues this
+    claim actually holds and ``worktree`` -- and nothing else; everything a
+    brief used to restate is in `agents/developer.md`, re-sent on every turn.
+    ``brief_path``, when given, is optional extra per-lane context (a recon
+    summary, say) appended to that prompt, never a substitute for it.
 
     States:
 
@@ -485,17 +539,17 @@ def compose_claim_label(
       fleet-label-error        `fleet_label`/`agent_call` itself refused (a
                                 duplicate, a blank phrase, ...); ``detail``
                                 carries the message.
-      brief-could-not-read     only reachable with ``subagent_type`` given:
-                                the brief at ``brief_path`` could not be
-                                read.
+      brief-could-not-read     only reachable with ``subagent_type`` and
+                                ``brief_path`` given: the extra context file
+                                could not be read. Never folded into a
+                                findings row -- "this prompt is missing the
+                                worktree" and "nobody read that file" are
+                                different facts.
       brief-structural-finding only reachable with ``subagent_type`` given:
-                                the brief fails at least one of
-                                `lane_setup_brief_schema`'s four structural
+                                the composed prompt fails at least one of
+                                `lane_setup_brief_schema`'s three structural
                                 elements -- the ``Agent(...)`` line is
-                                refused, never rendered. A presence-only
-                                finding does not reach this state; it is
-                                printed by the caller and the call still
-                                renders.
+                                refused, never rendered.
     """
     held = _claimed_issue_numbers(payload.get("claim_result"))
     result = {"state": None, "text": None, "held": held, "brief": None}
@@ -507,13 +561,36 @@ def compose_claim_label(
         result["state"] = "primary-not-held"
         return result
 
-    brief_payload = None
+    prompt = None
     if subagent_type is not None:
-        brief_payload = lane_setup_brief_schema.check_path(brief_path)
+        prompt = lane_prompt(held, worktree)
+        if brief_path is not None:
+            try:
+                extra = Path(brief_path).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                result["brief"] = {
+                    "state": lane_setup_brief_schema.STATE_COULD_NOT_READ,
+                    "path": str(brief_path),
+                    "detail": "{0}: {1}".format(brief_path, exc),
+                    "elements": [],
+                    "missing": [],
+                }
+                result["state"] = "brief-could-not-read"
+                return result
+            prompt = prompt + "\n\n" + extra.strip()
+        # A caller reaching here always ATTEMPTED the derivation, so a falsy
+        # `worktree` is a failed one, never "not asked" -- the schema needs
+        # that told to it or it guesses from the text, and an appended recon
+        # summary is full of path-shaped tokens (#1535 self-review).
+        brief_payload = lane_setup_brief_schema.check_text(
+            prompt,
+            issues=held,
+            worktree=worktree,
+            worktree_state=(
+                None if worktree else lane_setup_brief_schema.WORKTREE_COULD_NOT_DERIVE
+            ),
+        )
         result["brief"] = brief_payload
-        if brief_payload["state"] == lane_setup_brief_schema.STATE_COULD_NOT_READ:
-            result["state"] = "brief-could-not-read"
-            return result
         structural_missing = any(
             row["state"] == "missing"
             and row["checked"] == lane_setup_brief_schema.STRUCTURAL
@@ -534,6 +611,7 @@ def compose_claim_label(
                 subagent_type,
                 model=model,
                 run_in_background=run_in_background,
+                prompt=prompt,
             )
     except FleetLabelError as exc:
         result["state"] = "fleet-label-error"
@@ -1731,20 +1809,20 @@ def main(argv=None):
         metavar="TYPE",
         help="given together with --claim and --phrase, renders the whole "
         "literal Agent(...) call (#989) instead of only the description "
-        "string -- requires --brief, since rendering a call that dispatches "
-        "means checking the brief it dispatches first (#1143). Ignored "
-        "without --claim.",
+        "string -- prompt included, composed from the issues this claim "
+        "holds and the worktree it derived (#1535). Ignored without --claim.",
     )
     parser.add_argument(
         "--brief",
         default=None,
         metavar="PATH",
-        help="the composed brief text --subagent-type is about to dispatch, "
-        "checked against lane_setup_brief_schema's eight elements before the "
-        "Agent(...) line is rendered (#1143): a finding in one of the four "
-        "STRUCTURAL elements refuses to render it; a PRESENCE-only finding "
-        "is printed and it renders anyway. Required together with "
-        "--subagent-type.",
+        help="OPTIONAL extra per-lane context (a recon summary, say) appended "
+        "to the composed prompt (#1535) -- never a substitute for it, and "
+        "never a place to restate agents/developer.md, which the lane holds "
+        "on every turn. The whole composed prompt is checked against "
+        "lane_setup_brief_schema's three structural elements before the "
+        "Agent(...) line is rendered; any finding refuses the render. "
+        "Requires --subagent-type.",
     )
     parser.add_argument(
         "--release",
@@ -1932,11 +2010,10 @@ def main(argv=None):
         parser.error("--group-state requires --claim (#1153)")
     if args.subagent_type is not None and args.phrase is None:
         parser.error("--subagent-type requires --phrase (#1143)")
-    if args.subagent_type is not None and args.brief is None:
-        parser.error(
-            "--subagent-type requires --brief -- rendering a call that "
-            "dispatches means checking the brief it dispatches first (#1143)"
-        )
+    # #1535 retired the reverse direction: --subagent-type no longer requires
+    # --brief, because the prompt is composed from the two facts this call
+    # already derived. --brief's own direction below stays enforced -- a
+    # --brief given alone was silently ignored (#1143).
     if args.brief is not None and args.subagent_type is None:
         # Self-review finding (Explore + oss:auditor, #1143): the reverse of
         # the check above was never enforced, so a --brief given without
@@ -2236,6 +2313,7 @@ def main(argv=None):
             model=args.model,
             run_in_background=args.background,
             brief_path=args.brief,
+            worktree=(payload.get("worktree") or {}).get("path"),
         )
         payload["label"] = label_result
 
@@ -2270,7 +2348,7 @@ def main(argv=None):
                 )
             elif state == "brief-structural-finding":
                 print(
-                    "AGENT(...) REFUSED -- the brief fails at least one "
+                    "AGENT(...) REFUSED -- the composed prompt fails at least one "
                     "structural element above (#1143)"
                 )
             elif state == "no-claimed-issues":

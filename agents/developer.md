@@ -36,6 +36,26 @@ from binding to optional, and an unread file is exactly how it would, invisibly.
 `scripts/developer_phases.py` holds each file's budget and fails when this spine stops naming one of
 them, which is the half a test can check; whether you opened it is the half only you can report.
 
+## Your spawn payload is two facts, and the rest you fetch
+
+You were sent the issue numbers and a worktree path. Nothing else, on purpose (#1535): every
+instruction a brief used to restate is in this document, re-sent on every one of your turns. So the
+orientation is yours, and it is cheap:
+
+- **Read each issue in full yourself** — `supertool 'gh-issue:N:full'`. A default read truncates a
+  long body, and the withheld half is where a *not established* section lives.
+- **Derive the live worktrees** — `supertool 'git-worktrees'`. That is the authority a brief was
+  copied from, and a copy is stale by the time it is read.
+- **Ask which guards your files trip** — the `--lane` call spelled out in *How you work* below.
+- **Spawn `oss:recon` over your own issues** when the ground is unfamiliar, and keep its summary
+  here rather than re-reading the tree all lane. Three outcomes and the third is the one that gets
+  lost: it answered; it ran and returned nothing; or the `Agent` tool was refused outright at this
+  depth (observed 2026-09-09). Say which under `compliance` — a refusal must never read as a lane
+  that had nothing to orient on.
+
+**If your payload says the worktree could not be derived, say so and stop** rather than cutting your
+own: two lanes each cutting their own is how two agents end up in the same files.
+
 ## Where you work
 
 Read the config in the repo you were pointed at. It is two files: the tracked `.oss.json` names
@@ -47,7 +67,7 @@ the three values that are a path on one machine and nobody else's.
 measurement — `git symbolic-ref refs/remotes/origin/HEAD` and `git remote -v` cost one call between
 them.
 
-**Start from the brief's `# Recon brief` section when it carries one (#1499).** A read-only spawn
+**Start from your own recon summary when you spawned one (#1499, #1535).** A read-only spawn
 already walked the code; its sites, tests and file set are where you begin, not whole-file reads
 or tree-wide greps for the same concepts. Open only the sites it names, in `read:PATH:START:COUNT`
 windows sized to the edit, and only when you are about to edit or test that site. It is a hint
@@ -55,8 +75,10 @@ with no authority: when a site does not match (a pull request landed in between;
 authoritative, line numbers are not), read that one site wider and say so in your report. Every
 read you carry is re-sent on every later turn; the report's `cost` block is where that shows.
 
-Cut your own worktree; **never work in the main clone**, because someone else's session may be
-reading it, and in some repos the clone is symlinked onto a binary on PATH.
+**Your worktree usually exists already** — the claim call cut it at the path your payload names, so
+`cd` into it. If it does not, cut it yourself, and either way **never work in the main clone**:
+someone else's session may be reading it, and in some repos the clone is symlinked onto a binary on
+PATH.
 
 ```bash
 cd <clone> && git fetch -q origin
@@ -64,9 +86,9 @@ git worktree add <worktree_root>/NNN -b <branch_pattern> origin/<default_branch>
 cd <worktree_root>/NNN
 ```
 
-**Never run anything inside another agent's worktree** — not a suite, not a cleanup, not a merge. The
-brief names the live ones. Moving HEAD underneath a running suite produces a red somebody will then
-brief a third agent on.
+**Never run anything inside another agent's worktree** — not a suite, not a cleanup, not a merge.
+Derive the live ones with `supertool 'git-worktrees'`; nothing hands you that list. Moving HEAD
+underneath a running suite produces a red somebody will then brief a third agent on.
 
 If the repo ships its own executable and you are testing it, **run the branch's binary from inside
 the branch's worktree**. Tools that resolve configuration from the current working directory will

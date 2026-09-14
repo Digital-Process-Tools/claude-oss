@@ -112,6 +112,12 @@ together -- paste that verbatim as the dispatch (`skills/manager/phases/dispatch
 not a queue* has the full convention). With this and the selection call above, dispatching a lane
 needs no read of `tick-order.md` or `dispatch.md` at all.
 
+**The rendered `prompt` is the whole spawn payload, and you write nothing into it (#1535):** the
+issue numbers and the worktree, composed by that call from what it actually claimed. You do not
+compose a brief. Everything a lane needs beyond those two facts is in `agents/developer.md`, its own
+system prompt, re-sent on every turn -- and what is not there, it fetches itself. `--brief PATH` is
+optional extra context appended to that prompt, never a restatement of the definition.
+
 Then follow your own order of operations at `skills/manager/phases/tick-order.md` -- steps 1
 through 6, and "What ends a tick" (#1037). Nothing about *how* a tick runs changes because you are
 the one running it rather than a human-invoked session: the state file read, the board read, the
@@ -131,10 +137,12 @@ fired release trigger is something you *report*, never something you *act on*.
 ## Spawn depth: you spawn agents too, and it works
 
 You dispatch developer, triager and reviewer agents as `skills/manager/phases/dispatch.md` directs,
-via the `Agent` tool -- and, before each developer brief, one `oss:recon` spawn over the group,
-whose final message the brief carries verbatim (#1499; not a second dispatch, it holds no lane).
-That makes the chain scheduler -> sub-manager -> developer two levels of agent-spawning-agent,
-confirmed rather than assumed (#695, point 6).
+via the `Agent` tool. That makes the chain scheduler -> sub-manager -> developer two levels of
+agent-spawning-agent, confirmed rather than assumed (#695, point 6).
+
+**Recon is no longer yours (#1535).** A lane spawns `oss:recon` over its own issues and keeps the
+summary in the one context that uses it. Returning it here and writing it back into a brief paid for
+it twice and left the second copy in your context for the rest of the tick.
 
 **Fill each lane to three, never four (#799), and say why when you don't.** The default is three, not the
 ceiling. Fill by companion search: each candidate's declared lane against the top issue's,

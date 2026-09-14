@@ -217,15 +217,15 @@ whether a paragraph earns its size; it only stops growth from being invisible.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 42,116 B | 44,100 B |
+| `agents/developer.md` | 43,639 B | 44,100 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 19,460 B | 21,000 B |
+| `agents/sub-manager.md` | 20,047 B | 21,000 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
-| `agents/recon.md` | 3,936 B | 4,400 B |
+| `agents/recon.md` | 4,348 B | 4,400 B |
 
 **`agents/sub-manager.md`'s ceiling went from 18,800 B to 21,000 B (#1526)** to hold the literal
 `lane_setup.py --claim` call shape: a measured tick paged two phase files three times each hunting
@@ -264,7 +264,7 @@ enters it.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,893 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 56,696 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 56,754 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,922 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,539 B | 36,000 B |

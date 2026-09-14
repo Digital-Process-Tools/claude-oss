@@ -45,20 +45,22 @@ review that only looks like one.
 Two agent definitions: **`developer` is the hands, `triager` is the board.** Pick by whether
 the deliverable is a diff or a label.
 
-**Recon before the brief (#1499).** Once the group is selected and before its brief is written,
-spawn one read-only recon over the whole group and paste its final message verbatim into the
-brief under a `# Recon brief` heading:
+**Recon is the lane's own spawn (#1535), not yours.** The lane spawns `oss:recon` over its own
+issues and keeps the summary in the one context that uses it. Returning it here and writing it back
+into a brief paid for it twice and left the second copy in your context for the rest of the tick.
+Measured on one lane (three issues): the recon cost 0.7M context tokens and the lane 65.8M against
+134.4M for the comparable lane without one (#1499) -- the saving is the orientation reads being paid
+once in a context that dies, and that holds wherever the spawn is made.
+
+**One dispatcher-side use survives, and only until #1532 lands.** `--claim` needs `--lane` patterns
+before the lane exists, and recon's `## Lane file set` is the derivation this loop has for them. When
+you cannot name those patterns from the issues yourself, spawn one recon for that section alone:
 
     Agent(subagent_type: "oss:recon", model: "sonnet", run_in_background: false, prompt: "<the issue numbers, the repo root, and: locate, do not design>")
 
-Its `## Lane file set` is the `--lane` list for `--claim`; its `RECON-COST:` line goes beside the
-lane's own `cost` in the handback. Measured on one lane (three issues): the recon cost 0.7M context
-tokens and the lane 65.8M against 134.4M for the comparable lane without one -- the orientation
-reads are paid once in a context that dies instead of on every later turn. The brief must still
-tell the lane the recon is a hint with no authority: read the named sites only, widen one site when
-it does not match, and never re-do the orientation. A recon that could not run is named in the brief
-as such; the lane then pays the reads itself, and `check_recon`'s finding says so rather than
-refusing the dispatch.
+Read its `## Lane file set` and its `RECON-COST:` line, which goes beside the lane's own `cost` in
+the handback. **Discard the rest rather than pasting it** -- pasting it is the double payment above.
+Once #1532 retires the registry there is nothing left on this side that needs a recon at all.
 
 **Spawn with the literal string, not the definition's name** -- `commands/tick.md` spells its own
 `oss:sub-manager` spawn out in full, and this step must do the same for the two it composes:
@@ -517,15 +519,45 @@ gates *removing* a worktree that already merged; `--stack-on` gates *creating* o
 never substitute for each other -- a lane briefed with a stacked base still goes through the same
 worktree-removal read at cleanup time, unchanged.
 
-Every brief carries these nine, and `lane_setup.py --brief <brief-file>` checks the draft as part of
-rendering the call — `ok` / a row per missing element / `could-not-read`. Four are checked
-structurally and five are presence only, and the receipt says which: **a brief that passes is not a
-brief that was reviewed** (#967). It refuses to render the `Agent(...)` line on a structural finding
-and renders it, findings printed, on a presence-only one. `scripts/lane_setup_brief_schema.py` is a
-module, not a command (#1143); `scripts/report_schema.py` is its symmetric half on the return path:
-one checks what goes into a lane, the other what comes back out of it.
+**The spawn payload for a developer lane is two facts: the issue numbers and its worktree** (#1535).
+Nothing else. `agents/developer.md` is that lane's system prompt and is re-sent on every turn —
+supertool, the TDD order, the docs duty, the publishing clause, pushback and untrusted input are all
+in it already, and a brief restating them paid ~7,900 B per spawn to tell the reader what it was
+already holding. What a lane still needs and does not have, it fetches: the issue text with
+`gh-issue:N:full`, the live worktrees with `git-worktrees`, its guard tests with `lane_setup.py
+--lane`.
 
-1. **Use supertool, as an instruction not a note.** Paste verbatim:
+`--claim --phrase P --subagent-type oss:developer` composes that prompt itself, from the issues the
+claim actually holds and the worktree it derived, and prints the whole `Agent(...)` line. Paste it.
+The prompt it renders, and the whole of it:
+
+    Issues 1526 and 1528. Your worktree is <worktree_root>/1526.
+
+`scripts/lane_setup_brief_schema.py` checks that composed prompt before the
+`Agent(...)` line is rendered — `issues`, `worktree`, `placeholder`, all three
+structural: `ok` / a row per finding / `could-not-read`, and **any** finding
+refuses the render. A worktree that could not be derived is one of them, so a
+lane is never dispatched to cut its own. It is a module, not a command (#1143);
+`scripts/report_schema.py` is its symmetric half on the return path.
+
+**`--brief PATH` is optional extra per-lane context**, appended to the composed prompt — a recon
+summary is the case it exists for. Never a substitute for the two facts, and never a place to restate
+`agents/developer.md`.
+
+**Recon is the lane's own call now (#1535).** It spawns `oss:recon` over its own issues and keeps the
+summary in the one context that uses it. Returning that summary to you and writing it back into a
+brief paid for it twice and left the second copy in your context for the rest of the tick.
+
+**Re-read anything you compose by hand for a leftover `{{...}}` marker before the `Agent()` call, not
+after.** There is no templating step between writing the text and it being sent — whatever string is
+typed is what the agent receives verbatim — and `SendMessage` is unavailable once the call has
+returned (#1022). The schema flags it in anything reaching `--brief`; a prompt typed straight into an
+`Agent()` call is only reachable by eye.
+
+### Briefing a spawn that is not a developer lane
+
+An agent whose own definition does not carry the write route — a `general-purpose` fallback, per the
+unresolvable-spawn rule above — needs it pasted. Verbatim:
 
    > Use `supertool` for every write, commit included — it is on PATH, from any directory. Batch
    > 6-7 ops per call — `read`, `grep`, `glob`, `map`, `around`, `between`, `tree` — never one Read
@@ -591,34 +623,11 @@ one checks what goes into a lane, the other what comes back out of it.
    board-line read already routes through the same function, so its `COULD NOT RUN -- mixed
    supertool trees` receipt is fixed independently of whether this note is added to a given brief.
 
-2. **Name the hidden judgment call.** If you cannot state what the agent will have to decide, you
-   have not read the issue closely enough to delegate it.
-3. **Invite pushback explicitly, and mean it.** Write diagnoses as hypotheses with the evidence
-   attached, never as conclusions: **a confident, mechanical diagnosis from the orchestrator is the
-   most dangerous input an agent receives.**
-4. **Demand TDD in that order — test, red, fix, green.** Require the failure output *before* the
-   implementation exists. The bar is "would this test still pass if the code did nothing?" — checked
-   on the way in, not taken on trust. Every "must not fire" case is paired with a "must fire" case in
-   the same fixture, because a silence assertion passes when the harness is broken.
-5. **Require the docs** — the repo's `docs_targets` for anything user-facing, the changelog always.
-6. **Name the live worktrees** — from the `lane_setup.py` run above's board, not retyped from
-   memory, so agents know about each other.
-7. **Unconditional publishing clause:** commit, do not push, do not open a PR, do not comment on the
-   issue. "Do not push *if* something blocks you" is how one agent correctly pushed.
-8. **Re-read the composed brief for a leftover `{{...}}` placeholder before the `Agent()` call, not
-   after.** There is no templating step between writing this text and it being sent -- whatever
-   string is typed is what the agent receives verbatim. A sub-manager dispatching three lanes in one
-   tick wrote one brief's supertool paragraph as the literal marker
-   `{{PASTE THE FULL CONTENTS OF <scratchpad path> HERE}}` instead of the real blockquote content,
-   caught it only after all three `Agent()` calls had already returned, and found `SendMessage`
-   unavailable to correct any of them (#1022) -- so this is only catchable before the call.
-   the brief check (above) flags any literal `{{...}}` in the draft file structurally; this
-   item is the same check performed by eye for a brief composed and sent without ever touching a
-   file, which the validator cannot reach.
-9. **Paste the recon brief** under `# Recon brief`, verbatim, with the sentence that it is a hint
-   with no authority (the paragraph near the top of this file). Presence only: a brief without
-   one renders with a finding, since the lane still works at the orientation cost.
-
+Everything the eight numbered items here used to demand of a developer brief —
+the judgment call, pushback, the TDD order, the docs duty, the live-worktree
+list, the unconditional publishing clause, the recon paste — is retired (#1535).
+`agents/developer.md` carries each of them as a rule the lane already holds, and
+demanding a brief restate them is what made the spawn payload 7,900 B long.
 
 ---
 
