@@ -1085,14 +1085,15 @@ This is not hypothetical for a tool that runs inside a maintainer's session with
 
 ## What is not proven yet
 
-**The marker below names `v0.33.1`, and it was written inside the v0.33.1 release commit.**
+**The marker below names `v0.34.0`, and it was written inside the v0.34.0 release commit.**
 
-**Delta, taken two ways that agree.** The range is `v0.33.0..HEAD` at `b1371d5`: `git rev-list
---count v0.33.0..HEAD` returns **11**. `gh-prs:state=merged,merged-since=v0.33.0` returns **11**
-merged pull requests -- `#1470`, `#1471`, `#1472`, `#1448`, `#1473`, `#1474`, `#1482`, `#1484`,
-`#1483`, `#1485`, `#1486`. The two counts agree exactly (cross-check `RAN and AGREED`); no direct
-push carrying no trailing `(#N)` sits in this range. Both numbers are reported rather than one being
-silently preferred.
+**Delta, taken two ways that agree.** The range is `v0.33.1..HEAD` at `c2e9c13`: `git rev-list
+--count v0.33.1..HEAD` returns **22**. `gh pr list --state merged --search "merged:>=2026-09-12T03:21:31Z"`
+(the v0.33.1 tag timestamp) returns **22** merged pull requests -- `#1487`, `#1488`, `#1489`,
+`#1490`, `#1493`, `#1494`, `#1495`, `#1496`, `#1497`, `#1498`, `#1500`, `#1501`, `#1502`, `#1503`,
+`#1504`, `#1505`, `#1506`, `#1507`, `#1509`, `#1510`, `#1513`, `#1514`. The two counts agree exactly
+(cross-check `RAN and AGREED`); no direct push carrying no trailing `(#N)` sits in this range. Both
+numbers are reported rather than one being silently preferred.
 
 **One workflow is declared and produced no run on this commit, and that is not a gap.** `changelog`
 is `pull_request`-only, so it gated every pull request in this delta before each merged and simply
@@ -1100,55 +1101,62 @@ does not re-run at the tag: unrepeated, not unchecked. Gate 1's coverage came fr
 `CodeQL`, and from a **dispatched full matrix** rather than the push run alone -- this repository
 reduces its push/pull_request matrix and reserves all twelve OS x Python legs for
 `workflow_dispatch` with `full_matrix: true` (#1246), so the push run is never the whole picture
-here. Run `34668389997` on `244962f`, 14 legs, `conclusion=success`; 22 legs across 2 runs green
-on that commit in total.
+here. Run `34883685439` on `c2e9c13`, 14 legs, `conclusion=success`; 22 legs across 3 runs green
+on that commit in total (CodeQL 2, push-triggered `tests` 6, dispatched full-matrix `tests` 14).
 
-**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-0c628bb6fc093764`,
-over `v0.33.0..HEAD` at `244962ff`, 10 commits): **3 findings, none in a blocking row**, all ranked
-`misreports`. `gate3_disposition.py --round 1 --verdict findings --blocking no` returned `stop-tag`
-regardless -- round one always stops the tag, blocking or not, so the maintainer gets a chance to
-fix before round two runs. The three findings (the WAIT-vs-WARN split in
-`doctor_check_mcp_channel_connection.py` keyed on an env sentinel whose only writer #1474 had just
-removed; a jit-context rule still describing four env relays #1474 cut to one; `pr_green.py`'s
-`_superseded_flags` supersedes by check name alone, not `(workflow, name)`) were routed to
-`trap.d/1474.doctor-mcp-channel-wait-sentinel-dead.md`, `trap.d/1474.jit-rule-restates-removed-env-
-relays.md` and `trap.d/1458.pr-green-supersede-keyed-on-name-not-workflow.md` via PR #1486, merged
-before round two.
+**Gate 3, two formal rounds, the hard cap.** Round one (dispatch token `gate3-r1-3bf37232ab6d5c4f`,
+over `v0.33.1..HEAD` at `79a1399`, 20 commits): **5 findings, none in a blocking row** -- 4 ranked
+`misreports` (an unreadable transcript dropped with no counter in `agent_cost.py`; a `gh-branch`
+poller check that inspects only the first of possibly several state files in
+`doctor_check_event_filter.py`; a `pr_green.py` status condition that never reaches the run its own
+docstring cites, because the pre-existing event filter already excludes it; `oss_config.py`'s
+`REPO_RE` still accepting `..`/`.` path segments two sibling guards already refuse) and 1
+`unranked` (a module-scope circular import across three new `doctor_check_*` modules).
+`gate3_disposition.py --round 1 --verdict findings --blocking no` returned `stop-tag` regardless --
+round one always stops the tag, blocking or not, so the maintainer gets a chance to fix before round
+two runs. The four `misreports` were routed to `trap.d/1499.agent-cost-unreadable-transcript-
+dropped-silently.md`, `trap.d/1508.doctor-event-filter-reports-one-poller-as-all.md`,
+`trap.d/1458.pr-green-status-condition-narrower-than-docstring-claims.md` and
+`trap.d/1475.oss-config-repo-re-still-accepts-dot-segments.md` via PR #1513, merged before round
+two; the `unranked` finding was filed as issue #1512.
 
-Round two (dispatch token `gate3-r2-c044551201dee01c`, over the range re-derived at `b1371d5` after
-PR #1486 merged, 11 commits): the auditor re-derived independently, reproduced all three round-one
-findings at HEAD (confirming each was already routed and not to be re-filed) and found **2 new,
-non-blocking findings**, both `misreports`: `doctor_check_auto_update.py`'s `could-not-check` arm
-demotes every cause to `WAIT ... settles on the next SessionStart check`, though only one of its
-four causes (an unreadable install record) is actually self-healing; and `doctor.py`'s VERDICT line
-counts `NOTICE` but not `WAIT`, so a run with only WAIT findings renders `VERDICT: ok`
-indistinguishable from a clean run. `gate3_disposition.py --round 2 --verdict findings --blocking
-no` returned `carry-forward-and-proceed`. Both new findings were routed to
-`trap.d/1448.doctor-could-not-check-demoted-to-wait.md` and
-`trap.d/1448.doctor-verdict-line-does-not-count-wait.md`, carried in this commit. One shared
-limitation the round-one `pr_green.py` fragment named (keying by check name alone) was checked
-against `claude-supertool`'s own `_checks.github_superseded` and found to match it byte-for-shape --
-the fragment stays valid as a shared-limitation note, no new action. 2 of 4 classes were `read`
-rather than `exercised`; the test suite was reasoned, not run, by the auditor.
+Round two (dispatch token `gate3-r2-bcc87282b35641f8`, over the range re-derived at `f23839a` after
+PR #1513 merged, 21 commits): the auditor re-derived independently, reproduced all five round-one
+findings at HEAD (confirming each was already routed and not to be re-filed, with one refinement --
+the circular-import class reproduces on six `doctor_check_*` modules, not three, and was added as a
+comment on #1512 rather than a new issue) and found **4 new, non-blocking findings**, all
+`misreports`: `loop_cost_report.py` drops an assistant record with an unparseable timestamp with no
+counter; `next_action.py`'s inbound repeat-suppression signature is counts-only, so a different
+outside issue arriving while an old one is still ruled can read `not-due`; `trap_curate`'s
+`curate_count` reads `origin/<default_branch>` with nothing on that path fetching, so the count is
+only as fresh as the last fetch with no freshness signal; and `lane_setup_brief_schema.py`'s recon
+check is a bare substring with no word boundary. `gate3_disposition.py --round 2 --verdict findings
+--blocking no` returned `carry-forward-and-proceed`. All four were routed to
+`trap.d/1499.loop-cost-report-drops-unparseable-timestamp-silently.md`,
+`trap.d/1433.next-action-inbound-suppression-count-only-signature.md`,
+`trap.d/1476.curate-count-reads-stale-origin-default-branch.md` and
+`trap.d/1499.lane-setup-brief-schema-recon-check-no-word-boundary.md` via PR #1514, merged before
+this commit. 2 of 4 classes were `read` rather than `exercised` in each round; the test suite was
+reasoned, not run, by the auditor throughout.
 
-**Cohort freeze: cohort-30 at 34.** Per #1122's rule this marker cites a cohort that has already
+**Cohort freeze: cohort-31 at 31.** Per #1122's rule this marker cites a cohort that has already
 finished freezing, never this release's own -- the freeze runs after the tag and this commit is
-written before it. The state file records `cohort-30` as `measured` at **34**, frozen at the
-`v0.33.0` tag (2026-09-11T19:34:52Z), with two routes that first disagreed (`cutoff_scan: 34`,
-`label_filter: 31`, recorded as `unknown` rather than taking the lower number) and agreed at **34**
-on the re-count a minute later. `cohort_citation_order.py --state .max/claude-oss-watch.json --at
-<now>` was run against this paragraph before committing; its answer is quoted in the release
-report.
+written before it. The state file records `cohort-31` as `measured` at **31**, frozen at the
+`v0.33.1` tag (2026-09-12T03:36:13Z / re-confirmed 03:36:58Z), with two routes that first disagreed
+(`cutoff_scan: 31`, `label_filter: 30`, recorded as `unknown` rather than taking the lower number)
+and agreed at **31** on the re-count roughly a minute later. `cohort_citation_order.py --state
+.max/claude-oss-watch.json --at <now>` was run against this paragraph before committing; its answer
+is quoted in the release report.
 
 **The reach probe was NOT re-derived at `v0.33.0`** -- it is still `v0.21.0`'s, measured at
 `c565488`, eleven repositories in the one org it can see and four carrying `.oss.json`. The rest of
 the field readings were not either: the owned-files table, the two installs and the `doctor` run are
-still `v0.17.0`'s, measured at `ad38b93` and now carried through **seventeen** tags (`v0.18.0`
-through `v0.33.1`). `#1127` tracks re-deriving them. A seventeenth release disclosing the identical,
+still `v0.17.0`'s, measured at `ad38b93` and now carried through **eighteen** tags (`v0.18.0`
+through `v0.34.0`). `#1127` tracks re-deriving them. An eighteenth release disclosing the identical,
 unmeasured-since-`v0.17.0` gap is one of two things: either the gap is genuinely low priority
 against everything else this loop spends a tick on, or the disclosure is not actually driving anyone
 to close it. Both are worth naming and neither is decided here -- the honest content of this
-paragraph is the count itself, seventeen releases running, not a conclusion drawn from it. **The
+paragraph is the count itself, eighteen releases running, not a conclusion drawn from it. **The
 readings themselves live in `docs/release-currency.md`**; this section holds the verdict and the
 marker. Re-derive at each release rather than editing this -- and re-derive it INSIDE the release
 commit, per this section's own stated exception, so a developer lane does not have to catch the gap

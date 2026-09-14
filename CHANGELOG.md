@@ -7,6 +7,312 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-09-14
+
+### Added
+
+- Added `agents/doctor.md`, a spawn `/oss:run` step 1 and `/oss:doctor` reach for
+  once a `WARN`/`FAIL` line needs investigation past a scripted repair -- a stale
+  clone HEAD, a rate-limit mystery across pollers. Chasing those by hand used to
+  land the whole hunt permanently in the scheduler's own long-lived session; this
+  agent runs `doctor.sh`, chases each finding, and reports `repaired:` /
+  `not-ours:` / `could-not-tell:` per line, then dies with its context -- the same
+  move #1414 already made for the six `commands/run/*.md` sub-steps (#1457).
+
+- Added `scripts/loop_cost_report.py`, which sums token spend from Claude Code
+  transcripts per project, agent kind and context band, lists every transcript
+  whose context passed 400k, and reports `measured` / `nothing-in-window` /
+  `could-not-read`; a doctor check, `event filter`, that reports whether the
+  `gh-prs` radar tier's `pr_exclude_events` keeps per-PR channel noise out of
+  the scheduler session (`OK` / `WARN unfiltered` / `NOTICE not-configured` /
+  `WARN could-not-read`), with this repo's own `.supertool.json` now setting it;
+  and a jit-context rule reminding a sub-manager that a second status read on
+  the same PR inside a tick is hand-polling (#1499).
+
+- `scripts/agent_cost.py` measures one agent's own token spend from its transcript --
+  max context, turns, Bash calls, output tokens -- and `--into <report path>` writes the
+  block into the developer report's new optional `cost` key (agent-report contract 14,
+  additive). The lane finds its own transcript by the report path, a string only its own
+  tool calls name; `Agent`/`Task` spawn inputs are never matched, so a spawner's brief naming
+  the same branch cannot make the lane ambiguous. Four states: `measured`, `ambiguous`,
+  `no-match`, `could-not-read`. `agents/developer/report.md` tells a lane to run it before
+  validating; `skills/manager/phases/handback.md` tells a sub-manager to read
+  `over_threshold` as a `trap.d/` finding. Report first, enforce later -- #1499 decision 2.
+
+- Two `mode: block` jit-context rules in this repository's own `tools/00-manual/` layer
+  refuse the two habits that made one developer lane 761k tokens of context (#1499):
+  `raw-file-reads-are-uncapped.md` refuses `sed -n`, `cat FILE`, `head`/`tail FILE` and
+  `grep` at command position and names the capped `read:`/`grep:` op to send instead;
+  `python-heredoc-writes-are-unvalidated.md` refuses `cat > FILE <<EOF` and a
+  `python3 - <<EOF` whose body writes a file, naming `edit:@-`/`paste:@-`. Filters after a
+  pipe, read-only heredocs and supertool payloads whose content documents either form are
+  not matched. Enforcement rather than a once-per-session reminder; both rules degrade to
+  advisory where supertool is not on PATH.
+
+- Recon-first developer lanes (#1499). `agents/recon.md` is a new read-only spawn dispatch
+  runs over a lane's issues before the developer brief is written. It returns sites by symbol,
+  a verdict per claim (`confirmed-by-read` / `already-shipped` / `could-not-tell`), the nearest
+  tests, sibling instances, the lane file set and the open questions; the brief carries that
+  message verbatim under `# Recon brief`, and `agents/developer.md` tells the lane to start
+  there rather than re-reading the tree. `lane_setup_brief_schema` gains a ninth, presence-only
+  element, `recon`. Measured on one three-issue lane: 65.8M context tokens against 134.4M for
+  the comparable lane without a recon; the recon itself cost 0.7M.
+
+- `doctor` gains a `branch filter` line (#1508): the default-branch `gh-branch` poller has no
+  config knob and radar forks it subscribed to every key, so the check reads the poller's own
+  state file for its live `only=` list -- `ok` / `unfiltered` / `not-armed` / `could-not-read`
+  -- and names the `watch:gh-branch:<ref>:only=went_green,went_failed` call that arms it before
+  the heal. `tick-order.md` step 2 runs that call when the line is not `ok`; `tick.md` step 7's
+  paused resume is the poll-timer arm, since the per-PR pollers exclude `checks_succeeded` by
+  design.
+
+### Changed
+
+- The two `mode: block` jit rules #1502 added to this repository's own `tools/00-manual/`
+  layer -- a raw `sed -n`/`cat`/`head`/`tail`/`grep` read at command position, and a
+  `python3 - <<EOF` or `cat >` that writes a file -- now ship in the `01-oss` layer every
+  scaffolded repository receives (`oss_rules.TOOLS_RAW_READS`, `TOOLS_HEREDOC_WRITES`).
+  Measured before promoting: two developer lanes in another managed repository spent 66% and
+  58% of their tool output on raw reads the rule would have refused. Both carry
+  `requires: supertool`, so a repository without the op degrades to a reminder (#1499).
+
+### Fixed
+
+- Investigated and found already fixed: `doctor_check_trap_queue.check_trap_queue` delegates
+  entirely to `trap_curate.waiting()`, which #1348 already excludes `trap.d/README.md` from --
+  reproducing the issue's own scenario (a directory holding the scaffolded README plus one real
+  fragment) already reports the correct count on this repository's current `main`. A new
+  regression test now exercises the actual `/oss:doctor` entry point end to end (rather than only
+  the underlying `trap_curate.waiting()` function, which #1348's own tests already covered), so a
+  future regression in how the check calls that function has something to catch it (#1359).
+
+- Gate 3's v0.31.0 round-two audit found six carry-forward findings in the #1372 census fixes,
+  two of them inside round one's own fix commit: `bin/oss-workspace`'s embedded channel-census
+  heredoc still read `OSS_WORKSPACE_MCP_LIST_OUTPUT` bare, trusting any value inherited from the
+  environment rather than one this launch actually computed -- fixed by having the launch always
+  overwrite its own export, success or failure, so a stale or inherited value can never survive to
+  be replayed as a fresh answer. `_drop_dead_plugin_consumers`'s liveness gate had three further
+  defects: `run`/`which`/`env` were never threaded into its default `arm_target_liveness`, so a
+  caller already stubbing those for `claude mcp list` was still left with a real, unstubbable
+  `claude mcp get` underneath (untestable on this repo's own CI, where no `claude` binary exists);
+  the drop filtered by name PREFIX over the merged `claude mcp list`/plugin-registry populations
+  rather than by which population a name actually came from, so a `claude mcp list` row spoofed
+  with a `plugin:`-prefixed name could be liveness-probed and dropped, the unsafe direction for a
+  census that exists to catch two servers racing one socket; and the lazy `arm_target_liveness`
+  import had no failure arm, so an `ImportError` could escape as a raw traceback out of a function
+  `doctor.py`'s own `main()` calls with no enclosing `except`. A fifth, smaller finding hardened
+  `tests/test_gate3_round1_findings_1372.py`'s own trap-parity fixture to derive the owned
+  `trap.d/` filename from `scaffold.OWNED` rather than a hardcoded literal, so a second owned file
+  appearing there in the future is written to the fixture automatically instead of silently never
+  being tested. A sixth finding (a session-open cost regression: `_drop_dead_plugin_consumers`
+  introduces a `claude mcp get` call per plugin-declared name, paid twice per `/oss:doctor` run and
+  again on every launcher session-open, with no memoisation) is left for its own, narrower fix
+  rather than folded in here (#1378).
+
+- `scripts/script_call_survey.py` is a new check, surfaced in `/oss:doctor`'s own output as a
+  `NOTICE`: for every `scripts/<name>.py`, does something under `commands/`, `agents/`, `skills/`,
+  `bin/` or another script module actually RUN it, or only describe it in prose? Three states --
+  `called` (a documented command line naming the script alongside a runner verb, or a Python
+  `import`), `mentioned-only` (named in prose and never executed, including never referenced at
+  all), and `could-not-tell` (the script's own file is unreadable, never rendered as `called`).
+  Closes the class behind four things built in one night with no caller: triage-after-release
+  (#1386), the curation threshold-route (#1303), the cohort-freeze marker (#1410) and the
+  manager-in-the-picker key mismatch (#1391) -- each individually correct, and nothing before this
+  compared what calls what. A command line assembled from a runtime-rendered variable rather than
+  a literal filename (`scripts/lane_setup.py`'s own `Agent(...)` render is exactly this shape) is
+  not attributed to any one script; its presence is reported as a corpus-wide note instead, since
+  attributing it to a specific script without knowing what the variable resolves to would be a
+  guess (#1416).
+
+- #1426: `doctor_check_statusline_unknowns.py`'s statusline-refresh remedy
+  interpolated `project_dir` straight into a double-quoted shell string with
+  no escaping -- a `"` anywhere in the directory name terminated the quoting
+  early, so a maintainer pasting the remedy ran something other than a
+  statusline refresh. The embedded quote is now escaped before formatting.
+  Also added a parity test between `statusline._VENDORED_DIR_NAME` and
+  `scaffold.OWNED_DIR` (both `".oss"`, the same fact typed twice with
+  nothing previously tying them together), matching the precedent this
+  repo's own `_safe_which`/`gh_which.py` parity tests already set.
+
+- `scripts/lane_coupling.py`'s import-resolution loop now surfaces a genuine
+  `OSError` during candidate-path resolution (a real permission-denied stat)
+  through `problems`, instead of swallowing it identically to "this module was
+  never referenced" -- the same treatment its sibling glob-walk loop already
+  gives its own `OSError`s. The literal-candidate loop's broader
+  `(OSError, ValueError)` catch is unchanged: its candidates are free-text
+  string literals, where an unstat-able string is a routine, expected outcome
+  rather than a genuine access failure (#1427).
+
+- `tests/test_doctor_inprocess.py`'s config-dependent pairing test could fail on a developer's
+  own machine while staying green in CI: `_quiet_main` stubs every real subprocess the pairing
+  runs through `doctor.main()`, but not `statusline.cache_dir()`, which `check_latest_skew` reads
+  directly against the real `XDG_CACHE_HOME`/`~/.cache`. A stray cache file left there by any
+  earlier, unrelated run -- keyed on the test suite's shared placeholder repo `"owner/name"` --
+  made the pairing report `not checked` for a check the fixture itself never touched, while a
+  fresh CI checkout (whose `~/.cache` starts empty every run) never saw it. Confirmed as a real
+  test-isolation gap, not a difference in `check_latest_skew`'s own logic between the two
+  environments: `_quiet_main` now isolates `statusline.cache_dir` to the test's own `tmp_path`,
+  the same way every other boundary it stubs is isolated (#1428).
+
+- #1429: `plugin_update.py`'s `--root` argument parsing raised `IndexError`
+  when `--root` was the last token on the command line, the same pattern
+  #1346 already fixed in `statusline.py`. Both `--root` and `--caller` now
+  go through a local, bounds-checked `_arg_value` helper.
+
+- #1431: after #1389 demoted `setup`, `scaffold`, `triage`, `curate` and
+  `changelog` out of the top-level slash-command picker, a few still-live
+  remedy strings kept printing the now-dead bare form as the fix-it
+  instruction. `commands/doctor.md`, `commands/tick.md` and
+  `commands/release.md` -- three of the four files that stayed top-level --
+  plus `docs/overview.md`'s own cheat-sheet row, are swept: each instructive
+  remedy (never one that quotes `scripts/doctor.py`'s own generated WARN text
+  verbatim, which stays literal until that generator itself is fixed) now
+  says `/oss:run setup` / `/oss:run scaffold` / `/oss:run changelog` /
+  `/oss:run curate`, or drops the exact slash-command spelling entirely in
+  favour of naming the step.
+
+- `next_action.py`'s `inbound` source now carries the same repeat-suppression
+  receipt `curate` and `triage` already had: an unresolved external issue or
+  pull request no longer reports `due` identically forever, since `DEFAULT_ORDER`
+  put it first and nothing armed once it was taken. Also states, in the module's
+  own docstring, why this rewrite does not switch the candidate to
+  `inbound_triage.py`'s richer per-item classification -- repeat-suppression only
+  needs a signature to compare, not a richer reading, so the two questions are not
+  actually coupled (#1433).
+
+- #1435: two script-hygiene fixes from a hands-on pass over the loop's own
+  scripts. First, the same concept -- the repository a script acts on -- was
+  spelled `--root` in some scripts (`next_action.py`, `statusline.py`) and
+  `--repo` in others (`triage_trigger.py`, `cohort_freeze_record.py`); each
+  script now accepts both spellings via an `add_argument` alias (or, for
+  `statusline.py`'s manual `_arg_value` parsing, the same fallback), so a
+  caller using the "wrong" one for a given script is no longer refused.
+  Second, `next_action.py`'s `--record-skip`/`--take` write paths had no
+  `--state-file` override, unlike every other script that touches the state
+  file, so the write path could only be exercised against the live state
+  file; a new `--state-file` flag now diverts both write paths to a scratch
+  file, provable in isolation with a paired test proving the un-overridden
+  case still writes to the configured file.
+
+- #1437: two gate 3 misreports. A cached `channel:health` reading taken by
+  a DIFFERENT session used to suppress a real WARN in
+  `check_mcp_channel_connection`/`check_channel_delivery` -- `doctor.py` has
+  no session identity of its own to compare against, so every session's
+  cached reading was trusted unconditionally. `resolve_channel_health_
+  reading` now reports a distinct `cached-other-session` source for a
+  session-tagged cached reading, and both consumers stop treating it as
+  trustworthy. Separately, `next_action.py`'s `_record_skip_cli` only
+  trapped `ValueError`, but `record_skip` can raise `oss_state.StateError`
+  (e.g. a `--reason` long enough to push the composed decision string past
+  `oss_state.MAX_DECISION`) -- that produced an uncaught traceback instead
+  of the documented `FAIL:` line. Both exception types are now trapped.
+
+- #1460: `.oss/assemble_changelog.py`'s `self_reference_finding()` raised a `BadFragment`
+  when a changelog fragment's body never cited its own issue number, but the message never said
+  why the rule exists -- a reader had no pointer back to `claude-supertool#1251`, the issue that
+  originally motivated it, and `claude-supertool`'s own retired local copy of this assembler had
+  carried that pointer while the ported, oss-owned copy dropped it. The finding now links to
+  `https://github.com/Digital-Process-Tools/claude-supertool/issues/1251` rather than a bare
+  `#1251` -- a bare citation would resolve against whichever tracker a scaffolded repo's reader is
+  standing in, the same defect `tests/test_assemble_changelog_citations.py` already guards this
+  file against. No internal rule-to-issue registry was built: this is the only rule in the file
+  that traces back to an originating issue today, so hardcoding the one pointer is the right-sized
+  fix.
+
+- #1468: a nested `oss:developer` lane reported the `Agent` tool totally
+  unavailable in its own session -- neither `Explore` nor `oss:auditor` could
+  be spawned for the mandatory self-review, even though the dispatching
+  sub-manager's own `Agent` tool worked throughout the same run. The developer
+  brief only documented a fallback for a `subagent_type` that fails to
+  *resolve* (re-dispatch once to `general-purpose`, #81); it said nothing
+  about the tool itself being unreachable, where that fallback hits the
+  identical wall. `agents/developer/review-return.md` and the spine
+  (`agents/developer.md`) now name the two failure modes separately and say
+  what to report for each: `not-checked` with the verbatim error in
+  `review.spawn_error` (already wired by #1383/#1445) for total
+  unavailability, `could not run` only for a genuine name-resolution failure
+  with a working `Agent` tool underneath it -- so a lane in this state cannot
+  silently downgrade to a clean review with nothing behind it.
+
+- #1469: a sub-manager spawned during a real tick read `agents/sub-manager.md`'s
+  "read it the same way out of habit" line as an instruction to open
+  `commands/tick.md`, whose first line is `Agent(subagent_type:
+  "oss:sub-manager", ...)`, and spawned a second sub-manager underneath itself
+  instead of running the tick -- scheduler, sub-manager, sub-manager,
+  developers, three levels deep, one extra full context paid for nothing.
+  `agents/sub-manager.md` no longer sends the sub-manager to `commands/tick.md`
+  at all: the "Run the tick" section now states outright that the file is the
+  scheduler's own spawn wrapper, names its first-line spawn instruction
+  explicitly, and says the spawn already happened -- there is nothing for the
+  sub-manager to read or repeat there.
+
+- `oss_config.repo_problem` (`REPO_RE`) refused a `repo` value carrying a slash, whitespace or a
+  backslash, but still accepted one carrying `?` or `#` -- both legal to the old character class
+  and both able to start a bogus query string or URL fragment the instant they reach a REST path
+  `gh api` builds by plain string substitution rather than URL-encoding. `cohort_freeze.py`'s
+  `_resolve_repo_slug` routes a tracked, contributor-editable `.oss.json`'s `repo` field through
+  this exact function, unguarded by any copy of its own, before building several such paths during
+  release tagging. Closed at the canonical source rather than as a fourth standalone copy: `?` and
+  `#` now join the excluded class in `oss_config.REPO_RE` itself, the same class `statusline.
+  _malformed_repo` and `doctor._malformed_repo` already excluded them from in their own standalone
+  copies for #1401 (#1475).
+
+- Fixed: `next_action.py`'s curate/triage ranking read `trap.d/`'s working-tree state for whatever branch happened to be checked out, rather than `origin/<default_branch>`'s -- a shared checkout parked on a stale feature branch could report that branch's own leftover fragments as though they belonged to the default branch. `workspace_routes.curate_count` now reads `origin/<default_branch>`'s own committed tree via `git ls-tree` whenever the checkout is standing on some other branch, and still reads the working tree when the checkout genuinely IS the default branch (so a just-committed, not-yet-pushed curate run stays visible before it is pushed). (#1476)
+
+- Fixed: `commands/run/triage.md` completed a full triage sweep and reported back, but never told the `oss:scheduler-step` spawn to record it in the state file -- so `--last-triage` stayed unchanged and `triage_trigger.py` would have re-ranked triage `due` forever, re-spawning it on every loop iteration. The procedure now runs `oss_state.py <state_file> --decision "triage sweep recorded" --at <ts> --triage-recorded <ts>` once the agent's report confirms the sweep actually ran, the same call shape `commands/tick.md`'s own post-release triage step already uses. (#1478)
+
+- #1480: two `misreports` findings from a v0.33.0 gate 3 release audit,
+  both confirmed rather than left as reasoning alone. `pr_green.py`'s
+  `--wait` could hold PENDING forever for an Actions run that reaches
+  `status: completed` (e.g. cancelled while still queued) but produced zero
+  jobs -- confirmed against this repository's own history (run 34676522288:
+  `status=completed`, `conclusion=cancelled`, `.../jobs?filter=all`
+  reporting `{"jobs": []}` permanently, not merely for the transient window
+  a partial re-run needs). A `completed` run is now excluded from
+  "unresolved" regardless of its job count, since a completed run's job
+  count can never change; #1400's own genuine still-in-flight race is
+  unaffected (its run object carries no `status` at all, treated as "not
+  confirmed completed"). Separately, `tree_snapshot._root_relative_path`
+  did a case-sensitive prefix compare between `--before`'s recorded root
+  and the live root, which can mis-resolve on Windows when the two differ
+  only in case (a drive letter, a short-name spelling) -- the mechanism is
+  confirmed by unit test (the function is pure string manipulation with no
+  OS call), though the real-world trigger stays reasoned rather than
+  observed on an actual Windows host. The prefix compare now case-folds
+  both sides when `sys.platform` reports Windows, and is left untouched
+  everywhere else since a POSIX filesystem is not guaranteed
+  case-insensitive.
+
+- `scripts/doctor.py`'s `_supertool_tree_identity_confirmed` now threads
+  through the reason `_origin_slug` already computes instead of discarding it,
+  so `supertool_invocation` can render `own-tree declined: <reason>` for an
+  inconclusive input (no installed `supertool` dependency to compare against,
+  no readable `origin`, an unrecognised remote form) distinctly from a
+  genuinely confirmed non-match, which keeps reading as the plain
+  `not a supertool checkout` (#1481).
+
+- #1491: `tests/test_total_tool_unavailability_1468.py`'s PRIOR-control helpers
+  read a historical document with a bare `git show f0cf758:<path>`, which
+  assumes the local checkout is a full clone. `.github/workflows/tests.yml`'s
+  `actions/checkout@v7` steps set no `fetch-depth`, so CI's default shallow
+  (depth-1) checkout does not have that commit's object at all, and the read
+  failed with exit 128 (bad object) rather than returning the historical
+  content -- turning main red at 95391c7 on macOS/3.12 (job #103498989883).
+  The two helpers now fetch the one commit on demand, by its full 40-hex SHA
+  (an abbreviated SHA is refused by GitHub's own remote with "not our ref"
+  even where the full form succeeds), before reading it; if the fetch itself
+  cannot succeed -- no network, or the object genuinely unreachable from that
+  remote -- the two dependent tests are skipped with the reason stated,
+  rather than rendering a missing historical blob as a red assertion failure
+  indistinguishable from a real regression.
+
+- The shipped `pr_exclude_events` default named `pr_opened`, a `github-pr-feed` event the
+  per-PR `github-pr` poller cannot emit, so supertool 0.61.0's radar refused the whole
+  `gh-prs` tier -- zero per-PR pollers -- while `doctor`'s event-filter check reported `ok`
+  over it. Dropped from all four shipped copies (the `.supertool.json` template, both radar
+  remedies, `doctor_check_event_filter.INITIAL_EXCLUDE`); a new test reads supertool's own
+  `events.json` for the valid set and holds the four copies to one value (#1499).
+
 ## [0.33.1] - 2026-09-12
 
 ### Fixed
@@ -11035,7 +11341,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.33.1...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.34.0
 [0.33.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.33.1
 [0.33.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.33.0
 [0.32.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.32.0
