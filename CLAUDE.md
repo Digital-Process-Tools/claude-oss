@@ -64,6 +64,14 @@ unusually coordination-heavy (a release, a curate pass, a triage sweep), so trea
 indicative rather than standing; what does not depend on the window is that a spawn whose whole
 purpose is to read one command file and die reached 306,361.
 
+**Every read, write and search goes through supertool, and that is a hook, not a preference.**
+`Read`, `Edit`, `Write`, `Glob` and `Grep` are refused, and so are bare `cat`, `sed -n`, `head`,
+`tail` and `grep` at command position. The op replaces the call: `read:PATH`, `edit:@-`,
+`paste:@-`, `glob:PATTERN`, `grep:PATTERN:PATH`, several in one call with `batch:@-`. The refusal
+names the replacement, so a blocked call is a redirect rather than a dead end, and `ops` lists what
+this project's supertool can do. The reason is this section: supertool's reads are capped, ranged
+and logged, and the raw forms are none of the three.
+
 **A read is the largest cost a lane controls, and a capped read is not a whole file.** `read:` caps
 at 20,000 B, so a bare read of a large file pages: one lane spent ~68k tokens returning 272,756 B
 over 18 reads, seven of them exactly at the cap, to walk two scripts it needed one function from.
@@ -349,9 +357,9 @@ them.
 - **A content check over the loop reads the set, never the spine.** `scripts/manager_docs.py`
   derives it from disk; every guard that used to open `skills/manager/SKILL.md` goes through it.
 
-- **No agent is granted `Read`, `Grep` or `Glob`**; reads go through supertool via `Bash`. The
-  triager is additionally denied `Edit` and `Write`. That denial is real for the harness tools and
-  empty for the route this repository actually uses: `Bash` is total and every write goes through
+- **The withheld harness tools are not a boundary.** No agent is granted `Read`, `Grep` or `Glob`,
+  and the triager is additionally denied `Edit` and `Write` -- real for those tools, and empty for
+  the route this repository actually uses, since `Bash` is total and every supertool op goes through
   it. So every `Bash`-granted agent carries a section saying the grant is total, labelled as advice
   rather than as a boundary, pointing at supertool's own `ops:roster`;
   `tests/test_agent_grant_is_total.py` holds that shape and cannot hold the behaviour.
