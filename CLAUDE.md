@@ -168,6 +168,16 @@ separately rather than one list.
   and let CI answer the rest. A full local green is not a stronger signal than a partial local green;
   it is the same signal, costing more.
 
+- **A read is the largest cost a lane controls, and a capped read is not a whole file.** `read:` caps
+  at 20,000 B, so a bare read of a large file pages -- one lane spent ~68k tokens returning 272,756 B
+  over 18 reads, seven of them exactly at the cap, to walk two scripts it needed one function from
+  (measured 2026-09-14, four lanes, peaks 272k-313k). **Locate with `grep:PATTERN:PATH`, then
+  `read:PATH:START:LEN` over the range it named.** Batch the reads you already know you need into one
+  `batch:@-`. Never re-read what is in context: a brief this lane wrote, a file it just edited (`edit`
+  returns the result), a `--help` whose call shape the brief states. A file outside the worktree costs
+  the same -- prefix `cwd:PATH` rather than reaching for `python3 -c "print(open(...).read())"`, which
+  has no cap and no range.
+
 - **A green run on your own platform is the weakest evidence available** about the platform it was
   not run on. Say which cross-platform claims are observed and which are reasoned. The interpreter is
   a second axis and it is the easier one to miss: a local suite stayed green for a whole round while
@@ -296,165 +306,24 @@ from being invisible.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 18,021 B | 18,800 B |
+| `agents/sub-manager.md` | 19,460 B | 21,000 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 3,936 B | 4,400 B |
 
-**#1499 adds `agents/recon.md`, a new file rather than growing an existing one.** A developer lane
-used to open its first thirty files itself and carry every one of those reads for the rest of the
-lane -- 57% of one night's context tokens were sent in calls made past 200k. The recon spawn pays
-those reads once, in a context that dies, and hands the lane a summary: sites by symbol, a verdict
-per claim (`confirmed-by-read` / `already-shipped` / `could-not-tell`), nearest tests, siblings,
-the lane file set, open questions. Measured on one three-issue lane: 65.8M context tokens with a
-recon (0.7M for the recon itself) against 134.4M for the comparable lane without one; max context
-345k against 503k. One sample, different issues, so directional rather than proven -- the report's
-`cost` block on every later lane is what turns it into a measurement. `agents/developer.md` and
-`agents/sub-manager.md` each grew one paragraph for it (re-baselined above, neither ceiling moved),
-and `scripts/lane_setup_brief_schema.py` gained a ninth, presence-only element, `recon`.
-
-**#1457 adds `agents/doctor.md`, a new file rather than growing an existing one.** `/oss:run`'s own
-step 1 used to run `doctor.sh` inline and chase every `WARN`/`FAIL` line in the scheduler's own
-long-lived session -- fine for a scripted repair, but a line that needed investigation (a stale
-clone HEAD, a rate-limit mystery across pollers reading one channel) then landed permanently in
-that session's context, the same erosion #1414 already closed for the six `commands/run/*.md`
-sub-steps via `agents/scheduler-step.md`. This agent closes the one step 1 that still ran the hunt
-by hand: `Bash` and `TodoWrite` only, and it reports `repaired:` / `not-ours:` / `could-not-tell:`
-per line rather than the generic `ok`/finding/`skipped`-`unknown` label a caller would have had to
-re-translate. Budgeted from the day it was added, the same posture #1389 and #1414 already take.
+**#1526 raised `agents/sub-manager.md`'s ceiling from 18,800 B to 21,000 B**: 18,021 B became
+19,460 B, past the old ceiling by 660 B. A measured tick paged `tick-order.md` and `dispatch.md`
+three times each (66,441 B combined) hunting for the `lane_setup.py --claim` call shape before
+dispatching a single lane; the shape is now literal here, beside the `select_issues.py` call #1179
+already put in this file for the identical reason. Nothing already in the file argued that point,
+so nothing was cut to make room; the ceiling carries the same ~10% headroom the other re-baselines
+in this table use.
 
 The counter-argument stands and must survive whatever gets cut to stay under budget: this repository's
 history is largely expensive lessons written down so they are not paid twice, and a trim that removes
 a still-live trap costs a whole extra review round — a cost that will not show up next to the token
 count it saved. The budget is a visible number, not a mandate to shrink.
-
-**#972 raised `agents/auditor.md`'s ceiling from 15,800 B to 18,400 B** rather than trimming
-an existing paragraph to fit the new one: the addition states the worktree-boundary rule a
-spawned auditor failed to hold (#972's own incident), and nothing already in the file argued
-that point, so there was nothing safe to cut in its place.
-
-**#1071 re-baselined `agents/auditor.md` and `agents/release-auditor.md` down, without touching
-either ceiling.** Measured on `main` at `ef9a1bc`: the two files shared 286 8-grams, ~10% of
-each -- the total `Bash` grant's explanation, how a read happens through `supertool`, and "test
-behaviour is reasoned, not run" were near-verbatim in both, because both are audit spawns with
-the same operating shape underneath different jobs (one annotates a PR's diff, the other blocks
-a release over the whole delta). That shared prose moved to `agents/audit/shared.md` -- the
-loop's first **multi-parent** fragment, since every extraction before this one had exactly one
-spine (`SKILL.md` over `phases/*.md`, `agents/developer.md` over `agents/developer/*.md`). Each
-agent kept its own decision (the worktree-boundary check for `auditor.md`, the tagging/
-publishing exception for `release-auditor.md`) and now points at the fragment for the argument.
-Living one directory down (`agents/audit/` rather than `agents/`) keeps it off the non-recursive
-`agents/*.md` glob `tests/test_agent_definition_budget_491.py` and `tests/test_agent_grant_is_
-total.py` both use, the same reason `agents/developer/*.md` sits below `agents/` rather than
-beside it. Its own budget lives in `scripts/audit_shared.py` rather than in either
-`agent_budgets.BUDGETS` (one-to-one with a real, frontmatter-bearing agent definition) or
-`developer_phases.DOCUMENTS` (one spine, not two) -- neither fits a file with no single parent.
-14,174 B became 12,963 B for `auditor.md`, 14,953 B became 13,992 B for `release-auditor.md`;
-both ceilings are unchanged and both files sit further under them than before.
-
-**#1210 partially restored what #1071 moved.** The dedup deleted "Test behaviour is reasoned,
-not run" from both files' own raw text and left only the pointer to `agents/audit/shared.md`, but
-`tests/test_delegated_test_run_877.py` reads each file's own bytes directly and does not resolve
-that pointer -- a fact #1071 did not check against, so the marker sentence silently stopped
-existing anywhere the test could see it. The section is back in both files' own text (the shared
-fragment and the pointer stay too, for the human reader). Restoring it verbatim in both files at
-first re-crossed `tests/test_audit_shared_1071.py`'s own duplication threshold (168 shared 8-grams
-against a `< 150` ceiling) -- the same defect #1071 fixed, reintroduced by the fix for a different
-one. `release-auditor.md`'s copy was reworded (same four required substrings, different
-surrounding prose) rather than left byte-identical to `auditor.md`'s, bringing the pair back to 132
-shared 8-grams. 12,963 B became 13,273 B for `auditor.md`, 13,992 B became 14,424 B for
-`release-auditor.md`. Both ceilings are unchanged.
-
-**#1186 raised `auditor.md`'s own measurement again, without touching the ceiling.** The
-Report format section now requires every finding to open with a list marker
-`scripts/review_return.py` already recognises, closing the gap that let a compliant auditor state
-a real finding as bare prose under a class label and have it read back as `could-not-classify`.
-13,273 B became 14,046 B; the ceiling stays at 15,600 B, ~1,550 B of headroom left.
-
-**#1468 re-baselined `agents/developer.md` without raising its ceiling**: 41,227 B became
-41,443 B. The pointer sentence to `agents/developer/review-return.md` used to name only one way a
-self-review spawn can fail -- a `subagent_type` that does not resolve -- after a live lane reported
-its own nested `Agent` tool totally unavailable (neither `Explore` nor `oss:auditor` could be
-spawned, while the dispatching sub-manager's own `Agent` tool worked throughout), which is a
-different failure with a different documented outcome (`not-checked`, not `could not run`). The
-sentence now names both before a lane opens the phase file itself. Nothing already in the file
-argued that point, so nothing was cut to make room; still comfortably under the 44,100 B ceiling.
-
-**#1048 raised `agents/sub-manager.md`'s ceiling from 17,000 B to 18,700 B**, after trimming the
-new paragraph once to fit as much of it as possible: a sub-manager closed a handback promising its
-own resumption three times in one session, and being told the correct format directly, twice, held
-for exactly one turn. The fix is a self-validation step -- run the draft handback through
-`tick_handback.py` before sending it, rather than trust memory under narrative pressure -- and
-nothing already in the file argued that point either, so there was nothing safe to cut in its
-place.
-
-**#1041 raised `agents/releaser.md`'s ceiling from 9,560 B to 11,800 B**: 9,215 B became
-10,713 B, and a self-review fix (the `GATE:` field's prose contradicted the classifier's
-actual, more permissive rule) grew it again to 10,985 B. The addition gives a releaser a
-fourth report state, `RELEASE: paused`, the same shape #818 already gave a sub-manager
-reaching a CI wait -- observed three times in one release closing on an unkeepable "I'll
-resume once CI reports back" instead of a state a scheduler could act on. Nothing already
-in the file argued that point, so there was nothing safe to cut in its place; the ceiling
-carries the same ~10% headroom the other re-baselines in this table use.
-
-**#1414 adds `agents/scheduler-step.md`, a new file rather than growing an existing one.**
-`/oss:run`'s own scheduler used to read six command files directly in its own long-lived session
-(setup, scaffold, install-audit, triage, curate, changelog) -- the erosion #695 built the
-sub-manager/releaser split to prevent, one layer over. One generic spawn covers all six, since none
-differ in shape, only in which file to read; dispatch and release keep their own dedicated spawns
-unchanged. 4,554 B became 5,154 B in the same lane's own self-review round, after a content-
-invariant test found this file missing the untrusted-input clause every document that can read
-issue/PR/comment text must carry -- `commands/run/triage.md` reads exactly that while this spawn
-follows it.
-
-**#1190 re-baselined `agents/sub-manager.md` without raising its ceiling**: 14,666 B became
-16,060 B, still under the 16,800 B budget. #818 ("hand a CI wait back, always") and #1086
-("call `pr_green.py --wait` instead") were two rules about the same moment that disagreed, and
-a sub-manager that followed #818 six times in one tick paid ~11k tokens per resume finding no
-other work to dispatch into a lane freed mid-wait. One paragraph replaces both with an ordered
-procedure -- re-select a freed lane first, else wait inside the turn with `pr_green.py --wait`,
-else hand back with the fleet's occupancy folded into `WAIT-OBSERVABLE` -- rather than a third
-rule stacked beside the two it removes. A self-review round grew it once more (15,571 B ->
-16,060 B): a placeholder example that wrapped across a markdown line, and step 2's `--wait` call
-having no branch for a `pending` timeout, both closed in place.
-
-**#1179 re-baselined `agents/sub-manager.md` without raising its ceiling**: 16,060 B became
-16,630 B, still under the 16,800 B budget. The `select_issues.py` dispatch-selection call sits
-at lines 304-315 of `skills/manager/phases/tick-order.md`, past the ~292-line window a
-`supertool read` with no explicit end returns by default (a 20,000-byte cap), so a sub-manager
-reading only the first window never sees the directive, goes hunting for the script by
-`ls`/`find`, and burns turns on the auto-mode classifier denying then allowing the identical
-read-only command. The literal command now lives directly in `agents/sub-manager.md` itself,
-which is injected whole on every turn and never truncated, rather than only in the phase file a
-bounded read might still miss.
-
-**#1275 raised `agents/sub-manager.md`'s ceiling from 16,800 B to 18,800 B**: 16,630 B became
-17,104 B, past the old ceiling by 304 B. The new paragraph points a tick's own review-time findings
-at `findings.md`'s new routing rule -- blocking to an issue, non-blocking to `trap.d/` -- so a
-sub-manager's own filing follows the same rule an audit and a developer lane now follow, rather than
-silently keeping the old file-everything default. Too small an overage to be worth trimming
-something else in the same file to absorb, so the ceiling moved with ~10% headroom over the new
-size rather than cutting anything.
-
-**#1409 re-baselined `agents/sub-manager.md` without raising its ceiling**: 17,104 B became
-17,270 B, still under the 18,800 B ceiling. `select_issues_rank.SHORT_REASONS` gained a fifth
-value, `declined-for-cause` (#1407), for a lane that found a real, adjacent candidate and declined
-it for a substantive judgment reason -- neither `board-exhausted` nor `no-adjacent` nor
-`did-not-search` nor `could-not-tell` fits a search that ran, found something, and rejected it on
-purpose. The short-lane reason list this file states was extended to match, since
-`test_spawn_token_fill_parity_828_867.py` pins it against `SHORT_REASONS` itself rather than a
-retyped copy.
-
-**#1469 re-baselined `agents/sub-manager.md` without raising its ceiling**: 17,270 B became
-17,850 B, still under the 18,800 B ceiling. A sub-manager spawned during a real tick read
-`agents/sub-manager.md`'s "read it the same way out of habit" line as an instruction to open
-`commands/tick.md`, whose first line is `Agent(subagent_type: "oss:sub-manager", ...)`, and spawned
-a second sub-manager underneath itself instead of running the tick -- three levels deep, one extra
-full context paid for nothing. That sentence is cut, and the "Run the tick" section now says
-outright that `commands/tick.md` is the scheduler's own spawn wrapper, never a script for the
-sub-manager to read or follow, naming the exact first-line spawn instruction so a sub-manager
-recognises it as already having happened to it rather than as something to repeat.
 
 **#675: every number in this table is now a property of the file, not of the checkout.**
 `scripts/agent_budgets.py` measures `len(path.read_bytes())`, and a checkout is not the same
@@ -487,68 +356,6 @@ only the lane can report.
 | `agents/developer/report.md` | 19,676 B | 21,500 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
-
-**#1103 re-baselined `agents/developer/report.md` without raising its ceiling**: 17,401 B became
-18,286 B, still under the 19,100 B budget. The new paragraph tells a lane to record the literal
-`${CLAUDE_PLUGIN_ROOT}` it validated against in a new optional `plugin_root` field, so a sub-manager
-later seeing `UNVALIDATABLE` on that report can attribute it to a mid-tick plugin update rather than
-an uncaused schema mismatch.
-
-**#1333 re-baselined `agents/developer/report.md` again, without raising its ceiling**: 18,286 B
-became 18,942 B, still under the 19,100 B budget. A lane dispatched against a different repo
-reported back that its own runtime session held no `Agent`/`Task` tool at all, so neither reviewer
-spawn `agents/developer/review.md` requires could run -- it correctly reported that gap as
-`not-checked` rather than a clean pass. Proving a spawn actually ran is not reachable from a JSON
-validator (the schema's own `x-convention` entry says so and this does not retire it), but nothing
-previously stopped `review.mechanism` -- a required field -- from being an empty string paired with
-a claimed-clean `review.findings`, which is literally no evidence at all. `schemas/agent-report.
-schema.json` gained a `minLength` (20) on `mechanism` (contract 12, breaking, the same shape as
-#1298's own bump at 11), and the new paragraph documents it beside the existing "shape, not truth"
-disclaimer. Nothing already in the file argued that point, so nothing was cut to make room.
-
-**#1499 raised `agents/developer/report.md`'s ceiling from 19,100 B to 21,500 B**: 18,942 B became
-19,676 B, past the old ceiling by 576 B. The new paragraph tells a lane to complete its own report
-with `scripts/agent_cost.py --into <report path>` -- a `cost` block measured from the lane's own
-transcript (max context, turns, Bash calls) rather than typed, the first of #1499's report-first
-steps. Nothing already in the file argued that point, so nothing was cut to make room; the ceiling
-carries the same ~10% headroom the other re-baselines in this table use.
-
-**#1275 raised `agents/developer/review.md`'s ceiling from 10,500 B to 11,600 B**: 10,132 B became
-10,576 B, past the old ceiling by 76 B. Both self-review spawns (the `Explore` reviewer and
-`oss:auditor`) independently found `report-for-filing` still described here as the disposition for
-any real, out-of-scope finding, after the sibling rule -- a non-blocking row routes to `trap.d/`
-instead -- landed in `agents/developer.md`'s own spine and every other site this diff touches. Too
-small an overage to trim something else in the same file to absorb, so the ceiling moved with ~10%
-headroom over the new size rather than cutting anything.
-
-**#1383 raised `agents/developer/review.md`'s ceiling from 11,600 B to 13,500 B**: 11,486 B became
-12,272 B, past the old ceiling by 672 B. `schemas/agent-report.schema.json` carries a
-`review.spawn_error` field that no document ever told a lane to fill in -- so a lane whose `Agent`
-tool was refused at runtime (observed 2026-09-09, a `claude-supertool` tick) had a correct
-`not-checked` state to land in, per #1333, but no instruction to record the one string (the
-verbatim refusal) that could ever settle whether the cause was a harness gate, a manifest issue, or
-something else. Nothing already in the file argued that point, so nothing was cut to make room; the
-ceiling moved with ~10% headroom over the new size.
-
-**#1047 raised `agents/developer/review-return.md`'s ceiling from 12,400 B to 13,700 B**: 11,249 B
-became 12,465 B. A fix commit answering an audit's own findings is a diff nothing makes a subject
-again by default -- PR #921's fix for two findings shipped unreviewed and a later re-audit found
-two more real bugs inside it. The new section names the mechanized half of the trigger
-(`scripts/fix_commit_scope.py`: file count, byte-budgeted files touched) and states the
-unmechanized third (a guard's behaviour changing) as judgement rather than pretending to derive
-it. Nothing already in the file argued that point, so nothing was cut to make room; the ceiling
-carries the same ~10% headroom the other re-baselines in this table use.
-
-**#1468 re-baselined `agents/developer/review-return.md` without raising its ceiling**: 12,465 B
-became 13,418 B, still under the 13,700 B budget. "When the spawn itself fails" used to document
-only a `subagent_type` that does not resolve, with a `general-purpose` re-dispatch as the remedy. A
-live lane reported a different failure one level down: the `Agent` tool itself refused every spawn
-regardless of name, while the dispatching sub-manager's own `Agent` tool kept working throughout
-the same session. The new paragraph says the two are not the same outcome and that the
-`general-purpose` fallback is not a remedy for the second one -- it hits the identical wall -- so
-the report should read `not-checked` with the verbatim error in `review.spawn_error`, per
-`agents/developer/review.md`'s own #1383 clause, rather than `could not run`. Nothing already in
-the file argued that point, so nothing was cut to make room.
 
 **#1114: `tests/test_baseline_matches_disk_1014.py` did not cover `developer_phases.DOCUMENTS`,
 and its two rows had already drifted from disk by the time the gap was found.** #1014 closed
@@ -588,89 +395,6 @@ phase's argument: the incident behind a rule, the measurement, the approach trie
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces them,
 on the same replace-don't-append terms as the agent budgets above.
 
-**#1103 re-baselined `skills/manager/phases/handback.md` without raising its ceiling**: 16,347 B
-became 17,116 B, still under the 18,000 B budget. The new paragraph tells a sub-manager, on seeing
-`UNVALIDATABLE`, to read the report's optional `plugin_root` field and compare it to its own current
-`${CLAUDE_PLUGIN_ROOT}` -- a difference attributes the answer to a mid-tick plugin update rather than
-leaving it as a bare, uncaused schema mismatch. A self-review auditor spawn found the comparison as
-first worded ("a difference means...") could misread a trivially-respelled but identical path (case,
-a trailing separator, slash vs. backslash) as a version change; 17,116 B became 17,249 B naming those
-to ignore first and softening the verdict to "a real difference is evidence".
-
-**#1499 re-baselined `skills/manager/phases/handback.md` without raising its ceiling**: 17,249 B
-became 17,922 B, 78 B under the 18,000 B budget. One paragraph tells a sub-manager how to read the
-report's new `cost` block: `over_threshold` is a `trap.d/` finding, a non-measured state is carried
-into the handback, an absent key is a compliance question -- never a number to estimate.
-
-**#1275 raised `skills/manager/phases/findings.md`'s ceiling from 10,300 B to 12,400 B**: 9,326 B
-became 11,222 B, past the old ceiling by 922 B. The new "Routing a finding" section states where a
-ranked finding goes once it is ranked -- filed as an issue for a blocking or unranked row, a
-`trap.d/` fragment for everything else -- closing the gap #1275 named: 21 of 30 open issues carried
-`filed-by-loop`, because nothing routed a non-blocking finding anywhere but the tracker. Nothing
-already in the file argued that point, so nothing was cut to make room; the ceiling carries the same
-~10% headroom the other re-baselines in this table use.
-
-**#1374 raised `skills/manager/phases/findings.md`'s ceiling from 12,400 B to 13,800 B**: 11,222 B
-became 12,570 B, past the old ceiling by 170 B. A v0.59.0 release audit of claude-supertool found a
-defect none of the table's eleven rows fit: a credential cache written with `write_text(...)` then
-chmodded to `0o600` a line later, briefly world-readable at the process umask. The new `overexposes`
-row answers the `Blocks a release?` column with a stated condition rather than a bare yes/no --
-the instance audited was a sub-second exposure on the operator's own machine and did not block, but a
-first-of-its-kind instance on a shared host, or a cache that survives past the writing process, is a
-different answer -- and `scripts/ranking_table.py` gained `conditional_classes` to keep reading it as
-a third bucket rather than sorting it silently into `blocking_classes` or `non_blocking_classes`.
-Nothing already in the file argued that point, so nothing was cut to make room; the ceiling carries
-the same ~10% headroom the other re-baselines in this table use. Re-baselined in the same lane's own
-self-review round: 12,570 B became 13,093 B. An auditor spawn found the new row's embargo column, a
-bare `yes`, broke `tests/test_embargo_routing.py`'s invariant that the embargo set is a subset of the
-blocking set -- `overexposes` blocks only `conditionally`, so a bare `yes` in the embargo column put
-it in `embargo - blocking` with no recorded exception covering it. Fixed by making the embargo
-column conditional too, on the same stated condition as blocking, rather than adding a new kind of
-exception to that test's own invariant. A reviewer spawn separately found two stale "eleven-row
-findings table" mentions in `skills/manager/phases/dispatch.md` and `scripts/select_issues_rank.py`
--- a hardcoded row count, wrong the moment a twelfth row landed -- both corrected to drop the count
-rather than bump it to thirteen and go stale again at the next row; `dispatch.md`'s own baseline
-below moved with it (54,117 B -> 53,938 B, still comfortably under its ceiling). Ceiling for
-`findings.md` unchanged at 13,800 B; still comfortably under it.
-
-**#1409 re-baselined `dispatch.md` without raising its ceiling**: 53,938 B became 55,309 B, still
-under the 57,400 B ceiling. A lane dispatched with the blockquote's verbatim "on PATH, from any
-directory" claim, inside a worktree of the one managed repo that is supertool's own checkout, cost
-three round-trips following it literally -- the bare `supertool` name there resolves to whichever
-clone the SessionStart hook last linked, ordinarily supertool's own live checkout at `master`, and
-running it from a worktree of that same repository runs master's core against the worktree's own
-branch-local presets, refusing a write-class op outright (claude-supertool#1942). The new paragraph
-points at `scripts/doctor.py`'s new `supertool_invocation(project_dir)` -- reusing the existing
-`_own_supertool_tree` walk `check_supertool_entry_point` already uses for its `own-tree` diagnostic
-state, rather than a second, drifting copy of the same detection -- and tells a dispatching session
-to append one line naming the tree's own core after the verbatim blockquote, never to edit the
-blockquote itself, which stays byte-identical for every other managed repo.
-`scripts/lane_setup.py`'s own board-line read (`read_board`) now routes through the same function,
-independently fixing the `COULD NOT RUN -- mixed supertool trees` receipt #1409 also reported.
-
-**#1047 re-baselined `skills/manager/phases/review.md` without raising its ceiling**: 10,353 B
-became 10,829 B. A fix commit answering an audit's own findings is a diff nothing makes a subject
-again by default -- PR #921's fix for two findings shipped unreviewed and a later re-audit found
-two more real bugs inside it. A new bullet on the maintainer's own closed checklist names the
-backstop: check `scripts/fix_commit_scope.py` against a fix-for-a-finding commit the report is
-silent about, the same gap `agents/developer/review-return.md`'s own new section (also #1047)
-closes on the developer side. Comfortably under the ceiling; no change needed there.
-
-**#1266 raised `skills/manager/phases/release.md`'s ceiling from 9,800 B to 10,900 B**: 9,425 B
-became 9,918 B, past the old ceiling by 118 B. `v0.27.0` was tagged and published at `fb73907`
-before that commit's own `tests` run had even started, and that run concluded RED four minutes
-later, on every non-CodeQL leg, on all three operating systems -- gates 1-6 verify the default
-branch is green *before* the release commit is written, and nothing verified the commit itself. The
-new paragraph names this as a seventh, unnumbered check and points at `commands/release.md` for the
-mechanics (a new `scripts/release_ci_wait.py`, mirroring `pr_green.py`'s shape for a commit pushed
-straight to the default branch rather than a pull request). Too small an overage to be worth
-trimming something else in the same file to absorb, so the ceiling moved to 10,900 B, ~10% headroom
-over the new size, rather than cutting anything. Re-baselined in the same lane's own self-review
-round: 9,918 B became 10,035 B fixing two reviewer findings in place -- the exit-code list
-undercounted `release_ci_wait.py`'s four outcomes at three (missing `could-not-read`), and the new
-paragraph was ordered after the tag-push verification it is actually a precondition for. Ceiling
-unchanged; comfortably under it.
-
 **#1162 adds a new phase file, `ci-green.md` (2,454 B), rather than growing an existing one.** The
 `pr_green.py` wait and its #1086 substring trap used to live only inline in `agents/sub-manager.md`;
 now shared by that file and `agents/releaser.md`, each holding a one-line pointer instead. Same
@@ -678,196 +402,7 @@ reasoning as `tick-order.md`'s own addition: a new subject earns a new file rath
 folded into `merge.md`, whose own row moved from 13,985 B to 14,230 B for the one pointer sentence
 it gained in place of restating anything.
 
-**#1458 raised `ci-green.md`'s ceiling from 2,700 B to 3,050 B**: 2,646 B became 2,761 B, past the
-old ceiling by 61 B. `pr_green.py` read a check-run conclusion (e.g. `CANCELLED`) as `red` even when
-a later run of the same check name superseded it, disagreeing with `gh-pr:N:status` -- the fix
-applies the same supersession rule (#1792) to `pr_green.py`, and the new sentence states that a
-superseded leg is excluded from `red`. Nothing already in the file argued that point, so nothing was
-cut to make room; the ceiling carries the same ~10% headroom the other re-baselines in this table
-use.
-
-**#1275 re-baselined `SKILL.md` and `phases/review.md` in the same self-review round that raised
-`agents/developer/review.md`'s ceiling above**, without raising either of these two ceilings: 41,601 B
-became 41,738 B for `SKILL.md` (a stale "the three receipts" summary sentence, corrected to four),
-and 10,829 B became 11,390 B for `phases/review.md` (the receipt list itself gained the fourth entry
--- a `trap.d/` fragment for a non-blocking row -- and a rank-first instruction). Both files stayed
-under their existing ceilings; `phases/review.md` now has 10 B of headroom left.
-
-**#1394 re-baselined `SKILL.md` and added a new phase file, `inbound.md`, rather than folding the
-new material into `tick-order.md`.** The loop had no owner anywhere for work that arrives from
-outside -- refusing an issue nobody filed on our behalf, an external contributor's pull request, a
-comment on either -- and the subject is genuinely new rather than a rule about the existing
-dispatch order, the same test `ci-green.md` applied for its own split. 41,738 B became 42,837 B for
-`SKILL.md`: a new table row plus one directive block, "Inbound, before anything new", pointing a
-tick at the new file at step 3 of `tick-order.md` rather than restating its own closed set of six
-refusal reasons and four pull-request states. Neither ceiling moved; `SKILL.md` still has ~2,000 B
-of headroom. `inbound.md` itself measured 6,262 B at first commit and 6,533 B after a maintainer
-review round renamed `classify_pr`'s `ready-to-merge` state to `green-and-mergeable` (a returned
-string naming the one act `merge.md` forbids absolutely is a verdict, not a measurement) -- the
-same rename touched `merge.md`, 14,621 B to 14,776 B, for the same reason; see this table's own
-current row for both files' final measurements.
-
-**#1409 re-baselined `tick-order.md` without raising its ceiling**: 34,816 B became 34,905 B, still
-under the 36,000 B ceiling. The same `select_issues_rank.SHORT_REASONS` fifth value,
-`declined-for-cause` (#1407), that re-baselined `agents/sub-manager.md` above also reaches this
-file's own statement of the short-lane reasons, since `test_spawn_token_fill_parity_828_867.py`
-requires the two documents to agree on the fact rather than each naming its own stale copy.
-
 **#1136 cut the rationale out of the loop's own markdown: 581,678 B became 480,591 B across 23 files, -17.4%.** The rule applied, written down as `.claude/jit-context/paths/00-manual/md-is-a-manual-not-a-rationale.md`: **a loop markdown file is an operator's manual for the tools its phase runs.** The rule, the call, every state and every payload field stay; the measurement that justified a constant belongs beside the constant, the incident behind a rule stays in its own issue, and the file's own history goes. Each rule keeps a bare issue citation for provenance. `dispatch.md`'s selection band was the worked example -- 14,240 B to 6,601 B, prose still explaining how to drive by hand the four scripts `select_issues.py` had already composed (#970, #1068, #1129). Every ceiling came down with its measurement rather than being left where it was (#958, #960). Four content guards refused cuts that went too far and every one was right: the bundle cap rule, the #499 citation, the `27m36s` threshold, and an unhyphenated `could not tell` -- each restored as a rule, without its narrative.
-
-**This table is where #675 was found.** `dispatch.md` measured 25,980 B (LF, 338 lines) — 120 B
-under its 26,100 B budget — and 26,318 B as a Windows checkout's CRLF, 218 B *over* the same budget,
-because `scripts/skill_phases.py` measures raw checked-out bytes and this repository shipped no
-`.gitattributes` pinning line endings. #672 was sent back to fit under a ceiling that was never the
-number the table names — `budget - line_count`, not `budget` — on a checkout nobody in this repo's own
-sessions ever produces. `.gitattributes` (`* text=auto eol=lf`) closes that: every checkout now
-normalizes to LF, so the measured column above is the number on every platform's disk, and
-`budget` is the real ceiling again rather than `budget - line_count`. The checkers were deliberately
-left alone — see #675's own reasoning for why normalizing the measurement instead was rejected.
-
-**`dispatch.md`'s budget was raised again for #725, and this table and `scripts/skill_phases.
-DOCUMENTS` are compared now rather than hand-kept in sync.** The margin had narrowed to 48 B —
-26,052 B measured against the prior 26,100 B ceiling — and a lane in this same tick had already
-been forced to place a new directive in `SKILL.md` instead of here for no reason but that margin.
-A split was weighed and declined: `dispatch.md`'s content is one subject in one section, not two
-phases wearing one name, and a fresh split is a larger, separately-reviewable change #725 does not
-warrant. `tests/test_claude_md_phase_budget_table_725.py` now holds this table against
-`skill_phases.DOCUMENTS` the same way `tests/test_claude_md_budget_table_709.py` already held the
-agent table above against `agent_budgets.BUDGETS` — closing the gap #725 filed: two hand-copied
-tables and nothing that compared either one to its source.
-
-**Raised again for #1084**: 56,058 B became 58,344 B, a 444 B overage past the 57,900 B ceiling.
-The new subsection states the four (really five) cases for whether a pending vs red default branch
-should block dispatch, merge or release — a rule this repository was following by habit rather than
-by instruction. Too small an overage to be worth trimming something else in the same file to absorb,
-so the ceiling moved to 64,200 B, ~10% headroom over the new size, rather than cutting anything.
-Re-baselined again in the same lane's own self-review round: 58,344 B became 58,392 B after two
-precision fixes to the new subsection's cross-reference wording (radar's board-member row is
-established at `tick-order.md`'s step 4, not inside *What ends a tick* itself). Budget unchanged.
-
-**`accounting.md`'s budget was raised for #694 and #762, landed together because both touch the same
-intake paragraph and the same `--decision` call.** #762 gives the intake numerator a mechanism
-(`labels.filed_by_loop`) instead of a recalled memory; #694 adds a whole second metric, tick cost,
-beside it. Both are load-bearing argument, not padding, so the fix was to raise the ceiling rather
-than trim either one to fit the old one — 10,663 B measured became 15,093 B, about 42% growth in one
-file. A split into its own phase file was weighed and declined for the same reason #725 declined one
-for `dispatch.md`: accounting is one subject — closing a tick's books — not two phases wearing one
-name, and unlike the two `Tick cost`/`Intake` subsections this stays a smaller, together-reviewable
-change than a fresh phase file plus its own spine directive block would be. `review.md`'s budget
-moved by the same #762: one paragraph, naming where the filing-time label attach happens, pushed
-10,348 B to 11,637 B and past its old 11,400 B ceiling by 237 B -- too small an overage to be worth
-trimming something else in the same file to absorb, so it was raised too.
-
-**`accounting.md`'s budget was raised again for #1122**, past the same growth-by-accretion pattern
-this table calls out for #675 and #1029: 18,549 B became 20,894 B, past the 19,500 B ceiling by
-1,394 B. The new paragraph states which cohort's count the release-commit marker may cite -- only
-the previous release's, already fully frozen, never the current release's own not-yet-frozen one --
-closing a structural gap where `v0.25.0`'s marker cited cohort-21's count inside the commit written
-*before* cohort-21's own freeze ran (the freeze runs after the tag; the marker is written before
-it), and the two numbers (30 cited, 32 actually applied) disagreed. Nothing already in the file
-argued that point, so nothing was cut to make room; ceiling moved to 23,000 B, ~10% headroom over
-the new size. Re-baselined again in the same lane's own self-review round: 20,894 B became
-21,569 B after a reviewer spawn found "settled count" ambiguous between the recorded freeze
-decision and a fresh recount taken later, once a cohort has shrunk further -- fixed by naming the
-recorded `froze <cohort> at N` decision as the one to quote rather than a re-run of the check.
-Ceiling unchanged; comfortably under it.
-
-**`accounting.md`'s own measurement moved again for #1303**: the table's declared 22,700 B became
-22,987 B. The new sentence in Cadence names the #1155 threshold route now activated via
-`curate_route_threshold` -- the config change closing #1303, not a prose expansion of its own.
-Ceiling unchanged; still under it.
-
-**`accounting.md`'s budget was raised again for #1386**: 22,987 B became 23,564 B, past the 23,000 B
-ceiling by 564 B. The Cadence section's own triage paragraph used to say the last-triaged read is
-enforced but consumed by nothing -- true at the time, and the gap this issue closes: a sub-manager
-cannot act on it itself, since it dies with its own context at the end of its tick and cannot count
-ticks or releases across a spawn boundary. `scripts/triage_trigger.py` gives the scheduler -- the one
-actor spanning ticks -- a computed verdict (`due` / `not-due` / `could-not-tell`, mirroring
-`release_trigger.py`'s own three-state shape) to read at the `RELEASE: released` handback in
-`commands/tick.md`, which is where the paragraph now points rather than restating a second copy of
-when the trigger fires. Nothing already in the file argued that point, so nothing was cut to make
-room; the ceiling moved to 25,900 B, ~10% headroom over the new size.
-
-**`merge.md`'s budget was raised for #1007**, which closes the race a tick's own cleanup
-guard was overridden through: 10,012 B measured became 13,198 B. The new bullet states two
-things together -- re-read the tree's HEAD immediately before a force-remove and refuse the
-force if it moved since the merge, plus record the override with `oss_state.py`'s new
-`--cleanup-override` when the check passes and the force runs anyway -- because the second
-without the first would make an override legible without making the removal any safer, and
-splitting the two into separate bullets would have cost more bytes than raising the ceiling
-did. No paragraph already in the file argued either point, so nothing was cut to make room.
-Re-baselined again for #1029: 13,198 B on disk drifted to 14,455 B after #1026 grew this file
-(#976's push-to-main rule, #1017's worktree-reap fix) without updating this table or
-`scripts/skill_phases.py`, leaving `tests/test_baseline_matches_disk_1014.py` red on `main`.
-Budget unchanged; the file is still under it, but only by 45 B.
-
-**Raised again for #1085/#1056**, exactly the overage #1029's own note flagged as coming: 14,455 B
-became 16,671 B against a 14,500 B ceiling that had 45 B of headroom left. Two additions landed
-together because both touch the same worktree-cleanup and merge-gate material -- #1085 writes down
-the merge policy (green and mergeable means merge; no pre-merge rebase, `git merge origin/main`,
-force-push or fresh matrix run absent a real reason) and #1056 fixes the #1007 HEAD-comparison
-guard, whose `git-worktrees`-first fallback could never fire because that op never emits a commit
-SHA, so the guard was nominally on and effectively off. Neither could be trimmed to make room for
-the other -- one is a new policy statement with its own safety argument, the other closes a
-data-loss guard silently left open -- so the ceiling moved to 18,300 B, ~10% headroom over the new
-size, rather than cutting either down. Re-baselined again in the same lane's own self-review round:
-16,671 B became 17,234 B after fixing a wrong issue citation (the rerun rule "just below" is #389's,
-not #1004's) and a hardcoded, repo-specific CI fact (the policy bullet named this repo's own
-`tests.yml` trigger shape as though it held for every managed repo; now stated as a per-repo fact to
-check). Budget unchanged. Re-baselined once more for #1091's CI leg: the
-literal substring "merging on green" in that same bullet collided with `tests/test_command_
-references.py`'s cross-file act-boundary check (a phase file is concatenated after `SKILL.md`'s own
-stop-boundary marker), reworded to "a green merge" -- 17,234 B became 17,250 B. Budget unchanged.
-
-**The total grew: 122,423 B became 189,517 B, +54.8%** — re-derived by summing the table's own
-"measured (baseline)" column above, not by editing the prior figure (186,769 B / +52.6%, itself a
-correction of a 178,700 B / +46.0% edit that had gone stale). #1014 is the reason for that
-correction, not the usual one: the prior figure was not stale because a phase file grew and nobody
-re-summed, it was stale because `check()` in `skill_phases.py`, `agent_budgets.py` and
-`command_budgets.py` only ever compares measured size against `budget` (the ceiling), never against
-the "baseline" quoted in these tables' own first column -- so a baseline could drift from disk
-indefinitely with no test noticing, and several of the rows above had. `tests/test_baseline_matches_
-disk_1014.py` now compares every declared baseline against the file's actual size directly, closing
-that gap; #709 and #725 already compared this table against the modules' own dicts, which was never
-the missing link. #1029 is this pattern recurring exactly as #1014 predicted it would: #1026 grew
-`SKILL.md` and `merge.md` for reasons unrelated to this table (#976, #1017) and did not touch
-`CLAUDE.md` or `scripts/skill_phases.py`, so both baselines drifted again and the dedicated
-comparison test caught it. Still no test ties this sentence's own summed total to the table's
-column, only the per-file rows; sum it again the next time a row changes, rather than editing this
-sentence by hand. **Re-summed for #1037: 189,517 B became 230,672 B, +21.7% (+88.4% over the
-original 122,423 B)** — #1037 added a new row, `skills/manager/phases/tick-order.md` (a
-sub-manager's own steps 1-6 and "how a tick closes", moved out of `commands/tick.md`), rather than
-growing an existing one, so this jump is a new phase file joining the split, not a paragraph nobody
-trimmed. **Re-summed for #1069: 230,672 B became 231,916 B, +0.5%** — five existing rows grew
-(`SKILL.md`, `dispatch.md`, `handback.md`, `tick-order.md`, `accounting.md`), each by the same
-call-site rewrite (`dispatch_rank.py`/`issue_claim.py`/`preflight_check.py`/`fleet_label.py`
-collapsed to `select_issues.py`/`lane_setup.py`'s own two entry points), plus a second pass in the
-same lane's own self-review round fixing several bare-mention (no `scripts/` prefix) stale call
-sites an auditor spawn found, then a third pass (maintainer review) putting `--label`'s two worked
-examples back on positional arguments -- matching `fleet_label.py`'s own old call length plus the
-one unavoidable `--label` mode-selector token -- which shrank three of the five rows again; no new
-row. **Re-summed for #1057: 231,916 B fell to 209,239 B**, the first drop rather than growth in this
-sentence's own history. The driver is #1136, landed after the #1069 figure above and never re-summed
-until now: its rationale cut removed 581,678 B down to 480,591 B across 23 loop-markdown files (see
-below), and this table's own rows fell with it even as several were also re-baselined upward in the
-same window (#1085/#1056, #1091, #1162's new `ci-green.md` row). #1057 found this sentence and the
-one below it stale by the same mechanism #1014 already named for the per-file baselines -- nobody
-re-sums a prose total when a row changes -- and, unlike a baseline, a summed total has no
-`scripts/skill_phases.py` counterpart to compare against; it is re-derived by hand from the table
-above each time this sentence is touched, which stays true after this fix. A test that ties this
-sentence to the table mechanically was weighed and declined: it would force every future
-budget-touching lane to also edit this sentence, which is exactly the class of forced `CLAUDE.md`
-edit #1134 narrowed rather than widened (see `Working here`'s third exception, which does not cover
-it). The spine's directive blocks and each phase file's own header are a second, shorter statement
-of what the phase file then argues at length, and that is a real cost paid on every read of the phase
-file. It buys the number that actually matters here — what a session loads before it knows which
-phase it will reach. **122,423 B became 41,601 B, -66.0%** (previously reported as 44,358 B / -63.8%,
-stale by the same #1136 cut above and never re-baselined until #1057), in three rounds: the original
-split, then #958 (the ranking table and upstream filing out to `phases/findings.md`, 62,829 ->
-54,751 B), then #960 (the pre-flight and dispatch order to `dispatch.md`, the platform band to
-`review.md`, cadence and the loop doctrine's argument to `accounting.md`, 54,751 -> 42,604 B, since
-re-baselined to 42,867 B by #1014's own measurement, to 44,358 B by #1029's, and to 41,601 B
-by #1136's cut and later re-baselines). Quote both numbers, or the saving reads as free.
 
 **#958's own reasoning, because the rejected alternative is the interesting half.** Moving that
 prose to `.claude/jit-context/` was weighed and refused: jit's shown-set dedup is keyed on
@@ -880,15 +415,6 @@ for a directive a phase depends on. The split was chosen on the same test #725 a
 the same subject as choosing what to dispatch. The spine's budget came down with the measurement
 rather than staying at 64,600 B — a ceiling left 9,849 B above the file is a saving that can be
 spent again without anybody choosing to.
-
-**#960 is the second round and it names what it refused to move.** `Who decides` stays whole: the
-authority tables and the three-state `release.authority` read are the rules that keep the loop from
-stalling for permission it already holds and from tagging without a grant, and an unread phase file
-is a rule that did not run. `Operational hazards` stays because its thirteen rules fire on an
-operation rather than at a phase, so there is no moment at which a session would open the file. The
-op table's rows stay because they are consulted on every call. And the saving is smaller than the
-byte count for a tick that dispatches -- that tick reads `dispatch.md` anyway; what #960 buys is
-`/oss:release` sessions, review-only ticks and ticks that end blocked before briefing anything.
 
 **The split's own defect is that an unread phase file is a rule that did not run, and that renders
 exactly like a rule with nothing to say.** Nothing in this repository can observe whether a reader
@@ -952,40 +478,10 @@ budgets_940.py` holds it against the real on-disk size and this table's own comp
 the CLAUDE.md row against `BUDGETS`'s declared numbers, same replace-don't-append terms as the
 other two tables.
 
-**Re-baselined down for #1037: 52,090 B fell to 16,294 B.** Steps 1 through 6 and "What ends a
-tick" -- the numbered order of operations only a sub-manager's own context ever executes -- moved
-out to `skills/manager/phases/tick-order.md` (the new row in the table above), leaving this file
-carrying only what the scheduler itself runs: the spawn, the seven-state handback classification,
-and step 7. The scheduler is injected with this file whole on every tick, so the saving is paid on
-every one of them, the same shape #695 already measured for the manager skill split. The budget
-came down with the measurement rather than staying at 57,300 B, for the same reason #958 and #960
-give for `skill_phases.py`'s own re-baselines: a ceiling left far above the file is a saving
-spendable again without anybody choosing to.
-
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 22,444 B | 24,500 B |
 | `commands/run.md` | 8,246 B | 8,900 B |
-
-**#1389 adds `commands/run.md` as a new file rather than growing `tick.md`.** It is the two-verb
-picker's primary entry point -- diagnose (#1390), decide (`scripts/next_action.py`), then either take
-the single most urgent step or fall through to `tick.md`'s own dispatch cadence, read and followed
-from there rather than duplicated. `commands/tick.md`, `setup.md`, `triage.md`, `curate.md`,
-`release.md`, `scaffold.md`, `install-audit.md` and `changelog.md` are unchanged and still exist as
-their own top-level commands: removing them from the picker cascades through the roughly forty test
-files and several scripts (`lane_setup.py`, `tick_handback.py`, `plugin_update.py`,
-`doctor_check_supertool_ops.py`, `select_issues_overlap.py`, `command_budgets.py` itself) that name
-`commands/tick.md` by path, and that migration is deliberately left for its own change rather than
-folded in here. `commands/tick.md`'s own row moved separately, in #1386/#1402, for the scheduler's
-new triage-trigger step -- both re-baselines land in this merge together.
-
-**#1421 re-baselined both rows together.** `commands/run.md`'s own `## dispatch` step named
-`commands/tick.md` with the pronoun "it" rather than a literal path, one section below the six
-`${CLAUDE_PLUGIN_ROOT}`-anchored spawn prompts #1419/#1420 already fixed -- invisible to that fix's
-own regex guard by construction. Anchoring it (8,173 B -> 8,233 B) also required anchoring
-`commands/tick.md:11`'s own self-read instruction (21,917 B -> 21,939 B), live only when `tick.md`
-is reached from `run.md`'s dispatch step rather than harness-injected directly. Neither ceiling
-moved.
 
 **#1389's own follow-up demotes six of the eight: `setup.md`, `scaffold.md`, `triage.md`,
 `curate.md`, `changelog.md` and `install-audit.md` moved to `commands/run/*.md`.** The plugin
@@ -1001,77 +497,6 @@ fingers already know, so keeping it live and unchanged during the transition is 
 `commands/run.md`'s own row moved from 4,365 B to 4,784 B naming the new paths; the six moved files
 carry no budget of their own (never did, since only `tick.md` and `run.md` are budgeted), so no
 other row in this table changes.
-
-**Raised for #1414: 4,784 B became 6,810 B.** The scheduler used to read `commands/run/*.md`'s six
-files and `commands/release.md` directly, in its own long-lived session -- exactly the erosion #695
-built the sub-manager/releaser split to prevent, one layer over, since a session left running many
-ticks pays for every document it ever opened on every later turn. A new agent,
-`agents/scheduler-step.md`, is the one wrapper all six generic sub-steps share (they differ only in
-which file to read, never in shape); release keeps its own dedicated `oss:releaser`, unchanged.
-Step 2 also needed rewriting regardless: `#1405`'s `rank()` replaced the four-state `next_action.py`
-shape (`due`/`nothing-due`/`could-not-decide`/`unsafe`) this file used to parse with an ordered
-candidate list, and this file now documents both that shape and the `--record-skip` CLI for a
-caller that deliberately takes a lower-ranked candidate. Nothing already in the file argued either
-point, so nothing was cut to make room; the ceiling moves to 7,300 B, ~10% headroom over the new
-size. Re-baselined twice more in the same lane's own two self-review rounds: 6,646 B became
-6,810 B after `tests/test_picker_demotion_1389.py`'s own regression test required each of the six
-demoted files' literal path, not a `<name>` placeholder, in the shared spawn example; then 6,810 B
-became 7,162 B making each of the five remaining generic sub-steps its own literal `Agent(...)`
-line rather than one shared example (an Explore reviewer found the shared form left four of the
-five relying on nothing but the required path strings, with no guard against the file drifting
-back to "read and follow" prose for them); then 7,162 B became 8,041 B documenting the new
-`--take` CLI (below) alongside `--record-skip`, once the ordinary case -- taking `candidates[0]`
--- also needed an explicit commitment call, not only a deviation. Ceiling moved to 8,900 B for the
-last of the three, ~10% headroom over the final size.
-
-**#1455 re-baselined `commands/run.md` without raising its ceiling**: 8,400 B became 8,717 B,
-still under the 8,900 B budget. Step 1's own `doctor.sh` call gained the new `--findings` flag
-(#1455's own findings-only mode) plus a sentence saying why the ordinary report no longer needs a
-`head`/`grep` filter a reader might otherwise reach for. No ceiling change needed.
-
-**#1457 re-baselined `commands/run.md` DOWN, without raising its ceiling**: 8,717 B became
-8,246 B. Step 1's inline WARN/FAIL chase (run `doctor.sh`, then two hand-written bullets for
-"ours to repair" vs "not ours") is replaced by a spawn of the new `agents/doctor.md` -- the same
-move #1414 already made for the six `commands/run/*.md` sub-steps, so a WARN/FAIL line that needs
-investigation no longer sits permanently in this session's own context. Replacing rather than
-appending shrank the file; ceiling unchanged.
-
-**A second follow-up review round on this same lane found a real regression in `rank()` itself
-(unchanged by #1414's own diff, but newly exposed by it): the curate/triage repeat-suppression
-receipt used to be armed by `rank()` on every call, including a plain `--json` read, rather than
-only when a caller actually committed to acting on the top candidate.** `#1414`'s own
-`--record-skip` gave a caller a real reason to call `rank()` without ever taking `candidates[0]`
-at all, collapsing "surfaced" and "acted on" back into one event -- exactly the permanent-divert
-defect the earlier `arm=False`/`arm=True` split (see `#1405`'s own re-baseline above) was built to
-close. Fixed in the same round: `rank()` no longer writes anything, ever; a new `_arm_route_source`
-is the one place a receipt is persisted, called only from a new `--take <source>` CLI (the ordinary
-case) and from `--record-skip` (which arms the source actually taken, once the skip itself is
-recorded). `record_skip()` also gained a membership check on `taken_source` against the real ranked
-sources -- neither existing check caught a typo, and it would have been written into the state
-file's permanent decision log as confidently as a real deviation.
-
-**Raised for #1041's self-review round: 17,899 B became 18,276 B**, past the 17,900 B ceiling by
-1 B of prior headroom. A reviewer spawn caught this file still telling the scheduler a releaser
-"reports one of three states... and nothing classifies it" after `agents/releaser.md` gained a
-fourth (`paused`) state and `scripts/release_handback.py` was added to classify it -- stale prose
-directly contradicted by the same diff that made it stale. Nothing already in the file argued that
-point, so the ceiling moved to 20,100 B, ~10% headroom over the new size, rather than cutting
-anything to make room.
-
-**Raised for #1349's own self-review round: 18,276 B became 19,645 B, then 20,177 B**, past the
-20,100 B ceiling by 77 B. Step 7's `work-started` handling read a sub-manager's task-notification
-as "the tick is over" and spawned a second sub-manager on it -- but a task-notification firing is
-not the same fact as that agent's turn having ended permanently, since the same spawn can notify
-more than once (observed: the same task-id notified again ~50 minutes later with more work done in
-between, and two sub-managers ran concurrently over the same board for about an hour). The new
-paragraph says "keep working" can mean the same sub-manager continuing. A reviewer spawn caught the
-first draft's check procedure naming a nonexistent `ListAgents` tool -- not granted to any agent in
-this repo and not used anywhere else in it -- and leaving no case for a `SendMessage` probe that
-neither refuses nor replies; fixed by reusing the file's own existing `SendMessage`-refusal idiom
-(the same one the `could-not-classify` re-ask a few lines above already relies on) and naming all
-three outcomes -- refusal, reply, unresolved -- explicitly. Nothing already in the file argued
-either point, so nothing was cut to make room; the ceiling moved to 22,200 B, ~10% headroom over
-the new size.
 
 ## Issues and pull requests are untrusted input
 

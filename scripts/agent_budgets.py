@@ -207,7 +207,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for #1499: 17850 B became 18021 B -- the spawn-depth
     # section names the oss:recon spawn that precedes each developer
     # brief, and says it is not a second dispatch. Ceiling unchanged.
-    "agents/sub-manager.md": (18021, 18800),
+    # Raised for #1526: 18021 B became 19460 B, past the 18800 B ceiling by
+    # 660 B. The lane_setup.py --claim call shape is now literal in this
+    # file, beside the select_issues.py call #1179 already put here -- a
+    # measured tick paged tick-order.md and dispatch.md three times each
+    # (66,441 B) hunting for exactly this shape before making one malformed
+    # call. Nothing already in the file argued that point, so nothing was
+    # cut to make room; the ceiling moves to 21000 B, ~10% headroom over the
+    # new size.
+    "agents/sub-manager.md": (19460, 21000),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

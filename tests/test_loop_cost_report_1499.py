@@ -45,8 +45,10 @@ def _user(text, ts=IN_WINDOW):
     }
 
 
-def _assistant(cache_read, cache_create=0, inp=1, out=10, ts=IN_WINDOW):
-    return {
+def _assistant(
+    cache_read, cache_create=0, inp=1, out=10, ts=IN_WINDOW, attribution=None
+):
+    record = {
         "type": "assistant",
         "timestamp": ts,
         "message": {
@@ -60,6 +62,9 @@ def _assistant(cache_read, cache_create=0, inp=1, out=10, ts=IN_WINDOW):
             },
         },
     }
+    if attribution is not None:
+        record["attributionAgent"] = attribution
+    return record
 
 
 def _write_jsonl(path, records):
@@ -179,6 +184,30 @@ def test_malformed_lines_are_counted_and_reported(projects):
     assert result["malformed"][0]["line"] == 3
 
 
+def test_measure_classifies_by_declared_attribution_not_prompt_phrase(tmp_path):
+    """#1526, at the `measure()` level rather than the unit level above: a real
+    sub-manager transcript whose first prompt never says "spawn token" (it
+    dispatches lanes instead, naming issues and lanes early) is classified
+    `sub-manager` because its own records carry `attributionAgent`, not
+    folded into `developer` the way prompt-sniffing alone would have done.
+    """
+    root = tmp_path / "projects" / PROJECT
+    # Must-fire: no "spawn token" anywhere, and "issue"/"lane" appear early --
+    # exactly the shape the old classifier misrouted to "developer".
+    _write_jsonl(
+        root / "sess" / "subagents" / "agent-sub.jsonl",
+        [
+            _user("Dispatch lane fix/9 for issue #9, then review and merge."),
+            _assistant(200_000, attribution="oss:sub-manager"),
+        ],
+    )
+    result = lcr.measure(tmp_path / "projects", since=SINCE)
+    kinds = result["projects"][PROJECT]["kinds"]
+    assert "sub-manager" in kinds
+    assert "developer" not in kinds
+    assert kinds["sub-manager"]["max_context"] == 200_001
+
+
 def test_repo_dir_filter_keeps_only_that_project(projects):
     other = projects / "-Users-example-Documents-other"
     _write_jsonl(other / "s.jsonl", [_user("hi"), _assistant(10)])
@@ -201,6 +230,69 @@ def test_classify_covers_every_kind():
     assert lcr.classify("Do something else", subagent=True) == "other"
     # The window is bounded: "issue" past 300 chars does not make a developer.
     assert lcr.classify("z" * 301 + " issue", subagent=True) == "other"
+
+
+def test_classify_prefers_the_declared_attribution_agent_over_prompt_sniffing():
+    """#1526: a real sub-manager whose first prompt lacked "spawn token" fell
+    through the substring chain to "other" -- and worse, because its prompt
+    named an issue and a lane early (as every dispatch brief does), the
+    fall-through order sent it to "developer" instead, inflating the very
+    number used to argue the lanes are the product. `attributionAgent` is
+    the `subagent_type` Claude Code itself records at spawn time, so it
+    cannot drift the way a hand-picked phrase in a prompt can.
+    """
+    prompt = "Dispatch lane fix/1234 for issue #1234, then review and merge."
+    # Must-fire: the misclassification this issue measured, reproduced.
+    assert lcr.classify(prompt, subagent=True, attribution_agent=None) == "developer"
+    # The fix: the same prompt, now with the declared attribution present.
+    assert (
+        lcr.classify(prompt, subagent=True, attribution_agent="oss:sub-manager")
+        == "sub-manager"
+    )
+    assert (
+        lcr.classify(prompt, subagent=True, attribution_agent="oss:releaser")
+        == "releaser"
+    )
+    assert (
+        lcr.classify(prompt, subagent=True, attribution_agent="oss:scheduler-step")
+        == "scheduler-step"
+    )
+    assert (
+        lcr.classify(prompt, subagent=True, attribution_agent="oss:developer")
+        == "developer"
+    )
+    assert (
+        lcr.classify(prompt, subagent=True, attribution_agent="oss:auditor")
+        == "audit-review"
+    )
+    assert (
+        lcr.classify(prompt, subagent=True, attribution_agent="oss:release-auditor")
+        == "audit-review"
+    )
+    # An attribution that names a real agent this repo spawns but that has no
+    # dedicated row (Explore, general-purpose, oss:triager, oss:recon,
+    # oss:doctor, claude-code-guide, a forked session) reads "other" -- never
+    # silently folded into a neighbour it is not.
+    for other_agent in (
+        "Explore",
+        "general-purpose",
+        "oss:triager",
+        "oss:recon",
+        "oss:doctor",
+        "claude-code-guide",
+        "fork",
+    ):
+        assert (
+            lcr.classify(prompt, subagent=True, attribution_agent=other_agent)
+            == "other"
+        )
+    # A main-session transcript never carries attributionAgent at all, and
+    # this must stay true even if one somehow slipped in: subagent=False
+    # still wins.
+    assert (
+        lcr.classify(prompt, subagent=False, attribution_agent="oss:sub-manager")
+        == "main-session"
+    )
 
 
 # --- the CLI ------------------------------------------------------------------------
