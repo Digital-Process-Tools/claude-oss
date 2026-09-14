@@ -207,6 +207,29 @@ def test_check_path_reads_a_real_file_and_reports_on_it(tmp_path):
     assert brief_schema.check_path(bad)["state"] == brief_schema.STATE_FINDINGS
 
 
+def test_check_path_threads_the_worktree_state_through(tmp_path):
+    """oss:auditor, second pass: `check_path` grew `worktree_state` with no
+    caller passing it, so nothing held the pass-through and a future direct
+    caller would have got the pre-fix reading back -- a failed derivation and
+    "nobody asked" collapsing into the same weak fallback.
+
+    `compose_claim_label` reaches `check_text` directly, so this is the seam
+    that is documented but unexercised rather than one that is live today.
+    """
+    path = tmp_path / "prompt.md"
+    path.write_text(TARGET, encoding="utf-8")
+
+    refused = brief_schema.check_path(
+        path, issues=[1526, 1528], worktree_state=brief_schema.WORKTREE_COULD_NOT_DERIVE
+    )
+    assert _row(refused, "worktree")["state"] == "missing"
+    assert refused["state"] == brief_schema.STATE_FINDINGS
+
+    # Must-not-fire in the same fixture: the identical file with no state given
+    # still passes, so the assertion above is about the state and not the text.
+    assert brief_schema.check_path(path)["state"] == brief_schema.STATE_OK
+
+
 def test_every_element_declares_how_it_was_checked():
     payload = brief_schema.check_text(TARGET)
     for row in payload["elements"]:

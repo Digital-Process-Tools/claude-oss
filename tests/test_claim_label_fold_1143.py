@@ -6,8 +6,10 @@ and `test_fleet_label_989.py`, updated to import `lane_setup` instead). This fil
 covers the new behaviour: `--claim` renders the fleet label (and, given a
 subagent type, the whole `Agent(...)` call) from the issues the claim call
 *actually holds*, never from the issues the caller requested, and refuses to
-render the `Agent(...)` line when the brief it is about to dispatch fails one of
-`lane_setup_brief_schema`'s four structural checks.
+render the `Agent(...)` line when the prompt it is about to dispatch fails one of
+`lane_setup_brief_schema`'s three structural checks (#1535 cut nine elements to
+three; every one of them is structural now, so there is no presence-only tier
+left that renders anyway).
 
 Every "must not" is paired with a "must" in the same fixture, per this
 repository's own rule for a negative assertion.
