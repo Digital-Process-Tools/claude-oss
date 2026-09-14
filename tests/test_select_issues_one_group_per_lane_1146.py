@@ -7,9 +7,9 @@ lane's second, third and fourth groups cannot be dispatched this tick and
 are recomputed next tick against a board that has moved.
 
 Each lane still returns every one of its eligible candidates under
-`candidates` (nothing is lost), and a lane with more than one file-disjoint
-candidate now returns only the single best-ranked group -- lead plus up to
-two companions by the existing adjacency rules.
+`candidates` (nothing is lost), and a lane with more than one candidate
+sharing its own label now returns only the single best-ranked group --
+lead plus up to two companions sharing that same lane label (#1530).
 """
 
 import sys
@@ -21,12 +21,16 @@ sys.path.insert(0, str(REPO / "scripts"))
 import select_issues  # noqa: E402
 
 DECLARED = {
-    "lanes": ["lane-dispatch"],
+    "lanes": ["lane-dispatch", "lane-doctor"],
     "filed_by_loop": "filed-by-loop",
     "priority": ["priority-high", "priority-medium", "priority-low"],
 }
 
-CONFIG = {"repo": "Digital-Process-Tools/claude-oss", "worktree_root": "/tmp/wt", "labels": DECLARED}
+CONFIG = {
+    "repo": "Digital-Process-Tools/claude-oss",
+    "worktree_root": "/tmp/wt",
+    "labels": DECLARED,
+}
 
 
 def _issue(number, labels=None, **extra):
@@ -50,7 +54,13 @@ def _no_op_checker(numbers, mode, run=None, repo=None):
 
 def _fetcher(issues):
     def fetch(repo_slug, per=100, run=None):
-        return {"state": "ok", "issues": issues, "capped": False, "cap_detail": "", "detail": ""}
+        return {
+            "state": "ok",
+            "issues": issues,
+            "capped": False,
+            "cap_detail": "",
+            "detail": "",
+        }
 
     return fetch
 
@@ -100,19 +110,25 @@ def test_a_lane_with_several_disjoint_candidates_returns_only_its_best_ranked_gr
 
 
 def test_a_lane_with_one_candidate_still_returns_its_one_group():
-    board = [_issue(5, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/e.py"])]
+    board = [
+        _issue(5, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/e.py"])
+    ]
     result = _select_fleet(board)
     lane = result["lanes"]["lane-dispatch"]
     assert len(lane["groups"]["groups"]) == 1
 
 
 def test_capping_to_one_group_does_not_touch_ungrouped():
-    """A candidate that declares no files still lands in `ungrouped`, never
+    """A candidate whose own lane label is ambiguous -- two DIFFERENT
+    declared lane labels at once -- still lands in `ungrouped`, never
     silently absorbed by the one-group cap -- the cap is on GROUPS, not on
-    which candidates get reported at all."""
+    which candidates get reported at all. Every candidate that survives
+    `select_fleet`'s own per-lane label filter otherwise shares the one
+    label being iterated, so ambiguity is the one way `ungrouped` is still
+    reachable from this entry point (#1530)."""
     board = [
         _issue(6, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/f.py"]),
-        _issue(7, ["priority-high", "lane-dispatch"]),  # no declared files
+        _issue(7, ["priority-high", "lane-dispatch", "lane-doctor"]),
     ]
     result = _select_fleet(board)
     lane = result["lanes"]["lane-dispatch"]

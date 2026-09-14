@@ -34,6 +34,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -41,8 +43,14 @@ import lane_coupling  # noqa: E402
 
 
 def _real_lane_patterns():
+    # #1530: this repo retired `labels.lane_patterns` from its own
+    # `.oss.json` -- dispatch grouping keys on the lane LABEL directly now,
+    # never on a per-issue file set derived from it. `lane_coupling.py`
+    # itself is unaffected (a repo that still declares the key gets the
+    # identical check); `None` is the honest, already-tested "not
+    # configured" reading for THIS repo's own tree, never a crash.
     config = json.loads((REPO_ROOT / ".oss.json").read_text(encoding="utf-8"))
-    return config["labels"]["lane_patterns"]
+    return config["labels"].get("lane_patterns")
 
 
 def _scaffold_two_lane_repo(tmp_path):
@@ -527,6 +535,13 @@ def test_non_utf8_test_file_is_unreadable_not_a_crash(tmp_path):
     assert "tests/test_bad_encoding.py" in files
 
 
+@pytest.mark.skipif(
+    _real_lane_patterns() is None,
+    reason="#1530: this repo retired labels.lane_patterns -- the incident "
+    "fixture (tests/test_lane_pattern_coverage_1201.py) that demonstrated "
+    "it was retired with it. lane_coupling.py itself is unaffected; this "
+    "regression guard applies only to a repo that still declares the key.",
+)
 def test_real_repo_finds_the_1201_incident():
     """The definitive check: run against this repo's own real .oss.json
     and its own real test suite, the mechanism finds

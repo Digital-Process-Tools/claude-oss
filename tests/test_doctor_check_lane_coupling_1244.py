@@ -117,6 +117,21 @@ def test_allowlisted_span_is_ok_not_warn(tmp_path):
     assert "1" in doctor.FINDINGS[0][1]
 
 
+def _real_lane_patterns_declared():
+    import json
+
+    config = json.loads((REPO_ROOT / ".oss.json").read_text(encoding="utf-8"))
+    return config["labels"].get("lane_patterns") is not None
+
+
+@pytest.mark.skipif(
+    not _real_lane_patterns_declared(),
+    reason="#1530: this repo retired labels.lane_patterns from its own "
+    ".oss.json -- dispatch grouping keys on the lane LABEL directly now. "
+    "check_lane_coupling itself is unaffected (a repo that still declares "
+    "the key gets the identical check); this regression guard applies only "
+    "to a repo that still declares it.",
+)
 def test_real_repo_is_quiet_the_issues_own_verification(
     monkeypatch, lane_coupling_real_repo_report
 ):

@@ -22,43 +22,6 @@
     "lanes": ["lane-dispatch", "lane-doctor", "lane-prose", "lane-release", "lane-scaffold"],
     "filed_by_loop": "filed-by-loop",
     "lane_other": "lane-other",
-    "lane_patterns": {
-      "lane-dispatch": [
-        "scripts/select_issues*.py",
-        "scripts/lane_setup*.py",
-        "scripts/ranking_table.py",
-        "scripts/tick_handback.py",
-        "scripts/review_return.py"
-      ],
-      "lane-doctor": [
-        "scripts/doctor.py",
-        "scripts/doctor_check_*.py",
-        "scripts/lane_pattern_coverage.py",
-        "scripts/oss-workspace",
-        "bin/oss-workspace"
-      ],
-      "lane-prose": [
-        "skills/manager",
-        "agents",
-        "commands",
-        "CLAUDE.md",
-        "scripts/skill_phases.py",
-        "scripts/agent_budgets.py",
-        "scripts/command_budgets.py",
-        "scripts/developer_phases.py"
-      ],
-      "lane-release": [
-        "scripts/release_*.py",
-        "scripts/assemble_changelog.py",
-        "scripts/release_delta.py",
-        "scripts/release_publish.py",
-        "scripts/release_version.py"
-      ],
-      "lane-scaffold": [
-        "scripts/scaffold.py",
-        "scripts/oss_rules.py"
-      ]
-    },
     "lane_coupling_allowlist": [
         "tests/test_assemble_changelog_swallow_383.py",
         "tests/test_bare_gh_git_spawn_sweep_1165.py",
@@ -85,7 +48,6 @@
         "tests/test_jit_agent_dispatch.py",
         "tests/test_jit_layer_readers.py",
         "tests/test_jit_rule_migration_245.py",
-        "tests/test_lane_pattern_coverage_1201.py",
         "tests/test_lane_setup_267.py",
         "tests/test_lane_setup_432.py",
         "tests/test_lane_setup_566.py",
@@ -104,7 +66,6 @@
         "tests/test_scaffold.py",
         "tests/test_scaffold_cli.py",
         "tests/test_scaffold_test_measurement_932.py",
-        "tests/test_select_issues_lane_labels_1129.py",
         "tests/test_select_issues_lane_other_1130.py",
         "tests/test_shipped_op_spellings.py",
         "tests/test_stale_remedy_strings_1431.py",
