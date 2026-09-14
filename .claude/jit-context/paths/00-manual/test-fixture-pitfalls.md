@@ -33,6 +33,24 @@ sentence naming what went untested.
   answers mean there is nothing to classify, and it skips carrying both.
 - **Pin `PATH`.** With the stub absent, the launcher finds the real `claude` and executes it — a
   suite starting live agent sessions in temp directories.
+- **Pin `XDG_CACHE_HOME` in every doctor/statusline test, not only the one you
+  are fixing.** Three separate incidents (#1428, #1499, #1508), each caught
+  only on the maintainer's own machine and green on CI:
+  `_quiet_main`/`_rig`-style harnesses in `test_doctor_inprocess.py`
+  exercise real cache-writing paths (`statusline.cache_dir`, the
+  channel-health reading) without redirecting `XDG_CACHE_HOME`, so a
+  stray real file under `~/.cache/oss-statusline/` -- written by an
+  earlier, unrelated test run using the same placeholder repo slugs
+  (`owner/name`, `owner/repo`, `a/b`) -- leaks into the fixture and
+  produces a WARN the test does not stub. Confirmed each time by
+  re-running with `XDG_CACHE_HOME` pointed at an empty directory.
+  Fixing one consumer (`check_latest_skew`) did not fix the next one
+  (`check_channel_delivery`) sharing the same unpinned harness --
+  isolate the harness itself, not each symptom as it is found.
+  Roughly twenty other test files share the placeholder-repo-slug
+  pattern with no confirmed isolation nearby (`ls -la
+  ~/.cache/oss-statusline/` is the fast diagnostic for whether this
+  is recurring).
 
 - **Ambient credentials are a third axis, beside OS and interpreter, and the least visible.**
   `tests/test_select_issues_970.py` spawned `select_issues.py` as a subprocess; that reached the real

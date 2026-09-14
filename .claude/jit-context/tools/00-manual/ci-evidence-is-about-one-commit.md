@@ -39,6 +39,33 @@ first two; noticing that no sha was ever cleared catches the third.
   only backstop. If the train always outpaces it, the backstop never fires. **Watch the last merge
   of a tick to conclusion before the tick closes.**
 
+**A `pr_green.py` PENDING downgrade over-reaches its own docstring (#1458).**
+`_unresolved_runs`'s `status != "completed"` check is only reachable after the
+event filter already excludes push-triggered runs -- so the run its own
+docstring cites as motivation (a queued run cancelled) never reaches this
+condition at all. What the condition actually widens is
+`pull_request`+`completed` with zero jobs, which also now covers a completed
+*failure* (conclusion never read). Bounded: this function only ever downgrades
+an already-GREEN rollup to PENDING, never turns a real failure into green, so
+no false green resulted -- but a downgrade reason can misreport why.
+
+**A supersede check keyed on check-run name alone can drop a real failure
+(#1458).** `pr_green.py`'s `_superseded_flags` supersedes by name/context,
+discarding `workflowName` even though `read_pr` already has it on the same
+row. Two same-named jobs in two different workflows on one commit would let
+a later, unrelated job's start silently clear an earlier, genuinely failed
+one. Not observed on a managed repo yet; check any new supersede logic keys
+on (workflow, name), not name alone, before trusting it on a repo with more
+than one workflow producing same-named jobs.
+
+**An `unknown` flip on a sha CI already reported GREEN is noise, not
+news, when CodeQL's job list comes back empty (#1499).** Observed twice:
+`gh-branch` emitted `unknown` ("the job list for CodeQL did not come
+back") then `went_green` on the same, unchanged sha 36-40 seconds later.
+Read a same-sha `unknown`-then-`went_green` pair as a transient GitHub
+API read, not a regression -- and do not spend a turn investigating the
+sha until a *different* sha's state is in question.
+
 And read a GREEN sentence for what it excludes. `gh-branch` names the workflows that produced no
 run — in this repo `changelog` produces none on a push commit, every time — so "every leg passed"
 routinely describes 2 of 3 declared workflows. That third one is `unknown`, never covered.

@@ -23,15 +23,17 @@ the launcher already measured.
 claude`, so the session that starts has never held the old registry -- there is no stale copy to
 reload out of.
 
-**Four env relays hand each computed reading forward, and are unset again right before `exec`:**
-`OSS_WORKSPACE_MCP_CHECKED` (#629), `OSS_WORKSPACE_CENSUS_CHECKED` (#810),
-`OSS_WORKSPACE_MCP_LIST_CHECKED` (#1372), `OSS_WORKSPACE_CHANNEL_ARM_TARGET` (#1307). **Since #1392
-removed this file's own synchronous `doctor.sh` call, none of the four currently has a live
-consumer** -- the one thing that read them was the launcher's own diagnostic, which now runs from
-inside the session instead (`/oss:run` step 1). They are still computed and still unset, unchanged,
-pending a decision on whether to thread them into `/oss:run`'s own first `doctor.sh` call or retire
-them (#1432): treat a relay here as dead plumbing until that lands, not as something a session
-downstream can rely on.
+**Three of the four env relays are gone entirely, not merely dead plumbing pending a decision.**
+Issue #1474 removed `OSS_WORKSPACE_MCP_CHECKED` (#629), `OSS_WORKSPACE_CENSUS_CHECKED` (#810) and
+`OSS_WORKSPACE_CHANNEL_ARM_TARGET` (#1307) from this file outright, closing #1432's
+open question by deletion rather than by threading them into `/oss:run`'s own
+`doctor.sh` call. **Do not go looking for them** -- a session
+touching this file will not find them, and that is correct.
+`OSS_WORKSPACE_MCP_LIST_OUTPUT` is the one survivor, because it still has a real, same-process
+consumer (the #1361 census heredoc), and it is still unset before `exec` for the ordinary staleness
+reason. Its own sentinel, `OSS_WORKSPACE_MCP_LIST_CHECKED`, was dropped along with the other three
+-- nothing has read it since #1392. A rule that quotes a removed name is worse than silent: it sends
+a reader hunting for plumbing that was deliberately deleted (#1474).
 
 Routed via /oss:curate from `trap.d/1392.env-relays-now-consumerless.md`; the sibling docs
 staleness (`docs/open-the-workspace.md`, `docs/install.md`) this same launcher change left behind
