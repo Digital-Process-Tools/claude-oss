@@ -137,14 +137,14 @@ def test_guard_status_could_not_tell_when_the_repo_cannot_be_examined(tmp_path):
 
 def test_lane_report_threads_repo_into_guard_status(tmp_path):
     repo = _repo_with_guard(tmp_path, present=False)
-    report = lane_setup.lane_report(repo, ["agents/developer.md"], None)
+    report = lane_setup.lane_report(repo, ["agents/developer.md"])
     entry = next(
         e for e in report["guards"] if e["test"] == "tests/test_content_invariants.py"
     )
     assert entry["status"] == "absent"
 
 
-def _minimal_payload(repo, lane_patterns, against_patterns):
+def _minimal_payload(repo, lane_patterns):
     return {
         "issue": 566,
         "repo": str(repo),
@@ -172,8 +172,7 @@ def _minimal_payload(repo, lane_patterns, against_patterns):
             "exists": False,
         },
         "board": {"state": "ok", "lines": []},
-        "lanes": None,
-        "lane": lane_setup.lane_report(repo, lane_patterns, against_patterns),
+        "lane": lane_setup.lane_report(repo, lane_patterns),
     }
 
 
@@ -182,7 +181,7 @@ def test_receipt_says_not_in_this_repo_for_an_absent_guard(tmp_path):
     test reads a sentence saying so, never a bare test path that would collect
     nothing if run."""
     repo = _repo_with_guard(tmp_path, present=False)
-    payload = _minimal_payload(repo, ["agents/developer.md"], None)
+    payload = _minimal_payload(repo, ["agents/developer.md"])
     text = lane_setup.receipt(payload)
     assert "tests/test_content_invariants.py -- NOT IN THIS REPO" in text
 
@@ -192,7 +191,7 @@ def test_receipt_still_names_a_guard_that_genuinely_exists(tmp_path):
     time -- a lane in a repo that carries the guard reads exactly the pre-#566
     line, unflagged."""
     repo = _repo_with_guard(tmp_path, present=True)
-    payload = _minimal_payload(repo, ["agents/developer.md"], None)
+    payload = _minimal_payload(repo, ["agents/developer.md"])
     text = lane_setup.receipt(payload)
     assert "guard   : tests/test_content_invariants.py (" in text
     assert "NOT IN THIS REPO" not in text

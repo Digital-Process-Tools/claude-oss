@@ -68,14 +68,7 @@ def _payload(issue, claim_result):
 def test_compose_lane_fill_renders_the_full_lane_token_with_no_reason(tmp_path):
     """Positive control: a full lane (3 held) needs no reason and gets none."""
     checker = _always(claim_read.STATE_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(_payload(1, result))
     assert fill["state"] == "rendered"
     assert fill["text"] == "1:3"
@@ -85,14 +78,7 @@ def test_compose_lane_fill_carries_the_reason_through_for_a_short_lane(tmp_path)
     """A short lane (2 held, the third failed) whose caller passed the
     group's own established short_reason gets a complete token."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(
         _payload(1, result), short_reason="board-exhausted"
     )
@@ -104,14 +90,7 @@ def test_compose_lane_fill_never_invents_a_reason_for_a_short_lane(tmp_path):
     """The hidden judgment call: a short lane whose group carried no reason
     gets a token with no third field at all, never a fabricated one."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(_payload(1, result))
     assert fill["state"] == "rendered"
     assert fill["text"] == "1:2"
@@ -123,14 +102,7 @@ def test_the_unreasoned_short_token_still_gets_refused_by_oss_state(tmp_path):
     oss_state.py's own lane_fill() -- the exact function `--decision`
     calls -- and confirm #852's guard still fires on it."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(_payload(1, result))
     entry = oss_state._lane_fill_argument(fill["text"])
     try:
@@ -149,14 +121,7 @@ def test_the_reasoned_short_token_is_accepted_by_oss_state(tmp_path):
     given a real reason, is accepted rather than refused for some other,
     unrelated cause."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(
         _payload(1, result), short_reason="board-exhausted"
     )
@@ -173,14 +138,7 @@ def test_compose_lane_fill_drops_a_reason_given_for_a_full_lane(tmp_path):
     different, unrelated cause than #852's, and that refusal would obscure
     the one #1148 exists to keep firing."""
     checker = _always(claim_read.STATE_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(
         _payload(1, result), short_reason="board-exhausted"
     )
@@ -195,14 +153,7 @@ def test_compose_lane_fill_refuses_when_nothing_was_actually_held():
 
 def test_compose_lane_fill_refuses_when_the_primary_issue_is_not_held(tmp_path):
     checker = _mixed_checker(fail_issue=1)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(_payload(1, result))
     assert fill["state"] == "primary-not-held"
     assert fill["text"] is None
@@ -318,14 +269,7 @@ def test_compose_lane_fill_derives_no_adjacent_from_group_state_none(tmp_path):
     adjacent) mechanically derives `no-adjacent` -- no retyping, and no
     --short-reason on the call at all."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(_payload(1, result), group_state="none")
     assert fill["state"] == "rendered"
     assert fill["text"] == "1:2:no-adjacent"
@@ -333,14 +277,7 @@ def test_compose_lane_fill_derives_no_adjacent_from_group_state_none(tmp_path):
 
 def test_compose_lane_fill_derives_could_not_tell_from_group_state(tmp_path):
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(
         _payload(1, result), group_state="could-not-tell"
     )
@@ -353,14 +290,7 @@ def test_compose_lane_fill_derives_did_not_search_from_lane_other(tmp_path):
     exactly `did-not-search`'s own definition (#918: "a computation nobody
     started"), so it derives cleanly without needing --short-reason."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(_payload(1, result), group_state="lane-other")
     assert fill["state"] == "rendered"
     assert fill["text"] == "1:2:did-not-search"
@@ -376,14 +306,7 @@ def test_compose_lane_fill_never_invents_board_exhausted_from_candidates_state(
     `state` never establishes. Never guessed at: the token carries no
     reason at all, exactly like passing no --group-state."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(_payload(1, result), group_state="candidates")
     assert fill["state"] == "rendered"
     assert fill["text"] == "1:2"
@@ -394,14 +317,7 @@ def test_compose_lane_fill_short_reason_overrides_group_state(tmp_path):
     wins over the mechanical derivation -- the same fallback role #1143
     already gave --label over --claim's own render."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(
         _payload(1, result),
         short_reason="board-exhausted",
@@ -415,14 +331,7 @@ def test_compose_lane_fill_drops_group_state_reason_for_a_full_lane(tmp_path):
     """Positive control paired with the full-lane test above: a mechanically
     derivable reason must not land on a full lane's token either."""
     checker = _always(claim_read.STATE_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     fill = lane_setup.compose_lane_fill(_payload(1, result), group_state="none")
     assert fill["text"] == "1:3"
 

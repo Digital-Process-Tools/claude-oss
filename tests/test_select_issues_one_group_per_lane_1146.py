@@ -86,7 +86,6 @@ def _select_fleet(issues):
     return select_issues.select_fleet(
         CONFIG,
         fetcher=_fetcher(issues),
-        held_fetcher=_held(),
         checker=_no_op_checker,
         resolve_lane=_literal_resolve,
     )

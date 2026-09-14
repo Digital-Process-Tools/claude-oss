@@ -151,7 +151,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # the release's own script rather than a maintainer's hand, closing a
         # stale-prose finding a self-review spawn caught. Budget unchanged;
         # comfortably under it.
-        42893,
+        # Re-baselined for #1532: 42893 B became 42577 B -- the op table's
+        # two `--derive-held`/`--against` probe rows collapsed into one
+        # read row with the retired flags named as retired.
+        42577,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -303,8 +306,16 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # carry the write route. The recon section is rewritten in the same
         # diff: the lane spawns its own, and only the `## Lane file set` read
         # survives on this side, until #1532 retires the registry that needs
-        # it. Budget unchanged; 646 B headroom.
-        56754,
+        # it.
+        #
+        # #1532 is that retirement, stacked here: 56754 B -> 54641 B. The
+        # held-set derivation, its `--against` fallback and the five-state
+        # `availability` verdict chain they fed are gone, replaced by a shorter
+        # note saying what answers the question now. #1530 and #1532 both
+        # re-baselined from the same 56678 B, so this is `wc -c` on the rebased
+        # file rather than either side's arithmetic. Budget unchanged; 2,759 B
+        # headroom.
+        54641,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -325,7 +336,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # is a trap.d finding, a non-measured state is carried into the
         # handback, an absent key is a compliance question. 17249 became
         # 17922. Ceiling unchanged, 78 B of headroom left.
-        17922,
+        # #1532: 17922 B became 17924 B -- the release call now names the
+        # assignee it releases rather than "the lane record AND the
+        # assignee". Ceiling unchanged, 76 B of headroom left.
+        17924,
         18000,
         "a lane reported back: reading the report, pushing, opening the pull request",
     ),
@@ -418,7 +432,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # -- the same ready-to-merge -> green-and-mergeable rename, plus one
     # sentence stating why the old name was a verdict. Budget unchanged.
     "skills/manager/phases/merge.md": (
-        14776,
+        # Re-baselined for #1532: 14776 B became 14715 B -- the post-merge
+        # release bullet no longer describes the lane record's TTL or the
+        # prune that used to clear it for you; there is no longer any
+        # mechanism that does, which the bullet now says outright.
+        14715,
         15400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),
@@ -633,7 +651,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # arms the default-branch poller filtered (only=went_green,went_failed)
         # before the bare radar, and the "no poller to heal" prose that
         # predated supertool #2024 is corrected. Budget unchanged; 461 B left.
-        35539,
+        # Re-baselined for #1532: 35539 B became 35308 B -- the registry
+        # paragraph and the `--claim` requires `--lane` rule went with the
+        # registry, and step 3 no longer claims to derive a held set.
+        35308,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

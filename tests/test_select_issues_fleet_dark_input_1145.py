@@ -70,7 +70,6 @@ def test_a_dark_input_scoped_to_one_lane_label_answers_could_not_select_not_a_cr
     result = select_issues.select_fleet(
         CONFIG,
         fetcher=_fetcher(board),
-        held_fetcher=_held(),
         checker=_no_op_checker,
         search=_bad_search,
     )
@@ -97,7 +96,6 @@ def test_a_dark_input_scoped_to_lane_other_also_does_not_crash():
     result = select_issues.select_fleet(
         config,
         fetcher=_fetcher(board),
-        held_fetcher=_held(),
         checker=_no_op_checker,
         search=_bad_search,
     )
@@ -122,7 +120,6 @@ def test_an_untagged_issue_never_reaches_select_at_all_so_it_cannot_crash():
     result = select_issues.select_fleet(
         CONFIG,
         fetcher=_fetcher(board),
-        held_fetcher=_held(),
         checker=_no_op_checker,
         search=_bad_search,
     )

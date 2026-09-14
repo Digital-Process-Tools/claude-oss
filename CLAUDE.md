@@ -221,7 +221,7 @@ whether a paragraph earns its size; it only stops growth from being invisible.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 20,047 B | 21,000 B |
+| `agents/sub-manager.md` | 19,911 B | 21,000 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
@@ -263,15 +263,15 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,893 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 56,754 B | 57,400 B |
-| `skills/manager/phases/handback.md` | 17,922 B | 18,000 B |
+| `skills/manager/SKILL.md` | 42,577 B | 44,800 B |
+| `skills/manager/phases/dispatch.md` | 54,641 B | 57,400 B |
+| `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
-| `skills/manager/phases/tick-order.md` | 35,539 B | 36,000 B |
+| `skills/manager/phases/tick-order.md` | 35,308 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
-| `skills/manager/phases/merge.md` | 14,776 B | 15,400 B |
+| `skills/manager/phases/merge.md` | 14,715 B | 15,400 B |
 | `skills/manager/phases/ci-green.md` | 2,761 B | 3,050 B |
 | `skills/manager/phases/inbound.md` | 6,799 B | 6,900 B |
 

@@ -264,21 +264,24 @@ def test_lane_report_is_none_when_no_lane_was_asked_for(tmp_path):
     import lane_setup  # noqa: E402
 
     _make_tree(tmp_path)
-    assert lane_setup.lane_report(tmp_path, [], []) is None
+    assert lane_setup.lane_report(tmp_path, []) is None
 
 
-def test_lane_report_carries_overlap_only_when_both_sides_are_given(tmp_path):
+def test_lane_report_resolves_the_lane_side_when_one_is_given(tmp_path):
+    """#1532: the pair to the test above used to be
+    `test_lane_report_carries_overlap_only_when_both_sides_are_given`, driving
+    `against_patterns` and asserting the computed `overlap`. `lane_report` has
+    one side now, so the positive control is that the one side genuinely
+    resolves -- a glob expanded against what is actually on disk, which is the
+    half #267 was really about (a path and a glob naming the same file do not
+    intersect visibly as strings)."""
     import lane_setup  # noqa: E402
 
     _make_tree(tmp_path)
-    report = lane_setup.lane_report(tmp_path, ["skills/manager/SKILL.md"], None)
-    assert report["against"] is None
-    assert report["overlap"] is None
-
-    report = lane_setup.lane_report(
-        tmp_path, ["skills/manager/SKILL.md", "commands/tick.md"], ["commands/*.md"]
-    )
-    assert report["overlap"] == ["commands/tick.md"]
+    report = lane_setup.lane_report(tmp_path, ["commands/*.md"])
+    assert report["lane"]["files"] == ["commands/release.md", "commands/tick.md"]
+    assert "against" not in report
+    assert "overlap" not in report
 
 
 # --- CLI: --lane / --against reach the JSON payload -------------------------------
@@ -316,19 +319,26 @@ def _cli(tmp_path, *extra_args):
     )
 
 
-def test_cli_lane_and_against_reach_the_json_payload(tmp_path):
+def test_cli_lane_reaches_the_json_payload(tmp_path):
+    """#1532: this used to pass `--against commands/*.md` beside the two
+    `--lane` patterns and assert the computed `overlap`. Both the flag and the
+    overlap are retired -- what `--lane` is still for is rendering a lane's own
+    files in canonical form, each glob expanded against what is on disk, which
+    is what this now asserts."""
     _make_tree(tmp_path)
     done = _cli(
         tmp_path,
         "--lane",
         "skills/manager/SKILL.md",
         "--lane",
-        "commands/tick.md",
-        "--against",
         "commands/*.md",
     )
     payload = json.loads(done.stdout)
-    assert payload["lane"]["overlap"] == ["commands/tick.md"]
+    assert payload["lane"]["lane"]["files"] == [
+        "commands/release.md",
+        "commands/tick.md",
+        "skills/manager/SKILL.md",
+    ]
 
 
 def test_cli_with_no_lane_flags_reports_lane_as_none(tmp_path):

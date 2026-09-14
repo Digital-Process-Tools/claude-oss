@@ -96,7 +96,6 @@ def test_select_issues_solo_lane_other_group_uses_the_shared_constant():
     result = select_issues.select_fleet(
         _LANE_OTHER_CONFIG,
         fetcher=_fetcher,
-        held_fetcher=_held,
         checker=_no_op_checker,
     )
     group = result["lanes"]["lane-other"]["groups"]["groups"][0]
@@ -131,7 +130,6 @@ def test_select_issues_solo_lane_other_group_actually_reads_the_constant_at_call
     result = select_issues.select_fleet(
         _LANE_OTHER_CONFIG,
         fetcher=_fetcher,
-        held_fetcher=_held,
         checker=_no_op_checker,
     )
     group = result["lanes"]["lane-other"]["groups"]["groups"][0]

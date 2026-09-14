@@ -86,14 +86,7 @@ def test_full_success_counts_every_issue_requested(tmp_path):
     """Positive control: nothing failed and the registry write itself
     succeeds, so the held set is the full bundle."""
     checker = _always(claim_read.STATE_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     assert result["state"] == lane_setup_claim.CLAIM_STATE_CLAIMED
     held = lane_setup._claimed_issue_numbers(result)
     assert sorted(held) == [1, 2, 3]
@@ -103,14 +96,7 @@ def test_a_failed_companion_is_excluded_from_the_held_set(tmp_path):
     """The scenario named in #1143 itself: the third issue comes back
     could-not-claim-assignee, so the lane carries two, never three."""
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     held = lane_setup._claimed_issue_numbers(result)
     assert sorted(held) == [1, 2]
     assert 3 not in held
@@ -118,14 +104,7 @@ def test_a_failed_companion_is_excluded_from_the_held_set(tmp_path):
 
 def test_an_already_claimed_companion_is_excluded_too(tmp_path):
     checker = _mixed_checker(fail_issue=3, fail_state=claim_read.STATE_ALREADY_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     held = lane_setup._claimed_issue_numbers(result)
     assert sorted(held) == [1, 2]
 
@@ -134,18 +113,22 @@ def test_no_claim_result_at_all_holds_nothing():
     assert lane_setup._claimed_issue_numbers(None) == []
 
 
-def test_a_rolled_back_assignee_is_no_longer_held(tmp_path):
-    """The registry write fails after a fresh assignee write succeeded --
-    `claim_and_register` releases it again, so it must not be counted as
-    held even though the row itself still says `claimed`."""
+def test_every_claimed_row_is_held_now_that_nothing_rolls_back(tmp_path):
+    """#1532 deleted this test's original subject. It used to drive a failing
+    registry write (a regular file where the registry directory should be),
+    assert `assignee-rolled-back`, and check that the released assignee was
+    NOT counted as held even though its own row still said `claimed`.
+
+    There is no registry, so there is no second write to fail, no rollback,
+    and no `assignee-rolled-back` state. What replaces it is the claim that
+    made the old behaviour necessary in the first place, asserted directly: a
+    `claimed` row is held. Kept rather than deleted outright so the inversion
+    is visible to whoever reads `_claimed_issue_numbers` next -- the old test
+    would now be asserting the opposite of the truth."""
     checker = _always(claim_read.STATE_CLAIMED)
-    not_a_dir = tmp_path / "not-a-dir"
-    not_a_dir.write_text("x")
-    result = lane_setup_claim.claim_and_register(
-        str(not_a_dir), 4, "fix/4", str(tmp_path / "wt"), checker=checker
-    )
-    assert result["state"] == lane_setup_claim.CLAIM_STATE_ASSIGNEE_ROLLED_BACK
-    assert lane_setup._claimed_issue_numbers(result) == []
+    result = lane_setup_claim.claim_issues(4, checker=checker)
+    assert result["state"] == lane_setup_claim.CLAIM_STATE_CLAIMED
+    assert lane_setup._claimed_issue_numbers(result) == [4]
 
 
 # --------------------------------------------------------------- compose_claim_label
@@ -157,14 +140,7 @@ def _payload(issue, claim_result):
 
 def test_compose_claim_label_renders_x2_when_a_third_issue_fails(tmp_path):
     checker = _mixed_checker(fail_issue=3)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     label = lane_setup.compose_claim_label(_payload(1, result), "auto-update path")
     assert label["state"] == "rendered"
     assert label["text"] == "Lane 1 x2  auto-update path"
@@ -173,14 +149,7 @@ def test_compose_claim_label_renders_x2_when_a_third_issue_fails(tmp_path):
 def test_compose_claim_label_renders_x3_when_everything_claims(tmp_path):
     """Positive control paired with the test above."""
     checker = _always(claim_read.STATE_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     label = lane_setup.compose_claim_label(_payload(1, result), "auto-update path")
     assert label["state"] == "rendered"
     assert label["text"] == "Lane 1 x3  auto-update path"
@@ -194,14 +163,7 @@ def test_compose_claim_label_refuses_when_nothing_was_actually_held():
 
 def test_compose_claim_label_refuses_when_the_primary_issue_is_not_held(tmp_path):
     checker = _mixed_checker(fail_issue=1)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        1,
-        "fix/1",
-        str(tmp_path / "wt"),
-        also_claim=[2, 3],
-        checker=checker,
-    )
+    result = lane_setup_claim.claim_issues(1, also_claim=[2, 3], checker=checker)
     label = lane_setup.compose_claim_label(_payload(1, result), "phrase")
     assert label["state"] == "primary-not-held"
     assert label["text"] is None
@@ -217,9 +179,7 @@ def test_compose_claim_label_refuses_agent_call_on_a_structural_brief_finding(tm
     appended rather than from what it forgot to restate.
     """
     checker = _always(claim_read.STATE_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"), 1, "fix/1", str(tmp_path / "wt"), checker=checker
-    )
+    result = lane_setup_claim.claim_issues(1, checker=checker)
     brief = tmp_path / "brief.md"
     brief.write_text("{{PASTE THE RECON SUMMARY HERE}}", encoding="utf-8")
     label = lane_setup.compose_claim_label(
@@ -240,9 +200,7 @@ def test_compose_claim_label_renders_agent_call_with_clean_appended_context(
     """Positive control in the same fixture family: the same appended file with
     no placeholder in it renders the Agent(...) call."""
     checker = _always(claim_read.STATE_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"), 1, "fix/1", str(tmp_path / "wt"), checker=checker
-    )
+    result = lane_setup_claim.claim_issues(1, checker=checker)
     brief = tmp_path / "brief.md"
     brief.write_text("Recon: the guard lives in scripts/foo.py:40.", encoding="utf-8")
     label = lane_setup.compose_claim_label(
@@ -259,9 +217,7 @@ def test_compose_claim_label_renders_agent_call_with_clean_appended_context(
 
 def test_compose_claim_label_refuses_when_the_brief_could_not_be_read(tmp_path):
     checker = _always(claim_read.STATE_CLAIMED)
-    result = lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"), 1, "fix/1", str(tmp_path / "wt"), checker=checker
-    )
+    result = lane_setup_claim.claim_issues(1, checker=checker)
     label = lane_setup.compose_claim_label(
         _payload(1, result),
         "phrase",

@@ -49,12 +49,14 @@ collapsing them by accident:
              the third state was reachable only for an empty path.
   board      ok (condensed from `supertool git-worktrees`) or could-not-run (supertool
              is not on PATH, or the call itself failed) -- never silently empty.
-  record     recorded (this call passed --claim and the write succeeded), unknown
-             (no worktree_root to write to -- expected inside a worktree this loop
-             cuts), could-not-write (worktree_root known, the write itself failed),
-             or not-claimed (#705: this call did not pass --claim, so it asked
-             without writing -- the ordinary shape for a disjointness probe that
-             may never be dispatched).
+             #1532: this is the single source of truth about which lanes are
+             live. The local lane registry that used to sit beside it was a
+             second, staler copy of the same fact and is retired.
+  assignee   claimed (this call passed --claim and every requested assignee
+             write went through), already-claimed (somebody else holds one --
+             nothing written), or could-not-claim-assignee (the read/write
+             itself did not complete, which is not the same fact and is never
+             folded into it).
 
 `git rev-parse` on a full ref, never abbreviated: a short sha returns `[]` from
 `gh run list --commit` and exits 0, which has cost this loop a round already
@@ -182,29 +184,10 @@ import select_issues_rank  # noqa: E402
 from lane_setup_claim import (  # noqa: E402,F401
     CLAIM_STATE_ALREADY_CLAIMED,
     CLAIM_STATE_ALREADY_MINE,
-    CLAIM_STATE_ASSIGNEE_ROLLED_BACK,
     CLAIM_STATE_CLAIMED,
     CLAIM_STATE_COULD_NOT_CLAIM_ASSIGNEE,
-    CLAIM_STATE_COULD_NOT_REGISTER,
-    CLAIM_STATE_ROLLBACK_FAILED,
-    LANE_RECORD_TTL_SECONDS,
-    LANE_REGISTRY_DIRNAME,
-    _PR_LIST_LIMIT,
-    _branch_confirmed_gone,
-    _branch_confirmed_present,
-    _mark_branch_confirmed_created,
-    _show_ref_code,
-    claim_and_register,
-    derive_held_set,
-    detect_vanished_worktrees,
-    held_from_live_lanes,
-    held_from_open_prs,
-    lane_count,
-    lane_registry_dir,
-    lanes_snapshot,
-    record_lane,
-    release_lane,
-    release_lane_and_assignee,
+    claim_issues,
+    release_assignees,
 )
 from lane_setup_patterns import (  # noqa: E402,F401
     _refused_patterns,
@@ -457,45 +440,28 @@ def _claimed_issue_numbers(claim_result):
     ``claim_result["assignee"]["rows"]`` is a real, independent write attempt
     (`select_issues_claim_read.check` writes for every issue named,
     regardless of whether another issue in the same batch failed), so a row
-    can genuinely say ``claimed`` even when `claim_and_register`'s own
-    overall ``state`` is a failure -- that dangling write is still real and
-    still counts here.
+    can genuinely say ``claimed`` even when `claim_issues`' own overall
+    ``state`` is a failure -- that dangling write is still real and still
+    counts here.
 
-    The one case where a ``claimed`` row does NOT count: `claim_and_register`
-    rolled it back because the lane's own registration failed
-    (``assignee-rolled-back`` / ``rollback-failed-assignee-still-set``). A
-    number named in ``rollback_failed`` is excluded from the rollback itself
-    -- its release attempt failed, so the assignee is still genuinely set --
-    and is counted; every other freshly-claimed number under those two
-    states was successfully released again and is not.
+    #1532 removed the one exception to that. A ``claimed`` row used to not
+    count when `claim_and_register` had rolled the assignee back because the
+    lane's own registry write failed (``assignee-rolled-back`` /
+    ``rollback-failed-assignee-still-set``). There is no registry and no
+    second write to fail, so there is no rollback and every ``claimed`` row
+    is simply held.
     """
     if not claim_result:
         return []
     assignee = claim_result.get("assignee") or {}
     rows = assignee.get("rows") or []
-    rollback_failed = set(assignee.get("rollback_failed") or [])
-    overall = claim_result.get("state")
-    rolled_back_states = (
-        lane_setup_claim.CLAIM_STATE_ASSIGNEE_ROLLED_BACK,
-        lane_setup_claim.CLAIM_STATE_ROLLBACK_FAILED,
-    )
 
     held = []
     for row in rows:
         state = row.get("state")
-        number = row.get("issue")
         if state not in _HELD_ASSIGNEE_STATES:
             continue
-        if (
-            overall in rolled_back_states
-            and state == select_issues_claim_read.STATE_CLAIMED
-            and number not in rollback_failed
-        ):
-            # This row's own freshly-written assignee was released again
-            # because the lane could not be registered -- no longer held,
-            # whatever the row itself still says.
-            continue
-        held.append(number)
+        held.append(row.get("issue"))
     return held
 
 
@@ -831,8 +797,6 @@ def compute(
     issue,
     remote="origin",
     lane_patterns=None,
-    against_patterns=None,
-    derive_held=False,
     claim=False,
     stack_on=None,
     also_claim=None,
@@ -849,57 +813,36 @@ def compute(
     in, sidestepping the `cannot tell` collision `git-worktrees` reports for a
     tree whose index was written recently, rather than trying to resolve it.
 
-    `lane_patterns` / `against_patterns` are optional (#267): when neither is
-    given and `derive_held` is False, `payload["lane"]` is None -- an absent ask
-    must not read as a checked, empty lane. When either is given, both sides are
-    rendered through `resolve_lane` and, when both sides are present, compared
-    with `lane_overlap` -- the disjointness check the manager skill currently runs
-    by eye.
+    `lane_patterns` is optional (#267): when it is not given, `payload["lane"]`
+    is None -- an absent ask must not read as a checked, empty lane. When it is
+    given, it is rendered through `resolve_lane` so a brief can state what its
+    lane touches, and `--suggest-companions` has a claimed set to sweep the
+    board against.
 
-    `derive_held` (#558) is opt-in, not the default: the local, offline path this
-    module has always offered (`--lane`/`--against`, both hand-typed) keeps working
-    unchanged when it is False, which is the ordinary case for the "writing each
-    brief" call SKILL.md's own table names -- that call has no reason to pay for a
-    `gh pr list` round trip. When True, the "against" side is derived instead of
-    accepted (`derive_held_set`, from open pull requests and live lane records) --
-    a forge call that fails must never render as an empty, confident held set, so
-    a failed derivation flows into `lane_report` as `could-not-derive`, not as
-    `against=None` (which would silently read as "nothing to check against").
+    **#1532 retired the against side entirely.** `--against` compared a
+    candidate's declared files against a hand-typed set and `--derive-held`
+    derived that set from every open pull request plus every live lane record.
+    Both existed to answer "which files are already spoken for", and #1528
+    stopped that answer dropping a candidate. git reports a real collision at
+    merge, like everywhere else; a second answer computed hours earlier does
+    not.
 
-    `claim` (#705) is the only thing that makes this call write *this lane's own*
-    record. Default False: `--lane`/`--against`/`--derive-held` never write a
-    record for the issue this call is about, and nothing here writes a lane
-    record on that issue's behalf without `--claim`. Pass `claim=True` only at
-    the moment this lane is actually being dispatched, never while probing
-    candidates.
-
-    **That is narrower than "nothing is written to the registry", and it always
-    has been.** `lanes_snapshot` -> `lane_count` prunes a TTL-expired record as a
-    side effect of the read it performs regardless of `claim` (its own docstring
-    says so); `--derive-held` (#734, review round) can now do the same for a
-    *different* issue's record, whenever `held_from_live_lanes` corroborates a
-    live record's declared branch as locally confirmed gone -- a probe that never
-    intends to dispatch can still delete another lane's stale record. Both are
-    deletions of records this loop has independent evidence are dead (aged out,
-    or the branch a merge already removed), never of a record still legitimately
-    held, and both are reported: `lane_report`'s `held_source.stale_pruned` and
-    the receipt's first `held :` line name what a `--derive-held` call actually
-    removed, so this is a write with a trace, not a silent one. #792: the removal
-    itself can fail -- `held_source.prune_failed` and the receipt's second
-    `held :` line name a record this call tried and failed to remove, which is
-    demonstrably still on disk and never counted in the first line's total.
+    `claim` (#705, #1532) is the only thing that makes this call write
+    anything, and what it now writes is the GitHub assignee -- a forge-side
+    fact with a real owner -- rather than a local record beside it. Default
+    False: a probe writes nothing. Pass `claim=True` only at the moment this
+    lane is actually being dispatched.
 
     `also_claim`/`claim_checker` (#1069): when `claim` is True, the assignee
     is written for `issue` AND every issue in `also_claim` (a lane's
-    companion issues) via `lane_setup_claim.claim_and_register`, which rolls
-    every freshly-written assignee back if the lane registration itself
-    fails -- see that function's own docstring for the full state list.
-    `claim_checker` is injectable the same way `select_issues.py`'s own
-    `select()` injects `checker`, so a test never needs a live `gh` session.
-    Ignored when `claim` is False, the ordinary probing case.
+    companion issues) via `lane_setup_claim.claim_issues` -- see that
+    function's own docstring for the full state list. `claim_checker` is
+    injectable the same way `select_issues.py`'s own `select()` injects
+    `checker`, so a test never needs a live `gh` session. Ignored when `claim`
+    is False, the ordinary probing case.
 
-    `activity` (#1120) is opt-in and off by default, the same posture
-    `derive_held` takes: a plain recursive mtime scan (`worktree_last_activity`)
+    `activity` (#1120) is opt-in and off by default: a plain recursive mtime
+    scan (`worktree_last_activity`)
     over a real worktree can be an arbitrarily large walk, and this is the
     unconditional read path every plain `lane_setup.py <issue>` call takes, so
     it is never paid unless asked for. Computed only when the worktree is
@@ -907,26 +850,15 @@ def compute(
     there is nothing to scan for a worktree not yet cut, and scanning a path
     this call could not even confirm exists would answer a question that was
     never asked. `payload["worktree"]["last_activity"]` is always present as a
-    key, `None` when not requested or not applicable, never omitted -- the
-    same "always the key, sometimes the value" shape `derived_held` already
-    uses, so a JSON consumer never has to guess whether the absence means "not
-    asked" or "asked and found nothing".
+    key, `None` when not requested or not applicable, never omitted, so a JSON
+    consumer never has to guess whether the absence means "not asked" or
+    "asked and found nothing".
     """
     repo = Path(repo)
     config_path = repo / CONFIG_NAME
     config, problems = oss_config.load(config_path)
 
     if config is None:
-        derived_held = (
-            {
-                "state": "could-not-derive",
-                "held": {},
-                "detail": "config could not be loaded, so neither repo nor "
-                "worktree_root is known to derive a held set from.",
-            }
-            if derive_held
-            else None
-        )
         return {
             "issue": issue,
             "repo": str(repo),
@@ -935,10 +867,7 @@ def compute(
             "branch": None,
             "worktree": None,
             "board": None,
-            "lanes": None,
-            "lane": lane_setup_patterns.lane_report(
-                repo, lane_patterns, against_patterns, derived_held
-            ),
+            "lane": lane_setup_patterns.lane_report(repo, lane_patterns),
         }
 
     if stack_on:
@@ -985,94 +914,28 @@ def compute(
 
     board = read_board(repo)
 
-    derived_held = (
-        lane_setup_claim.derive_held_set(
-            config.get("repo"),
-            config.get("worktree_root"),
-            exclude_issue=issue,
-            repo=repo,
-        )
-        if derive_held
-        else None
-    )
-    lane = lane_setup_patterns.lane_report(
-        repo, lane_patterns, against_patterns, derived_held
-    )
+    lane = lane_setup_patterns.lane_report(repo, lane_patterns)
 
-    # #558: this lane's own resolved files are recorded so a *later* candidate's
-    # `derive_held_set` call can read them back -- computed here, after `lane_report`,
-    # rather than calling `resolve_lane` a second time for the same patterns.
-    lane_files = (
-        lane["lane"]["files"] if lane and lane.get("lane") is not None else None
-    )
-
-    # #865: a claim standing inside a linked worktree derives `worktree_root`
-    # from THAT worktree's own path (#608), not the clone's -- a value, not
-    # an absence, and a wrong one: the registry it would write into is a
-    # sibling of the one worktree that asked, invisible to every other lane.
-    # Checked only when a claim was actually requested -- every probe form
-    # above is read-only and this must never refuse one of those.
+    # #1069, #1532: claiming writes the GitHub assignee for `issue` and every
+    # issue in `also_claim`. That is now the whole of what a claim does --
+    # `claim_issues`' own docstring names every state. There is no local
+    # record beside it any more, so there is nothing to roll back and no
+    # second, staler answer to the question `git-worktrees` already answers.
     #
-    # Review round: `linked_worktree_state`'s own docstring says its
-    # `could-not-tell` state must never render as `main` -- comparing only
-    # against `WORKTREE_LINKED` here let a `could-not-tell` reading (git
-    # itself failed to answer one of the two rev-parse calls) fall through
-    # to a claim proceeding exactly as if it had been verified safe. Refusing
-    # on anything other than a confirmed `WORKTREE_MAIN` closes that: the
-    # only way to write is a positive, checked answer, never an unchecked one.
-    standing_in = (
-        lane_setup_worktree.linked_worktree_state(repo)
-        if claim
-        else (lane_setup_worktree.WORKTREE_MAIN, "")
-    )
-    claim_worktree_state = standing_in[0] if claim else None
-    claim_refused = claim and claim_worktree_state != lane_setup_worktree.WORKTREE_MAIN
-    # Nothing is written when the claim cannot be trusted -- refusing loudly
-    # and still writing into the wrong registry would be strictly worse than
-    # refusing and writing nothing at all.
-    effective_claim = claim and not claim_refused
-
-    # #1069: claiming now writes the GitHub assignee for `issue` (and every
-    # issue in `also_claim`) AND registers the lane, rolling the assignee
-    # write(s) back if registration fails -- `claim_and_register`'s own
-    # docstring names every state. The lane count is read via
-    # `lanes_snapshot(..., claim=False)` -- a pure read, never a second
-    # write -- and read AFTER registering, so this lane's own just-written
-    # record is included in its own count, the same ordering the single
-    # `lanes_snapshot(..., claim=effective_claim)` call used to guarantee by
-    # writing first and counting second.
+    # #865's linked-worktree refusal went with the registry: it existed
+    # because a claim standing inside a linked worktree derives
+    # `worktree_root` from THAT worktree's own path (#608) and so wrote its
+    # record into a sibling registry no other lane could read. An assignee
+    # write does not read `worktree_root` at all -- it is a forge call
+    # against the issue number -- so it is correct from any directory, and
+    # refusing it here would refuse a claim that is in fact sound.
     claim_result = None
-    if effective_claim:
-        claim_result = lane_setup_claim.claim_and_register(
-            config.get("worktree_root"),
+    if claim:
+        claim_result = lane_setup_claim.claim_issues(
             issue,
-            branch.get("name"),
-            worktree.get("path"),
-            files=lane_files,
             also_claim=also_claim,
             repo=config.get("repo"),
             checker=claim_checker,
-        )
-    lanes = lane_setup_claim.lanes_snapshot(
-        config.get("worktree_root"),
-        issue,
-        branch.get("name"),
-        worktree.get("path"),
-        files=lane_files,
-        claim=False,
-    )
-    if claim_result is not None:
-        lanes = dict(lanes)
-        lanes["record"] = (
-            claim_result["record"]
-            if claim_result["record"] is not None
-            else {
-                "state": "not-claimed",
-                "path": None,
-                "detail": "the assignee claim was refused or failed before the "
-                "lane could be registered ({0}) -- see "
-                "claim_result".format(claim_result["state"]),
-            }
         )
 
     return {
@@ -1083,19 +946,10 @@ def compute(
         "branch": branch,
         "worktree": worktree,
         "board": board,
-        "lanes": lanes,
         "lane": lane,
         "claim": claim,
-        # #865: None when no claim was requested (nothing to refuse); the
-        # worktree state that caused the refusal ('linked' or
-        # 'could-not-tell') when one was and the claim could not be trusted;
-        # 'main' when a claim was requested and genuinely went through.
-        "claim_worktree_state": claim_worktree_state,
-        "claim_refused": claim_refused,
-        # #1069: None when no claim was requested, or a claim was requested
-        # but refused before it ever reached `claim_and_register` (the
-        # `claim_refused` case above -- standing inside a linked worktree).
-        # Otherwise `claim_and_register`'s own result -- see its docstring.
+        # #1069: None when no claim was requested. Otherwise `claim_issues`'
+        # own result -- see its docstring.
         "claim_result": claim_result,
     }
 
@@ -1103,30 +957,22 @@ def compute(
 def blocked(payload):
     """True when there is not enough here to cut a lane from.
 
-    #865: a `--claim` that could not record is folded in here too, not only
-    "not enough to cut a lane from" -- a claim standing inside a linked
-    worktree writes into a registry no other lane reads, which is worse than
-    writing nothing, and letting it exit 0 identically to a real claim is
-    exactly the defect this repository is named after: an absence produced
-    by the tool, read as an absence in the world. `claim_refused` covers
-    both ways the worktree check can fail to vouch for the claim -- a
-    confirmed linked worktree AND a plain could-not-tell -- because only a
-    confirmed `WORKTREE_MAIN` reading is grounds to trust it (review round:
-    an earlier version compared only against `WORKTREE_LINKED`, so a
-    could-not-tell reading silently proceeded as if verified safe).
+    A `--claim` that was attempted and did not come back `claimed` is folded
+    in here too, not only "not enough to cut a lane from": letting it exit 0
+    identically to a real claim is exactly the defect this repository is
+    named after -- an absence produced by the tool, read as an absence in the
+    world.
     """
     if payload["config"]["state"] != "ok":
         return True
     if payload["base"]["state"] == "could-not-resolve":
         return True
-    if payload.get("claim_refused"):
-        return True
     # #1069: a claim that was attempted and did NOT reach
     # `lane_setup_claim.CLAIM_STATE_CLAIMED` -- already claimed by somebody
-    # else, the assignee write itself failed, or the registration failed and
-    # the assignee write was rolled back (or the rollback itself failed) --
-    # is not a lane a caller may proceed to dispatch from, exactly the same
-    # discipline `claim_refused` already applies one case over.
+    # else, or the assignee write itself failed -- is not a lane a caller may
+    # proceed to dispatch from. The two are kept apart by `claim_result`'s own
+    # state and folded together only here, where the question is the single
+    # yes/no "may this be dispatched".
     claim_result = payload.get("claim_result")
     if (
         claim_result is not None
@@ -1283,265 +1129,57 @@ def receipt(payload):
         for line in board["lines"]:
             lines.append("  " + line)
 
-    lanes = payload.get("lanes")
-    if lanes is not None:
-        count = lanes["count"]
-        if count["state"] == "resolved":
+    # #1069, #1532: the assignee is the whole of what a claim writes, so this
+    # is the whole of what a claim reports. There used to be a `lanes :` row
+    # above it naming the local registry's live count and TTL, and a
+    # `this lane not recorded:` line beside it; both are gone with the
+    # registry. A reader must never have to infer the outcome of a write from
+    # silence, so every state gets its own line here.
+    claim_result = payload.get("claim_result")
+    if claim_result is not None:
+        if claim_result["state"] == lane_setup_claim.CLAIM_STATE_CLAIMED:
+            lines.append(_row("assignee", "claimed"))
+        elif claim_result["state"] == lane_setup_claim.CLAIM_STATE_ALREADY_CLAIMED:
+            holders = sorted(
+                {
+                    holder
+                    for row in claim_result["assignee"]["rows"]
+                    for holder in (row.get("holders") or [])
+                }
+            )
             lines.append(
                 _row(
-                    "lanes",
-                    "{0} live (recorded, TTL {1}m)".format(
-                        count["count"], lane_setup_claim.LANE_RECORD_TTL_SECONDS // 60
+                    "assignee",
+                    "ALREADY CLAIMED by {0} -- nothing written".format(
+                        ", ".join(holders) if holders else "somebody else"
                     ),
                 )
             )
         else:
+            # `could-not-claim-assignee`. Kept apart from the line above on
+            # purpose: "somebody else holds this" and "nothing could read
+            # whether anybody holds this" are different facts, and folding
+            # the second into the first claims a reading nothing performed.
             lines.append(
                 _row(
-                    "lanes",
-                    "{0} -- {1}".format(count["state"].upper(), count["detail"]),
+                    "assignee",
+                    "COULD NOT CLAIM -- the assignee read/write itself did not "
+                    "complete for at least one issue",
                 )
             )
-        record = lanes["record"]
-        if payload.get("claim_refused"):
-            # #865: --claim was requested and could not be trusted -- either a
-            # confirmed linked worktree, or git itself could not answer the
-            # check (could-not-tell, never read as safe). Nothing was written
-            # (`effective_claim` was forced False in `compute`), so the
-            # underlying record always reads `not-claimed` here -- but THAT
-            # state's own generic detail ("this call did not pass --claim")
-            # is written for #705's genuine probing case and is false for
-            # this one: the call plainly did pass --claim. Review round: an
-            # earlier version printed the generic line unedited beside the
-            # #865 line below, contradicting it. Replaced with the real
-            # cause instead of reusing a sentence built for a different one.
-            if (
-                payload.get("claim_worktree_state")
-                == lane_setup_worktree.WORKTREE_LINKED
-            ):
-                lines.append(
-                    "  CLAIM REFUSED: standing inside a linked worktree, not the "
-                    "clone -- run --claim from the clone instead (#865)"
-                )
-            else:
-                lines.append(
-                    "  CLAIM REFUSED: could not tell whether this is a linked "
-                    "worktree or the clone -- git did not answer, so the claim "
-                    "was not trusted (#865)"
-                )
-        elif record["state"] != "recorded":
-            lines.append(
-                "  this lane not recorded: {0} -- {1}".format(
-                    record["state"], record["detail"]
-                )
-            )
-        # #1069: `claim_and_register`'s own outcome, one line naming the
-        # assignee side of the claim -- the record line above already names
-        # the registry side, and a reader must never have to infer the other
-        # half from silence.
-        claim_result = payload.get("claim_result")
-        if claim_result is not None:
-            if claim_result["state"] == lane_setup_claim.CLAIM_STATE_CLAIMED:
-                lines.append("  assignee: claimed")
-            elif claim_result["state"] == lane_setup_claim.CLAIM_STATE_ALREADY_CLAIMED:
-                holders = sorted(
-                    {
-                        holder
-                        for row in claim_result["assignee"]["rows"]
-                        for holder in (row.get("holders") or [])
-                    }
-                )
-                lines.append(
-                    "  assignee: ALREADY CLAIMED by {0} -- nothing written".format(
-                        ", ".join(holders) if holders else "somebody else"
-                    )
-                )
-            elif (
-                claim_result["state"]
-                == lane_setup_claim.CLAIM_STATE_COULD_NOT_CLAIM_ASSIGNEE
-            ):
-                lines.append(
-                    "  assignee: COULD NOT CLAIM -- the assignee read/write itself "
-                    "did not complete for at least one issue"
-                )
-            elif (
-                claim_result["state"]
-                == lane_setup_claim.CLAIM_STATE_ASSIGNEE_ROLLED_BACK
-            ):
-                lines.append(
-                    "  assignee: ROLLED BACK -- the lane could not be registered, "
-                    "so the assignee write was undone"
-                )
-            elif claim_result["state"] == lane_setup_claim.CLAIM_STATE_ROLLBACK_FAILED:
-                lines.append(
-                    "  assignee: ROLLBACK FAILED -- {0} still assigned even though "
-                    "the lane was never registered; release by hand".format(
-                        ", ".join(
-                            "#{0}".format(n)
-                            for n in claim_result["assignee"]["rollback_failed"]
-                        )
-                    )
-                )
 
     lane = payload.get("lane")
     if lane is not None:
         lines.append("lane      :")
-        held_source = lane.get("held_source")
-        if held_source is None:
-            for side_label, side in (
-                ("lane", lane["lane"]),
-                ("against", lane["against"]),
-            ):
-                if side is None:
-                    continue
-                for entry in side["patterns"]:
-                    lines.append(
-                        "  [{0}] {1} ({2}): {3}".format(
-                            side_label,
-                            entry["pattern"],
-                            entry["state"],
-                            ", ".join(entry["files"]) or "-",
-                        )
-                    )
-        else:
-            # #558: the "against" side was derived (open PRs + live lanes), not
-            # hand-typed -- printing every held file as an individual pattern line,
-            # the way the hand-typed side does, would run to hundreds of lines on a
-            # busy tracker. The files themselves still appear, in `overlap` and
-            # `verdict` below; this line only says where "against" came from.
-            for entry in lane["lane"]["patterns"] if lane["lane"] else []:
-                lines.append(
-                    "  [lane] {0} ({1}): {2}".format(
-                        entry["pattern"],
-                        entry["state"],
-                        ", ".join(entry["files"]) or "-",
-                    )
-                )
-            if held_source["state"] == "resolved":
-                held_count = len(lane["against"]["files"]) if lane["against"] else 0
-                lines.append(
-                    "  against : derived held set, {0} file(s)".format(held_count)
-                )
-            else:
-                lines.append(
-                    "  against : COULD NOT DERIVE THE HELD SET -- {0}".format(
-                        held_source["detail"]
-                    )
-                )
-            # #734, review round: a stale-branch prune is a real write this call
-            # performs even when --claim was never passed -- named here so it is
-            # never a silent action with no trace anywhere in this receipt.
-            stale_pruned = held_source.get("stale_pruned") or []
-            if stale_pruned:
-                lines.append(
-                    "  held    : {0} stale record(s) released (branch confirmed gone): {1}".format(
-                        len(stale_pruned),
-                        ", ".join(
-                            "lane #{0} ({1})".format(item["issue"], item["branch"])
-                            for item in stale_pruned
-                        ),
-                    )
-                )
-            # #792: a prune this call attempted and failed is a fact just as
-            # load-bearing as one that succeeded -- the record named here is
-            # demonstrably still on disk, never folded into the line above.
-            prune_failed = held_source.get("prune_failed") or []
-            if prune_failed:
-                lines.append(
-                    "  held    : {0} stale record(s) could NOT be released (still on disk): {1}".format(
-                        len(prune_failed),
-                        ", ".join(
-                            "lane #{0} ({1}): {2}".format(
-                                item["issue"], item["branch"], item["detail"]
-                            )
-                            for item in prune_failed
-                        ),
-                    )
-                )
-        # #774: `overlap_state` is checked first -- `.get` rather than `[]` so a
-        # payload built before this field existed (an older test fixture, or a
-        # hand-built dict) still renders the pre-#774 lines below rather than
-        # raising.
-        if lane.get("overlap_state") == "could-not-check":
+        for entry in lane["lane"]["patterns"] if lane["lane"] else []:
             lines.append(
-                "  overlap : COULD NOT CHECK -- {0}".format(
-                    lane.get("overlap_detail", "")
+                "  [lane] {0} ({1}): {2}".format(
+                    entry["pattern"],
+                    entry["state"],
+                    ", ".join(entry["files"]) or "-",
                 )
             )
-        elif lane.get("overlap_state") == "resolved-to-nothing":
-            # #809: the lane side named no file on disk -- an empty `overlap`
-            # here is not the same claim an empty `overlap` from two real,
-            # checked, disjoint sets makes, so it gets its own line rather
-            # than folding into `none`.
-            lines.append(
-                "  overlap : n/a -- lane resolved to zero files on disk, nothing to compare (#809)"
-            )
-        elif lane["overlap"] is None:
-            # #558 review round: the pre-#558 "only one side given" wording is
-            # wrong when `held_source` is present and no --lane was given -- that
-            # is "no candidate to check", not "only the against side is missing",
-            # and printing the old sentence there would misdescribe a derived-held
-            # call that never named a lane at all.
-            if held_source is not None and lane["lane"] is None:
-                lines.append(
-                    "  overlap : n/a -- no --lane given to compare against the held set"
-                )
-            else:
-                lines.append("  overlap : n/a -- only one side given")
-        elif lane["overlap"]:
-            lines.append("  overlap : " + ", ".join(lane["overlap"]))
-        else:
-            lines.append("  overlap : none")
-        availability = lane.get("availability")
-        if availability is not None:
-            # #558: the per-candidate verdict the issue asks for -- available,
-            # blocked, could-not-check, resolved-to-nothing, or
-            # could-not-derive-the-held-set (#843: this comment itself still
-            # enumerated only the pre-#809 four) -- never rendered as
-            # `available` or `blocked` when the held set itself could not be
-            # derived, or when the lane side itself could not be checked
-            # (#774: a refused pattern must never render as clear).
-            if availability["state"] == "available":
-                lines.append("  verdict : available")
-            elif availability["state"] == "blocked":
-                # #1528: informational, not an instruction to stop -- these
-                # files are also held by another lane. The internal state
-                # name stays `blocked` (`lane_report`'s own contract, and
-                # `skills/manager/phases/dispatch.md` still documents that
-                # word), but the render no longer reads as a command: the
-                # caller decides whether to group with the holder, order
-                # after it, or dispatch anyway now that the overlap is
-                # named in full.
-                lines.append(
-                    "  verdict : OVERLAP -- {0} (also held by {1}) -- "
-                    "information, not a block: group with the holder or "
-                    "run in order".format(
-                        ", ".join(availability["files"]),
-                        ", ".join(availability["holders"]),
-                    )
-                )
-            elif availability["state"] == "could-not-check":
-                lines.append(
-                    "  verdict : COULD NOT CHECK -- {0}".format(availability["detail"])
-                )
-            elif availability["state"] == "resolved-to-nothing":
-                # #809: third state, same shape as everywhere else in this
-                # loop -- `available`, `BLOCKED`, and "this lane names no
-                # file on disk, so nothing was compared". Never folded into
-                # `available`, the dangerous direction: a lane that resolved
-                # to nothing is not confirmed free, it is unnamed.
-                lines.append(
-                    "  verdict : RESOLVED TO NOTHING -- {0}".format(
-                        availability["detail"]
-                    )
-                )
-            else:
-                lines.append(
-                    "  verdict : COULD NOT DERIVE THE HELD SET -- {0}".format(
-                        availability["detail"]
-                    )
-                )
-        # #432: guards the lane side's own files trip -- a narrowed local test
+        # #432: guards the lane's own files trip -- a narrowed local test
         # command that omits these will look green and CI will not.
         if lane["lane"] is None:
             pass
@@ -1687,28 +1325,16 @@ def main(argv=None):
         help="a file or glob this brief's lane touches; repeatable (#267)",
     )
     parser.add_argument(
-        "--against",
-        action="append",
-        default=[],
-        metavar="PATTERN",
-        help="a file or glob to check --lane against for overlap; repeatable (#267)",
-    )
-    parser.add_argument(
-        "--derive-held",
-        action="store_true",
-        help="derive the against side instead of accepting it -- from every open "
-        "pull request's file list and every live lane record's own files (#558); "
-        "refused together with --against, since a derived exclusion and a "
-        "hand-typed one beside it is exactly the ambiguity this exists to close",
-    )
-    parser.add_argument(
         "--claim",
         action="store_true",
-        help="write this lane's own record to the registry (#705); every other "
-        "call -- including one carrying --lane or --derive-held -- is a read and "
-        "writes nothing, so probing candidate lanes never leaves a phantom "
-        "record behind. Pass this only at the moment this lane is actually "
-        "dispatched.",
+        help="write the GitHub assignee for this lane's issue, and for every "
+        "--claim-also companion (#705, #1532). Every other call -- including "
+        "one carrying --lane -- is a read and writes nothing, so probing "
+        "candidates never leaves anything behind. Pass this only at the "
+        "moment this lane is actually dispatched. #1532: this no longer "
+        "writes a local lane record; the assignee is the one claim with a "
+        "real owner, and `git-worktrees` is the authority on which lanes "
+        "are live.",
     )
     parser.add_argument(
         "--claim-also",
@@ -1827,12 +1453,13 @@ def main(argv=None):
     parser.add_argument(
         "--release",
         action="store_true",
-        help="release this issue's own lane record (#734), instead of computing "
-        "setup facts -- call this once the merge step has independently "
-        "verified the pull request merged (state/mergedAt/mergeCommit read "
-        "back off the remote), so a follow-up dispatched minutes later never "
-        "reads this lane as still held. Exits 0 whether or not a record "
-        "existed to release; every other flag is ignored when this is given.",
+        help="release this issue's GitHub assignee (#734, #1532), instead of "
+        "computing setup facts -- call this once the merge step has "
+        "independently verified the pull request merged (state/mergedAt/"
+        "mergeCommit read back off the remote), so a follow-up dispatched "
+        "minutes later never reads this issue as still taken. Exits 0 whether "
+        "or not an assignee was set; every other flag is ignored when this is "
+        "given.",
     )
     parser.add_argument(
         "--release-also",
@@ -1847,18 +1474,6 @@ def main(argv=None):
         "without --release.",
     )
     parser.add_argument(
-        "--check-vanished",
-        action="store_true",
-        help="#845: report every live lane record whose own worktree "
-        "directory is confirmed absent -- a loud detector for a worktree "
-        "that disappeared mid-run, caused by no command this file issues "
-        "(the mechanism was not found in this plugin's own code). Reads "
-        "worktree_root from .oss.local.json the same way --release does, "
-        "needs no issue number, and refuses every other mode flag "
-        "alongside it (--claim, --release, --derive-held, --against, "
-        "--suggest-companions).",
-    )
-    parser.add_argument(
         "--activity",
         action="store_true",
         help="#1120: alongside the default setup-facts read (and --claim), scan "
@@ -1869,8 +1484,8 @@ def main(argv=None):
         "computed when the worktree is positively confirmed to already exist; "
         "a plain recursive stat walk, so this is opt-in and never paid by the "
         "unconditional call every plain lane_setup.py <issue> already makes. "
-        "Refused together with --release, --check-vanished, --suggest-companions "
-        "and --label, none of which render a worktree line.",
+        "Refused together with --release, --suggest-companions and --label, "
+        "none of which render a worktree line.",
     )
     parser.add_argument(
         "--suggest-companions",
@@ -1885,7 +1500,7 @@ def main(argv=None):
         "states: candidates / none / could-not-tell. Requires at least one "
         "--lane, carries its own issue number (the positional issue argument "
         "is omitted when this is given), and refuses every other mode flag "
-        "(--claim, --release, --derive-held, --against) alongside it.",
+        "(--claim, --release) alongside it.",
     )
     # #1069's own CI fix (argparse's inconsistent handling of a second run of
     # optional positionals appearing after --label) moved ISSUES/PHRASE/
@@ -1921,16 +1536,13 @@ def main(argv=None):
         for flag_name, flag_value in (
             ("--claim", args.claim),
             ("--release", args.release),
-            ("--derive-held", args.derive_held),
-            ("--against", bool(args.against)),
-            ("--check-vanished", args.check_vanished),
             ("--activity", args.activity),
         ):
             if flag_value:
                 parser.error(
                     "--suggest-companions and {0} are mutually exclusive -- "
                     "the sweep answers a different question than any of "
-                    "this file's other modes (#851, #845)".format(flag_name)
+                    "this file's other modes (#851)".format(flag_name)
                 )
         if not args.lane:
             # Found by this lane's own reviewer, and it is this repository's
@@ -1941,36 +1553,18 @@ def main(argv=None):
             # the claimed set" -- about a claimed set nobody ever named. The
             # sweep has no third state for "you did not tell me what this
             # lane holds", because that is a usage error rather than a
-            # measurement, so it is refused at the boundary the way --claim
-            # already refuses a fileless claim (#788).
+            # measurement, so it is refused at the boundary.
             parser.error(
                 "--suggest-companions requires --lane (#851) -- with no claimed "
                 "file set the sweep compares every issue against nothing and "
                 "reports a confident `none` about a lane that was never named; "
                 "pass --lane once per file this lane holds"
             )
-    elif args.check_vanished:
-        for flag_name, flag_value in (
-            ("--claim", args.claim),
-            ("--release", args.release),
-            ("--derive-held", args.derive_held),
-            ("--against", bool(args.against)),
-            ("--activity", args.activity),
-        ):
-            if flag_value:
-                parser.error(
-                    "--check-vanished and {0} are mutually exclusive -- it "
-                    "answers a different question than any of this file's "
-                    "other modes (#845)".format(flag_name)
-                )
     elif args.issue is None and not args.label:
         parser.error(
-            "the issue argument is required unless --suggest-companions, "
-            "--check-vanished or --label is given"
+            "the issue argument is required unless --suggest-companions or "
+            "--label is given"
         )
-
-    if args.derive_held and args.against:
-        parser.error("--derive-held and --against are mutually exclusive (#558)")
 
     if args.release and args.activity:
         parser.error(
@@ -1979,24 +1573,12 @@ def main(argv=None):
             "(#1120)"
         )
 
-    if args.claim and not args.lane and not args.release:
-        # #788: the documented dispatch-time call used to be `--claim` with no
-        # `--lane` at all, which writes a fileless lane record -- indistinguishable
-        # at write time from a well-formed one, and indistinguishable from every
-        # OTHER live lane's record once written. `derive_held_set` then has to
-        # treat the held set as untrustworthy while that record is live (its own
-        # `held_from_live_lanes` detail names the cause: "recorded without
-        # --lane"), which poisons every later --derive-held call this tick, not
-        # just this one's own probe -- the fallback #558 exists to retire. Refuse
-        # the write instead of the state it produces, the same shape
-        # `fleet_label.py` already refuses an incomplete label bundle rather than
-        # composing one from a missing piece.
-        parser.error(
-            "--claim requires --lane (#788) -- a claim with no files writes a "
-            "fileless lane record, which poisons every later --derive-held call "
-            "this tick; pass --lane once per file this lane touches, the same "
-            "patterns already used to probe this candidate"
-        )
+    # #788 required `--claim` to carry `--lane`, because a claim with no files
+    # wrote a fileless lane record that poisoned every later `--derive-held`
+    # call this tick. #1532 removed both the record and `--derive-held`, so
+    # the reason is gone and the requirement went with it: `--claim` now
+    # writes a GitHub assignee, which does not carry a file set and is not
+    # made better or worse by one being declared beside it.
 
     if args.phrase is not None and not args.claim:
         parser.error("--phrase requires --claim (#1143)")
@@ -2027,9 +1609,6 @@ def main(argv=None):
         for flag_name, flag_value in (
             ("--claim", args.claim),
             ("--release", args.release),
-            ("--derive-held", args.derive_held),
-            ("--against", bool(args.against)),
-            ("--check-vanished", args.check_vanished),
             ("--suggest-companions", args.suggest_companions is not None),
             ("--activity", args.activity),
         ):
@@ -2141,69 +1720,50 @@ def main(argv=None):
 
     if args.release:
         config, problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
-        # #791 fixed the case where `config` is None -- the project half could
-        # not be read at all, absent or malformed. #803: that is not the only
-        # way a real read failure hides in `problems`. `worktree_root` only
-        # ever lives in `.oss.local.json` (`LOCAL_KEYS`), so when the *local*
-        # half is present but unparseable, `oss_config.load` returns a
-        # non-None `config` -- with no `worktree_root` key, since the
-        # unreadable local half was never merged in -- and the parse error
-        # sitting in `problems` right beside advisory findings that fire on
-        # every config missing `worktree_root`, read failure or not (a
-        # "missing required key: worktree_root" entry, chiefly). Gating on
-        # `config is None` alone dropped the local parse error and rendered
-        # it identically to the genuinely benign "no worktree_root configured
-        # here" case `release_lane` reports below.
-        #
-        # A first version of this fix scanned `problems` for the substring
-        # "could not", reasoning that `_read_json_object`'s own read-failure
-        # messages ("could not read/decode/parse") were the only ones that
-        # used it. That reasoning was never checked against the rest of
-        # `oss_config.py` and was wrong: `test_command_problem`'s own
-        # advisory ("...or null when the probe could not tell; got ...")
-        # contains the same substring, so a config with a perfectly readable,
-        # perfectly known `worktree_root` and an unrelated malformed
-        # `test_command` field was blocked from releasing at all (found in
-        # this diff's own review round). Ask the one question this arm
-        # actually needs answered instead of inferring it from prose
-        # elsewhere in the list: did *the local file itself* fail to parse?
-        # Re-read it with the exact primitive `load()` uses internally for
-        # both halves, so this stays one read failure, one fact, rather than
-        # a second implementation of JSON/encoding error handling that could
-        # drift from `oss_config`'s own.
-        local_read_problem = None
-        if config is not None:
-            _, local_read_problem = oss_config._read_json_object(
-                oss_config.local_config_path(Path(args.repo) / CONFIG_NAME)
-            )
-        if config is None or local_read_problem is not None:
+        # #791, #803: a release used to need `worktree_root` (to find the lane
+        # registry) as well as `repo`, and most of the care here was about
+        # telling a genuinely benign "no worktree_root configured" apart from
+        # an unparseable `.oss.local.json` that merely LOOKS like one.
+        # #1532 retired the registry, so the only thing this arm still needs
+        # is the repo slug to aim the assignee call at -- and `config is None`
+        # is the one state in which that is unknown.
+        if config is None:
             result = {
                 "state": "could-not-release",
-                "path": None,
-                "detail": "worktree_root is not known -- the config could not "
+                "detail": "the repository is not known -- the config could not "
                 "be read: {0}".format(
                     "; ".join(problems) if problems else "no detail available."
                 ),
             }
+            combined = None
         else:
-            worktree_root = config.get("worktree_root")
-            # #1069: the mirror of --claim -- release both the local lane
-            # record AND the GitHub assignee in one call, closing the gap
-            # `.claude/jit-context/tools/01-oss/pr-create-gate.md` used to
-            # patch with a prose reminder to run the assignee release by
-            # hand after a merge.
-            combined = lane_setup_claim.release_lane_and_assignee(
-                worktree_root,
+            # #1069, #1532: the mirror of --claim -- release the GitHub
+            # assignee for this issue and every --release-also companion,
+            # closing the gap `.claude/jit-context/tools/01-oss/
+            # pr-create-gate.md` used to patch with a prose reminder to run
+            # the assignee release by hand after a merge.
+            combined = lane_setup_claim.release_assignees(
                 args.issue,
                 also_release=args.release_also,
                 repo=config.get("repo"),
             )
-            result = combined["record"]
+            assignee_row = combined["assignee"]
+            result = {
+                "state": "released"
+                if assignee_row is not None
+                else "could-not-release",
+                "detail": ""
+                if assignee_row is not None
+                else "the assignee release returned no row at all",
+            }
         if args.json:
-            if config is not None and local_read_problem is None:
-                print(json.dumps(combined, indent=2, sort_keys=True))
-            else:
-                print(json.dumps(result, indent=2, sort_keys=True))
+            print(
+                json.dumps(
+                    combined if combined is not None else result,
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
         else:
             print(
                 "RELEASE #{0}: {1}{2}".format(
@@ -2212,7 +1772,7 @@ def main(argv=None):
                     " -- " + result["detail"] if result["detail"] else "",
                 )
             )
-            if config is not None and local_read_problem is None:
+            if combined is not None:
                 assignee_row = combined["assignee"]
                 if assignee_row is not None:
                     print(
@@ -2234,65 +1794,11 @@ def main(argv=None):
                     )
         return EXIT_COULD_NOT_RUN if result["state"] == "could-not-release" else EXIT_OK
 
-    if args.check_vanished:
-        config, problems = oss_config.load(Path(args.repo) / CONFIG_NAME)
-        local_read_problem = None
-        if config is not None:
-            _, local_read_problem = oss_config._read_json_object(
-                oss_config.local_config_path(Path(args.repo) / CONFIG_NAME)
-            )
-        if config is None or local_read_problem is not None:
-            result = {
-                "state": "could-not-run",
-                "vanished": [],
-                "detail": "worktree_root is not known -- the config could not "
-                "be read: {0}".format(
-                    "; ".join(problems) if problems else "no detail available."
-                ),
-            }
-        else:
-            worktree_root = config.get("worktree_root")
-            result = lane_setup_claim.detect_vanished_worktrees(worktree_root)
-        if args.json:
-            print(json.dumps(result, indent=2, sort_keys=True))
-        else:
-            if result["state"] == "resolved" and result["vanished"]:
-                lines = [
-                    "VANISHED WORKTREES: {0} live lane record(s) whose own "
-                    "worktree directory is confirmed absent".format(
-                        len(result["vanished"])
-                    )
-                ]
-                for entry in result["vanished"]:
-                    lines.append(
-                        "  lane #{0} branch={1} path={2} recorded_at={3}".format(
-                            entry["issue"],
-                            entry["branch"],
-                            entry["path"],
-                            entry["recorded_at"],
-                        )
-                    )
-                print("\n".join(lines))
-            else:
-                print(
-                    "VANISHED WORKTREES: {0}{1}".format(
-                        result["state"],
-                        " -- " + result["detail"]
-                        if result["detail"]
-                        else " -- none found",
-                    )
-                )
-        if result["state"] == "could-not-run":
-            return EXIT_COULD_NOT_RUN
-        return 1 if result.get("vanished") else EXIT_OK
-
     payload = compute(
         args.repo,
         args.issue,
         args.remote,
         args.lane,
-        args.against,
-        derive_held=args.derive_held,
         claim=args.claim,
         stack_on=args.stack_on,
         also_claim=args.claim_also,

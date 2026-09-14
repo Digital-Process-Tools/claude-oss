@@ -50,9 +50,9 @@ Two entry points. Two calls. Nothing hand-assembled between them.
 
 **The boundary between them is read versus write, and it is the reason there are two rather than
 one.** `select_issues.py` never mutates anything, so asking "what could be dispatched?" is free and
-repeatable. `lane_setup.py` writes assignees, the lane registry and a worktree. Collapsing them
-would make it impossible to look without claiming, which breaks a dry run and the tick's own preview
-step.
+repeatable. `lane_setup.py --claim` writes the issue's GitHub assignee (#1532 retired the local lane
+registry it used to write beside it). Collapsing them would make it impossible to look without
+claiming, which breaks a dry run and the tick's own preview step.
 
 **Everything below the entry points is a module, not a command.** That is the `doctor.py` model --
 twenty files behind one entry point -- and it is the part of this repository that has held up.
@@ -71,7 +71,7 @@ Five steps. Two are calls, one is a judgement, one is a paste, one is the lane r
 | --- | --- |
 | **Who** | the sub-manager, once per tick |
 | **Runs** | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py"` |
-| **Input** | nothing. It fetches the board itself -- issues, labels, `author_association` -- reads `.oss.json` for the declared label spellings, and derives the held set from the lanes already running. There is no stdin payload and no `--fetch` mode. |
+| **Input** | nothing. It fetches the board itself -- issues, labels, `author_association` -- and reads `.oss.json` for the declared label spellings. There is no stdin payload and no `--fetch` mode. (It also derived a held set from the lanes already running, until #1528 removed the last thing that acted on it and #1532 retired the registry half of the derivation.) |
 | **Output** | the fleet: **one group per lane label**, each carrying up to three issues, **no issue bodies attached** (#1180). |
 
 State, and the third must never render as the second:

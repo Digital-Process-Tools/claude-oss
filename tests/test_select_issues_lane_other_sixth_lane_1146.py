@@ -87,7 +87,6 @@ def _select_fleet(issues):
     return select_issues.select_fleet(
         CONFIG,
         fetcher=_fetcher(issues),
-        held_fetcher=_held(),
         checker=_no_op_checker,
         resolve_lane=_literal_resolve,
     )
@@ -174,7 +173,7 @@ def test_a_failed_fetch_still_reports_an_empty_dropped_list_not_a_missing_key():
         }
 
     result = select_issues.select_fleet(
-        CONFIG, fetcher=failing_fetcher, held_fetcher=_held(), checker=_no_op_checker
+        CONFIG, fetcher=failing_fetcher, checker=_no_op_checker
     )
     assert result["state"] == "could-not-select"
     assert result["dropped"] == []

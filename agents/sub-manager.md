@@ -100,12 +100,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane <
 ```
 
 Run it from the clone, before `git worktree add` -- that is where `.oss.local.json` is present and
-`worktree_root` resolves. `--claim` refuses without `--lane` (#788); pass the same `--lane` patterns
-the candidate was already probed with, and never pass `--claim` on an earlier disjointness probe
-(#705) -- that leaves a phantom record behind that can block a later `--derive-held` call for hours.
+`worktree_root` resolves. Never pass `--claim` on an earlier probe (#705): it writes the issue's
+GitHub assignee, taking an issue nobody is working. #1532 retired the local lane record, so it no
+longer requires `--lane` either (#788's reason was the record, not the claim).
 **Repeat `--claim-also <N>` for every further issue bundled into this same lane** -- `dispatch.md`'s
 own *Run a fleet, not a queue* names bundling as the better pattern once a further issue's files fall
-inside a lane's already-claimed set, and the flag is what claims and registers each one alongside the
+inside a lane's already-claimed set, and the flag is what claims each one alongside the
 primary in the same call rather than a second, separate one. Its stdout renders the resolved base,
 the branch and worktree, the condensed board, and this lane's `description`/`Agent(...)` call
 together -- paste that verbatim as the dispatch (`skills/manager/phases/dispatch.md`'s *Run a fleet,
@@ -146,8 +146,7 @@ it twice and left the second copy in your context for the rest of the tick.
 
 **Fill each lane to three, never four (#799), and say why when you don't.** The default is three, not the
 ceiling. Fill by companion search: each candidate's declared lane against the top issue's,
-over the open board. `--against` between lanes you already picked is the conflict check, a different
-question (#918). A short lane names `board-exhausted`, `no-adjacent`, `did-not-search`, `could-not-tell` or
+over the open board. A short lane names `board-exhausted`, `no-adjacent`, `did-not-search`, `could-not-tell` or
 `declined-for-cause` -- derive it mechanically via `--claim --group-state STATE` (#1198, mapping
 in dispatch.md) or give `--short-reason` explicitly; naming none is the defect (#867).
 `declined-for-cause` (#1407) needs a citation of what was declined and why, or it is refused the

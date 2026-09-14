@@ -208,57 +208,14 @@ def test_control_windows_style_single_backslash_separator_is_not_an_escape(tmp_p
 
 
 # --- part 2: the two stale pre-#809 enumerations named by the issue -----------
-
-
-def test_lane_report_docstring_names_resolved_to_nothing():
-    # #1069: lane_report moved to lane_setup_patterns.py in the entry-point split.
-    source = (REPO_ROOT / "scripts" / "lane_setup_patterns.py").read_text(
-        encoding="utf-8"
-    )
-    def_start = source.index("\ndef lane_report(")
-    doc_open = source.index('"""', def_start)
-    doc_close = source.index('"""', doc_open + 3)
-    docstring = source[doc_open:doc_close]
-    assert "resolved-to-nothing" in docstring, (
-        "lane_report's own docstring enumerates the availability states and "
-        "must name resolved-to-nothing beside the pre-#809 four (#843)"
-    )
-
-
-def _receipt_availability_comment():
-    """The comment block sitting directly above `receipt()`'s
-    `availability["state"] == "available"` branch -- normalized to collapse
-    a line-wrapped word (`# comment\n            # continuation`) back into
-    one contiguous string, so a check for a compound term like
-    `could-not-derive-the-held-set` cannot be defeated by where the prose
-    happens to wrap."""
-    source = (REPO_ROOT / "scripts" / "lane_setup.py").read_text(encoding="utf-8")
-    start = source.index("def receipt(")
-    end = source.index("\ndef ", start + 1)
-    body = source[start:end]
-    comment_block = body[: body.index('availability["state"] == "available"')]
-    import re
-
-    return re.sub(r"\n\s*# ?", " ", comment_block)
-
-
-def test_receipt_comment_names_resolved_to_nothing():
-    assert "resolved-to-nothing" in _receipt_availability_comment(), (
-        "receipt()'s own comment above the availability branch must name "
-        "resolved-to-nothing beside the pre-#809 four (#843)"
-    )
-
-
-def test_control_receipt_comment_still_names_the_older_states_too():
-    """Control: the guard above must not pass merely because the word
-    appears somewhere in the file -- the older three states must still be
-    named in the same comment block, proving nothing was deleted to add
-    the new one."""
-    comment_block = _receipt_availability_comment()
-    for state in (
-        "available",
-        "blocked",
-        "could-not-check",
-        "could-not-derive-the-held-set",
-    ):
-        assert state in comment_block, comment_block
+#
+# #1532 removed both enumerations with the thing they enumerated. `lane_report`
+# no longer computes an `availability` verdict and `receipt()` no longer has an
+# `availability["state"] == "available"` branch to comment above, because the
+# held set those five states described a candidate's relationship to is retired
+# (#1528 removed its last consumer). A guard that a docstring names a state is
+# worth nothing once no code produces the state, so these two tests and their
+# control are deleted rather than pointed at a different string.
+#
+# Part 1 above is untouched: `_split_lane_value` is the `--lane` parser and is
+# still live.

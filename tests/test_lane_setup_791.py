@@ -35,43 +35,19 @@ def _cli(tmp_path, issue, *extra_args):
 
 
 def test_release_with_absent_config_names_the_absence(tmp_path):
-    """A committed config with no `.oss.local.json` at all -- #608: `worktree_root`
-    used to be simply absent here, and the benign case this test used to pin was
-    `derive_worktree`'s "genuinely no worktree_root configured" arm. `oss_config.load`
-    now DERIVES `worktree_root` from the repository root instead of leaving it out, so
-    this shape no longer reaches that arm at all: the release proceeds against the
-    derived path, finds no record there (nothing was ever written to a directory that
-    has never existed), and reports the ordinary not-found outcome -- benign in a
-    different, and now more useful, way.
-    """
-    (tmp_path / ".oss.json").write_text(
-        json.dumps(
-            {
-                "repo": "example/example",
-                "default_branch": "main",
-                "clone": "/tmp/does-not-matter",
-                "branch_pattern": "fix/{issue}",
-                "test_command": "pytest",
-                "version_sites": [],
-                "changelog_dir": None,
-                "docs_targets": [],
-                "labels": {"priority": [], "lanes": []},
-                "state_file": "/tmp/does-not-matter-state.json",
-            }
-        )
-    )
+    """#1532: this used to compare a valid config carrying no `worktree_root`
+    (benign -- nothing to release from) against an absent config (a read that
+    failed), because the two rendered the same sentence. `--release` no longer
+    reads `worktree_root` at all, so the benign half has no shape any more.
+
+    The distinction that mattered survives on the project half, which still
+    carries `repo`: absent and malformed are different facts and must not
+    share a sentence. `tests/test_lane_setup_803.py` holds the malformed side;
+    this holds the absent one."""
     done = _cli(tmp_path, 999, "--release")
     payload = json.loads(done.stdout)
-    assert payload["record"]["state"] == "not-found", payload
-    valid_missing_detail = payload["record"]["detail"]
-
-    no_config_dir = tmp_path / "no-config"
-    no_config_dir.mkdir()
-    done2 = _cli(no_config_dir, 999, "--release")
-    payload2 = json.loads(done2.stdout)
-    assert payload2["state"] == "could-not-release"
-    assert "not found" in payload2["detail"]
-    assert payload2["detail"] != valid_missing_detail
+    assert payload["state"] == "could-not-release"
+    assert "not found" in payload["detail"]
 
 
 def test_release_with_malformed_config_names_the_parse_error(tmp_path):
@@ -80,4 +56,4 @@ def test_release_with_malformed_config_names_the_parse_error(tmp_path):
     payload = json.loads(done.stdout)
     assert payload["state"] == "could-not-release"
     assert "not found" not in payload["detail"]
-    assert "no registry" not in payload["detail"]
+    assert "could not parse as JSON" in payload["detail"]

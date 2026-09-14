@@ -23,7 +23,11 @@ DECLARED = {
     "lane_other": "lane-other",
 }
 
-CONFIG = {"repo": "Digital-Process-Tools/claude-oss", "worktree_root": "/tmp/wt", "labels": DECLARED}
+CONFIG = {
+    "repo": "Digital-Process-Tools/claude-oss",
+    "worktree_root": "/tmp/wt",
+    "labels": DECLARED,
+}
 
 
 def _issue(number, labels=None, **extra):
@@ -47,7 +51,13 @@ def _no_op_checker(numbers, mode, run=None, repo=None):
 
 def _fetcher(issues):
     def fetch(repo_slug, per=100, run=None):
-        return {"state": "ok", "issues": issues, "capped": False, "cap_detail": "", "detail": ""}
+        return {
+            "state": "ok",
+            "issues": issues,
+            "capped": False,
+            "cap_detail": "",
+            "detail": "",
+        }
 
     return fetch
 
@@ -73,7 +83,6 @@ def _select_fleet(issues):
     return select_issues.select_fleet(
         CONFIG,
         fetcher=_fetcher(issues),
-        held_fetcher=_held(),
         checker=_no_op_checker,
         resolve_lane=_literal_resolve,
     )
@@ -92,7 +101,9 @@ def test_one_key_per_declared_lane_label_plus_lane_other():
 
 
 def test_a_lane_label_with_no_eligible_work_is_a_stated_absence_not_a_missing_key():
-    board = [_issue(1, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/a.py"])]
+    board = [
+        _issue(1, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/a.py"])
+    ]
     result = _select_fleet(board)
     assert "lane-doctor" in result["lanes"]
     assert result["lanes"]["lane-doctor"]["state"] == "none-available"
@@ -105,18 +116,18 @@ def test_a_declared_lane_full_of_ineligible_work_stays_a_named_lane_none_availab
     """Positive control for the stated-absence test above: a lane label
     that IS on the board, but every one of its issues is already assigned,
     still gets its own key (never dropped for having nothing usable)."""
-    board = [_issue(6, ["priority-high", "lane-doctor"], lane_patterns=["scripts/e.py"])]
+    board = [
+        _issue(6, ["priority-high", "lane-doctor"], lane_patterns=["scripts/e.py"])
+    ]
 
     def assigned_checker(numbers, mode, run=None, repo=None):
         return [
-            {"issue": n, "state": "assigned", "assignees": ["someone"]}
-            for n in numbers
+            {"issue": n, "state": "assigned", "assignees": ["someone"]} for n in numbers
         ]
 
     result = select_issues.select_fleet(
         CONFIG,
         fetcher=_fetcher(board),
-        held_fetcher=_held(),
         checker=assigned_checker,
         resolve_lane=_literal_resolve,
     )
