@@ -221,11 +221,15 @@ whether a paragraph earns its size; it only stops growth from being invisible.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 18,021 B | 18,800 B |
+| `agents/sub-manager.md` | 19,460 B | 21,000 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 3,936 B | 4,400 B |
+
+**`agents/sub-manager.md`'s ceiling went from 18,800 B to 21,000 B (#1526)** to hold the literal
+`lane_setup.py --claim` call shape: a measured tick paged two phase files three times each hunting
+for it. Nothing already in the file argued that point, so nothing was cut to make room.
 
 A trim that removes a still-live trap costs a whole extra review round, which will not show up next
 to the token count it saved. The budget is a visible number, not a mandate to shrink.
@@ -352,9 +356,9 @@ as `measured` at 31, frozen at the `v0.33.1` tag; two routes first disagreed (31
 recorded as `unknown`) and agreed at 31 on the re-count. `cohort_citation_order.py --state
 .max/claude-oss-watch.json --at <now>` was run against this paragraph before committing.
 
-**The reach probe was NOT re-derived at `v0.34.0`.** It is still `v0.21.0`'s: `gh repo list
-Digital-Process-Tools --limit 100`, run at `c565488`, returns eleven repositories in that one GitHub
-organisation, four carrying `.oss.json`, each confirmed by its own contents read. The count is
+**The reach probe was NOT re-derived at `v0.34.0`.** It is still `v0.21.0`'s:
+`gh repo list Digital-Process-Tools --limit 100`, run at `c565488`, returns eleven repositories in
+that one GitHub organisation, four carrying `.oss.json`, each confirmed by its own contents read. The count is
 scoped to the organisation the command names, never to "the field": a repository under a different
 account renders identically to one that does not exist. The owned-files table, the two installs and
 the `doctor` run are still `v0.17.0`'s, carried through eighteen tags; `#1127` tracks re-deriving
