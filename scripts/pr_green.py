@@ -80,6 +80,17 @@ any one of them is not.
 `EXIT_CODES` is the machine-readable half; the printed line is for the human
 reading the sub-manager's transcript.
 
+## `--wait`'s poll interval backs off under a low GitHub REST budget (#1492)
+
+`--interval` (default 45s) is a base, not a fixed cadence: before every sleep,
+`--wait` reads `gh api rate_limit`'s `resources.core` (a read that does not
+itself count against the budget it reports) and widens the interval in steps
+as `remaining/limit` falls -- doubled under 25%, quadrupled under 10%. A
+failed read leaves the interval unchanged rather than guessing. This is
+`pr_green.py`'s own use of a budget shared with watchers, ticks and log
+reads polling on no schedule of their own; it does not change what any of
+those read or report.
+
 Python 3.9 compatible: no match statements, no ``X | Y`` annotations.
 """
 
@@ -232,6 +243,48 @@ def _flatten(text):
     column 0 of the next line, where it can read as a second, unrelated row
     (e.g. a fake `#999 | GREEN | ...`)."""
     return " ".join(str(text).split())
+
+
+def _read_core_rate_limit(gh, run, timeout=10):
+    """``(remaining, limit)`` from ``gh api rate_limit``'s ``resources.core`` --
+    or ``(None, None)`` when the read itself failed (network, auth, an
+    unparseable body). GitHub documents that reading the limit does not
+    itself count against the budget it reports, so this is safe to call on
+    every poll (#1492) -- reacting only once a poll has already failed is
+    too late: the budget is shared with watchers, ticks and log reads that
+    poll on no schedule of their own, so another process can drain it
+    between two of our own polls.
+    """
+    out, _err, _detail = _gh(gh, ["api", "rate_limit"], run, timeout=timeout)
+    if out is None:
+        return None, None
+    try:
+        core = json.loads(out)["resources"]["core"]
+        return int(core["remaining"]), int(core["limit"])
+    except (ValueError, KeyError, TypeError):
+        return None, None
+
+
+# #1492: a step function, not a continuous scale -- easier to test and to
+# reason about, and the issue names no existing threshold to reuse. A read
+# that could not be taken (``None, None``) leaves the interval unchanged:
+# backing off on a guess would be the same absence-as-signal mistake
+# CLAUDE.md warns against, applied to a poll interval instead of a check.
+_RATE_LIMIT_BACKOFF_STEPS = (
+    (0.10, 4.0),
+    (0.25, 2.0),
+)
+
+
+def _rate_limit_backoff(base_interval, remaining, limit):
+    """``base_interval``, widened in steps as ``remaining/limit`` falls."""
+    if remaining is None or limit is None or limit <= 0:
+        return base_interval
+    fraction = remaining / limit
+    for threshold, multiplier in _RATE_LIMIT_BACKOFF_STEPS:
+        if fraction < threshold:
+            return base_interval * multiplier
+    return base_interval
 
 
 def _gh(gh, args, run, timeout=30):
@@ -693,11 +746,19 @@ def wait_for_first_actionable(
     timeout=None,
     sleep=time.sleep,
     clock=time.monotonic,
+    rate_limit_reader=None,
 ):
     """Poll ``scan`` while every named pull request is still pending; return
     the instant any one of them is not. Returns ``None`` only when
     ``timeout`` expired with every pull request still pending -- the
     caller's cue to hand back `TICK: paused` naming the exact re-invocation.
+
+    ``rate_limit_reader``, when given, is called before every sleep and must
+    return ``(remaining, limit)`` for GitHub's REST core budget (or
+    ``(None, None)`` when it could not be read) -- #1492's back-off: the
+    interval widens in steps as the shared budget runs low, rather than
+    polling at a fixed cadence regardless of how close to the wall it is.
+    ``None`` (the default) preserves the original fixed cadence exactly.
     """
     start = clock()
     while True:
@@ -712,7 +773,23 @@ def wait_for_first_actionable(
             return entry
         if timeout is not None and (clock() - start) >= timeout:
             return None
-        sleep(interval)
+        wait_interval = interval
+        if rate_limit_reader is not None:
+            remaining, limit = rate_limit_reader()
+            wait_interval = _rate_limit_backoff(interval, remaining, limit)
+            if timeout is not None:
+                # Self-review (#1492): a backed-off interval must never widen
+                # how far a `--timeout` caller can be kept waiting past the
+                # deadline it asked for. Pre-backoff, the worst-case overshoot
+                # was one `interval` (the check above only runs again after
+                # `sleep` returns); left uncapped here, a low-budget backoff
+                # could push that to 4x `interval`, exactly when the caller
+                # most needs a prompt, bounded PENDING handback. Capping to
+                # the base `interval` whenever a timeout is set keeps the
+                # original overshoot bound and simply forgoes the extra
+                # back-off for that one poll.
+                wait_interval = min(wait_interval, interval)
+        sleep(wait_interval)
 
 
 def list_open_pr_numbers(gh, run, repo=None):
@@ -835,7 +912,10 @@ def main(argv=None, run=None):
         "--interval",
         type=float,
         default=45.0,
-        help="seconds between polls (default 45)",
+        help=(
+            "base seconds between polls (default 45) -- widens automatically "
+            "when GitHub's shared REST rate limit runs low (#1492)"
+        ),
     )
     parser.add_argument(
         "--timeout",
@@ -888,6 +968,25 @@ def main(argv=None, run=None):
     workflows_dir = os.path.join(str(args.project_dir), ".github", "workflows")
 
     if args.wait:
+        # Self-review (#1492): a `(None, None)` read (could not check) and a
+        # genuinely healthy budget both leave the cadence unchanged, so an
+        # operator watching a long `--wait` run has no way to tell "healthy,
+        # no backoff needed" from "the rate-limit read is broken for this
+        # whole session" -- one stderr note the first time a read fails is
+        # enough to make that distinguishable without spamming every poll.
+        rate_limit_warned = [False]
+
+        def _cli_rate_limit_reader():
+            remaining, limit = _read_core_rate_limit(gh, run)
+            if remaining is None and not rate_limit_warned[0]:
+                sys.stderr.write(
+                    "note: could not read GitHub's rate limit (`gh api "
+                    "rate_limit`); polling at the fixed --interval cadence, "
+                    "unable to back off\n"
+                )
+                rate_limit_warned[0] = True
+            return remaining, limit
+
         entry = wait_for_first_actionable(
             numbers,
             gh,
@@ -895,6 +994,7 @@ def main(argv=None, run=None):
             workflows_dir=workflows_dir,
             interval=args.interval,
             timeout=args.timeout,
+            rate_limit_reader=_cli_rate_limit_reader,
         )
         if entry is None:
             sys.stdout.write(
