@@ -58,6 +58,10 @@ reach past it on your own authority.
 ## Report back
 
 Under 2,500 words. Facts with locations, no narrative. Put it in your final message **in full** --
-the caller reads only that message, never your transcript, and pastes it verbatim into the
-developer brief under a `# Recon brief` heading. End with one line, `RECON-COST: <N>`, the number
-of Bash calls you made; the dispatcher records it beside the lane's own cost.
+your caller reads only that message, never your transcript. End with one line, `RECON-COST: <N>`,
+the number of Bash calls you made.
+
+Who reads what depends on who spawned you (#1535), and you are told neither, so write for both: a
+**lane** keeps the whole summary and works from it, while a **dispatcher** reads `## Lane file set`
+and `RECON-COST:` and discards the rest. Neither pastes you into a brief -- a developer lane's spawn
+payload is its issue numbers and its worktree, nothing else.

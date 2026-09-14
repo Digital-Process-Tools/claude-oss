@@ -78,9 +78,9 @@ of `lane_setup_worktree.py` (the base commit, branch, worktree path and
 their occupancy checks), `lane_setup_patterns.py` (cross-cutting guard
 lookup, and the disjointness report a lane brief reads), `lane_setup_claim.py`
 (the lane registry, held-set derivation, and the claim/release logic below)
-or `lane_setup_brief_schema.py` (whether a composed brief carries dispatch's
-eight required elements, checked before `--claim` renders an `Agent(...)`
-line -- #1143). Every name is imported here and re-exported at module level,
+or `lane_setup_brief_schema.py` (whether the composed prompt carries the two
+per-lane facts and no leftover template marker, checked before `--claim`
+renders an `Agent(...)` line -- #1143, #1535). Every name is imported here and re-exported at module level,
 so `lane_setup.<name>` keeps working for every existing caller.
 `resolve_lane`/`lane_overlap` and `suggest_companions` moved to
 `select_issues_overlap.py`/`select_issues_companions.py` instead --
@@ -109,14 +109,15 @@ wrong number, worse than the retype it replaces. `--label` is unchanged and
 stays the path for a lane composed some other way -- it still takes its
 issue list as an explicit argument, never derived from a claim.
 
-`compose_claim_label` is the one function both call sites route through. It
-also runs `lane_setup_brief_schema.check_path` on `--brief` whenever a
-subagent type is given: a **structural** finding (one of the four elements
-that can fail for the reason it exists, not just for being absent) refuses
-to render the `Agent(...)` line at all; a **presence-only** finding is
-printed and the line renders anyway, because presence is not quality and a
-schema pass is not a review (`lane_setup_brief_schema`'s own reasoning,
-unchanged).
+`compose_claim_label` is the one function both call sites route through.
+Given a subagent type it also **composes the prompt** (#1535) -- `lane_prompt`'s
+two facts, plus whatever `--brief` names, appended -- and runs
+`lane_setup_brief_schema.check_text` over the whole composed string before the
+`Agent(...)` line is rendered. All three elements are structural now, so any
+finding refuses the render; there is no presence-only tier left to print and
+carry on from. A schema pass is still not a review: it says the two facts are
+there and no template marker survived, never that dispatching this lane is a
+good idea.
 
 ## Claim in both senses, in one call (#1069)
 
@@ -357,6 +358,13 @@ def lane_prompt(issues, worktree):
     agents end up in the same files.
     """
     numbers = sorted(issues)
+    if not numbers:
+        raise FleetLabelError(
+            "lane_prompt: no issues -- a lane with nothing to work on is not a "
+            "lane, and composing a prompt around an empty bundle would dispatch "
+            "one. `compose_claim_label` returns `no-claimed-issues` before "
+            "reaching here; this is the refusal for any other caller (#1535)"
+        )
     if len(numbers) == 1:
         head = "Issue {0}.".format(numbers[0])
     else:
@@ -570,8 +578,17 @@ def compose_claim_label(
                 result["state"] = "brief-could-not-read"
                 return result
             prompt = prompt + "\n\n" + extra.strip()
+        # A caller reaching here always ATTEMPTED the derivation, so a falsy
+        # `worktree` is a failed one, never "not asked" -- the schema needs
+        # that told to it or it guesses from the text, and an appended recon
+        # summary is full of path-shaped tokens (#1535 self-review).
         brief_payload = lane_setup_brief_schema.check_text(
-            prompt, issues=held, worktree=worktree
+            prompt,
+            issues=held,
+            worktree=worktree,
+            worktree_state=(
+                None if worktree else lane_setup_brief_schema.WORKTREE_COULD_NOT_DERIVE
+            ),
         )
         result["brief"] = brief_payload
         structural_missing = any(
@@ -2331,7 +2348,7 @@ def main(argv=None):
                 )
             elif state == "brief-structural-finding":
                 print(
-                    "AGENT(...) REFUSED -- the brief fails at least one "
+                    "AGENT(...) REFUSED -- the composed prompt fails at least one "
                     "structural element above (#1143)"
                 )
             elif state == "no-claimed-issues":

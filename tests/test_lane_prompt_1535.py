@@ -24,6 +24,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
@@ -307,6 +309,69 @@ def test_an_underivable_worktree_refuses_the_call(tmp_path):
         worktree=None,
     )
     assert label["state"] == "brief-structural-finding"
+
+
+def test_an_underivable_worktree_still_refuses_when_context_is_appended(tmp_path):
+    """oss:auditor, self-review: the case above only refused because the
+    composed prompt had no other text in it.
+
+    `compose_claim_label` always *attempts* the derivation, so `worktree=None`
+    there means it failed -- but the schema read that as "nobody gave me a
+    value to check against" and fell into its unverified branch, where any
+    path-shaped token satisfies the row. An appended recon summary is full of
+    them (`scripts/lane_setup.py`, and ordinary prose like `read/write`), so
+    the dispatch that most needs the refusal is the one that did not get it:
+    `state` came back `rendered`, and the row read `found`.
+    """
+    path = tmp_path / "extra.md"
+    path.write_text(
+        "Recon: the guard lives in scripts/lane_setup.py, read/write path.",
+        encoding="utf-8",
+    )
+    result = _claim(tmp_path, 1526, [1528])
+    label = lane_setup.compose_claim_label(
+        {"issue": 1526, "claim_result": result},
+        "phrase",
+        subagent_type="oss:developer",
+        worktree=None,
+        brief_path=str(path),
+    )
+    assert label["state"] == "brief-structural-finding", label
+    assert label["text"] is None
+    row = _row(label["brief"], "worktree")
+    assert row["state"] == "missing"
+    assert "could not be derived" in row["why"]
+
+
+def test_a_failed_derivation_is_not_reported_as_nobody_asked(tmp_path):
+    """The two readings of `worktree=None` are different facts and the row must
+    not spell the second as the first. Paired must-fire/must-not-fire on the
+    one function, so neither branch can quietly become the other."""
+    failed = brief_schema.check_text(
+        "Issue 1526. Working in /tmp/wt/1526.",
+        issues=[1526],
+        worktree_state=brief_schema.WORKTREE_COULD_NOT_DERIVE,
+    )
+    assert _row(failed, "worktree")["state"] == "missing"
+
+    not_asked = brief_schema.check_text("Issue 1526. Working in /tmp/wt/1526.")
+    row = _row(not_asked, "worktree")
+    assert row["state"] == "found"
+    assert "no worktree was given" in row["note"]
+
+
+def test_lane_prompt_refuses_an_empty_issue_list(tmp_path):
+    """Explore, self-review: `numbers[-1]` raised a bare IndexError. The
+    guarded call site returns `no-claimed-issues` before reaching it, so this
+    is about the function's own third state rather than a live crash -- a
+    public function with no reachable diagnosis is one refactor away from
+    being one."""
+    with pytest.raises(lane_setup.FleetLabelError) as excinfo:
+        lane_setup.lane_prompt([], "/tmp/wt/1526")
+    assert "no issues" in str(excinfo.value)
+
+    # Must-fire control in the same fixture: one issue still composes.
+    assert lane_setup.lane_prompt([1526], "/tmp/wt/1526").startswith("Issue 1526.")
 
 
 # ------------------------------------------------- the CLI no longer demands a brief file

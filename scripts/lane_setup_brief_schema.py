@@ -59,6 +59,15 @@ STATE_COULD_NOT_READ = "could-not-read"
 #: whether to refuse the render.
 STRUCTURAL = "structural"
 
+#: `worktree_state`, passed by a caller that *attempted* the derivation. The
+#: distinction is the whole of #1535's self-review finding: `worktree=None`
+#: alone cannot tell "nobody gave me a value to check against" from "this
+#: lane's worktree could not be derived", and reading the second as the first
+#: sends the unverified fallback below to decide -- where any path-shaped token
+#: in an appended recon summary satisfies the row, and the dispatch that most
+#: needs the refusal is the one that does not get it.
+WORKTREE_COULD_NOT_DERIVE = "could-not-derive"
+
 #: #1022: a sub-manager wrote a brief's supertool paragraph as the literal
 #: template placeholder string it was meant to be substituted with -- "{{PASTE
 #: THE FULL CONTENTS OF <scratchpad path> HERE}}" -- and only noticed after all
@@ -145,12 +154,24 @@ def check_issues(text, issues=None):
     )
 
 
-def check_worktree(text, worktree=None):
+def check_worktree(text, worktree=None, worktree_state=None):
     """Does the prompt name the worktree this lane was claimed into?
 
-    Same two readings as `check_issues`. A lane not told its worktree cuts its
-    own, which is how two lanes end up briefed into the same files.
+    Three readings, and the third is the one that was missing (#1535
+    self-review). `worktree_state=WORKTREE_COULD_NOT_DERIVE` says the caller
+    tried and failed: that is a finding whatever the text contains, because the
+    fallback below cannot tell a real path from `read/write` in a sentence, and
+    a caller that attempted the derivation has already answered the question
+    the fallback exists to guess at. A lane not told its worktree cuts its own,
+    which is how two lanes end up briefed into the same files.
     """
+    if worktree_state == WORKTREE_COULD_NOT_DERIVE:
+        return _finding(
+            "worktree",
+            "the worktree could not be derived for this lane, so there is no "
+            "path to name -- refused rather than dispatched to cut its own "
+            "(#1535). This is not 'no worktree was given': the caller tried.",
+        )
     if worktree:
         if str(worktree) not in text:
             return _finding(
@@ -169,7 +190,9 @@ def check_worktree(text, worktree=None):
     return _found(
         "worktree",
         note="a path appears, but not verified against a derived worktree -- "
-        "no worktree was given to check against",
+        "no worktree was given to check against, and no caller said it had "
+        "tried. Weak by construction: this only asks whether a separator sits "
+        "between two non-separators, which ordinary prose satisfies",
     )
 
 
@@ -194,14 +217,17 @@ def check_placeholder(text):
 #: ones before it found. A validator that stopped at the first finding would
 #: send an author back for one fix at a time.
 CHECKS = (
-    ("issues", lambda text, issues, worktree: check_issues(text, issues)),
-    ("worktree", lambda text, issues, worktree: check_worktree(text, worktree)),
-    ("placeholder", lambda text, issues, worktree: check_placeholder(text)),
+    ("issues", lambda text, issues, worktree, state: check_issues(text, issues)),
+    (
+        "worktree",
+        lambda text, issues, worktree, state: check_worktree(text, worktree, state),
+    ),
+    ("placeholder", lambda text, issues, worktree, state: check_placeholder(text)),
 )
 
 
-def check_text(text, issues=None, worktree=None):
-    rows = [run(text, issues, worktree) for _, run in CHECKS]
+def check_text(text, issues=None, worktree=None, worktree_state=None):
+    rows = [run(text, issues, worktree, worktree_state) for _, run in CHECKS]
     missing = [row for row in rows if row["state"] == "missing"]
     return {
         "state": STATE_FINDINGS if missing else STATE_OK,
@@ -210,7 +236,7 @@ def check_text(text, issues=None, worktree=None):
     }
 
 
-def check_path(path, issues=None, worktree=None):
+def check_path(path, issues=None, worktree=None, worktree_state=None):
     try:
         text = Path(path).read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
@@ -221,7 +247,9 @@ def check_path(path, issues=None, worktree=None):
             "elements": [],
             "missing": [],
         }
-    payload = check_text(text, issues=issues, worktree=worktree)
+    payload = check_text(
+        text, issues=issues, worktree=worktree, worktree_state=worktree_state
+    )
     payload["path"] = str(path)
     return payload
 

@@ -225,7 +225,7 @@ whether a paragraph earns its size; it only stops growth from being invisible.
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
-| `agents/recon.md` | 4,121 B | 4,400 B |
+| `agents/recon.md` | 4,348 B | 4,400 B |
 
 **`agents/sub-manager.md`'s ceiling went from 18,800 B to 21,000 B (#1526)** to hold the literal
 `lane_setup.py --claim` call shape: a measured tick paged two phase files three times each hunting

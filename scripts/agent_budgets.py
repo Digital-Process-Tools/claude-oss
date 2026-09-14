@@ -285,9 +285,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for #1535: 3936 B became 4121 B -- the caller moved. A lane
     # spawns its own recon and keeps the summary where it is used; a dispatcher
     # may still spawn one for part 5 (the lane file set) alone, which it needs
-    # before the lane exists, until #1532 retires the registry. Ceiling
-    # unchanged; 279 B headroom.
-    "agents/recon.md": (4121, 4400),
+    # before the lane exists, until #1532 retires the registry. "Report back"
+    # is rewritten in the same diff -- it still told this agent its output gets
+    # pasted into a developer brief, contradicting the intro two screens above
+    # it -- so it now says who reads which part, since the spawn is told
+    # neither. 3936 B -> 4348 B. Ceiling unchanged; 52 B headroom, which is
+    # tight: the next edit here pays for itself or raises the ceiling.
+    "agents/recon.md": (4348, 4400),
 }
 
 

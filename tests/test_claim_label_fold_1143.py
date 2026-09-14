@@ -297,7 +297,7 @@ def test_compute_claim_with_a_failing_companion_composes_x2_end_to_end(
     (repo / lane_setup.CONFIG_NAME).write_text(json.dumps(config))
 
     monkeypatch.setattr(
-        lane_setup,
+        lane_setup.lane_setup_worktree,
         "resolve_base",
         lambda *a, **k: {
             "state": "resolved",
@@ -425,13 +425,33 @@ def test_claim_with_phrase_alone_is_not_refused_at_the_argparse_level():
 
 
 def test_main_end_to_end_refuses_the_agent_call_on_a_structural_brief_finding(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, capsys
 ):
     """Self-review finding (Explore, #1143): the new argparse validation and
     the final print/exit-code block in main() had zero coverage through
     main()/argv -- only the library functions were exercised directly. This
     drives the whole CLI path, including the exit-code override, for the
-    refusal case."""
+    refusal case.
+
+    Two repairs from #1535's own self-review, because this test was passing for
+    a reason unrelated to its name:
+
+    * the fixture was `"nothing useful here at all"`, a structural finding only
+      under the retired eight-element schema. Under the three-element one it
+      renders cleanly, so the refusal being asserted had stopped happening. It
+      is now a leftover `{{...}}` marker, which is a real structural finding
+      both before and after #1535.
+    * `monkeypatch.setattr(lane_setup, "resolve_base", ...)` patched an
+      attribute `compute()` never reads -- it calls
+      `lane_setup_worktree.resolve_base` directly -- so the real one ran, failed
+      against a repo with no `origin`, and forced EXIT_COULD_NOT_RUN through
+      `blocked()` no matter what the schema said. Patched at the module
+      `compute()` actually reads, so the exit code now comes from the refusal
+      this test is named for.
+
+    The assertion on stdout is what keeps both repairs honest: an exit code
+    alone cannot tell a refused render from a blocked one.
+    """
     import json
     import subprocess
 
@@ -450,7 +470,7 @@ def test_main_end_to_end_refuses_the_agent_call_on_a_structural_brief_finding(
     (repo / lane_setup.CONFIG_NAME).write_text(json.dumps(config))
 
     monkeypatch.setattr(
-        lane_setup,
+        lane_setup.lane_setup_worktree,
         "resolve_base",
         lambda *a, **k: {
             "state": "resolved",
@@ -487,7 +507,7 @@ def test_main_end_to_end_refuses_the_agent_call_on_a_structural_brief_finding(
     )
 
     brief = tmp_path / "brief.md"
-    brief.write_text("nothing useful here at all", encoding="utf-8")
+    brief.write_text("{{PASTE THE RECON SUMMARY HERE}}", encoding="utf-8")
 
     exit_code = lane_setup.main(
         [
@@ -506,3 +526,36 @@ def test_main_end_to_end_refuses_the_agent_call_on_a_structural_brief_finding(
         ]
     )
     assert exit_code == lane_setup.EXIT_COULD_NOT_RUN
+    out = capsys.readouterr().out
+    assert "AGENT(...) REFUSED" in out, out
+    assert 'subagent_type: "oss:developer"' not in out, (
+        "the Agent(...) line was rendered despite a structural finding: " + out
+    )
+
+    # The paired must-not-fire, in the same fixture, and the whole reason the
+    # monkeypatch repair above matters: with the marker taken out and nothing
+    # else changed, the identical CLI call renders and exits OK. Before the
+    # repair this arm would also have exited EXIT_COULD_NOT_RUN -- the real
+    # `resolve_base` failed against a repo with no `origin` and `blocked()`
+    # forced the code regardless of the schema -- so the assertion above
+    # measured nothing about the refusal it is named for (#1535 self-review).
+    brief.write_text("Recon: the guard lives in scripts/foo.py:40.", encoding="utf-8")
+    ok_code = lane_setup.main(
+        [
+            "1",
+            "--repo",
+            str(repo),
+            "--claim",
+            "--lane",
+            "a.py",
+            "--phrase",
+            "auto-update path",
+            "--subagent-type",
+            "oss:developer",
+            "--brief",
+            str(brief),
+        ]
+    )
+    ok_out = capsys.readouterr().out
+    assert ok_code == lane_setup.EXIT_OK, ok_out
+    assert 'subagent_type: "oss:developer"' in ok_out, ok_out
