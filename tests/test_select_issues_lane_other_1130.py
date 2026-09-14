@@ -1,23 +1,19 @@
 """#1130: `lane-other` -- a triaged issue with no owning lane -- must never
 render as an untriaged one, and must never be treated as bundleable.
 
-`.oss.json` declares five real lanes; the triager's correct behaviour when
-none fits is to apply nothing, which makes an examined-and-refused issue
+`.oss.json` declares real lanes; the triager's correct behaviour when none
+fits is to apply nothing, which makes an examined-and-refused issue
 indistinguishable from one nobody has read. `lane-other` is the positive
 statement "triaged, no lane owns its files."
 
-Two things carry the weight, each covered below:
-
-* `_derive_lane_patterns_from_labels` must special-case the configured
-  `lane-other` label to `None` -- unknown -- explicitly, never by falling
-  through to the "uncovered label" path by accident. A test fails if
-  someone later adds a `lane-other` entry to the `.oss.json` mapping and
-  the special case stops being what produces the `None`.
-* A `lane-other` candidate is dispatched solo, always: never given a
-  companion, never offered as one, never padded toward `_GROUP_TARGET`.
-  It must come out of grouping as a deliberate group of one with a stated
-  `short_reason` -- entering grouping and staying alone -- never landing
-  in `ungrouped`, which means "never entered grouping at all".
+A `lane-other` candidate is dispatched solo, always: never given a
+companion, never offered as one, never padded toward `_GROUP_TARGET`. It
+must come out of grouping as a deliberate group of one with a stated
+`short_reason` -- entering grouping and staying alone -- never landing in
+`ungrouped`, which means "never entered grouping at all". #1530 replaced
+the file-overlap grouping mechanism with lane-label grouping; the solo
+rule for `lane-other` is unchanged by that move, since a `lane-other`
+issue carries no ordinary lane label to match on either way.
 """
 
 import sys
@@ -32,11 +28,7 @@ DECLARED = {
     "filed_by_loop": "filed-by-loop",
     "priority": ["priority-high", "priority-medium", "priority-low"],
     "lane_other": "lane-other",
-}
-
-LANE_MAP = {
-    "lane-dispatch": ["scripts/select_issues_overlap.py"],
-    "lane-doctor": ["scripts/doctor.py"],
+    "lanes": ["lane-dispatch", "lane-doctor"],
 }
 
 
@@ -53,82 +45,23 @@ def _no_op_checker(numbers, mode, run=None, repo=None):
     ]
 
 
-def _literal_resolve(repo, patterns):
-    return {
-        "patterns": [
-            {"pattern": p, "state": "literal", "files": [p], "detail": ""}
-            for p in patterns
-        ],
-        "files": list(patterns),
-    }
-
-
-# --------------------------------------------------------------------- unit: derivation
-
-
-def test_lane_other_label_is_special_cased_to_none_even_when_mapped():
-    """The constraint's own words: an explicit special case, with a test
-    that fails if someone later adds a `lane-other` entry to the mapping.
-    Building the mapping WITH a `lane-other` key (never produced by
-    .oss.json's own validated shape, but nothing stops a hand edit) proves
-    the `None` comes from the special case, not from the "uncovered label"
-    fallback -- if the special case were deleted and `lane-other` merely
-    fell through, this exact mapping would derive a file set instead."""
-    mapping = dict(LANE_MAP, **{"lane-other": ["scripts/anything.py"]})
-    result = select_issues._derive_lane_patterns_from_labels(
-        ["lane-other"], mapping, "lane-other"
-    )
-    assert result is None
-
-
-def test_a_lane_label_covered_by_the_mapping_still_derives_normally():
-    """Positive control: the derivation still works for a real lane when
-    `lane_other_label` is passed alongside it -- the special case must not
-    swallow every label, only the configured lane-other one."""
-    result = select_issues._derive_lane_patterns_from_labels(
-        ["lane-dispatch"], LANE_MAP, "lane-other"
-    )
-    assert result == LANE_MAP["lane-dispatch"]
-
-
 # --------------------------------------------------------------- production shape
 
 
 def test_lane_other_issue_and_a_bundleable_pair_both_present():
     """The production shape: a board carrying one `lane-other` issue AND a
-    genuinely bundleable pair. The pair must bundle; the `lane-other` issue
-    must come out as a stated singleton, never in `ungrouped`, never as a
-    member or lead of the pair's group."""
-
-    def companions(repo, own_issue, claimed, board):
-        if own_issue == 2:
-            return {
-                "state": "candidates",
-                "candidates": [{"number": 3, "files": ["scripts/shared.py"]}],
-                "undetermined": [],
-                "detail": "",
-            }
-        return {
-            "state": "none",
-            "candidates": [],
-            "undetermined": [],
-            "detail": "swept, nothing overlaps",
-        }
-
+    genuinely bundleable pair sharing a lane label. The pair must bundle;
+    the `lane-other` issue must come out as a stated singleton, never in
+    `ungrouped`, never as a member or lead of the pair's group."""
     payload = {
         "declared": DECLARED,
         "issues": [
             _issue(1, ["priority-high", "lane-other"]),
-            _issue(2, ["priority-medium"], lane_patterns=["scripts/shared.py"]),
-            _issue(3, ["priority-medium"]),
+            _issue(2, ["priority-medium", "lane-dispatch"]),
+            _issue(3, ["priority-medium", "lane-dispatch"]),
         ],
     }
-    result = select_issues.select(
-        payload,
-        checker=_no_op_checker,
-        resolve_lane=_literal_resolve,
-        suggest_companions=companions,
-    )
+    result = select_issues.select(payload, checker=_no_op_checker)
     assert result["state"] == "candidates"
     groups = result["groups"]["groups"]
     ungrouped = result["groups"]["ungrouped"]
@@ -148,58 +81,27 @@ def test_lane_other_issue_and_a_bundleable_pair_both_present():
 
 def test_lane_other_issue_is_never_offered_as_a_companion():
     """Symmetric half of the rule, paired with the must-fire test above (the
-    genuinely bundleable pair DOES bundle): even when a lead's own
-    `suggest_companions` sweep names the `lane-other` issue as an
-    overlapping candidate, it must never be pulled in as a member.
+    genuinely bundleable pair DOES bundle): even when a `lane-other` issue
+    carries the SAME lane-* label spelling as a lead's own peer search would
+    otherwise match, it must never be pulled in as a member -- the
+    `is_lane_other` check, not label equality alone, decides membership.
 
-    #1130 review round: the `lane-other` issue must outrank the querying
-    lead here (`priority-high` vs. `priority-low`) so it is PROCESSED
-    FIRST by `_group_candidates`'s own loop -- not because that ordering
-    matters to the rule (it must not: see the "regardless of iteration
-    order" claim below), but because a `lane-other` candidate that is
-    processed BEFORE the lead's own turn is already in the shared `taken`
-    set by the time the lead's `suggest_companions` sweep names it, and
-    the pre-existing `if cnum in taken: continue` guard would then hide a
-    missing `is_lane_other` check entirely -- the original version of this
-    test made exactly that mistake and stayed green with the `is_lane_other`
-    guard deleted. Ranking the `lane-other` issue LOWER instead means it is
-    still untaken when the lead's sweep runs, so only the dedicated guard
-    can be what excludes it."""
-
-    def companions(repo, own_issue, claimed, board):
-        if own_issue == 2:
-            return {
-                "state": "candidates",
-                "candidates": [{"number": 1, "files": ["scripts/shared.py"]}],
-                "undetermined": [],
-                "detail": "",
-            }
-        return {
-            "state": "none",
-            "candidates": [],
-            "undetermined": [],
-            "detail": "",
-        }
-
+    The `lane-other` issue outranks the lead here (`priority-high` vs.
+    `priority-low`) so it is PROCESSED FIRST by `_group_candidates`'s own
+    loop -- not because that ordering matters to the rule (it must not: see
+    the "regardless of iteration order" claim in `_group_candidates`'s own
+    docstring), but so a missing `is_lane_other` guard could not be hidden
+    behind the pre-existing `if number in taken: continue` check."""
     payload = {
         "declared": DECLARED,
         "issues": [
-            _issue(1, ["priority-low", "lane-other"]),
-            _issue(2, ["priority-high"], lane_patterns=["scripts/shared.py"]),
+            _issue(1, ["priority-high", "lane-other"]),
+            _issue(2, ["priority-low", "lane-dispatch"]),
         ],
     }
-    result = select_issues.select(
-        payload,
-        checker=_no_op_checker,
-        resolve_lane=_literal_resolve,
-        suggest_companions=companions,
-    )
-    # The lead (#2) must still be processed, and asked for companions,
-    # before #1's own turn -- confirming this test actually reaches the
-    # code path described above rather than #1 having already claimed
-    # itself solo first.
+    result = select_issues.select(payload, checker=_no_op_checker)
     numbers_in_rank_order = [c["number"] for c in result["candidates"]]
-    assert numbers_in_rank_order[0] == 2
+    assert numbers_in_rank_order[0] == 1
 
     groups = result["groups"]["groups"]
     for group in groups:
@@ -211,19 +113,9 @@ def test_lane_other_issue_is_never_offered_as_a_companion():
 
 
 def test_a_lane_other_issue_never_gets_a_companion_itself():
-    """Even when the board contains another candidate that WOULD overlap by
-    file, a `lane-other` lead never receives a companion -- solo dispatch,
-    always. Positive control: without the `lane-other` label, the same
-    board shape bundles (see the production-shape test above)."""
-
-    def companions(repo, own_issue, claimed, board):
-        return {
-            "state": "candidates",
-            "candidates": [{"number": 2, "files": ["scripts/shared.py"]}],
-            "undetermined": [],
-            "detail": "",
-        }
-
+    """Even when the board contains another candidate carrying the same
+    lane-* label spelling, a `lane-other` lead never receives a companion
+    -- solo dispatch, always."""
     payload = {
         "declared": DECLARED,
         "issues": [
@@ -231,21 +123,16 @@ def test_a_lane_other_issue_never_gets_a_companion_itself():
             _issue(2, ["priority-medium"]),
         ],
     }
-    result = select_issues.select(
-        payload,
-        checker=_no_op_checker,
-        resolve_lane=_literal_resolve,
-        suggest_companions=companions,
-    )
+    result = select_issues.select(payload, checker=_no_op_checker)
     groups = result["groups"]["groups"]
     lead_group = [g for g in groups if g["members"][0]["number"] == 1][0]
     assert len(lead_group["members"]) == 1
 
 
 def test_lane_other_singleton_is_distinguishable_from_ungrouped():
-    """A `lane-other` singleton and a fileless, never-derived candidate must
-    render as different states -- the one 'entered grouping and stayed
-    alone', the other 'never entered grouping at all'."""
+    """A `lane-other` singleton and an issue with no determinable lane label
+    must render as different states -- the one 'entered grouping and
+    stayed alone', the other 'never entered grouping at all'."""
     payload = {
         "declared": DECLARED,
         "issues": [
@@ -253,9 +140,7 @@ def test_lane_other_singleton_is_distinguishable_from_ungrouped():
             _issue(2, ["priority-medium"]),  # no lane label at all: genuinely unknown
         ],
     }
-    result = select_issues.select(
-        payload, checker=_no_op_checker, resolve_lane=_literal_resolve
-    )
+    result = select_issues.select(payload, checker=_no_op_checker)
     ungrouped_numbers = {e["number"] for e in result["groups"]["ungrouped"]}
     assert ungrouped_numbers == {2}
     solo_numbers = {
@@ -270,12 +155,10 @@ def test_solo_is_a_bundling_verdict_not_a_ranking_one():
     payload = {
         "declared": DECLARED,
         "issues": [
-            _issue(2, ["priority-low"], lane_patterns=["scripts/shared.py"]),
+            _issue(2, ["priority-low", "lane-dispatch"]),
             _issue(1, ["priority-high", "lane-other"]),
         ],
     }
-    result = select_issues.select(
-        payload, checker=_no_op_checker, resolve_lane=_literal_resolve
-    )
+    result = select_issues.select(payload, checker=_no_op_checker)
     numbers_in_rank_order = [c["number"] for c in result["candidates"]]
     assert numbers_in_rank_order[0] == 1

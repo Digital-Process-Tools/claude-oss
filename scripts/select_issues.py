@@ -32,11 +32,10 @@ pattern matched -- the defect is already fixed) / `unrankable`
 non-loop issue whose `author_association` this payload never carried, most
 often). #1528: a candidate whose own declared files overlap the fleet's
 held set is NOT dropped any more -- it stays `eligible`, the same as any
-other candidate. The overlap itself is no longer computed or surfaced
-here at all; per-issue file-set declaration (`lane_patterns`, its label
-fallback, the whole apparatus this used to feed) is being removed
-altogether in a follow-up (#1530), so this lane does not invest in a new
-field only to have it deleted again.
+other candidate, and the overlap is no longer computed or surfaced here
+at all. #1530 then removed the label-derived half of that file-set
+declaration outright; what remains is a declared or body-declared file
+set, read only for staleness.
 
 ## What this deliberately does NOT do
 
@@ -46,60 +45,29 @@ module never invents `lane_patterns` or a `preflight_pattern` from prose. A
 path a human wrote literally, in backticks, is a declaration rather than a
 guess (#851's own distinction, extended to the lead by #1135 below) --
 what #267 forbids is inventing a file set from a subject line, never
-reading one the issue's own author already wrote down. An issue with none
-of `lane_patterns`, a body-declared path (#1135) or a mapped `lane-*`
-label (#1129) is simply never checked for staleness or collision, which is
-the correct answer for an issue nobody has looked at that closely yet, not
-a silent `stale: no`.
+reading one the issue's own author already wrote down. An issue with
+neither an explicit `lane_patterns` nor a body-declared path (#1135) is
+simply never checked for staleness, which is the correct answer for an
+issue nobody has looked at that closely yet, not a silent `stale: no`.
 
-**#1129 adds one narrow, declared exception to that rule, never a second
-way to guess.** An issue with no `lane_patterns` of its own falls back to
-`_derive_lane_patterns_from_labels`: its `lane-*` GitHub label, resolved
-through a mapping a human wrote into `.oss.json`'s `labels.lane_patterns` --
-never text an issue itself wrote. No lane label, an uncovered one, two
-differently-mapped labels on the same issue, or no mapping declared at all
-still resolve to `None` -- the identical "not derivable" posture as before,
-never an empty file set (which would read as disjoint with every other
-lane and falsely bundle an unexamined issue into one of them). A derived
-set is coarser than a declared one -- a lane label names a whole
-subsystem, not one issue's own files -- so every candidate carries
-`lane_patterns_source` (`"declared"` / `"derived-from-body"` /
-`"derived-from-label"` / `None`), never folding the sources together.
-
-**#1135 inserts a narrower source ahead of both.** `select()`'s own lead
-used to skip straight to the label fallback the moment it had no explicit
-`lane_patterns` -- broad by construction, a whole subsystem -- while
-`suggest_companions` derived each OTHER open issue's file set from
-`select_issues_companions._derive_declared_files`: paths named literally,
-in backticks, in that issue's own title and body (#851). Overlap was
-therefore computed broad-against-narrow: a lead labelled `lane-dispatch`
-claimed all of that lane's files and swallowed anything else in the
-subsystem, while the precise overlaps on a live board were exactly the
-ones where at least one side had no lane label and its files came from
-its body instead. The fix gives the lead the identical body-declared
-extraction first, falling back to the label's globs only when the title
-and body name no path at all -- there is no argument for trusting a
-backtick declaration on one side of an overlap and not the other.
-Precedence is now strict and three deep: an issue's own explicit
-`lane_patterns`, then paths declared in its own body
-(`"derived-from-body"`), then its label's globs (`"derived-from-label"`),
-then unknown (`None`) -- never `[]` at any step. See "## Groups" below for
-`adjacency`, the group-level signal this adds so a bundle joined by a
-measured file and a bundle joined only through a lead's coarse label set
-render differently.
+**#1530 retired the label-derived fallback #1129 added, and grouping with
+it.** `_derive_lane_patterns_from_labels` used to convert a candidate's
+`lane-*` GitHub label into a file set (through a mapping a human wrote
+into `.oss.json`'s `labels.lane_patterns`) purely so grouping could
+compute an overlap against it -- and the label was the real signal all
+along: two candidates carrying the same lane label ARE the same lane,
+with no glob resolution needed to say so. The collision check above keeps
+its narrower, declared/body-declared-only file set (#1135); grouping (see
+"## Groups" below) now reads the label directly instead.
 
 **#1130 adds one more per-repo label, never a sixth lane: `labels.lane_other`.**
 A `lane-other` GitHub label is the triager's positive statement that an
 issue was examined and no real lane owns its files -- never "nobody has
-looked yet", which stays plain unlabelled. It carries no file set by
-definition, so `_derive_lane_patterns_from_labels` special-cases it to
-`None` explicitly, before the mapping is even consulted, rather than
-reaching the same `None` through the ordinary "uncovered label" path by
-accident. A candidate whose issue carries that label also gets
-`is_lane_other: True`, independent of `lane_patterns_source` (which cannot
-carry the distinction -- both a `lane-other` issue and one with no lane
-label at all resolve `lane_patterns_source` to `None`). See "## Groups"
-below for what that flag does to grouping.
+looked yet", which stays plain unlabelled. `is_lane_other` is read
+directly off the issue's own labels against the repo's declared
+`labels.lane_other`, independent of the lane-label match above (a
+`lane-other` issue carries no ordinary lane label by definition). See
+"## Groups" below for what that flag does to grouping.
 
 **#1145: this module fetches the board itself now, and the stdin payload
 path is gone.** It used to refuse to call `gh` for the board while making a
@@ -120,42 +88,29 @@ docstring.
 ## Groups, not only a flat list (#1068)
 
 A `candidates` result also carries `groups`: `{"groups": [...], "ungrouped":
-[...]}`. Each group composes `select_issues_companions.suggest_companions` over one
-`candidates` entry's own resolved lane files -- board in, ranked
-**dispatchable lanes** out, the same way this module already composes
-`resolve_lane` and `select_issues_claim_read.check`. A group targets three members
+[...]}`. #1530: each group bundles `candidates` entries that share the same
+`lane-*` GitHub label directly -- board in, ranked **dispatchable lanes**
+out -- replacing the declared-file overlap search #1068/#1135 used to run
+(the label a triager applied already states the partition; see "## What
+this deliberately does NOT do" above). A group targets three members
 (`_GROUP_TARGET`), never pads to hit that number, and a member's own
-disposition plus a group's own three-value state
-(`candidates`/`none`/`could-not-tell`) survive per group rather than
-flattening to one verdict for the whole call. A group is a suggestion, never
-a dispatch -- the caller still decides whether it is worth a lane.
-`ungrouped` lists candidates that could not be grouped at all (no declared
-files, per #267, or files that could not be resolved), never candidates that
-were grouped and stayed alone -- a short group with a stated
-`short_reason` is a different, weaker claim than "never entered grouping".
+disposition plus a group's own state (`candidates`/`none`) survive per
+group rather than flattening to one verdict for the whole call. A group is
+a suggestion, never a dispatch -- the caller still decides whether it is
+worth a lane. `ungrouped` lists candidates whose own lane label could not
+be determined at all (no lane-* label, an uncovered one, or two different
+ones at once -- never guessed, per #267), never candidates that were
+grouped and stayed alone -- a short group with a stated `short_reason` is
+a different, weaker claim than "never entered grouping".
 
 **#1130: a `lane-other` candidate is a third route into `groups`, never
 into `ungrouped`.** It is dispatched solo, always -- never given a
 companion, never offered as one, never padded toward `_GROUP_TARGET` --
 but it still enters grouping and comes out as a deliberate group of one
 with a stated `short_reason` naming the rule. That is the same
-"entered, and stayed alone" claim a short overlap-based group makes, kept
+"entered, and stayed alone" claim a short label-matched group makes, kept
 apart from "never entered grouping at all" so a reader can tell "no lane
 owns this, by rule" from "nobody could place this".
-
-**#1135: a group joined by an actual overlap also carries `adjacency`,**
-`"measured"` or `"label-derived"` -- which kind of claim joined its
-members, never left to be inferred from `lane_patterns_source` alone. A
-companion that survives `suggest_companions` at all always got there
-through its own body-declared file set (#851) -- never through a label --
-so the only side of an overlap that can still be coarse is the lead's own,
-and `adjacency` reads directly off it: `"label-derived"` when the lead's
-own claim fell back to its `lane-*` label's globs (broad by construction,
-per #1135 above), `"measured"` otherwise (`declared` or
-`derived-from-body`, narrow by construction). A group the lead entered
-without an overlap at all -- a short group with nothing further to say, or
-a #1130 `lane-other` singleton -- carries `adjacency: None`: nothing
-joined it, so there is no claim to grade.
 
 ## Fleet: fetch, iterate the fleet's own lanes, return bodies (#1145,
 ## #1146, #1147; bodies narrowed off the default print by #1180)
@@ -190,7 +145,7 @@ the "computed, rendered, never used" defect #1146 was filed to remove one
 level up. `_run_one`'s `cap_groups` truncates every lane's own
 `groups.groups` to its first entry -- `_group_candidates` already orders
 groups by rank, so the first is "the best-ranked eligible issue in this
-lane as lead, plus up to two companions by the existing adjacency rules,"
+lane as lead, plus up to two companions sharing its lane label,"
 never a re-derivation. Nothing else changes: `candidates` still lists
 every eligible issue in the lane, capped group or not, and `ungrouped` is
 untouched -- the cap removes a group's number, not an issue's visibility.
@@ -334,75 +289,45 @@ _GROUP_TARGET = 3
 
 def _group_candidates(
     candidates,
-    issues_by_number,
-    resolved_files_by_number,
-    suggest_companions,
-    board_capped,
-    board_cap_detail,
+    lane_label_by_number,
 ):
-    """#1068: compose `select_issues_companions.suggest_companions` over `select()`'s own
-    ranked, eligible `candidates` -- the fourth join this module used to leave
-    to a session, the same way it already composes `resolve_lane` and
-    `select_issues_claim_read.check`. `suggest_companions` keeps its own signature and
-    stays independently callable; this only adds a caller.
+    """#1530: bundle candidates that already share a lane LABEL -- the
+    label a triager applied states the partition directly, so grouping no
+    longer approximates it via a per-issue declared-file overlap search
+    (formerly #1068/#1135, both retired by this change). No board sweep,
+    no file resolution: membership is exactly "same lane label, next by
+    rank."
 
-    **Membership is restricted to issues already in `candidates`.**
-    `suggest_companions` sweeps every OTHER open issue on the board, including
-    ones this call has already dropped as stale, assigned or colliding --
-    only a `candidates` entry has passed every one of those checks, so only
-    one is safe to hand a developer as part of the same dispatchable lane. An
-    overlap `suggest_companions` finds against a non-candidate issue is real,
-    but it is not this function's to add to a group; the maintainer still
-    sees it via that issue's own row when it is next ranked.
+    **Membership is restricted to issues already in `candidates`.** Only a
+    `candidates` entry has passed every earlier filter (rank, staleness,
+    assignment), so only one is safe to hand a developer as part of the
+    same dispatchable lane.
 
     Returns `(groups, ungrouped)`:
 
       groups      one entry per lead (highest-ranked first, never a
                   candidate already claimed by an earlier group), each
-                  `{"members": [...], "state", "detail", "short_reason"}`.
-                  `members` is `candidates` entries, unmodified apart from an
-                  added `role` (`"lead"` / `"member"`) and, for a member, the
-                  overlapping files `suggest_companions` found. `state` is
-                  `suggest_companions`'s own three-value answer for this
-                  lead (`candidates` / `none` / `could-not-tell`) --
-                  preserved per group rather than flattened into one verdict
-                  for the whole call, per the issue's own requirement. #1130
-                  adds a fourth value, `"lane-other"`, for the one case
-                  that never calls `suggest_companions` at all: a candidate
-                  whose issue carries the repo's configured `lane-other`
-                  label is routed straight to a solo group, by rule, before
-                  any board sweep runs.
-                  `short_reason` is set (never guessed at, never blank) only
-                  when the group has not reached `_GROUP_TARGET`: it says
-                  which of the two distinct reasons applies -- no overlapping
-                  candidate was found, or the board read that fed
-                  `suggest_companions` was capped -- so a short group because
-                  nothing overlaps and a short group because the read was
-                  truncated never render as the same row.
-      ungrouped   every candidate that could not join any group at all --
-                  declares no files (#267: never guessed into one), the only
-                  reason reachable through `select()`'s own call graph today
-                  for a candidate that is not `is_lane_other`;
-                  a second, named reason ("its own declared files could not
-                  be resolved to anything on disk") is kept for a future
-                  caller of this function that builds `candidates` /
-                  `resolved_files_by_number` some other way, since every
-                  `select()` candidate with `lane_patterns` has already
-                  passed the refused/resolved-to-nothing dark-input checks by
-                  the time grouping runs. Each entry carries its own `why`.
+                  `{"members": [...], "state", "short_reason"}`. `members`
+                  is `candidates` entries, unmodified apart from an added
+                  `role` (`"lead"` / `"member"`). `state` is `"candidates"`
+                  when the group has more than the lead, `"none"` when
+                  nothing else on the board shares its label. #1130 adds a
+                  third value, `"lane-other"`, for the one case that skips
+                  label-matching entirely: a candidate whose issue carries
+                  the repo's configured `lane-other` label is routed
+                  straight to a solo group, by rule.
+                  `short_reason` is set (never guessed at, never blank)
+                  only when the group has not reached `_GROUP_TARGET`.
+      ungrouped   every candidate whose own lane label could not be
+                  determined -- no lane-* label, an uncovered one, or two
+                  DIFFERENT lane labels on the same issue at once
+                  (ambiguous, never guessed) -- the one case reachable
+                  through `select()`'s own call graph for a candidate that
+                  is not `is_lane_other`. Each entry carries its own `why`.
                   Not the same list as a short group's members: this is
-                  "never entered grouping", `short_reason` is "entered, and
-                  stayed alone".
+                  "never entered grouping", `short_reason` is "entered,
+                  and stayed alone".
     """
-    board = {
-        "capped": bool(board_capped),
-        "cap_detail": board_cap_detail or "",
-        "issues": [
-            {"number": n, "title": row.get("title"), "body": row.get("body")}
-            for n, row in issues_by_number.items()
-        ],
-    }
-    candidates_by_number = {c["number"]: c for c in candidates}
     taken = set()
     groups = []
     ungrouped = []
@@ -412,166 +337,62 @@ def _group_candidates(
             continue
         taken.add(number)
         if cand.get("is_lane_other"):
-            # #1130: never given a companion, always solo -- the direction
-            # of the risk runs opposite to a declared-file group. Bundling
-            # is justified by PROVEN disjointness (#267); a `lane-other`
-            # issue has no known file set at all, so disjointness against it
-            # can only be assumed, and assuming it is the dangerous
-            # direction. This still ENTERS grouping and comes out as a
-            # deliberate group of one with a stated `short_reason` -- never
-            # `ungrouped`, which means "never entered grouping at all".
+            # #1130: never given a companion, always solo -- unchanged by
+            # the move to label grouping, since a `lane-other` issue is
+            # the one case that carries no lane label to match on at all.
             groups.append(
                 {
                     "members": [dict(cand, role="lead")],
                     "state": select_issues_companions.STATE_LANE_OTHER,
-                    "detail": "",
                     "short_reason": (
                         "lane-other: no lane owns this issue's files -- "
-                        "dispatched alone by rule, never assumed disjoint "
-                        "with another candidate (#1130)"
+                        "dispatched alone by rule (#1130)"
                     ),
-                    # #1135: nothing joined this group -- there is no
-                    # overlap to grade for precision.
-                    "adjacency": None,
                 }
             )
             continue
-        claimed = resolved_files_by_number.get(number)
-        if not claimed:
-            row = issues_by_number.get(number) or {}
-            if row.get("lane_patterns"):
-                # Defensive only, reviewed and left in on purpose (#1068 review
-                # round): under `select()`'s own control flow this arm cannot
-                # actually run today -- any candidate whose `lane_patterns` is
-                # truthy has already passed the refused/`_lane_resolved_to_
-                # nothing` dark-input checks above (either of which would have
-                # forced the whole call to `could-not-select` before grouping
-                # ever runs), so `resolved_files_by_number[number]` is always
-                # set and non-empty by the time `candidates` is built. Kept as
-                # a second, named reason -- rather than folded into the one
-                # below -- so a future caller of this internal function with a
-                # `candidates`/`resolved_files_by_number` pair built some other
-                # way still gets a true answer instead of a misleading one.
-                why = "its own declared files could not be resolved to anything on disk"
-            else:
-                why = (
-                    "declares no files -- an issue's files are not derivable "
-                    "from its body (#267), so it cannot be grouped"
+        label = lane_label_by_number.get(number)
+        if not label:
+            ungrouped.append(
+                dict(
+                    cand,
+                    why=(
+                        "no single lane-* label could be determined for "
+                        "this issue -- none, an uncovered one, or two "
+                        "different lane labels at once"
+                    ),
                 )
-            ungrouped.append(dict(cand, why=why))
+            )
             continue
-        result = suggest_companions(Path("."), number, claimed, board)
         members = [dict(cand, role="lead")]
-        if result["state"] == select_issues_companions.STATE_CANDIDATES:
-            for entry in result["candidates"]:
-                cnum = entry["number"]
-                if cnum in taken:
-                    continue
-                other = candidates_by_number.get(cnum)
-                if other is None:
-                    continue
-                if other.get("is_lane_other"):
-                    # #1130: symmetric with the solo-dispatch branch above --
-                    # a `lane-other` candidate is never offered AS a
-                    # companion either, regardless of iteration order (this
-                    # lead may be ranked ahead of the `lane-other` issue's
-                    # own turn in the loop above).
-                    continue
-                members.append(dict(other, role="member", overlap=entry["files"]))
-                taken.add(cnum)
-                if len(members) >= _GROUP_TARGET:
-                    break
+        for other in candidates:
+            if len(members) >= _GROUP_TARGET:
+                break
+            onum = other["number"]
+            if onum in taken or other.get("is_lane_other"):
+                continue
+            if lane_label_by_number.get(onum) == label:
+                members.append(dict(other, role="member"))
+                taken.add(onum)
         short_reason = None
         if len(members) < _GROUP_TARGET:
-            if result["state"] == select_issues_companions.STATE_COULD_NOT_TELL:
-                short_reason = "board sweep could not tell: {0}".format(
-                    result["detail"]
+            short_reason = (
+                "no further ranked candidate carries the same lane label ({0})".format(
+                    label
                 )
-            else:
-                short_reason = (
-                    "no further overlapping candidate among the ranked issues"
-                )
-        # #1135: which kind of claim joined this group -- `"measured"` when
-        # the LEAD's own file set is narrow (an explicit declaration or a
-        # path named in its own body), `"label-derived"` when it fell back
-        # to its `lane-*` label's whole subsystem. A companion that reached
-        # `members` at all always got there through its own body-declared
-        # set (#851's guarantee, unchanged) -- never through a label -- so
-        # the lead's own `lane_patterns_source` is the only place coarseness
-        # can still come from. `None` when nothing actually joined the
-        # group (a solo lead, whatever the reason): there is no overlap to
-        # grade for precision.
-        adjacency = None
-        if len(members) > 1:
-            adjacency = (
-                "label-derived"
-                if cand.get("lane_patterns_source") == "derived-from-label"
-                else "measured"
             )
         groups.append(
             {
                 "members": members,
-                "state": result["state"],
-                "detail": result["detail"],
+                "state": (
+                    select_issues_companions.STATE_CANDIDATES
+                    if len(members) > 1
+                    else select_issues_companions.STATE_NONE
+                ),
                 "short_reason": short_reason,
-                "adjacency": adjacency,
             }
         )
     return groups, ungrouped
-
-
-def _derive_lane_patterns_from_labels(labels, lane_pattern_map, lane_other_label=None):
-    """#1129: an issue's `lane_patterns` when it declares none of its own,
-    derived from whichever of its GitHub labels the repo's declared
-    `.oss.json` `labels.lane_patterns` mapping covers -- the fix for
-    `select_issues.py` forming zero groups on every real board, because not
-    one real issue carries a literal `lane_patterns` and #267 rightly
-    forbids inventing one from an issue's body.
-
-    Three states, never two, matching this issue's own governing rule for a
-    single lane one level down (`_lane_resolved_to_nothing`): a lane label
-    covered by the mapping derives that lane's patterns; no lane label, a
-    lane label the mapping does not cover, two DIFFERENTLY-mapped lane
-    labels on the same issue (ambiguous -- guessing which one applies is
-    exactly the invention #267 forbids), or no mapping declared at all are
-    all `None` -- **unknown**, never `[]`. An empty file set would read as
-    disjoint with every other lane on the board and falsely bundle an
-    unexamined issue into one of them, which is worse than the "not
-    checked" this module already renders for an issue with no
-    `lane_patterns` at all.
-
-    A lane label is coarser than an issue -- the mapping names a whole
-    subsystem's files, not this one issue's -- so a derived set is a weaker
-    claim than a declared one. The caller (`select()`) records that as
-    `lane_patterns_source`, never folding the two together, so a reader can
-    tell a measured disjointness from an inferred one.
-
-    #1130: `lane_other_label` -- the per-repo `labels.lane_other` name --
-    is checked FIRST and unconditionally, before the mapping is consulted
-    at all. `lane-other` has no file set by definition: it is the label the
-    triager applies precisely when no lane owns an issue's files, so it
-    must resolve to unknown even if a mapping happens to carry an entry
-    keyed by that same label (never produced by `.oss.json`'s own validated
-    shape, but a hand edit could do it). Reaching `None` for `lane-other`
-    via the ordinary "uncovered label" fallback below would be the right
-    answer for the wrong reason -- indistinguishable from a repo that
-    simply forgot to map it -- so this is its own explicit branch, not a
-    consequence of the loop underneath.
-    """
-    if lane_other_label and lane_other_label in (labels or []):
-        return None
-    if not isinstance(lane_pattern_map, dict) or not lane_pattern_map:
-        return None
-    matched = None
-    for label in labels or []:
-        patterns = lane_pattern_map.get(label)
-        if not patterns:
-            continue
-        candidate = list(patterns)
-        if matched is not None and matched != candidate:
-            return None
-        matched = candidate
-    return matched
 
 
 def select(
@@ -640,13 +461,12 @@ def select(
     # ranking ever runs. This is a LABEL lane -- never to be confused with a
     # developer LANE (a worktree on `fix/N`, what `lane_setup.py` and
     # `held_files` above are about); this module never uses the bare word
-    # "lane" for the label, only "lane label". Admission is unchanged: the
-    # existing declared-file disjointness sweep (`_group_candidates`, below)
-    # still decides which of the label-filtered issues actually ride
-    # together in one developer lane -- the label only narrows what gets
-    # checked, per #1078's own framing ("a heuristic for legibility, not a
-    # guarantee"). Absent or empty, nothing is filtered -- the historical,
-    # whole-board behaviour every caller before #1078 still gets.
+    # "lane" for the label, only "lane label". #1530: `_group_candidates`
+    # (below) now groups directly on this same signal -- an issue's lane
+    # label IS the partition, not an input to a further overlap search --
+    # so filtering here and grouping there read the identical field.
+    # Absent or empty, nothing is filtered -- the historical, whole-board
+    # behaviour every caller before #1078 still gets.
     lane_label = payload.get("lane_label")
     lane_label_filter = None
     if lane_label:
@@ -700,29 +520,31 @@ def select(
     dropped = []
     survivors = []  # (issue_row, rank_answer)
     dark_inputs = []
-    # #1068: captured here, once, so grouping (below) never re-resolves a lane
-    # pattern it has already paid to resolve -- only survives for a candidate
-    # whose lane pattern was neither refused nor resolved-to-nothing, which is
-    # exactly the set grouping is safe to use.
+    # #998/#1067: captured here, once, so a candidate's own collision check
+    # (below) never re-resolves a lane pattern it has already paid to
+    # resolve -- only survives for a candidate whose lane pattern was
+    # neither refused nor resolved-to-nothing.
     resolved_files_by_number = {}
-    # #1129: parallel to `resolved_files_by_number` -- which of a
-    # candidate's two possible producers actually supplied its
-    # `lane_patterns`, so the result can say so rather than let a measured
-    # disjointness and an inferred one render identically. `None` covers
-    # both "no lane_patterns at all" and every one of #1129's own unknown
-    # cases (no lane label, an uncovered one, no declared mapping, or an
-    # ambiguous match across two differently-mapped labels on one issue).
-    lane_patterns_source_by_number = {}
-    # #1130: independent of `lane_patterns`/`lane_patterns_source` above --
-    # a `lane-other` issue has no file set by definition (it is always
-    # `None`, same as "no lane label at all"), so this is the one signal
+    # #1530: which single lane-* label (from the repo's declared
+    # `labels.lanes`) an issue carries -- the signal `_group_candidates`
+    # now groups on directly, replacing the per-issue declared-file
+    # overlap search #1068/#1135/#1129 used to build. `None` for no lane
+    # label, an uncovered one, or two DIFFERENT lane labels on the same
+    # issue at once (ambiguous -- guessing which one applies is the
+    # invention #267 forbids), never guessed.
+    lane_label_by_number = {}
+    # #1130: independent of the lane label above -- a `lane-other` issue
+    # carries no real lane label by definition, so this is the one signal
     # that tells "triaged, no lane owns this" apart from "nobody has looked
     # yet" once grouping needs to route the two differently. Read directly
     # off the issue's own `lane-*` label and the repo's declared
-    # `labels.lane_other` name -- never derived from `lane_patterns_source`,
-    # which cannot carry the distinction (both render `None`).
+    # `labels.lane_other` name.
     is_lane_other_by_number = {}
     lane_other_label = declared.get("lane_other")
+    declared_lane_labels = declared.get("lanes")
+    declared_lane_labels = (
+        declared_lane_labels if isinstance(declared_lane_labels, list) else []
+    )
 
     for item in ranked:
         number = item.get("number")
@@ -757,41 +579,34 @@ def select(
                 continue
 
         lane_patterns = item.get("lane_patterns")
-        lane_patterns_source = "declared" if lane_patterns else None
         if not lane_patterns:
-            # #1135: prefer a path the issue's OWN title/body names in
-            # backticks over its label's whole subsystem -- the same
-            # extraction `select_issues_companions._derive_declared_files`
-            # already trusts for a companion (#851), now given to the LEAD
-            # too. There is no argument for trusting a backtick declaration
-            # on one side of an overlap and not the other: a human-written
+            # #1135: a path the issue's OWN title/body names in backticks --
+            # the same extraction `select_issues_companions._derive_declared_
+            # files` already trusts for a companion (#851). A human-written
             # path is a declaration, never the guess #267 forbids. `None`
             # (never `[]`) when the title and body name nothing path-shaped.
+            # Still resolved and still checked against the held set below --
+            # #1530 only removed the LABEL-derived fallback that used to sit
+            # here, and grouping (which used to need a file set) now groups
+            # on the label directly instead.
             derived_body = select_issues_companions._derive_declared_patterns(
                 item.get("title"), item.get("body")
             )
             if derived_body:
                 lane_patterns = derived_body
-                lane_patterns_source = "derived-from-body"
-        if not lane_patterns:
-            # #1129: falls back to whatever `_derive_lane_patterns_from_
-            # labels` can read off its `lane-*` label through the repo's own
-            # declared mapping, only once the issue's own title/body have
-            # already been asked and named nothing. `derived` is `None` for
-            # every one of #1129's own unknown cases, never `[]`;
-            # `lane_patterns`/`lane_patterns_source` are simply left as they
-            # were (falsy / `None`) when it is, which is the exact "an issue
-            # nobody has looked at that closely yet" posture this module's
-            # own docstring already promises for an issue with no
-            # `lane_patterns` at all.
-            derived_label = _derive_lane_patterns_from_labels(
-                item.get("labels"), declared.get("lane_patterns"), lane_other_label
-            )
-            if derived_label:
-                lane_patterns = derived_label
-                lane_patterns_source = "derived-from-label"
         is_lane_other_by_number[number] = bool(
             lane_other_label and lane_other_label in (item.get("labels") or [])
+        )
+        # #1530: the single lane-* label this issue carries, straight off
+        # its GitHub labels -- never guessed when zero or more than one of
+        # `declared_lane_labels` matches.
+        matched_lane_labels = [
+            label
+            for label in declared_lane_labels
+            if label in (item.get("labels") or [])
+        ]
+        lane_label_by_number[number] = (
+            matched_lane_labels[0] if len(matched_lane_labels) == 1 else None
         )
 
         if lane_patterns:
@@ -837,11 +652,10 @@ def select(
             # file matched. Per the maintainer's own narrowed scope for this
             # issue, the overlap is no longer computed here at all -- the
             # candidate is simply left to survive on the same terms as any
-            # other. #1530 is removing `lane_patterns`/the held-set
-            # derivation this fed entirely; a replacement surface is not
-            # this lane's job to build.
+            # other. #1530 then removed the label-derived half of
+            # `lane_patterns` and the held-set derivation this fed; what
+            # is left is read for staleness only.
             resolved_files_by_number[number] = resolved["files"]
-            lane_patterns_source_by_number[number] = lane_patterns_source
 
         survivors.append((item, answer))
 
@@ -907,12 +721,6 @@ def select(
                     "author": answer["author"],
                     "band": answer["band"],
                     "why": answer["why"],
-                    # #1129: `"declared"` (the issue's own `lane_patterns`),
-                    # `"derived-from-label"` (#1129's own fallback), or `None`
-                    # -- no `lane_patterns` at all, declared or derived. A
-                    # reader must never have to guess which producer a
-                    # candidate's resolved files came from.
-                    "lane_patterns_source": lane_patterns_source_by_number.get(number),
                     # #1130: `True` when the issue carries the repo's
                     # configured `labels.lane_other` label -- a positive,
                     # triaged "no lane owns this", never a guess. Read by
@@ -927,15 +735,7 @@ def select(
 
     state = STATE_CANDIDATES if candidates else STATE_NONE_AVAILABLE
     if candidates:
-        issues_by_number = {item.get("number"): item for item in issues}
-        groups, ungrouped = _group_candidates(
-            candidates,
-            issues_by_number,
-            resolved_files_by_number,
-            suggest_companions,
-            payload.get("board_capped"),
-            payload.get("board_cap_detail"),
-        )
+        groups, ungrouped = _group_candidates(candidates, lane_label_by_number)
     else:
         groups, ungrouped = [], []
     return {
@@ -1385,8 +1185,8 @@ def select_fleet(
             # rank (it walks `candidates`, already ranked, forming one group
             # per not-yet-taken lead), so `groups[0]` -- when there is one --
             # is exactly "the best-ranked eligible issue in this lane as
-            # lead, plus up to two companions by the existing adjacency
-            # rules." Truncated BEFORE bodies are attached, so a dropped
+            # lead, plus up to two companions sharing its lane label."
+            # Truncated BEFORE bodies are attached, so a dropped
             # group's members never pay the body fetch/fence cost at all.
             # `candidates` (every eligible issue in this lane, capped group
             # or not) and `ungrouped` (never entered grouping at all, #267)

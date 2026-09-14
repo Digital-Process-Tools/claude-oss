@@ -293,7 +293,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1499: 55309 B became 56678 B -- a paragraph
         # spawning oss:recon before each brief, and a ninth brief element
         # naming where its output goes. Budget unchanged; 722 B headroom.
-        56678,
+        # Re-baselined for #1530: 56678 B became 56696 B -- the group's
+        # own bound restated as the shared lane label rather than file
+        # adjacency. Budget unchanged; 704 B headroom.
+        56696,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),

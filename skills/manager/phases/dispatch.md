@@ -315,11 +315,12 @@ stay separate calls.
 `could-not-select`. It still never invents `lane_patterns` or `preflight_pattern` for an issue that
 declares neither (#267).
 
-**Read `lanes`, one entry per declared lane label, and dispatch its group (#1146).** The fleet is the
-lane labels `.oss.json` declares, `labels.lane_other` included. Each lane returns **one** group: the
-best-ranked eligible issue as lead plus up to two companions by file adjacency, whatever their own
-rank. **Cap at three, never four** (#799, #499). A lane's other eligible issues stay in its
-`candidates` list. A group is a suggestion, never a dispatch — weigh it against topic and judgement.
+**Read `lanes`, one entry per declared lane label, and dispatch its group (#1146, #1530).** The
+fleet is the lane labels `.oss.json` declares, `labels.lane_other` included. Each lane returns
+**one** group: the best-ranked eligible issue as lead plus up to two companions sharing that same
+lane label, whatever their own rank. **Cap at three, never four** (#799, #499). A lane's other
+eligible issues stay in its `candidates` list. A group is a suggestion, never a dispatch — weigh it
+against topic and judgement.
 
 Each lane carries its own third state (`candidates` / `none` / `could-not-tell`) and, when short, one
 of `board-exhausted` / `no-adjacent` / `did-not-search` / `could-not-tell`. A lane with no eligible

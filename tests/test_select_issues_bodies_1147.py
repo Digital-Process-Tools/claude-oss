@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 import select_issues  # noqa: E402
 
 DECLARED = {
-    "lanes": ["lane-dispatch"],
+    "lanes": ["lane-dispatch", "lane-doctor"],
     "filed_by_loop": "filed-by-loop",
     "priority": ["priority-high", "priority-medium", "priority-low"],
     "lane_other": "lane-other",
@@ -155,10 +155,17 @@ def test_a_body_exactly_at_the_cap_is_not_reported_truncated():
 
 
 def test_ungrouped_candidates_carry_no_body():
-    """Bodies are for RETURNED GROUPS only, never the whole board -- and
-    an ungrouped candidate (declares no files, #267) never entered a group
-    at all."""
-    board = [_issue(4, "no files declared here", ["priority-high", "lane-dispatch"])]
+    """Bodies are for RETURNED GROUPS only, never the whole board -- and an
+    ungrouped candidate (an ambiguous lane label -- two DIFFERENT declared
+    lane labels at once, never guessed, #1530's continuation of #267) never
+    entered a group at all."""
+    board = [
+        _issue(
+            4,
+            "no lane label could be determined here",
+            ["priority-high", "lane-dispatch", "lane-doctor"],
+        )
+    ]
     result = _select_fleet(board)
     ungrouped = result["lanes"]["lane-dispatch"]["groups"]["ungrouped"]
     assert len(ungrouped) == 1

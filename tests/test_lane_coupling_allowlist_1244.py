@@ -20,13 +20,24 @@ NOT on the allowlist still fires -- so a genuinely new #1201-shaped incident
 reason this module exists.
 """
 
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import lane_coupling  # noqa: E402
+
+
+def _real_lane_patterns_declared():
+    # #1530: this repo retired `labels.lane_patterns` from its own
+    # `.oss.json` -- see test_lane_coupling_1234.py's identical helper for
+    # the full reasoning. `lane_coupling.py` itself is unaffected.
+    config = json.loads((REPO_ROOT / ".oss.json").read_text(encoding="utf-8"))
+    return config["labels"].get("lane_patterns") is not None
 
 
 def _scaffold_two_lane_repo(tmp_path):
@@ -83,6 +94,13 @@ def test_omitting_the_allowlist_leaves_old_behaviour_untouched(tmp_path):
     assert result["acknowledged"] == []
 
 
+@pytest.mark.skipif(
+    not _real_lane_patterns_declared(),
+    reason="#1530: this repo retired labels.lane_patterns -- there is no "
+    "longer a real lane-pattern set on this tree to verify quietness "
+    "against. lane_coupling.py itself is unaffected; this regression "
+    "guard applies only to a repo that still declares the key.",
+)
 def test_real_repo_is_quiet_once_wired_with_its_own_declared_allowlist(
     lane_coupling_real_repo_report,
 ):
