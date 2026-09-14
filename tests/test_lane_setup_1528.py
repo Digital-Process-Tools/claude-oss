@@ -54,20 +54,26 @@ def _minimal_payload(repo, derived_held, lane_patterns):
 
 
 def test_overlap_verdict_no_longer_reads_blocked(tmp_path):
-    """The issue's own worked example, shrunk: CLAUDE.md held by #1499,
-    same file declared by this brief. The verdict must still name the file
-    and the holder, but must not print the word BLOCKED."""
-    (tmp_path / "CLAUDE.md").write_text("x\n")
+    """The issue's own worked example (CLAUDE.md held by #1499, same file
+    declared by this brief), shrunk to a synthetic file name rather than a
+    real repo path -- `doctor_check_lane_coupling.py` statically scans this
+    test's own source for literal paths matching a declared lane's globs,
+    and a real cross-lane literal here (this file already imports
+    `lane_setup`, lane-dispatch) would trip that guard for no reason: the
+    subject under test is the receipt's wording, not which real lane the
+    example file happens to belong to. The verdict must still name the
+    file and the holder, but must not print the word BLOCKED."""
+    (tmp_path / "held-example.txt").write_text("x\n")
     derived = {
         "state": "resolved",
-        "held": {"CLAUDE.md": ["lane #1499"]},
+        "held": {"held-example.txt": ["lane #1499"]},
         "detail": "",
     }
-    payload = _minimal_payload(tmp_path, derived, ["CLAUDE.md"])
+    payload = _minimal_payload(tmp_path, derived, ["held-example.txt"])
     text = lane_setup.receipt(payload)
     assert "BLOCKED" not in text
     assert "verdict : OVERLAP" in text
-    assert "CLAUDE.md" in text
+    assert "held-example.txt" in text
     assert "lane #1499" in text
 
 

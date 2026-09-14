@@ -47,13 +47,21 @@ def test_an_overlapping_candidate_is_not_dropped():
     """The issue's own headline claim, and the actual deliverable of this
     lane: a candidate whose declared files overlap the fleet's held set
     stays a candidate rather than being excluded outright. The issue's own
-    worked example: #1526's files (`CLAUDE.md`, ...) are already held by
-    lane #1499 -- both resolve to `lane-prose` -- and #1526 must still be
-    offered as a candidate."""
+    worked example is #1526's files, already held by lane #1499 -- both
+    resolve to `lane-prose` -- reproduced here with synthetic file names
+    rather than real `lane-prose` paths (`CLAUDE.md`, `agents/*`): this
+    file already imports `select_issues` (`lane-dispatch`), and a second,
+    real lane's literal path in the same source would trip this repo's own
+    `doctor_check_lane_coupling.py`, which statically scans a test file's
+    source for references spanning two or more declared lanes. `select()`
+    treats `lane_patterns`/`held_files` as opaque strings -- the fix under
+    test has no dependency on which real lane a path belongs to."""
     payload = {
         "declared": DECLARED,
-        "issues": [_issue(1526, ["priority-high"], lane_patterns=["CLAUDE.md"])],
-        "held_files": ["CLAUDE.md", "agents/developer.md"],
+        "issues": [
+            _issue(1526, ["priority-high"], lane_patterns=["fixtures/example-a.md"])
+        ],
+        "held_files": ["fixtures/example-a.md", "fixtures/example-b.md"],
     }
     result = select_issues.select(
         payload, checker=_no_op_checker, resolve_lane=_resolve
@@ -104,11 +112,15 @@ def test_no_overlap_field_is_attached_to_a_candidate():
     """This lane's own narrowed scope, pinned: `select()` must not surface
     an `overlap` key on a candidate at all -- that surface was removed in
     this same lane's follow-up commit rather than shipped, per the
-    maintainer's directive that #1530 owns building any replacement."""
+    maintainer's directive that #1530 owns building any replacement.
+    Synthetic file name, same reasoning as the test above (avoids tripping
+    `doctor_check_lane_coupling.py` on a real cross-lane literal)."""
     payload = {
         "declared": DECLARED,
-        "issues": [_issue(1526, ["priority-high"], lane_patterns=["CLAUDE.md"])],
-        "held_files": ["CLAUDE.md"],
+        "issues": [
+            _issue(1526, ["priority-high"], lane_patterns=["fixtures/example-a.md"])
+        ],
+        "held_files": ["fixtures/example-a.md"],
     }
     result = select_issues.select(
         payload, checker=_no_op_checker, resolve_lane=_resolve
