@@ -444,7 +444,10 @@ def _minimal_payload(repo, derived_held, lane_patterns):
     }
 
 
-def test_receipt_names_the_holder_when_blocked(tmp_path):
+def test_receipt_names_the_holder_when_overlapping(tmp_path):
+    """#1528: the render no longer says BLOCKED -- the overlap is still
+    named in full, including the holder, as information rather than a
+    command to stop."""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "shared.py").write_text("x\n")
     derived = {
@@ -454,7 +457,8 @@ def test_receipt_names_the_holder_when_blocked(tmp_path):
     }
     payload = _minimal_payload(tmp_path, derived, ["scripts/shared.py"])
     text = lane_setup.receipt(payload)
-    assert "verdict : BLOCKED" in text
+    assert "verdict : OVERLAP" in text
+    assert "verdict : BLOCKED" not in text
     assert "PR #9" in text
 
 
@@ -479,7 +483,7 @@ def test_receipt_says_could_not_derive_never_available_or_blocked(tmp_path):
     text = lane_setup.receipt(payload)
     assert "verdict : COULD NOT DERIVE THE HELD SET" in text
     assert "verdict : available" not in text
-    assert "verdict : BLOCKED" not in text
+    assert "verdict : OVERLAP" not in text
 
 
 def test_receipt_does_not_reuse_the_only_one_side_given_wording_when_no_lane_given(

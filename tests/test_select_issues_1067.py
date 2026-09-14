@@ -78,10 +78,11 @@ def test_lanes_read_ok_absent_is_not_a_failure_the_positive_control():
     assert result["state"] == "candidates"
 
 
-def test_lanes_read_ok_true_with_a_real_collision_still_finds_it():
+def test_lanes_read_ok_true_with_a_real_overlap_still_finds_it():
     """`lanes_read_ok: True` alongside a genuine, populated `held_files` must
-    still run collision detection normally -- the new check does not
-    accidentally short-circuit the existing path."""
+    still leave a same-lane candidate eligible -- the new check does not
+    accidentally short-circuit the existing path. #1528: the candidate
+    stays a candidate, no longer dropped."""
 
     def resolve(repo, patterns):
         return {"patterns": [], "files": list(patterns)}
@@ -93,8 +94,9 @@ def test_lanes_read_ok_true_with_a_real_collision_still_finds_it():
         "lanes_read_ok": True,
     }
     result = select_issues.select(payload, checker=_no_op_checker, resolve_lane=resolve)
-    assert result["state"] == "none-available"
-    assert result["dropped"][0]["disposition"] == "lane-collision"
+    assert result["state"] == "candidates"
+    assert result["dropped"] == []
+    assert result["candidates"][0]["number"] == 1
 
 
 # ---------------------------------------------------------------------------

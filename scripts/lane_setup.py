@@ -1426,8 +1426,18 @@ def receipt(payload):
             if availability["state"] == "available":
                 lines.append("  verdict : available")
             elif availability["state"] == "blocked":
+                # #1528: informational, not an instruction to stop -- these
+                # files are also held by another lane. The internal state
+                # name stays `blocked` (`lane_report`'s own contract, and
+                # `skills/manager/phases/dispatch.md` still documents that
+                # word), but the render no longer reads as a command: the
+                # caller decides whether to group with the holder, order
+                # after it, or dispatch anyway now that the overlap is
+                # named in full.
                 lines.append(
-                    "  verdict : BLOCKED -- {0} (held by {1})".format(
+                    "  verdict : OVERLAP -- {0} (also held by {1}) -- "
+                    "information, not a block: group with the holder or "
+                    "run in order".format(
                         ", ".join(availability["files"]),
                         ", ".join(availability["holders"]),
                     )
