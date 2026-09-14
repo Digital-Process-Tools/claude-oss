@@ -51,6 +51,12 @@ imported rather than reimplemented, for the identical reason.
                      in its reason, the same courtesy #941 already gives a
                      sub-manager's equivalent shape.
 
+Every state above may also carry an optional `COST:` line (#1499, reusing `tick_handback.py`'s own
+field and its `_find_optional_field` helper) -- a releaser's own free-text token-spend self-report.
+Nothing in `agents/releaser.md` emits one today, so this is classifier-only for now; when a
+releaser does write one, it never affects which of the states above is chosen, on the same
+reasoning the `GATE:` field above already documents.
+
 ## Exit codes
 
 Because a shell reads those and never reads prose:

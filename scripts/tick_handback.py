@@ -91,6 +91,12 @@ frame parser is a second place for that bug to recur.
                     pointing at `TICK: paused` instead of the generic
                     no-header reason.
 
+Every state above may also carry an optional `COST:` line (#1499) -- a sub-manager's own free-text
+token-spend self-report, folded to one line, from `scripts/agent_cost.py`. It never affects which
+of the states above is chosen: a missing or duplicated `COST:` line folds to the same "absent"
+answer (`cost=None`), on the same reasoning `release_handback.py`'s own optional `GATE:` field
+already documents for a paused release.
+
 ## What this deliberately does not do
 
 Release authority is not a state here and never will be. A sub-manager's
