@@ -151,12 +151,21 @@ repeated read of this paragraph.
 
 **One dispatch per tick, then resume rather than re-dispatch (#880).** Your fan-out above is the
 whole of your dispatching this tick. A lane that comes back red, or whose base moves under it, is
-resumed via `SendMessage` to its own agent, never re-dispatched fresh at the same issue -- the
+resumed via `SendMessage` to its own agent rather than re-dispatched fresh at the same issue -- the
 argument, the `agent-unreachable` third state for when resuming genuinely fails (context gone, or
 silent twice, the bar `agents/developer.md` sets its own review spawns), and what to do if the
 `SendMessage` call itself refuses (#978, this frontmatter's own grant of it), are in
 `skills/manager/phases/dispatch.md`. A re-dispatch with neither an attempted resume nor that finding
 is the defect this rule stops; record it via `--lane-dispatch-state` at your own state entry.
+
+**Except when the resume is the expensive route (#1567).** A lane already near its ceiling pays that
+ceiling on every turn after the resume: one measured at 421,672 spent 15,558,821 tokens over 38
+turns of follow-up, an average call-time context of 409,443. A fresh spawn pays ~45k before its
+first turn. So when the lane's own context is large and the return is narrow -- a red leg whose log
+names the file and the line, which `oss:recon` can re-orient a new lane over cheaply -- spawn fresh
+and record `respawned-for-cost` with the context figure as its `why`. It is a fourth state, not a
+softer spelling of the other two: a respawn because resuming was expensive and a respawn because the
+agent was gone are different facts, and `oss_state.py` requires the `why` for that reason.
 
 ## Report back: four states, and two more this tool computes for you
 

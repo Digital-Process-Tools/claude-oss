@@ -345,8 +345,22 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # the harness's own guidance on receiving a task-notification
         # already says not to Read/tail that file, since it is a full JSONL
         # transcript. Budget unchanged; 688 B headroom.
-        56712,
-        57400,
+        # Re-baselined for #1567: 56712 B became 58022 B, and the ceiling went
+        # from 57400 B to 58500 B -- the resume rule's own cost argument had
+        # priced only the fresh spawn, and a red lane at 421,672 was measured
+        # spending 15,558,821 tokens across 38 turns of follow-up. The carve-out
+        # and the fourth dispatch state it names do not fit the 688 B that were
+        # left. Weighed: a first draft ran 1,800 B and was cut to 1,310 B by
+        # merging its three paragraphs into two and dropping the comparison
+        # lanes' figures, which live in the issue. Cutting further would have
+        # taken the measurement itself, which is the only thing that makes the
+        # carve-out arguable rather than a preference, or the #978 SendMessage
+        # paragraph beside it, which is a live trap two sub-manager spawns have
+        # already hit. This file is the loop's largest phase file and is read on
+        # every tick that dispatches, so the raise is ~2.5% rather than the usual
+        # ~10%.
+        58022,
+        58500,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
     # Re-baselined for #1014: 19369 B on disk against a stale 18864 declared

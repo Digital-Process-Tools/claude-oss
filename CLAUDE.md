@@ -293,7 +293,7 @@ when a file crosses it.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 20,680 B | 21,800 B |
+| `agents/sub-manager.md` | 21,469 B | 21,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
@@ -360,7 +360,7 @@ enters it.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,577 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 56,712 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 58,022 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,308 B | 36,000 B |
@@ -373,6 +373,16 @@ enters it.
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces
 them.
+
+**`skills/manager/phases/dispatch.md`'s ceiling went from 57,400 B to 58,500 B (#1567)** to hold the
+`respawned-for-cost` carve-out: the resume rule had priced only the fresh spawn, and a red lane at
+421,672 context was measured spending 15,558,821 tokens across 38 turns of follow-up. The addition
+was cut from 1,800 B to 1,310 B first, by merging three paragraphs into two and leaving the
+comparison lanes' figures in the issue. Weighed against cutting further, which would have taken
+either the measurement itself -- the only thing making the carve-out arguable rather than a
+preference -- or the #978 `SendMessage` paragraph beside it, a live trap two sub-manager spawns have
+already hit. This is the loop's largest phase file and is read on every tick that dispatches, so the
+raise is ~2.5% rather than the usual ~10%.
 
 - **A new subject earns a new phase file; a new paragraph in an existing one has to be paid for by a
   cut, or by a ceiling raised in the same diff with a sentence saying what was weighed.**
@@ -433,7 +443,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 32,621 B | 35,900 B |
+| `CLAUDE.md` | 34,266 B | 35,900 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.

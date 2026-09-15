@@ -284,7 +284,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # now spawns it, pastes what it renders, and no longer states the
     # select_issues.py/lane_setup.py call shapes or the fill-to-three
     # derivation inline. Ceiling unchanged; net shrink, 1120 B headroom.
-    "agents/sub-manager.md": (20680, 21800),
+    # Re-baselined for #1567: 20680 B became 21469 B -- the `respawned-for-cost`
+    # carve-out, which a tick decides at the moment a lane comes back red and so
+    # cannot be left only in the phase file it would have to go and read first.
+    # Budget unchanged; 331 B headroom.
+    "agents/sub-manager.md": (21469, 21800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
