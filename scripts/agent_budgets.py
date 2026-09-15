@@ -352,7 +352,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # own "Why this file exists" section for why that boundary is
     # deliberate. Budgeted from the day it was added, the same posture
     # #1414 and #1499 already take for a new file.
-    "agents/tick-dispatch.md": (6302, 6900),
+    # #1546: the documented `lane_setup.py --claim` call gained `--phrase`,
+    # `--subagent-type` and `--model`, plus three lines saying that without the
+    # first two it renders nothing at exit 0. 6302 B became 6696 B. Ceiling
+    # unchanged; 204 B headroom.
+    "agents/tick-dispatch.md": (6696, 6900),
 }
 
 
