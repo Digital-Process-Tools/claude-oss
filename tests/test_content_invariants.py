@@ -4344,12 +4344,19 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
     carry both flags (that is the whole point of #461), and if it does not, the
     substring test below is not measuring what it claims to.
 
-    `agents/sub-manager.md` is excluded from the claim/release pairing check
-    below (#1526) but not from the raw-assignee-flag check -- see
-    `_agent_definition_claim_findings`: it is the manager's own agent file,
-    not a worker the manager spawns, so it is held to the same
-    positive-control expectation as the manager skill itself, checked
-    separately just below.
+    `_MANAGER_ROLE_AGENTS` (`agents/sub-manager.md`, `agents/tick-dispatch.md`) is
+    excluded from the claim/release pairing check below (#1526, #1544) but not
+    from the raw-assignee-flag check -- see `_agent_definition_claim_findings`:
+    they are the manager's own agent files, not a worker the manager spawns, so
+    they are held to the same positive-control expectation as the manager skill
+    itself, checked separately just below.
+
+    #1544 moved the literal, executable `lane_setup.py <primary> --claim ...`
+    invocation out of `agents/sub-manager.md` into `agents/tick-dispatch.md` --
+    `sub-manager.md` now only mentions `--claim` in prose describing what
+    `tick-dispatch.md` runs. The positive control below checks
+    `agents/tick-dispatch.md`, the file that actually carries the executable
+    call today, rather than a substring that would still pass on prose alone.
     """
     manager_text = MANAGER_SKILL.read_text(encoding="utf-8")
     assert "--claim" in manager_text and "--release" in manager_text, (
@@ -4357,12 +4364,12 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
         "claim modes -- the negative check below over agents/*.md would then "
         "pass whether or not it is actually looking at anything (#461, #964)"
     )
-    sub_manager_text = (REPO_ROOT / "agents" / "sub-manager.md").read_text(
+    tick_dispatch_text = (REPO_ROOT / "agents" / "tick-dispatch.md").read_text(
         encoding="utf-8"
     )
-    assert "--claim" in sub_manager_text, (
-        "positive control failed: agents/sub-manager.md no longer carries the "
-        "literal lane_setup.py --claim call it was given for #1526 -- the "
+    assert "--claim" in tick_dispatch_text, (
+        "positive control failed: agents/tick-dispatch.md no longer carries the "
+        "literal lane_setup.py --claim call moved there for #1544 -- the "
         "exclusion below would then be excluding nothing"
     )
     for path in AGENTS:

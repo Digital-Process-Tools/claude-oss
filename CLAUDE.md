@@ -252,6 +252,7 @@ agents/triager.md           labels only; Bash and TodoWrite, nothing else
 agents/auditor.md           one diff, four classes, one verdict each; annotates, never blocks
 agents/release-auditor.md   the whole delta since the last tag, once per release; blocks
 agents/sub-manager.md       one tick, then dies with its context; never tags, never publishes
+agents/tick-dispatch.md     one tick's select+claim+dispatch-render step, then dies; spawned by sub-manager, renders the developer-lane Agent(...) call without making it
 agents/releaser.md          one release, fresh context; the only spawn holding tag-and-publish authority
 agents/scheduler-step.md    one /oss:run sub-step (setup scaffold install-audit triage curate changelog), then dies with its context
 agents/recon.md             read-only reconnaissance over one lane's issues before its brief is written; the lane starts from its summary
