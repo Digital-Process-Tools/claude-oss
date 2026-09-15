@@ -41,13 +41,6 @@ def _fetcher(issues):
     return fetch
 
 
-def _held():
-    def held_fetcher(repo_slug, worktree_root, exclude_issue=None, repo=None):
-        return {"state": "resolved", "held": {}, "detail": ""}
-
-    return held_fetcher
-
-
 def _no_op_checker(numbers, mode, run=None, repo=None):
     return [{"issue": n, "state": "unassigned", "assignees": []} for n in numbers]
 

@@ -61,13 +61,6 @@ def _fetcher(issues):
     return fetch
 
 
-def _held():
-    def held_fetcher(repo_slug, worktree_root, exclude_issue=None, repo=None):
-        return {"state": "resolved", "held": {}, "detail": ""}
-
-    return held_fetcher
-
-
 def _literal_resolve(repo, patterns):
     return {
         "patterns": [

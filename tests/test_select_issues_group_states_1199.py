@@ -61,10 +61,6 @@ def _no_op_checker(numbers, mode, run=None, repo=None):
     ]
 
 
-def _held(repo_slug, worktree_root, exclude_issue=None, repo=None):
-    return {"state": "resolved", "held": {}, "detail": ""}
-
-
 _LANE_OTHER_CONFIG = {
     "repo": "Digital-Process-Tools/claude-oss",
     "worktree_root": "/tmp/wt",

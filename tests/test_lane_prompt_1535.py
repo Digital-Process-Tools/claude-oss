@@ -277,24 +277,29 @@ def test_agent_call_carries_the_prompt_when_one_is_given():
 # ------------------------------------------------- compose_claim_label needs no brief file
 
 
-def _claim(tmp_path, primary, also):
+def _claim(primary, also):
+    """#1532: this called `claim_and_register`, which wrote the GitHub assignee
+    AND registered the lane in a local registry under a `tmp_path`-rooted
+    worktree root. The registry is retired, so claiming is the assignee write
+    alone and there is no path to root it at -- hence no `tmp_path` parameter.
+
+    Every caller below is about `compose_claim_label`, never about the
+    registry, so each test's own subject survives this unchanged: the claim is
+    scaffolding that produces a `claim_result` for the label to be composed
+    from, and `claim_issues` produces the same `{"state", "assignee"}` shape
+    `compose_claim_label` reads.
+    """
+
     def checker(numbers, mode, repo=None):
         if mode == "claim":
             return [{"issue": n, "state": claim_read.STATE_CLAIMED} for n in numbers]
         return [{"issue": n, "state": claim_read.STATE_RELEASED} for n in numbers]
 
-    return lane_setup_claim.claim_and_register(
-        str(tmp_path / "registry"),
-        primary,
-        "fix/{0}".format(primary),
-        str(tmp_path / "wt"),
-        also_claim=also,
-        checker=checker,
-    )
+    return lane_setup_claim.claim_issues(primary, also_claim=also, checker=checker)
 
 
 def test_a_claim_renders_the_whole_call_with_no_brief_file_at_all(tmp_path):
-    result = _claim(tmp_path, 1526, [1528])
+    result = _claim(1526, [1528])
     label = lane_setup.compose_claim_label(
         {"issue": 1526, "claim_result": result},
         "phrase",
@@ -311,7 +316,7 @@ def test_an_appended_brief_carrying_a_placeholder_still_refuses(tmp_path):
     because the dispatcher composes most of the prompt itself."""
     path = tmp_path / "extra.md"
     path.write_text("{{PASTE THE RECON SUMMARY HERE}}", encoding="utf-8")
-    result = _claim(tmp_path, 1526, [1528])
+    result = _claim(1526, [1528])
     label = lane_setup.compose_claim_label(
         {"issue": 1526, "claim_result": result},
         "phrase",
@@ -324,7 +329,7 @@ def test_an_appended_brief_carrying_a_placeholder_still_refuses(tmp_path):
 
 
 def test_an_underivable_worktree_refuses_the_call(tmp_path):
-    result = _claim(tmp_path, 1526, [1528])
+    result = _claim(1526, [1528])
     label = lane_setup.compose_claim_label(
         {"issue": 1526, "claim_result": result},
         "phrase",
@@ -351,7 +356,7 @@ def test_an_underivable_worktree_still_refuses_when_context_is_appended(tmp_path
         "Recon: the guard lives in scripts/lane_setup.py, read/write path.",
         encoding="utf-8",
     )
-    result = _claim(tmp_path, 1526, [1528])
+    result = _claim(1526, [1528])
     label = lane_setup.compose_claim_label(
         {"issue": 1526, "claim_result": result},
         "phrase",
