@@ -221,6 +221,61 @@ def test_trap_field_never_renders_zero_for_an_unreadable_directory(tmp_path):
     assert "trap 0" not in field
 
 
+# ------------------------------------------------------------------- outbound
+
+
+def test_outbound_count_only_counts_pending_drafts(tmp_path):
+    """Mirrors `test_trap_count_excludes_the_gitkeep_placeholder` for the
+    identical reason (#1395): the README this directory is scaffolded with,
+    and any draft not in the `pending` state, must not inflate the count a
+    tick actually needs to act on."""
+    out_dir = tmp_path / "outbound"
+    out_dir.mkdir()
+    (out_dir / "README.md").write_text("owned by the plugin", encoding="utf-8")
+    (out_dir / "1.pending.a.md").write_text("draft", encoding="utf-8")
+    (out_dir / "2.pending.b.md").write_text("draft", encoding="utf-8")
+    (out_dir / "3.sent.c.md").write_text("draft", encoding="utf-8")
+    (out_dir / "4.dropped.d.md").write_text("draft", encoding="utf-8")
+    assert statusline._outbound_count(tmp_path) == 2
+
+
+def test_outbound_count_is_a_real_zero_when_only_readme_is_present(tmp_path):
+    """The must-fire control for the case below: a directory that could not be
+    listed and a directory holding nothing but its owned README must not
+    render alike."""
+    out_dir = tmp_path / "outbound"
+    out_dir.mkdir()
+    (out_dir / "README.md").write_text("owned by the plugin", encoding="utf-8")
+    assert statusline._outbound_count(tmp_path) == 0
+
+
+def test_outbound_count_is_a_real_zero_when_the_directory_is_missing(tmp_path):
+    """Same split `outbound_draft.waiting()` already makes one script over:
+    nobody has drafted anything here, a real, measured `0` -- not the same
+    absence as a directory that exists but could not be listed (the
+    must-fire control right below)."""
+    assert statusline._outbound_count(tmp_path) == 0
+    assert statusline._outbound_field(statusline._outbound_count(tmp_path)) == "out 0"
+
+
+def test_outbound_field_never_renders_zero_for_an_unreadable_directory(tmp_path):
+    """The must-not-fire half, asserted directly against the rendered field: a
+    directory that could not be listed prints `?`, never the digit `0` --
+    distinct from a directory that is simply absent (real zero, tested
+    above)."""
+    unreadable = tmp_path / "outbound"
+    unreadable.write_text("not a directory", encoding="utf-8")
+    count = statusline._outbound_count(tmp_path)
+    assert count is None
+    field = statusline._outbound_field(count)
+    assert field == "out ?"
+    assert "out 0" not in field
+
+
+def test_outbound_field_renders_a_real_count():
+    assert statusline._outbound_field(3) == "out 3"
+
+
 # ------------------------------------------------------------------ plugin currency
 
 
@@ -459,6 +514,10 @@ def _facts(**overrides):
         },
         "release": {"since": 4, "typical": 17},
         "traps": 2,
+        # #1395: render() reads facts.get("outbound") the same way it reads
+        # facts.get("traps") immediately above, so it needs the same fixture
+        # entry for the identical reason -- see the #613 comment below.
+        "outbound": 2,
         "last": "23:47",
         "plugins": [
             ("oss", {"state": "current", "installed": "0.10.0", "latest": "0.10.0"}),

@@ -41,6 +41,10 @@ MODULES = [
     "doctor_check_mcp_channel_connection",
     "doctor_check_mcp_channel_registration",
     "doctor_check_channel_health_agreement",
+    # #1519: landed after #1512 with the identical shape (module-scope
+    # `import doctor`), caught only by manually reproducing this test's own
+    # standalone-import technique against it, not by this list.
+    "doctor_check_action_pins",
 ]
 
 

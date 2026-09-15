@@ -127,16 +127,17 @@ that already sets `statusLine`, or whose settings file cannot be read, gets no p
 there is nothing pending to show. `--apply`'s own receipt names it the same way, `extended` beside
 `created` and `ours`.
 
-`.oss/statusline.py` and `trap.d/README.md` are the two owned files **not** gated on the
-changelog-gate detection. That gate answers one question — does a changelog gate already run here
-under another name — and it is not an answer about a status line or about `trap.d/`.
+`.oss/statusline.py`, `trap.d/README.md` and `outbound/README.md` (#1395) are the three owned files
+**not** gated on the changelog-gate detection. That gate answers one question — does a changelog gate
+already run here under another name — and it is not an answer about a status line, about `trap.d/`,
+or about `outbound/`.
 
-The first eleven are created once when absent and are yours afterwards. The last five are ours and
+The first eleven are created once when absent and are yours afterwards. The last six are ours and
 are rewritten on every `--apply`, which is why `--show` prints them as `replace` even in a repo that
-already has everything. Two of the five live *outside* `.oss/`: the workflow (below) and
-`trap.d/README.md` (#1302), because `.oss/` is a directory this plugin owns outright and `trap.d/`
-is not — the directory itself is created once, like the first eleven, and every fragment written
-into it is the repo's own, never touched.
+already has everything. Three of the six live *outside* `.oss/`: the workflow (below),
+`trap.d/README.md` (#1302) and `outbound/README.md` (#1395), because `.oss/` is a directory this
+plugin owns outright and neither `trap.d/` nor `outbound/` is — each directory itself is created
+once, like the first eleven, and every fragment written into it is the repo's own, never touched.
 
 ## `.supertool.json` moves the ground you are standing on
 
