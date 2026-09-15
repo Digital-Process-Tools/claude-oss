@@ -317,7 +317,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # review cycle bought for nothing. Weighed against leaving it: this file
     # grew 1,618 B across #1544's three rounds and has no further growth
     # planned, so 602 B is roughly one more paragraph, not a licence.
-    "agents/sub-manager.md": (22298, 22900),
+    # That tripwire fired, exactly as intended, on #1544 steps 3-4: 22298 B
+    # became 24111 B -- the CI-wait shape's step 2 now names `oss:tick-merge`
+    # for a `ready-to-merge` decision, and "Report back" now spawns
+    # `oss:tick-accounting` to compose and validate the tick's own handback
+    # draft before this file pastes it. Nothing already here argued for
+    # cutting either addition: the merge authority reasoning and the "it
+    # cannot send the message for you" limit are both load-bearing findings
+    # this diff had to state, not restatable-shorter prose. Ceiling moves to
+    # 24700 B, ~590 B headroom -- the same tripwire posture as before, not a
+    # wider budget.
+    "agents/sub-manager.md": (24111, 24700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -437,6 +447,20 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # for the whole of that wait. Nothing here argued for cutting length to
     # avoid stating a real cost. Ceiling moves to 11200 B, ~5% headroom.
     "agents/tick-review.md": (10697, 11200),
+    # #1544 steps 3-4: two new files. `oss:sub-manager` used to merge on green
+    # and assemble its own state-file entry and `TICK:` handback inline, in
+    # the same long-lived context that dispatch and review had already been
+    # carved out of. `agents/tick-merge.md` holds the confirm-gated merge and
+    # its post-merge obligations (`skills/manager/phases/merge.md`, >15,000 B)
+    # for one pull request named `ready-to-merge`; `agents/tick-accounting.md`
+    # runs the tick's `oss_state.py --decision` call and the cohort/intake/
+    # plugin-identity derivations that feed it, and drafts the validated
+    # `TICK:` block -- it cannot send that block, since `tick_handback.py`
+    # classifies only the sub-manager's own final message, so the sub-manager
+    # still pastes what it drafts. Budgeted from the day each was added, the
+    # same posture #1414, #1499 and #1544 steps 1-2 already take.
+    "agents/tick-merge.md": (5905, 6300),
+    "agents/tick-accounting.md": (7219, 7700),
 }
 
 

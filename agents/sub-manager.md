@@ -218,10 +218,15 @@ moment the only thing left this tick looks like "wait on CI, then review":
    report-for-filing/below-bar routing** -- filing an issue, commenting on one, or writing a
    below-bar line into the pull request body is `oss:tick-review`'s to do, not yours to redo, in
    its own throwaway context. Read its report: `REVIEW: reviewed` names a decision per pull
-   request -- merge on green (`skills/manager/phases/merge.md`) or resume the lane per "One
-   dispatch per tick" above for `needs-fix` -- inline, unsplit (#1544's steps 3-4 are not this
-   diff). `REVIEW: pending` falls through to step 3 with its observable line, verbatim;
-   `REVIEW: could-not-run` folds into step 3 the same way any other unreadable input would.
+   request. For `ready-to-merge`, **spawn `oss:tick-merge` (#1544 step 3)** with that pull
+   request number and nothing else -- it inherits your marker exactly as `oss:tick-review` does
+   (merge is not withheld from `sub-manager` by `scripts/agent_role.py`, only publish is, so no
+   narrower reading applies), follows `skills/manager/phases/merge.md` in full, and reports
+   `MERGE: merged` / `MERGE: not-merged` / `MERGE: could-not-run` -- read that report rather than
+   re-running any of it yourself. For `needs-fix`, resume the lane per "One dispatch per tick"
+   above. `REVIEW: pending` falls through to step 3 with its observable line, verbatim;
+   `REVIEW: could-not-run` folds into step 3 the same way any other unreadable input would, and so
+   does a `MERGE: could-not-run`.
 3. **Else hand back** -- because nothing was dispatchable, something must stay reachable mid-wait,
    or step 2's own spawn came back still `pending`. You have no `ScheduleWakeup` and cannot
    receive channel events, so hand back rather than polling yourself or blocking your own turn on
@@ -263,9 +268,24 @@ holds one physical line; anything past the first newline is not part of it). `ti
 never lets it block classification: a `measured`, `ambiguous` or `no-match` result is equally fine
 to include, and omitting the line entirely is fine too.
 
+**Compose the draft via `oss:tick-accounting` instead of assembling it yourself (#1544 step 4).**
+Spawn it once this tick's dispatch, review and merge steps are done, naming in its prompt every fact
+it needs and does not re-derive: the lane fills and short-reasons, each lane's dispatch state, each
+pull request's review decision and merge outcome, any cleanup overrides, any pending wait, and your
+spawn token if you have one for a `COST:` line. It runs this tick's own `oss_state.py --decision`
+call and the cohort/intake/plugin-identity derivations that feed it, then hands back
+`ACCOUNTING: drafted` with an already-validated `TICK:` block, or `ACCOUNTING: could-not-run` naming
+what it could not read. **It cannot send that block for you** -- `tick_handback.py` classifies only
+your own final message, and nothing here has established that a notification for a spawn it made
+would ever reach the scheduler in your place, the same one-hop rule `agents/tick-dispatch.md` states
+for its own render. Paste what it drafted as your own final message, verbatim, the same way you
+already paste `oss:tick-dispatch`'s rendered `Agent(...)` calls. On `ACCOUNTING: could-not-run`,
+compose and validate the handback yourself with the shapes above and `tick-order.md` step 6's own
+`oss_state.py --decision` call, exactly as before this file existed.
+
 **Validate your own draft before you send it (#1048).** Remembering the rule under pressure is not
 the fix; checking the draft is. Before ending your turn with any final message meant as a handback,
-run it through the same tool the scheduler will:
+run it through the same tool the scheduler will, whether you or `oss:tick-accounting` drafted it:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - <<'MSG'

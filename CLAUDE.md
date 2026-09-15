@@ -253,6 +253,9 @@ agents/auditor.md           one diff, four classes, one verdict each; annotates,
 agents/release-auditor.md   the whole delta since the last tag, once per release; blocks
 agents/sub-manager.md       one tick, then dies with its context; never tags, never publishes
 agents/tick-dispatch.md     one tick's select+claim+dispatch-render step, then dies; spawned by sub-manager, renders the developer-lane Agent(...) call without making it
+agents/tick-review.md       one tick's wait+review step, then dies; spawned by sub-manager once its own dispatch opened a pull request
+agents/tick-merge.md        one tick's merge step for one pull request, then dies; spawned by sub-manager on a ready-to-merge review decision
+agents/tick-accounting.md   one tick's state-file write + handback draft, then dies; sub-manager still sends the draft as its own final message
 agents/releaser.md          one release, fresh context; the only spawn holding tag-and-publish authority
 agents/scheduler-step.md    one /oss:run sub-step (setup scaffold install-audit triage curate changelog), then dies with its context
 agents/recon.md             read-only reconnaissance over one lane's issues before its brief is written; the lane starts from its summary
@@ -293,13 +296,15 @@ when a file crosses it.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 22,298 B | 22,900 B |
+| `agents/sub-manager.md` | 24,111 B | 24,700 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 4,350 B | 4,400 B |
 | `agents/tick-dispatch.md` | 6,696 B | 6,900 B |
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
+| `agents/tick-merge.md` | 5,905 B | 6,300 B |
+| `agents/tick-accounting.md` | 7,219 B | 7,700 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
@@ -334,6 +339,20 @@ spawn's three report states mean for this file's own decision. Weighed against t
 leaving `ci-green.md`'s wait procedure and `review.md`'s own >24,000 B checklist landing in this
 file's own context for the rest of every tick that reaches this shape, which is the saving #1544
 exists to produce -- a new agent, `agents/tick-review.md`, holds that cost instead.
+
+**`agents/sub-manager.md`'s ceiling went from 22,900 B to 24,700 B (#1544 steps 3-4)**, past a
+tripwire deliberately left at 2 B headroom. The CI-wait shape's step 2 now names `oss:tick-merge`
+for a `ready-to-merge` review decision instead of merging inline, and the report-back section now
+spawns `oss:tick-accounting` to run the tick's state-file write and draft its own `TICK:` handback,
+already validated, for this file to paste. Two findings had to be stated rather than assumed, and
+neither compresses: merge authority is not narrowed by the split (`scripts/agent_role.py` withholds
+publishing only, so a spawn inheriting the marker merges with the same authority its caller always
+had), and `oss:tick-accounting` cannot itself end the tick -- `tick_handback.py` classifies only the
+sub-manager's own final message, so the accounting spawn drafts and this file still sends. Weighed
+against leaving both inline: the alternative keeps `skills/manager/phases/merge.md` (>15,000 B) and
+the tick's cohort/intake/plugin-identity/state-file calls landing in this file's own context for the
+rest of every tick, which is the same saving #1544's earlier steps already produce for dispatch and
+review.
 
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
@@ -452,7 +471,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 34,266 B | 35,900 B |
+| `CLAUDE.md` | 36,705 B | 37,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.

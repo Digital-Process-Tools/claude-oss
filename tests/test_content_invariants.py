@@ -4287,9 +4287,16 @@ def test_handback_releases_a_lane_that_returned_no_commit():
 #: `oss:sub-manager`'s own select+claim+dispatch-render step, spawned by the
 #: manager and holding the manager's own claim authority, moved into a
 #: throwaway context rather than into a worker the manager spawns.
+#: `agents/tick-merge.md` (#1544 step 3) joins it too: it documents
+#: `lane_setup.py <issue> --release` for the post-merge assignee release,
+#: which is the manager's own merge authority moved into a throwaway context,
+#: not a worker call. `agents/tick-review.md` and `agents/tick-accounting.md`
+#: are deliberately absent -- neither documents a `lane_setup.py` call paired
+#: with either flag, so neither trips the check this set exists to exempt.
 _MANAGER_ROLE_AGENTS = {
     REPO_ROOT / "agents" / "sub-manager.md",
     REPO_ROOT / "agents" / "tick-dispatch.md",
+    REPO_ROOT / "agents" / "tick-merge.md",
 }
 
 
