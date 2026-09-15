@@ -283,18 +283,28 @@ __pycache__/
 # supertool's own `{python}`/`{supertool_dir}` placeholder syntax in the
 # validators block below, and `.format()` would try to resolve those too.
 #
-# `validators`: three defaults, chosen for being safe on any machine rather than
-# for coverage (#633 half one -- every scaffolded repo got none at all).
-# `jsonlint` is stdlib-only, `tomllint` degrades to `skipped` rather than a
-# false `ok` when tomllib/tomli is unavailable (supertool #1157), and
-# `bash-check` only needs a `bash` on PATH. Nothing here needs an external
-# binary install (shellcheck, actionlint, markdownlint, gitleaks all do): half
-# two of #633 -- `/oss:doctor` reporting a configured-but-absent toolchain --
-# does not exist yet, and an unreported "could not tell" on every write in
-# somebody else's repo is worse than no validator at all. Python itself needs
-# no entry: `py-syntax` is supertool's built-in syntax backstop and applies
-# with zero configuration, to every `.py` file, whether or not this file names
-# it.
+# `validators`: four defaults. Three -- `jsonlint`, `tomllint`, `bash-check` --
+# were chosen for being safe on any machine (#633 half one -- every scaffolded
+# repo got none at all): `jsonlint` is stdlib-only, `tomllint` degrades to
+# `skipped` rather than a false `ok` when tomllib/tomli is unavailable
+# (supertool #1157), and `bash-check` only needs a `bash` on PATH.
+#
+# `markdownlint` joined in #1578. It needs an external binary install, which
+# is why it was excluded when this comment still named #633 half two as
+# missing: `/oss:doctor` had no way to tell a repo whether a configured
+# validator resolved on its machine, and an unreported "could not tell" on
+# every write is worse than no validator at all. #1577 shipped that half --
+# `doctor_check_supertool_validators.py` folds `supertool doctor:probe`'s own
+# resolves/absent/could-not-tell counts into `/oss:doctor` -- so a scaffolded
+# repo is now told, not left to find out by reading a stale-looking write.
+# `rollback_on_fail` is `false` here, unlike the other three: markdownlint can
+# be absent or unable to run at all, and undoing a write over a toolchain gap
+# is a worse failure than reporting one, the same posture this repository
+# uses for its own copy (`.supertool.json`).
+#
+# Python itself needs no entry: `py-syntax` is supertool's built-in syntax
+# backstop and applies with zero configuration, to every `.py` file, whether
+# or not this file names it.
 SUPERTOOL_JSON = """{
   "presets": ["git", "github", "watch"],
   "validators": {
@@ -318,6 +328,13 @@ SUPERTOOL_JSON = """{
       "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
       "rollback_on_fail": true,
       "timeout": 10
+    },
+    "markdownlint": {
+      "cmd": "{python} {supertool_dir}/validators/markdownlint/markdownlint.py {file}",
+      "match": "*.md",
+      "hooks_into": ["edit", "replace", "replace_lines", "paste", "append", "vim"],
+      "rollback_on_fail": false,
+      "timeout": 15
     }
   },
   "ops": {
@@ -863,6 +880,28 @@ def _render_contributing_md(config):
     )
 
 
+# The rule config for the `markdownlint` validator above. `defaults`-tier: a
+# repository's own lint configuration is a decision somebody made, so this is
+# created once when absent and never replaced (#1578).
+#
+# `MD013` (line length) is disabled outright rather than set to a number.
+# This repository's own `.markdownlint.json` uses 100, but that value is
+# derived from this repository's own corpus (#1576) and is not a fact about
+# any repository this plugin scaffolds -- the governing rule against a
+# hardcoded per-repo fact applies here as much as anywhere else. Shipping a
+# validator with no rule config at all is worse than shipping this one:
+# #1576 measured the stock MD013 default flagging 587 of 1,479 lines of this
+# plugin's own markdown, and a scaffolded repo would open on the same result
+# against markdown it had not yet had a chance to reformat. Everything else
+# stays on `default: true` -- the structural rules (heading order, link
+# syntax) catch real breakage; the line-length default is the one stylistic
+# rule known in advance to misfit an arbitrary repository.
+MARKDOWNLINT_JSON = """{
+  "default": true,
+  "MD013": false
+}
+"""
+
 # path -> a callable taking the config and returning the file body.
 TEMPLATES = {
     "CLAUDE.md": _render_claude_md,
@@ -876,6 +915,7 @@ TEMPLATES = {
     ".github/dependabot.yml": lambda config: DEPENDABOT_YML,
     ".gitignore": lambda config: GITIGNORE,
     ".supertool.json": _render_supertool_json,
+    ".markdownlint.json": lambda config: MARKDOWNLINT_JSON,
     # No rules seed here. The rules plugin ships its own examples, one per dimension,
     # and its README documents the frontmatter for each. A copy of that teaching in
     # this repo is a second copy to keep in step -- which is the drift this plugin

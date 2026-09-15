@@ -358,23 +358,57 @@ def test_rendering_supertool_json_refuses_an_invalid_repo_682():
 def test_the_shipped_config_declares_defensible_default_validators_633(tmp_path):
     """#633 half one: no scaffolded repo gets a single configured validator today,
     so every write in a managed repo runs with no post-write check and no
-    rollback. The three shipped here are chosen for being safe on any machine:
-    jsonlint is stdlib-only, tomllint degrades to 'skipped' rather than a false
-    'ok' when tomllib/tomli is unavailable, and bash-check only needs a bash on
-    PATH. Nothing needing an external binary install (shellcheck, actionlint,
-    markdownlint, gitleaks) ships as a default -- half two of #633 (doctor
-    reporting a configured-but-absent toolchain) does not exist yet, and an
-    unreported 'could not tell' on every write is worse than no validator at all.
-    Python itself needs no entry: py-syntax is supertool's built-in backstop and
-    applies with zero configuration.
+    rollback. jsonlint is stdlib-only, tomllint degrades to 'skipped' rather than
+    a false 'ok' when tomllib/tomli is unavailable, and bash-check only needs a
+    bash on PATH. Python itself needs no entry: py-syntax is supertool's built-in
+    backstop and applies with zero configuration.
+
+    markdownlint joined this set in #1578, once #633 half two -- doctor.py
+    reporting a configured-but-absent toolchain -- shipped in #1577. It needs an
+    external binary install where the other three do not, so it ships with
+    rollback_on_fail=false (report, never undo, per this repository's own
+    posture at .supertool.json) rather than the true the other three carry.
     """
     scaffold.apply(tmp_path, _config())
     written = json.loads((tmp_path / ".supertool.json").read_text(encoding="utf-8"))
     validators = written.get("validators")
-    assert validators and set(validators) == {"jsonlint", "tomllint", "bash-check"}
+    assert validators and set(validators) == {
+        "jsonlint",
+        "tomllint",
+        "bash-check",
+        "markdownlint",
+    }
     assert validators["jsonlint"]["match"] == "*.json"
     assert validators["tomllint"]["match"] == "*.toml"
     assert validators["bash-check"]["match"] == "*.sh"
+    assert validators["markdownlint"]["match"] == "*.md"
+    assert validators["markdownlint"]["rollback_on_fail"] is False
+
+
+def test_markdownlint_rule_config_is_written_once_and_never_replaced(tmp_path):
+    """#1578: shipping the markdownlint validator with no rule config leaves a
+    scaffolded repo running stock defaults that misfit it on day one -- #1576
+    measured 587 of 1,479 lines of this plugin's own markdown over the stock
+    MD013 line-length default. The scaffolded default disables MD013 entirely
+    rather than guessing a number, since no line-length fits every repository
+    (#1578's own 'Not established' section) and this repository's own 100 is
+    derived from its own corpus, not a fact about anybody else's.
+
+    It is a `defaults`-tier file: created once when absent, then a decision
+    somebody made, never replaced.
+    """
+    created = scaffold.apply(tmp_path, _config())["created"]
+    assert ".markdownlint.json" in created
+    written = json.loads((tmp_path / ".markdownlint.json").read_text(encoding="utf-8"))
+    assert written == {"default": True, "MD013": False}
+
+    (tmp_path / ".markdownlint.json").write_text('{"mine": true}\n', encoding="utf-8")
+    result = scaffold.apply(tmp_path, _config())
+    assert ".markdownlint.json" not in result["created"]
+    assert ".markdownlint.json" not in result["replaced"]
+    assert (tmp_path / ".markdownlint.json").read_text(
+        encoding="utf-8"
+    ) == '{"mine": true}\n'
 
 
 def test_an_existing_supertool_config_is_never_replaced(tmp_path):
