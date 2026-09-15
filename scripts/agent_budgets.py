@@ -101,7 +101,20 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # motivates the first of them. A lane pays this file on every turn, so the
     # raise is real cost; it is smaller than one extra review round over a lane
     # that paged a large file believing it had read it. 512 B headroom.
-    "agents/developer.md": (44788, 45300),
+    # Raised for #1518: 44788 B became 45460 B, 160 B over the 45300 B
+    # ceiling. A lane that hits the harness's own auto-mode Bash classifier
+    # going down mid-call used to end its turn on a bare "waiting" sentence
+    # with no report path -- observed costing a sub-manager one SendMessage
+    # resume plus ~45s of in-lane waiting -- so the retry-then-handback rule
+    # belongs in the spine: the classifier can refuse any Bash call at any
+    # point in a lane's life, not only inside one of the three late phases,
+    # so a phase file was not the right home for it. Weighed against cutting
+    # something else to pay for it: nothing else in this section argues a
+    # weaker case today, so the ceiling moves instead, to 46000 B, ~1.2%
+    # headroom -- narrower than the ~10% convention because this file is
+    # already the largest single turn-1 cost in the loop (#491's own
+    # measurement) and a wider ceiling would only be spent again.
+    "agents/developer.md": (45460, 46000),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each

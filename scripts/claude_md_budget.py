@@ -38,7 +38,13 @@ from pathlib import Path
 # repo-relative path -> (bytes measured when the budget was set, budget
 # bytes incl. ~10% headroom), same convention as agent_budgets.BUDGETS.
 BUDGETS: dict[str, tuple[int, int]] = {
-    "CLAUDE.md": (32621, 35900),
+    # Re-baselined for #1518/#1520: 32621 B became 33419 B -- this branch's
+    # own table-row updates to agents/developer.md's and dispatch.md's
+    # budget-table entries (scripts/agent_budgets.py, scripts/skill_phases.py)
+    # landed on top of #1556's declared baseline, which #1556 could not have
+    # seen since it merged first. Budget unchanged; comfortably under the
+    # 35900 B ceiling.
+    "CLAUDE.md": (33419, 35900),
 }
 
 
