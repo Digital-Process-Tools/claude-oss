@@ -57,7 +57,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # diff's own agent/skill files moved (agents/sub-manager.md,
     # agents/tick-review.md, skills/manager/SKILL.md) plus their own
     # narrative sentences. Budget unchanged; comfortably under the ceiling.
-    "CLAUDE.md": (34987, 35900),
+    # Re-baselined for #1544 steps 3-4: 34987 B became 36705 B, past the
+    # 35900 B ceiling -- two new agent-budget rows (agents/tick-merge.md,
+    # agents/tick-accounting.md), sub-manager.md's own row and ceiling
+    # raised again, three new Layout lines (tick-review.md was already
+    # missing from that block; tick-merge.md and tick-accounting.md are
+    # new), all under the third editing exception. Ceiling moves to
+    # 37500 B, ~2% headroom.
+    "CLAUDE.md": (36705, 37500),
 }
 
 

@@ -277,6 +277,14 @@ def test_classify_prefers_the_declared_attribution_agent_over_prompt_sniffing():
         lcr.classify(prompt, subagent=True, attribution_agent="oss:tick-review")
         == "tick-review"
     )
+    assert (
+        lcr.classify(prompt, subagent=True, attribution_agent="oss:tick-merge")
+        == "tick-merge"
+    )
+    assert (
+        lcr.classify(prompt, subagent=True, attribution_agent="oss:tick-accounting")
+        == "tick-accounting"
+    )
     # An attribution that names a real agent this repo spawns but that has no
     # dedicated row (Explore, general-purpose, oss:triager, oss:recon,
     # oss:doctor, claude-code-guide, a forked session) reads "other" -- never

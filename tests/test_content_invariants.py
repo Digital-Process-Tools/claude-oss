@@ -4287,9 +4287,16 @@ def test_handback_releases_a_lane_that_returned_no_commit():
 #: `oss:sub-manager`'s own select+claim+dispatch-render step, spawned by the
 #: manager and holding the manager's own claim authority, moved into a
 #: throwaway context rather than into a worker the manager spawns.
+#: `agents/tick-merge.md` (#1544 step 3) joins it too: it documents
+#: `lane_setup.py <issue> --release` for the post-merge assignee release,
+#: which is the manager's own merge authority moved into a throwaway context,
+#: not a worker call. `agents/tick-review.md` and `agents/tick-accounting.md`
+#: are deliberately absent -- neither documents a `lane_setup.py` call paired
+#: with either flag, so neither trips the check this set exists to exempt.
 _MANAGER_ROLE_AGENTS = {
     REPO_ROOT / "agents" / "sub-manager.md",
     REPO_ROOT / "agents" / "tick-dispatch.md",
+    REPO_ROOT / "agents" / "tick-merge.md",
 }
 
 
@@ -4344,9 +4351,10 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
     carry both flags (that is the whole point of #461), and if it does not, the
     substring test below is not measuring what it claims to.
 
-    `_MANAGER_ROLE_AGENTS` (`agents/sub-manager.md`, `agents/tick-dispatch.md`) is
-    excluded from the claim/release pairing check below (#1526, #1544) but not
-    from the raw-assignee-flag check -- see `_agent_definition_claim_findings`:
+    `_MANAGER_ROLE_AGENTS` (`agents/sub-manager.md`, `agents/tick-dispatch.md`,
+    `agents/tick-merge.md`) is excluded from the claim/release pairing check
+    below (#1526, #1544) but not from the raw-assignee-flag check -- see
+    `_agent_definition_claim_findings`:
     they are the manager's own agent files, not a worker the manager spawns, so
     they are held to the same positive-control expectation as the manager skill
     itself, checked separately just below.

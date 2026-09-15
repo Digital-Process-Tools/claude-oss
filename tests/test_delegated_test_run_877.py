@@ -70,12 +70,21 @@ ALREADY_COVERED_ELSEWHERE = {"developer.md"}
 #: `lane_setup.py --claim`, never `test_command`, and its own job description
 #: forbids calling `Agent` at all -- there is no test suite and no delegated
 #: agent verdict in its scope for a rule to bind.
+#:
+#: `tick-merge.md` and `tick-accounting.md` (#1544 steps 3-4) join it for the
+#: same reason: neither grants `Agent`, so neither can ask a spawned agent for
+#: a verdict, and neither runs or reasons about `test_command` -- `tick-merge.md`
+#: reads CI's already-settled state (`gh-pr-merge`, `gh-branch`) rather than
+#: waiting on or reproducing it, and `tick-accounting.md` only writes the
+#: state file and drafts a handback.
 NO_TEST_CONCERN = {
     "triager.md",
     "scheduler-step.md",
     "doctor.md",
     "recon.md",
     "tick-dispatch.md",
+    "tick-merge.md",
+    "tick-accounting.md",
 }
 
 #: filename -> the marker that must survive in the file, verbatim.

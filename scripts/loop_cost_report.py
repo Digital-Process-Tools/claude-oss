@@ -23,7 +23,9 @@ the `subagent_type` Claude Code itself records on every record of a spawned
 agent's own transcript, present from spawn time and never guessed at. Known
 values map directly: `oss:sub-manager` -> `sub-manager`, `oss:releaser` ->
 `releaser`, `oss:scheduler-step` -> `scheduler-step`, `oss:tick-dispatch` ->
-`tick-dispatch`, `oss:tick-review` -> `tick-review` (#1544 step 2), `oss:developer` -> `developer`,
+`tick-dispatch`, `oss:tick-review` -> `tick-review` (#1544 step 2),
+`oss:tick-merge` -> `tick-merge`, `oss:tick-accounting` -> `tick-accounting`
+(#1544 steps 3-4), `oss:developer` -> `developer`,
 `oss:auditor`/`oss:release-auditor` -> `audit-review`; any other
 declared agent (`Explore`, `general-purpose`, `oss:triager`, `oss:recon`,
 `oss:doctor`, `claude-code-guide`, a forked session, ...) -> `other`, visible
@@ -81,6 +83,8 @@ KINDS = (
     "scheduler-step",
     "tick-dispatch",
     "tick-review",
+    "tick-merge",
+    "tick-accounting",
     "developer",
     "audit-review",
     "other",
@@ -108,6 +112,8 @@ ATTRIBUTION_MAP = {
     "oss:scheduler-step": "scheduler-step",
     "oss:tick-dispatch": "tick-dispatch",
     "oss:tick-review": "tick-review",
+    "oss:tick-merge": "tick-merge",
+    "oss:tick-accounting": "tick-accounting",
     "oss:developer": "developer",
     "oss:auditor": "audit-review",
     "oss:release-auditor": "audit-review",
