@@ -109,6 +109,7 @@ The full list, so a plan line is never the first time you hear of a file:
 | `.github/dependabot.yml` | weekly action bumps |
 | `.gitignore` | the usual noise |
 | `.supertool.json` | **changes your own tooling mid-session — see below** |
+| `.markdownlint.json` | the markdownlint validator's rule config -- `default: true`, `MD013` (line length) off, since no one number fits every repo (#1578) |
 | `.oss/README.md` | the ownership table, stated inside the repo — **replaced every run** |
 | `.oss/assemble_changelog.py` | the assembler CI calls — **replaced every run** |
 | `.oss/statusline.py` | the status line: board, unlabelled-issue counts, trap.d backlog, plugin currency — **replaced every run** |
