@@ -63,6 +63,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -161,6 +162,54 @@ def _current_branch(repo_root, run=subprocess.run, git_bin=None, timeout=10):
     return branch, None
 
 
+def _fetch_head_age_seconds(repo_root, run=subprocess.run, git_bin=None, timeout=15):
+    """Seconds since this checkout's `FETCH_HEAD` was last written, or
+    `None` when that cannot be told (`git` could not resolve a git
+    directory here, or no `git fetch` has ever run in this checkout, so
+    `FETCH_HEAD` does not exist yet). `git fetch` writes `FETCH_HEAD` on
+    every run, whether or not any ref actually moved -- unlike a
+    remote-tracking ref itself, which git only rewrites when its value
+    changes -- so this is "how long since this checkout last even asked
+    the remote", which is the freshness question #1522 names, not "how
+    long since origin/<default_branch> last moved"."""
+    command = [git_bin or "git", "-C", str(repo_root), "rev-parse", "--git-dir"]
+    try:
+        done = run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if done.returncode != 0:
+        return None
+    raw = _decode(done.stdout).strip()
+    if not raw:
+        return None
+    git_dir = Path(raw)
+    if not git_dir.is_absolute():
+        git_dir = Path(repo_root) / git_dir
+    try:
+        mtime = (git_dir / "FETCH_HEAD").stat().st_mtime
+    except OSError:
+        return None
+    return max(0, int(time.time() - mtime))
+
+
+def _with_fetch_freshness(why, repo_root, run, git_bin):
+    """Append a freshness note to an `origin/<default_branch>` reading's
+    own `why` (#1522): the reading is only as fresh as this checkout's
+    last `git fetch`, and nothing on this path fetches, so a caller
+    comparing two readings taken minutes apart has no way to tell a
+    genuinely fresh one from a stale one without this."""
+    age = _fetch_head_age_seconds(repo_root, run=run, git_bin=git_bin)
+    if age is None:
+        return (
+            "{0} (no fetch recorded in this checkout, so freshness is unknown)".format(
+                why
+            )
+        )
+    return "{0} (last fetched {1}s ago)".format(why, age)
+
+
 def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     """(count_or_None, why). `count` is `None` only on `could-not-read`.
 
@@ -182,7 +231,11 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     - the checkout is standing on some OTHER, known branch -> read
       `origin/<default_branch>`'s own committed tree via `git ls-tree`
       (`trap_curate.waiting_at_ref`) instead of the working directory --
-      never the wrong branch's disk state;
+      never the wrong branch's disk state. #1522: nothing on this path
+      fetches, so `why` also carries how long ago this checkout's last
+      `git fetch` ran (`_with_fetch_freshness`) -- a confident count is
+      only ever as fresh as that, and a caller comparing two readings
+      needs the signal to tell a stale one from a fresh one;
     - the current branch could not even be determined (self-review
       finding, Explore reviewer, #1476: an earlier version of this
       function fell back to the working-tree read here too, silently
@@ -196,7 +249,8 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     When no `default_branch` is configured at all, this preserves the
     function's original, no-config-passed behaviour -- an unconditional
     working-tree read -- used by every existing caller that does not
-    supply one."""
+    supply one. The working-tree path carries no fetch-freshness note:
+    it never reads `origin/*` at all, so there is nothing to date."""
     default_branch = (config or {}).get("default_branch")
     if isinstance(default_branch, str) and default_branch.strip():
         current, why = _current_branch(repo_root, run=run, git_bin=git_bin)
@@ -216,7 +270,9 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
             )
             if result["state"] == "could-not-read":
                 return None, result["why"]
-            return result["count"], result["why"]
+            return result["count"], _with_fetch_freshness(
+                result["why"], repo_root, run, git_bin
+            )
     result = trap_curate.waiting(repo_root)
     if result["state"] == "could-not-read":
         return None, result["why"]
