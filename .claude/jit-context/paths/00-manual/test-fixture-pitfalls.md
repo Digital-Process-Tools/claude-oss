@@ -89,6 +89,23 @@ sentence naming what went untested.
 **A negative assertion needs a positive control**: pair every must-not-fire with a must-fire in the
 same fixture, or an assertion that nothing happened also passes when nothing ran.
 
+- **A positive control that never calls the real check is not a control.**
+  Three instances in one release-audit round. A control for "the file
+  must document the `external` filter" asserted a hand-typed local
+  string contained that substring, never running the real filter token
+  against supertool -- it would still pass if the documented call were
+  refused outright, which it was (#1573). A sibling control for "the
+  broken filter string must not appear" built its own local string and
+  asserted membership against *that*, never touching the real path
+  constants or the real helper the actual check uses -- it would pass
+  even against an empty file. And a must-not-contain-X test that
+  filters a file's own lines to a narrow shape (lines starting with
+  `python3`) before asserting none contain X passes vacuously forever
+  when the file states its calls as prose rather than literal command
+  lines, regardless of content. **A control proves the mechanism only
+  when it runs the real helper against the real file** -- a synthetic
+  string standing in for either one tests itself, not the check.
+
 **Assert the weakest property that actually matters, not the strongest one that happens to hold
 locally.** A test asserting cross-implementation agreement on a platform this suite does not run on
 locally cannot be red/green verified before it reaches CI. #1295's own

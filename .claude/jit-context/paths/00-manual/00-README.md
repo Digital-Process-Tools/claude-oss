@@ -431,3 +431,60 @@ incident. Left in `trap.d/`, unchanged.
 
 33 fragment files map onto 9 promoted, 9 merged, 7 issues covering 12 fragments, 3 fragments folded
 into one comment on #1499, 6 declined outright, 1 resolved by cross-reference, and 1 deferred.
+
+## 2026-09-15 — 24 fragments, 5 promoted into 3 new rules, 15 merged, 3 declined, 1 deferred
+
+The four buckets sum to 24: five fragments feed the three new rules below, fifteen are merged into
+six existing ones, three are declined outright with the reason, and one is left in `trap.d/`,
+unchanged, already recorded as deferred under 2026-09-14 above.
+
+Three new rules: `tools/00-manual/git-commit-no-paths-refusal.md` (from
+`1467.git-commit-refuses-no-paths-despite-listing-them`), `paths/00-manual/claude-md-budget-guard-
+derivation.md` (from `1544.claude-md-ceiling-history-names-a-number-never-on-disk` and
+`1544.claude-md-own-baseline-not-in-guard-derivation`), and `paths/00-manual/sub-manager-spawn-
+guard-fail-open-gaps.md` (from `1571.sub-manager-spawn-guard-import-outside-try` and
+`1571.sub-manager-spawn-guard-role-marker-is-repo-global-not-caller-scoped`). All three proved a
+must-fire and a must-not-fire payload against `pre-path-hook.sh` before being written into the
+index.
+
+Six merges: `paths/00-manual/counter-scripts-silent-gaps.md` (four fragments --
+`1571.doctor-action-pins-drops-unresolved-when-drift-present`,
+`1519.outbound-draft-pending-count-renders-unparseable-names-as-zero`,
+`1519.outbound-naming-convention-forked-and-the-two-copies-already-disagree`,
+`1571.ratelimit-backoff-constants-duplicated-with-no-cross-check` -- all four are the same class
+this file already names, an absence or a missing cross-check dropped silently),
+`paths/00-manual/loop-prose-parity.md` (four fragments on prose that drifted from what its own
+file now does -- `1544.tick-dispatch-why-section-now-overstates-what-stays-unsplit`,
+`1544.tick-review-procedure-never-names-what-to-do-on-could-not-read`,
+`1573.merge-phase-gh-api-call-wraps-across-a-line-inside-its-own-backticks`,
+`1567.respawned-for-cost-docstrings-still-say-three-dispatch-states`),
+`paths/00-manual/test-fixture-pitfalls.md` (three fragments, all a positive control that never
+runs the real helper it claims to be a control for --
+`1544.absence-check-plus-synthetic-control-cannot-tell-checked-clean-from-nothing-to-check`,
+`1571.merge-gate-guard-only-pins-substring-presence-not-op-validity`,
+`1573.tick-merge-guard-positive-control-is-tautological`),
+`paths/00-manual/config-value-validation.md` (`1571.outbound-route-threshold-key-validates-but-
+nothing-reads-it`), `tools/00-manual/stacked-pr-cleanup-recovery.md`
+(`1544.tick-merge-documents-cleanup-without-the-stacked-pr-hazard` -- the tool itself already
+guards the hazard the fragment asked whether to restate in prose; the merge instead adds the one
+genuinely new fact, that a refused cleanup is not a failed merge), and
+`vocabulary/00-manual/worktree-writes-land-where-cwd-says.md` (two fragments, both a missing
+`cwd:`/`cd` prefix landing a call in the wrong tree -- `1467.cwd-prefix-shape-costs-two-failed-
+reads`, `1573.supertool-edit-with-no-cd-or-cwd-prefix-lands-in-the-wrong-tree`).
+
+**Declined, with the reason.**
+
+- `1520.spawn-guard-docstring-cites-wrong-field-count` and
+  `1571.spawn-guard-docstring-claims-three-fields-harness-sends-five` -- the same underlying
+  docstring bug (`sub_manager_spawn_guard.py`'s own comment says three `AgentInput` fields; the
+  harness sends five), found independently by two different audit rounds. A wrong field count in
+  a docstring is a one-line fact to correct directly, not a generalisable rule a future agent
+  needs reminding of near this file -- the two live gaps that file actually has a rule for now
+  (`sub-manager-spawn-guard-fail-open-gaps.md`, promoted above) are the ones worth carrying
+  forward.
+- `1573.tick-merge-classifier-composition-mismatches-scalar-vs-dict` -- a real but narrow bug
+  (`agents/tick-merge.md`'s documented `gh api --jq .author_association` call composes a bare
+  scalar into a helper that wants a dict), already fail-closed (the documented gate routes any
+  classifier failure to `could-not-merge`, so nothing merges on an unread gate) and loud rather
+  than silent when it fires. A one-off composition mismatch in one documented call, not a pattern
+  this repo has hit more than once.

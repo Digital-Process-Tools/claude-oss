@@ -3,6 +3,7 @@ Bash	~open.*['\"][wa]['\"]|[.]write[(]|[.]write_text[(]	a-write-outside-supertoo
 Bash	~gh-run|gh-branch|gh-pr:[0-9]+:status	ci-evidence-is-about-one-commit.md	remind			
 Bash	~\|[[:space:]]*(head|tail)([[:space:];&|><)]|$)	exit-sensitive-pipe-to-head-tail.md	remind			
 Bash	~gh api rate_limit|rate limit exceeded	gh-rate-limit-reset-and-pollers.md	remind			
+Bash	~git-commit	git-commit-no-paths-refusal.md	remind			
 Bash	~git[[:space:]]+stash	git-stash-unstages-git-rm-deletions.md	remind			
 Bash	~git-push	lane-branch-upstream.md	remind			
 Bash	~gh-pr-create|gh-pr-edit|gh-pr-merge	pr-body-closing-keywords.md	remind			

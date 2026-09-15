@@ -40,3 +40,11 @@ three shared files with the `HEAD` side showing *pre-merge* byte counts, because
 never fetched after the merge landed on the remote. A conflict whose `HEAD` side shows values you
 know were replaced is the tell — `git fetch && git reset --hard origin/main` before rebasing onto
 it, rather than reading the conflict as a real disagreement.
+
+**A refused cleanup item is not a failed merge.** `gh-pr-merge` detects
+the stacked-PR case before deleting anything and refuses the cleanup
+item on that ground, with its own output saying so explicitly ("a
+refused cleanup is not a failed merge and does not move the exit
+code"). Read that line, not the exit code alone — a caller that treats
+a refused cleanup as `could-not-merge` would be wrong about a merge
+that landed.
