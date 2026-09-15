@@ -290,9 +290,11 @@ moment it actually consumes them, and the cohort burn-down a triage sweep feeds 
 release has already stopped editing.
 
 **Keep the freeze and the sweep apart.** The cohort freeze -- defined above, under *The backlog
-needs a terminating condition* -- is the maintainer's own act, by hand, in the same minute as the
-tag; the triager must never write a `cohort-*` label. The triage sweep is a separate step that
-follows the freeze, run over the tracker's priority and lane labels, never over cohorts.
+needs a terminating condition* -- is the release's own act, run by `cohort_freeze_record.py` in
+the same minute as the tag (#1410), never by hand and, since #1515, never needing a hand step even
+when the label itself is still missing; the triager must never write a `cohort-*` label. The
+triage sweep is a separate step that follows the freeze, run over the tracker's priority and lane
+labels, never over cohorts.
 
 **The last-triaged half is recorded, read, and now consumed (#855, #1386); the label-coverage half
 is still unbuilt.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file>
