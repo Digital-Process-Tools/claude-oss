@@ -25,6 +25,12 @@ a `pr_green.py --wait` call can legitimately hold a turn for its full timeout. R
 `oss:sub-manager`'s own context, either cost is paid for the rest of that tick; read here, inside a
 context that dies the moment it reports back, neither is.
 
+**Your caller's `Agent(...)` call to spawn you is synchronous, so `oss:sub-manager` blocks for the
+whole of your wait -- every one of your per-pull-request calls below, not one.** That is still the
+right trade, not an overlooked one: a blocked turn is one turn either way, and the context doing the
+waiting is now yours, thrown away the moment you report, rather than `oss:sub-manager`'s own
+long-lived context paying the identical wall-clock while also holding everything else a tick needs.
+
 ## What spawned you, and what you owe back
 
 `agents/sub-manager.md` spawns you once it has a pull request open from this tick's own dispatch
@@ -50,16 +56,32 @@ push origin <tag>`, or anything under `commands/release.md`.
 
 ## What you do
 
-1. **Read `skills/manager/phases/ci-green.md` and follow its wait shape exactly**, for every pull
-   request number your prompt named:
+1. **Read `skills/manager/phases/ci-green.md` and follow its wait shape** -- but call it once
+   **per pull request your prompt named, never once for the whole batch.** `pr_green.py`'s own
+   contract, stated in its own `--help`, is "scan in order, stop at the first one that is not
+   pending" -- `scan()` returns the first non-pending entry among the numbers it is given and never
+   looks at the rest, and `--wait`'s own `wait_for_first_actionable` returns only when *every* named
+   number is still pending (then reports `pending` for all of them, past the timeout) or the first
+   one that is not (then reports only that one). A single call given several numbers can resolve at
+   most one of them and says nothing about the others, even when they have already gone green or
+   red -- it was built to answer "what should I act on next", not "what is the state of everything
+   I named". So, for the N pull requests your prompt named, make N calls, one per pull request,
+   sequentially in the same turn:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pr_green.py" NUM [NUM...] --wait --timeout N
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pr_green.py" NUM --wait --timeout T
 ```
 
-   Four exit-code states: `green`, `red`, `pending`, `could-not-read` (#1086's own substring trap is
-   in `ci-green.md`, not restated here). `green` and `red` both resolve the wait inside this turn;
-   `pending` past the timeout has not resolved it.
+   **State the cost of this plainly rather than let it hide in "sequentially":** with N pull
+   requests each waiting up to its own timeout `T`, this step can hold the turn for up to `N * T`
+   seconds in the worst case. That is still one turn, paid once, and never a poll loop -- nothing
+   here re-checks a pull request this spawn has already resolved -- but real wall-clock that grows
+   with the fleet size. Divide whatever overall wait budget you were given across the N calls
+   (`T` per call, not the whole budget per call) rather than assuming timeouts do not stack.
+
+   Four exit-code states per call: `green`, `red`, `pending`, `could-not-read` (#1086's own
+   substring trap is in `ci-green.md`, not restated here). `green` and `red` both resolve that pull
+   request inside this turn; `pending` past its own timeout has not resolved it.
 
 2. **For every pull request that resolved (`green` or `red`), read `skills/manager/phases/review.md`
    and follow it in full** -- the check arithmetic, the review outcome, the premise, blast radius,

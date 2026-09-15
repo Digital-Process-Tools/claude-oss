@@ -52,7 +52,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for #1567: 33441 B became 34266 B -- the dispatch.md ceiling
     # raise and its weighed sentence, under the third editing exception (a lane
     # whose own diff moves a budgeted file's row). Budget unchanged.
-    "CLAUDE.md": (34266, 35900),
+    # Re-baselined for #1544 step 2 and its review-return fix-up: 34266 B
+    # became 34987 B -- the same third exception, across three rows this
+    # diff's own agent/skill files moved (agents/sub-manager.md,
+    # agents/tick-review.md, skills/manager/SKILL.md) plus their own
+    # narrative sentences. Budget unchanged; comfortably under the ceiling.
+    "CLAUDE.md": (34987, 35900),
 }
 
 

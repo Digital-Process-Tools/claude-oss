@@ -303,9 +303,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined in the same lane's own self-review round: 21993 B became
     # 22184 B after two reviewers found the same real gap this file's own
     # step 2 needed to state -- that `oss:tick-review` files/comments/writes
-    # a below-bar line itself, so this file never needs to redo it. Budget
-    # unchanged; ~116 B headroom.
-    "agents/sub-manager.md": (22184, 22300),
+    # a below-bar line itself, so this file never needs to redo it.
+    # Re-baselined on the maintainer's own review return: 22184 B became
+    # 22298 B -- step 2's own call description now says `oss:tick-review`
+    # waits one call per pull request, not one for the whole batch, matching
+    # the fix in `agents/tick-review.md`'s own step 1 (pr_green.py's real
+    # contract cannot verdict more than one named pull request per call).
+    # Budget unchanged; 2 B headroom.
+    "agents/sub-manager.md": (22298, 22300),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -412,9 +417,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # quoting convention (unlike tick-dispatch.md's nonce-wrapped payload),
     # and a mixed-batch report shape review.md's own routing table never
     # named. All three were real findings on a brand-new file, so nothing
-    # here argued for cutting rather than fixing. Ceiling moves to 9200 B,
-    # ~5% headroom.
-    "agents/tick-review.md": (8741, 9200),
+    # here argued for cutting rather than fixing.
+    # Re-baselined on the maintainer's own review return: 8741 B became
+    # 10697 B. pr_green.py's real contract is "one call resolves at most one
+    # named pull request" (`scan()` stops at the first non-pending; `--wait`
+    # returns on the first actionable one or reports every name pending) --
+    # this file's step 1 previously documented a single call over the whole
+    # batch as though it verdicted every pull request, which it cannot. Step
+    # 1 now documents N sequential per-pull-request calls, states the N*T
+    # worst-case wall-clock cost this creates explicitly, and "Why this file
+    # exists" now says outright that the caller's own `Agent(...)` blocks
+    # for the whole of that wait. Nothing here argued for cutting length to
+    # avoid stating a real cost. Ceiling moves to 11200 B, ~5% headroom.
+    "agents/tick-review.md": (10697, 11200),
 }
 
 

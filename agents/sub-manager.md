@@ -211,8 +211,10 @@ moment the only thing left this tick looks like "wait on CI, then review":
    Dispatch into it instead of waiting at all.
 2. **Else, spawn `oss:tick-review`** with exactly the pull request number(s) open this tick,
    nothing else -- it inherits the `sub-manager` marker you already wrote, so it can no more
-   publish a release than you can. It waits on `pr_green.py --wait --timeout N` and, once CI
-   resolves, applies `skills/manager/phases/review.md` in full **including its own
+   publish a release than you can. It waits on `pr_green.py --wait --timeout T`, one call per
+   pull request rather than one for the whole batch (`agents/tick-review.md`'s step 1 says why),
+   and once each resolves applies `skills/manager/phases/review.md` in full **including its
+   own
    report-for-filing/below-bar routing** -- filing an issue, commenting on one, or writing a
    below-bar line into the pull request body is `oss:tick-review`'s to do, not yours to redo, in
    its own throwaway context. Read its report: `REVIEW: reviewed` names a decision per pull
