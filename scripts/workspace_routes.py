@@ -162,36 +162,58 @@ def _current_branch(repo_root, run=subprocess.run, git_bin=None, timeout=10):
     return branch, None
 
 
+#: `_fetch_head_age_seconds`'s three states (self-review finding, oss:auditor,
+#: #1522). The first version collapsed a genuine "this checkout has never run
+#: `git fetch`" into the exact same `None` as "the `git` call that would have
+#: told me that itself failed to run" -- rendering both as the identical "no
+#: fetch recorded" text, this repository's own named defect class (an absence
+#: the tool produced read as an absence in the world). `_current_branch`,
+#: right above this in the same file, already avoids the analogous mistake for
+#: branch detection; this mirrors that three-way split rather than repeating
+#: the two-way one.
+_FETCH_KNOWN = "known"
+_FETCH_ABSENT = "absent"
+_FETCH_COULD_NOT_TELL = "could-not-tell"
+
+
 def _fetch_head_age_seconds(repo_root, run=subprocess.run, git_bin=None, timeout=15):
-    """Seconds since this checkout's `FETCH_HEAD` was last written, or
-    `None` when that cannot be told (`git` could not resolve a git
-    directory here, or no `git fetch` has ever run in this checkout, so
-    `FETCH_HEAD` does not exist yet). `git fetch` writes `FETCH_HEAD` on
-    every run, whether or not any ref actually moved -- unlike a
-    remote-tracking ref itself, which git only rewrites when its value
-    changes -- so this is "how long since this checkout last even asked
-    the remote", which is the freshness question #1522 names, not "how
-    long since origin/<default_branch> last moved"."""
+    """(state, age_or_None). `git fetch` writes `FETCH_HEAD` on every run,
+    whether or not any ref actually moved -- unlike a remote-tracking ref
+    itself, which git only rewrites when its value changes -- so this is
+    "how long since this checkout last even asked the remote", which is
+    the freshness question #1522 names, not "how long since
+    origin/<default_branch> last moved".
+
+    `_FETCH_KNOWN` is the only state carrying a real `age_or_None`
+    (seconds since `FETCH_HEAD`'s mtime). `_FETCH_ABSENT` means the git
+    directory WAS resolved and `FETCH_HEAD` genuinely does not exist
+    there -- an honest "never fetched". `_FETCH_COULD_NOT_TELL` covers
+    every way this could not even ask the question: `git` missing from
+    PATH or failing to spawn, `rev-parse --git-dir` exiting non-zero or
+    printing nothing, or `FETCH_HEAD`'s own `stat()` failing for a reason
+    other than not existing (a permission error, say)."""
     command = [git_bin or "git", "-C", str(repo_root), "rev-parse", "--git-dir"]
     try:
         done = run(
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
         )
     except (OSError, subprocess.SubprocessError):
-        return None
+        return _FETCH_COULD_NOT_TELL, None
     if done.returncode != 0:
-        return None
+        return _FETCH_COULD_NOT_TELL, None
     raw = _decode(done.stdout).strip()
     if not raw:
-        return None
+        return _FETCH_COULD_NOT_TELL, None
     git_dir = Path(raw)
     if not git_dir.is_absolute():
         git_dir = Path(repo_root) / git_dir
     try:
         mtime = (git_dir / "FETCH_HEAD").stat().st_mtime
+    except FileNotFoundError:
+        return _FETCH_ABSENT, None
     except OSError:
-        return None
-    return max(0, int(time.time() - mtime))
+        return _FETCH_COULD_NOT_TELL, None
+    return _FETCH_KNOWN, max(0, int(time.time() - mtime))
 
 
 def _with_fetch_freshness(why, repo_root, run, git_bin):
@@ -199,15 +221,18 @@ def _with_fetch_freshness(why, repo_root, run, git_bin):
     own `why` (#1522): the reading is only as fresh as this checkout's
     last `git fetch`, and nothing on this path fetches, so a caller
     comparing two readings taken minutes apart has no way to tell a
-    genuinely fresh one from a stale one without this."""
-    age = _fetch_head_age_seconds(repo_root, run=run, git_bin=git_bin)
-    if age is None:
+    genuinely fresh one from a stale one without this. Three states, not
+    two (self-review finding, oss:auditor) -- see `_fetch_head_age_seconds`."""
+    state, age = _fetch_head_age_seconds(repo_root, run=run, git_bin=git_bin)
+    if state == _FETCH_KNOWN:
+        return "{0} (last fetched {1}s ago)".format(why, age)
+    if state == _FETCH_ABSENT:
         return (
             "{0} (no fetch recorded in this checkout, so freshness is unknown)".format(
                 why
             )
         )
-    return "{0} (last fetched {1}s ago)".format(why, age)
+    return "{0} (fetch freshness could not be determined)".format(why)
 
 
 def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):

@@ -247,6 +247,39 @@ def test_curate_count_on_a_stale_branch_reports_fetch_age(repo_on_main):
     assert "last fetched" in why, why
 
 
+def test_curate_count_on_a_stale_branch_with_git_dir_lookup_failure_does_not_claim_no_fetch(
+    repo_on_main,
+):
+    """Self-review finding (oss:auditor, #1522): the first version of
+    `_fetch_head_age_seconds` collapsed "the git-dir lookup itself
+    failed" into the identical `None` -- and identical rendered text --
+    as "FETCH_HEAD genuinely does not exist", so a real fetch could have
+    happened and this would still have confidently claimed none had. The
+    two must render differently: this checkout HAS a real FETCH_HEAD
+    (written just below), but a `run` that fails the `rev-parse
+    --git-dir` call must never be read as though that FETCH_HEAD did not
+    exist."""
+    root = repo_on_main
+    env = _git_env()
+    _run(["git", "checkout", "--quiet", "-b", "fix/999"], cwd=root, env=env)
+    (root / ".git" / "FETCH_HEAD").write_text("deadbeef\tnot-for-merge\t\n")
+
+    real_run = subprocess.run
+
+    def _boom(command, *args, **kwargs):
+        if "rev-parse" in command and "--git-dir" in command:
+            return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"boom")
+        return real_run(command, *args, **kwargs)
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}, run=_boom
+    )
+    assert count == 0, why
+    assert "no fetch recorded" not in why, why
+    assert "last fetched" not in why, why
+    assert "could not be determined" in why, why
+
+
 def test_curate_count_on_the_default_branch_itself_still_counts_real_fragments(
     repo_on_main,
 ):
