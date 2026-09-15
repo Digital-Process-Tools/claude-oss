@@ -387,7 +387,7 @@ tool, and you are gone by the time step 7 would run.
    branch and worktree, and the condensed board back, freshly re-derived rather than pasted:
 
    ```bash
-   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim --lane <pattern> [--lane <pattern> ...]
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim
    ```
 
    Run from the clone, before `git worktree add` — that is where `.oss.local.json` is present and

@@ -364,7 +364,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # already hit. This file is the loop's largest phase file and is read on
         # every tick that dispatches, so the raise is ~2.5% rather than the usual
         # ~10%.
-        58022,
+        # Re-baselined for #1579: 58022 B became 57948 B -- three --claim call
+        # shapes dropped --lane, which only ever fed the claim receipt's own
+        # unread [lane] block. Ceiling unchanged.
+        57948,
         58500,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -734,7 +737,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1532: 35539 B became 35308 B -- the registry
         # paragraph and the `--claim` requires `--lane` rule went with the
         # registry, and step 3 no longer claims to derive a held set.
-        35308,
+        # Re-baselined for #1579: 35308 B became 35268 B -- the --claim call
+        # dropped --lane, which only ever fed the claim receipt's own unread
+        # [lane] block. Ceiling unchanged.
+        35268,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

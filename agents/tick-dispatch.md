@@ -59,12 +59,13 @@ argument; read it there rather than re-deriving it, since that is exactly the re
 exists to hold instead of your caller):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane <pattern> [--lane <pattern> ...] [--claim-also <N> ...] --phrase "<two or three words naming the lane's subject>" --subagent-type oss:developer --model sonnet
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim [--claim-also <N> ...] --phrase "<two or three words naming the lane's subject>" --subagent-type oss:developer --model sonnet
 ```
 
 **Both trailing flags are what make it render at all (#1546).** `main()` gates the render on
 `args.phrase is not None` and the `Agent(...)` call on `subagent_type`; without them you get a bare
 `lane :` line at exit 0, no error -- a `DISPATCH: rendered` report with nothing pasteable in it.
+No `--lane` here (#1579) -- it fed only the claim receipt's own unread `[lane]` block.
 
 **Never pass `--claim` on an earlier probe** -- it writes the issue's GitHub assignee, taking an issue
 nobody is working. Its stdout is the resolved base, branch and worktree, the condensed board, and the
