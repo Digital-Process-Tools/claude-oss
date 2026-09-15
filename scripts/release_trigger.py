@@ -195,6 +195,23 @@ def _condition(name, state, **extra):
     return row
 
 
+def _one_line(text, limit=200):
+    """Text from outside this module, reduced to one printable ASCII line.
+
+    Duplicated from `release_delta._one_line` rather than imported across
+    modules -- a small, private helper, and this repository already accepts
+    that shape (`triage_trigger._git`'s own docstring cites the same
+    precedent). `git fetch`'s stderr can carry a `remote: <message>` line the
+    far end chose, including a newline; `receipt()` joins condition rows with
+    a newline and prints `detail` as one of them, so an unflattened newline
+    here would splice an extra line into the printed receipt, indistinguishable
+    from a genuine additional condition (#1566 second-pass review).
+    """
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in flat)
+    return safe[:limit]
+
+
 def _stale_local_head(repo):
     """``None`` when this check does not apply, or a reason when local `HEAD`
     has fallen behind the branch it tracks.
@@ -233,7 +250,9 @@ def _stale_local_head(repo):
     if not fetched:
         return (
             "could not fetch {0} to confirm local HEAD is current with {1}: {2}".format(
-                remote, upstream, fetch_detail or "unknown error"
+                remote,
+                upstream,
+                _one_line(fetch_detail) if fetch_detail else "unknown error",
             )
         )
     ok, out, _ = _git(repo, "rev-list", "--count", "HEAD..{0}".format(upstream))

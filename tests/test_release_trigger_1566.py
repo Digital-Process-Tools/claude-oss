@@ -161,3 +161,32 @@ def test_a_failed_fetch_is_could_not_evaluate_not_a_silent_reuse_of_a_stale_ref(
     row = release_trigger.merged_prs_condition(stale_clone, 1)
     assert row["state"] == release_trigger.COULD_NOT_EVALUATE, row
     assert "could not fetch" in row["detail"], row
+
+
+def test_a_multiline_fetch_failure_does_not_forge_an_extra_receipt_line(
+    stale_clone, monkeypatch
+):
+    """git's own stderr for a failed fetch is text the remote end can shape --
+    a `remote: <message>` line, potentially several of them. `receipt()`
+    joins condition rows with a newline and prints `detail` as one of them,
+    so an unflattened newline in this string would splice an extra line into
+    the printed receipt, indistinguishable from a genuine additional
+    condition (second-pass review finding on #1566). The real `git fetch`
+    is not a reliable way to manufacture a specific multi-line stderr, so
+    this drives `_stale_local_head` through a monkeypatched `_git` that
+    returns one instead."""
+    calls = []
+    real_git = release_trigger._git
+    hostile = "remote: line one" + chr(10) + "remote: line two" + chr(10)
+
+    def fake_git(repo, *args):
+        if args[:1] == ("fetch",):
+            calls.append(args)
+            return False, "", hostile
+        return real_git(repo, *args)
+
+    monkeypatch.setattr(release_trigger, "_git", fake_git)
+    reason = release_trigger._stale_local_head(stale_clone)
+    assert calls, "the fake fetch was never reached"
+    assert reason is not None
+    assert chr(10) not in reason, reason
