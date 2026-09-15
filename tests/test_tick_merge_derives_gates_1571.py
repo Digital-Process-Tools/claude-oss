@@ -34,7 +34,25 @@ MERGE_PHASE = REPO_ROOT / "skills" / "manager" / "phases" / "merge.md"
 # that field `authorAssociation`, and this repo's own guard refuses a raw
 # `gh pr view` at command position in favour of the `gh-pr` op. A test pinned to
 # field names would have passed on a call no spawn here can run.
-REQUIRED_READS = ("gh-pr:", "external")
+#
+# #1573: the second draft's own `gh-prs:state=open,external,iids` was wrong a
+# third way -- `external` is not a filter or a flag `gh-prs` recognises at all
+# (`supertool 'help:gh-prs'` lists exactly `assignee, author, label,
+# merged-since, per, reviewer, state` plus `anyauthor, failed, iids, nopipe`),
+# and the live call is refused on sight. `test_tick_merge_documents_the_gate_reads`
+# below still only pins substring presence, and prose *explaining* why
+# `external` is not a real filter still contains the substring "external" --
+# so REQUIRED_READS now pins the token that actually carries the read
+# (`author_association`, fed to `inbound_triage.classify_pr`) rather than the
+# board-filter spelling that was never valid, and BROKEN_FILTER_CALL below
+# pins the exact refused string as a standing regression check.
+REQUIRED_READS = ("gh-pr:", "author_association")
+
+# The exact call #1573 found refused. Its presence anywhere in either file,
+# even inside an explanation of why it does not work, is the shape that
+# fooled REQUIRED_READS the first time -- so this is checked by itself,
+# never folded into REQUIRED_READS.
+BROKEN_FILTER_CALL = "gh-prs:state=open,external,iids"
 
 MERGE_CALL = "gh-pr-merge"
 
@@ -73,6 +91,32 @@ def test_the_field_check_is_capable_of_failing():
     assertion above would pass on any text at all."""
     text = _text(TICK_MERGE)
     assert "notAFieldAnyGitHubApiReturns" not in text
+
+
+def test_neither_file_documents_the_refused_gh_prs_filter():
+    """#1573: `gh-prs:state=open,external,iids` is refused outright --
+    `external` is neither a filter nor a flag `gh-prs` recognises. A prose
+    line built to *explain* why it does not work still contains the same
+    substring `REQUIRED_READS` used to pin on, which is exactly how the
+    first fix passed this file's own tests while shipping a call nothing
+    can run. Checked as an exact standing string, never folded into
+    REQUIRED_READS above."""
+    for path in (TICK_MERGE, MERGE_PHASE):
+        text = _text(path)
+        assert BROKEN_FILTER_CALL not in text, (
+            "{} still documents the refused call {!r} -- #1573 found this "
+            "exact string refused by supertool's own gh-prs op".format(
+                path.name, BROKEN_FILTER_CALL
+            )
+        )
+
+
+def test_the_broken_filter_check_is_capable_of_failing():
+    """Positive control: a constructed text carrying the broken call must be
+    caught by the same substring check, or the assertion above proves
+    nothing."""
+    poisoned = "some prose\n{}\nmore prose".format(BROKEN_FILTER_CALL)
+    assert BROKEN_FILTER_CALL in poisoned
 
 
 # --------------------------------------------------- and it comes first

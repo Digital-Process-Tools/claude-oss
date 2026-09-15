@@ -64,12 +64,13 @@ curate-authored pull request (head branch matching `^curate/`), anything irrever
 invent gates** — parking a real bug as "the owner's call" when it is not on this list is just a way
 of not fixing things.
 
-**Two of those gates are facts, not judgements, so read them rather than recall them (#1571):** the
-head branch, from `gh-pr:N:status`'s own `branch:` line, against an anchored `^curate/`; and whether
-the pull request is contributor-authored, from `gh-prs:state=open,external,iids` — or, where the
-caller already holds a board read carrying `author_association`, from
-`inbound_triage.classify_pr(pr)`, which translates GitHub's own vocabulary and returns
-`could-not-tell` rather than guessing at a value it does not recognise.
+**Two of those gates are facts, not judgements, so read them rather than recall them (#1571, #1573):**
+the head branch, from `gh-pr:N:status`'s own `branch:` line, against an anchored `^curate/`; and
+whether the pull request is contributor-authored, from `inbound_triage.classify_pr(pr)` -- fed by a
+board read's `author_association` when held, or by `gh api
+repos/{owner}/{repo}/pulls/N --jq .author_association` for a bare number (`gh-prs` has no
+`external` filter or flag at all, #1573). `classify_pr` translates GitHub's own vocabulary and
+returns `could-not-tell` rather than guessing at a value it does not recognise.
 
 A caller holding those off an earlier board read does not re-read them. A spawn handed only a pull
 request number holds neither, and has to. Gate 3 caught exactly that in `agents/tick-merge.md`
