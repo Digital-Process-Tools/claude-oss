@@ -359,3 +359,75 @@ this pass's call to make alone. Left in `trap.d/`, unchanged.
 
 31 fragment files (30 present at pass start, plus one written mid-pass by a concurrent tick) map
 onto 7 promoted, 14 merged, 8 issues covering 9 fragments, and 1 deferred.
+
+## 2026-09-15 -- 33 fragments, 9 promoted, 9 merged, 22 filed or commented, 6 declined outright, 1 deferred
+
+**Promoted.** `tools/00-manual/exit-sensitive-pipe-to-head-tail.md` (from
+`1532.rebase-continue-piped-to-head-dropped-a-commit`,
+`1530.background-bash-reports-exit-0-for-an-argparse-refusal` -- a rebase and a background wait,
+same SIGPIPE/last-command-exit-code mechanism); `tools/00-manual/git-stash-unstages-git-rm-
+deletions.md` (from `1532.git-stash-unstages-git-rm-deletions`); `paths/00-manual/curate-pass-git-
+add-before-delete.md` (from `1425.curate-deletes-untracked-fragments-unrecoverably` -- applied to
+this pass's own execution as well as promoted, since it named this exact pass's own hazard).
+
+**Merged.** `tools/00-manual/waiting-on-a-status-line.md` gained the `gh-branch` Verdict-line
+`failed`-substring bullet (from `1530.gh-branch-verdict-says-nothing-has-failed`); `paths/00-
+manual/test-fixture-pitfalls.md` gained three bullets -- monkeypatching a re-exported name
+(`1535.monkeypatching-a-re-exported-name-patches-nothing`), deriving a caller sweep rather than
+hand-picking one (`1532.deleting-a-surface-needs-a-derived-caller-sweep`), and synthetic fixture
+paths (`1528.new-test-file-trips-repo-wide-lane-coupling-guard-untargeted`); `paths/00-manual/
+filesystem-probe-states.md` gained the falsy-vs-`is None` three-states fold bullet (from
+`1528.overlap-info-collapsed-checked-clean-into-never-checked`).
+
+**Filed as issues.** #1549 (`1190.scheduler-blocks-on-ci-with-no-reselect-procedure`), #1550
+(`1275.triage-report-parts-2-to-5-have-no-persistence-path`), #1551
+(`1414.triage-sub-step-names-its-spawn-in-prose-only` +
+`1469.phase-files-register-as-spawnable-agents`, filed together since the second is a sharper
+instance of the first's class), #1552 (`1467.curate-pr-has-no-closing-reference-by-construction`,
+also applied directly to this pass's own PR via `no_close = true`), #1553
+(`1476.record-skip-dispatch-target`, deferred once already on 2026-09-14 -- a second deferral would
+only delay the same open decision), #1554 (`1492.release-ci-wait-same-fixed-cadence-gap` +
+`1546.pr-green-backoff-capped-by-timeout`, the same rate-limit-backoff gap on both of the loop's
+CI-wait scripts), #1555 (`1528.dispatch-md-lane-collision-prose-now-stale` +
+`1546.pick-the-work-stale-after-the-registry-retirement` +
+`1546.lane-coupling-check-cannot-answer-any-more`, all stale prose or a stale check left behind by
+#1530's registry retirement), #1556 (`491.claude-md-is-the-largest-unbudgeted-file`).
+
+**Commented on the existing umbrella issue rather than filed separately**, since each is additional
+material toward a checklist item #1499 already tracks: a comment on #1499 folding in
+`1499.channel-excludes-the-one-event-the-poll-waits-for` (toward item 5, the event blacklist),
+`1499.recon-report-is-paid-twice-and-the-second-copy-sits-in-the-sub-manager` and
+`695.give-the-selection-scripts-to-the-lane-and-price-the-conflict` (both toward item 3, splitting
+sub-manager cost).
+
+**Declined outright, with the reason.**
+
+- `1499.a-capped-read-is-not-a-whole-file` -- the recovered text is already in `CLAUDE.md`'s token
+  economy section verbatim (it was a stray write to the main worktree, reverted, and the content
+  landed through the normal channel instead).
+- `1499.coordination-layer-costs-ten-times-the-lanes` -- its own measured table is already quoted
+  verbatim in `CLAUDE.md`'s token economy section.
+- `1499.developer-lane-context-breakdown-measured` -- a measurement; its actionable halves (capped-
+  read paging, `cwd:PATH` for out-of-worktree reads) are already stated in `CLAUDE.md`.
+- `1499.loop-cost-report-rerun-since-0.34.0-cycle` -- a re-run's own numbers, explicitly self-
+  described as settling no enforcement decision and establishing no trend from one window.
+- `1546.cost-line-folds-duplicate-to-absent` -- a deliberate trade-off already argued in the code's
+  own module docstring (`scripts/tick_handback.py`), not an oversight; nothing here would add
+  content.
+- `695.sub-manager-context-accounting-measured` -- a measurement whose "levers" section is already
+  covered by existing rules (never re-read a brief just written, read phase files with explicit
+  ranges) and by the recon/give-the-selection-scripts material folded into the #1499 comment above.
+
+**One fragment resolved by cross-reference rather than by its own content.**
+
+- `1530.lane-patterns-still-feeds-overlap-info-after-1528` -- its own premise (a warning about what
+  #1530's deletion step would break if it landed as scoped) is now historical: #1530 has since
+  merged, and the resulting state is what `1546.lane-coupling-check-cannot-answer-any-more`
+  describes and #1555 above files.
+
+**Deferred.** `1544.tree-snapshot-vanished-inside-worktree` -- root cause explicitly unconfirmed by
+its own text (three candidate causes named, none checked), too thin to tell a rule from a one-off
+incident. Left in `trap.d/`, unchanged.
+
+33 fragment files map onto 9 promoted, 9 merged, 7 issues covering 12 fragments, 3 fragments folded
+into one comment on #1499, 6 declined outright, 1 resolved by cross-reference, and 1 deferred.
