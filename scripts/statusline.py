@@ -1049,10 +1049,13 @@ def _inbound_field(inbound):
 
     `inbound` is `board.get("inbound")` -- the cached `inbound_reading()`
     document, or `None` for a cache written before this field existed. Each
-    count renders `?`, never `0`, exactly the rule `_trap_field` and
-    `_board_field`'s own `eis` group already follow: a zero from a read that
-    never happened and a zero from one that happened and found nothing must
-    not be the same pixels, which is the whole reason #1406 exists.
+    count renders `?`, never `0`, exactly the rule `_trap_field` already
+    follows: a zero from a read that never happened and a zero from one that
+    happened and found nothing must not be the same pixels, which is the
+    whole reason #1406 exists. `_board_field` used to render this exact
+    number a second time, as its own `eis` group, following the identical
+    rule -- #1463 removed that render, so this field is now the only one
+    that does.
 
     `unanswered_comments` is deliberately not a third number here.
     `inbound_reading` always reports it as `None` (see that function's own
