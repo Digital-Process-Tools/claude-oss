@@ -3294,7 +3294,6 @@ RADAR_REMEDY_CONFIG = {
                 "gh-prs": {
                     "pr_exclude_events": [
                         "checks_pending",
-                        "checks_succeeded",
                         "conflicts_appeared",
                     ]
                 }

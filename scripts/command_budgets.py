@@ -107,7 +107,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for #1508: 22275 B became 22444 B -- step 7's paused
     # resume names the poll-timer as the arm, since the per-PR pollers
     # exclude checks_succeeded by design. Ceiling unchanged.
-    "commands/tick.md": (22444, 24500),
+    # Re-baselined for #1499: 22444 B became 22424 B -- step 7's paused-resume
+    # paragraph now says checks_succeeded is delivered on the channel, not
+    # excluded (dropped from INITIAL_EXCLUDE, the asymmetry against
+    # checks_failed was never argued for). Ceiling unchanged.
+    "commands/tick.md": (22424, 24500),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at

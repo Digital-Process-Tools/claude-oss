@@ -69,9 +69,17 @@ STATE_BASE = "/tmp"
 #: over it. `pr_opened` is a `github-pr-feed` event and shipped here for a day
 #: before supertool 0.61.0 refused it; `tests/test_event_filter_keys_1499.py`
 #: reads supertool's own events.json rather than a copy of the valid set.
+#:
+#: `checks_succeeded` was in this list from #1499's first commit but was never
+#: argued for -- it was swept in alongside `checks_pending` on the shared
+#: prefix, not on the merits. `checks_failed` was never excluded, and
+#: `BRANCH_KEEP` above keeps BOTH terminal states for the default-branch
+#: poller, calling them "the two keys a scheduler acts on". Dropped for
+#: #1499's own comment thread: a PR going green now costs the scheduler the
+#: same one turn a PR going red already costs, and a `paused` wait for green
+#: can end on the channel event instead of only a poll-timer.
 INITIAL_EXCLUDE = [
     "checks_pending",
-    "checks_succeeded",
     "conflicts_appeared",
 ]
 
@@ -259,11 +267,11 @@ def check_event_filter(project_dir):
         doctor.report(
             "WARN",
             "event filter: unfiltered -- {} in {}. Every per-PR channel event "
-            "(checks_pending, checks_succeeded, conflicts_appeared, ...) then "
+            "(checks_pending, conflicts_appeared, ...) then "
             "lands in the scheduler session as a turn, and each turn re-sends the whole "
             "scheduler context; that is how one /oss:run session reached 419-503k tokens "
             "overnight (#1499). Set {} to {} in {} -- the running tick already polls for "
-            "those four.".format(
+            "those.".format(
                 detail,
                 doctor.WATCH_CONFIG,
                 key_path,
