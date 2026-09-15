@@ -299,8 +299,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # weighed against holding `ci-green.md`'s wait procedure and
     # `review.md`'s >24,000 B checklist out of this file's own context for
     # the rest of every tick that reaches this shape, which is the entire
-    # point of #1544. ~300 B headroom.
-    "agents/sub-manager.md": (21993, 22300),
+    # point of #1544.
+    # Re-baselined in the same lane's own self-review round: 21993 B became
+    # 22184 B after two reviewers found the same real gap this file's own
+    # step 2 needed to state -- that `oss:tick-review` files/comments/writes
+    # a below-bar line itself, so this file never needs to redo it. Budget
+    # unchanged; ~116 B headroom.
+    "agents/sub-manager.md": (22184, 22300),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -397,9 +402,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # the tick's own handback (#1544's steps 3-4), the same boundary
     # `agents/tick-dispatch.md` draws around steps 2-4. Budgeted from the
     # day it was added, the same posture #1414, #1499 and #1544 step 1
-    # already take for a new file. 7110 B measured; ceiling gives ~9%
-    # headroom for the same reason #1544 step 1's own file was given some.
-    "agents/tick-review.md": (7110, 7800),
+    # already take for a new file.
+    # Re-baselined in the same lane's own self-review round: 7110 B became
+    # 8741 B after two spawned reviewers (Explore, oss:auditor) independently
+    # found the same real gap -- the "filing an issue, commenting on one" was
+    # withheld in the same sentence review.md assigns it to whoever is doing
+    # the review, leaving no-op handling for report-for-filing/below-bar
+    # items -- plus a genuine forging risk in "carried verbatim" with no
+    # quoting convention (unlike tick-dispatch.md's nonce-wrapped payload),
+    # and a mixed-batch report shape review.md's own routing table never
+    # named. All three were real findings on a brand-new file, so nothing
+    # here argued for cutting rather than fixing. Ceiling moves to 9200 B,
+    # ~5% headroom.
+    "agents/tick-review.md": (8741, 9200),
 }
 
 

@@ -212,11 +212,13 @@ moment the only thing left this tick looks like "wait on CI, then review":
 2. **Else, spawn `oss:tick-review`** with exactly the pull request number(s) open this tick,
    nothing else -- it inherits the `sub-manager` marker you already wrote, so it can no more
    publish a release than you can. It waits on `pr_green.py --wait --timeout N` and, once CI
-   resolves, applies `skills/manager/phases/review.md` and routes any finding, in its own
-   throwaway context. Read its report: `REVIEW: reviewed` names a decision per pull request --
-   merge on green (`skills/manager/phases/merge.md`) or resume the lane per "One dispatch per
-   tick" above for `needs-fix` -- inline, unsplit (#1544's steps 3-4 are not this diff).
-   `REVIEW: pending` falls through to step 3 with its observable line, verbatim;
+   resolves, applies `skills/manager/phases/review.md` in full **including its own
+   report-for-filing/below-bar routing** -- filing an issue, commenting on one, or writing a
+   below-bar line into the pull request body is `oss:tick-review`'s to do, not yours to redo, in
+   its own throwaway context. Read its report: `REVIEW: reviewed` names a decision per pull
+   request -- merge on green (`skills/manager/phases/merge.md`) or resume the lane per "One
+   dispatch per tick" above for `needs-fix` -- inline, unsplit (#1544's steps 3-4 are not this
+   diff). `REVIEW: pending` falls through to step 3 with its observable line, verbatim;
    `REVIEW: could-not-run` folds into step 3 the same way any other unreadable input would.
 3. **Else hand back** -- because nothing was dispatchable, something must stay reachable mid-wait,
    or step 2's own spawn came back still `pending`. You have no `ScheduleWakeup` and cannot
