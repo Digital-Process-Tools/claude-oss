@@ -28,7 +28,7 @@ only the unconditional publishing clause above, which is unchanged. The agent co
 placed at dispatch is still sitting on the issue when this report comes back, and the report already
 carries what tells the two cases apart — `files` empty, no commit made. When a lane ends without a
 commit, release the issues it was claimed under before the spawn -- the mirror of `--claim` (#1069),
-releasing the lane record AND the primary issue's own GitHub assignee in one call:
+releasing the primary issue's own GitHub assignee and every companion's in one call:
 `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --release [--release-also <N> ...]`,
 naming every companion issue the lane also claimed as a `--release-also`. It removes only our own
 assignment and reports `released` / `not-assigned` / `not-mine` / `could-not-read` /

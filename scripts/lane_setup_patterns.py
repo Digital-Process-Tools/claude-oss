@@ -142,8 +142,8 @@ def _guard_test_existence(repo, test_path):
                        and a genuine miss render identically as
                        `FileNotFoundError` on a platform that folds Win32 codes
                        onto `ENOENT` (CLAUDE.md), so `_absence_confirmed` --
-                       already used by `worktree_occupancy` and `lane_count` for
-                       the identical swallow -- decides which of the two this is
+                       already used by `worktree_occupancy` for the identical
+                       swallow -- decides which of the two this is
                        rather than trusting the exception type alone.
 
     `CROSS_CUTTING_GUARDS` is a fact about *this* repository (claude-oss) living
@@ -254,250 +254,39 @@ def _refused_patterns(resolved):
     ]
 
 
-def _unresolved_overlap_detail(a, a_refused, b, b_refused):
-    """One line naming which side(s) carried a refused pattern and how many --
-    #774's own suggested shape, `1 of 1 lane pattern(s) refused`, so the reason
-    a comparison could not run is said in as many words rather than standing in
-    silently for the bare word `none`.
+def lane_report(repo, lane_patterns):
+    """The `lane` section of a lane-setup payload, or None when no `--lane`
+    was given at all -- an absent ask must never read as a checked, empty
+    lane.
+
+    `guards` (#432) is computed from the resolved files -- the files a
+    developer brief is actually about to touch -- so a brief names the
+    cross-cutting guard tests its own diff triggers, which a narrowed test
+    run selected by filename would not include.
+
+    **#1532 removed the against side.** This function used to take
+    `against_patterns` (a hand-typed set) or `derived_held`
+    (`derive_held_set`'s own return value, built from every open pull request
+    plus every live lane record) and report the overlap between the two, plus
+    a per-candidate `availability` verdict -- available / blocked /
+    could-not-check / resolved-to-nothing / could-not-derive-the-held-set.
+    All of it answered one question, which files are already spoken for, and
+    #1528 stopped that answer dropping a candidate: what was left was a
+    computation whose only remaining consumer was a receipt line. git reports
+    a real collision at merge, like everywhere else, and `git-worktrees`
+    reports which lanes are live from the filesystem, with no second copy to
+    go stale.
     """
-    parts = []
-    if a_refused:
-        parts.append(
-            "{0} of {1} lane pattern(s) refused: {2}".format(
-                len(a_refused), len(a["patterns"]), ", ".join(a_refused)
-            )
-        )
-    if b_refused:
-        parts.append(
-            "{0} of {1} against pattern(s) refused: {2}".format(
-                len(b_refused), len(b["patterns"]), ", ".join(b_refused)
-            )
-        )
-    return "; ".join(parts)
-
-
-def lane_report(repo, lane_patterns, against_patterns, derived_held=None):
-    """The `lane` section of a lane-setup payload, or None when nothing at all
-    was asked for. Two lanes given: also the overlap between them, so a
-    developer brief's setup call can carry the collision check the maintainer
-    would otherwise have to run by eye.
-
-    `guards` (#432) is computed only from the `lane` side's resolved files --
-    the files a developer brief is actually about to touch -- never from
-    `against`, which names a sibling lane's off-limits files. Reporting a
-    guard triggered by the sibling's files would tell a developer to run a
-    test for a change it must not make.
-
-    `derived_held` (#558) is `derive_held_set`'s own return value, or None. When
-    given, it replaces `against_patterns` as the source of the "against" side --
-    combining `--against` with it is refused earlier, in `main`, because a hand-typed
-    exclusion beside a derived one is exactly the ambiguity #558 exists to close (was
-    this file excluded because the derivation found it, or because someone typed it?).
-    Its `held` files become literal patterns through the same `resolve_lane` every
-    other side of this call already goes through, so the rendering and the overlap
-    check are the one mechanism, not two. When `derived_held["state"]` is
-    `could-not-derive`, no "against" side is resolved at all and `availability`
-    carries `could-not-derive-the-held-set` -- #558's own words, never `available`
-    and never `blocked`.
-
-    `availability` (#558) is a *per-candidate* verdict -- available / blocked /
-    could-not-check / resolved-to-nothing / could-not-derive-the-held-set (#843:
-    this enumeration itself used to stop at the pre-#809 four, the exact defect
-    #837 fixed one function away in dispatch.md's own prose) -- computed only
-    when `derived_held` was given, and only for the `lane` side against the
-    derived set: a mechanical question this function can answer on its own. The
-    tick-level *fill* verdict (filled / under-filled / could-not-tell) that #558
-    also names is deliberately NOT computed here: it needs the full list of
-    candidate issues under consideration this tick, which is a judgement about
-    which issues are even being weighed, not a fact this script can derive from
-    one `--lane` argument. That verdict stays prose in the tick, per the issue's
-    own framing of the two halves as separable.
-
-    `overlap_state` (#774) is a third answer sitting beside `overlap` itself --
-    `resolved` (both sides were actually compared), `could-not-check` (at least
-    one side carried a pattern `_lane_pattern_problem` refused, so the
-    comparison never ran for it), or `n/a` (fewer than both sides were given at
-    all, the pre-existing case). `overlap` alone cannot carry this on its own:
-    `[]` is the correct, meaningful answer for two sides that were both
-    genuinely resolved and share nothing, and #774's own measurement is that a
-    refused pattern produces the identical `[]` -- one word, `none`, for two
-    different claims, and in `--against` mode there is no sibling `verdict:`
-    line to disambiguate it. `overlap` itself is left `None` whenever
-    `overlap_state` is `could-not-check`, the same "nothing to report as a file
-    list" shape the pre-existing `n/a` case already uses, so a caller reading
-    `overlap` alone (the pre-#774 contract) never mistakes an unresolved
-    comparison for a computed empty one; `overlap_detail` carries the reason.
-    A refused pattern on the derived-held `lane` side also stops `availability`
-    from reading `available` -- the dangerous direction, since a real collision
-    hiding behind an unchecked pattern would otherwise render as clear to
-    dispatch on.
-    """
-    if not lane_patterns and not against_patterns and derived_held is None:
+    if not lane_patterns:
         return None
-    a = (
-        select_issues_overlap.resolve_lane(repo, lane_patterns)
-        if lane_patterns
-        else None
-    )
-    a_refused = _refused_patterns(a)
-    availability = None
-    overlap_state = "n/a"
-    overlap_detail = ""
-    if derived_held is not None:
-        if derived_held["state"] != "resolved":
-            b = None
-            overlap = None
-            if a is not None:
-                availability = {
-                    "state": "could-not-derive-the-held-set",
-                    "files": [],
-                    "holders": [],
-                    "detail": derived_held["detail"],
-                }
-        else:
-            held_files = sorted(derived_held["held"])
-            b = (
-                select_issues_overlap.resolve_lane(repo, held_files)
-                if held_files
-                else {"patterns": [], "files": []}
-            )
-            # #774, audit round: a held FILE can trip `_lane_pattern_problem`
-            # exactly the way a hand-typed pattern can -- a real git-tracked path
-            # containing '|' is legal on the filesystems this loop runs on, and
-            # `resolve_lane` gives it the identical `refused` state either way.
-            # Checking only `a_refused` left a refused held file silently
-            # dropping out of `b["files"]`, so a lane whose own pattern resolved
-            # cleanly could still read `available` while one of the files it was
-            # meant to be checked against was never actually compared -- the
-            # same dangerous direction the `a_refused` branch below exists to
-            # close, just on the other side of the comparison.
-            b_refused = _refused_patterns(b)
-            if a is None:
-                overlap = None
-            elif a_refused or b_refused:
-                # #774: a refused pattern on either side means this comparison
-                # never ran for it -- rendering `available` here would be the
-                # dangerous direction (a real collision hiding behind an
-                # unchecked pattern reads as clear to dispatch on), so this is
-                # its own state rather than folding into either `available` or
-                # `blocked`.
-                overlap = None
-                overlap_state = "could-not-check"
-                overlap_detail = _unresolved_overlap_detail(a, a_refused, b, b_refused)
-                availability = {
-                    "state": "could-not-check",
-                    "files": [],
-                    "holders": [],
-                    "detail": overlap_detail,
-                }
-            else:
-                overlap = select_issues_overlap.lane_overlap(a["files"], b["files"])
-                overlap_state = "resolved"
-                if overlap:
-                    holders = []
-                    for f in overlap:
-                        for h in derived_held["held"].get(f, []):
-                            if h not in holders:
-                                holders.append(h)
-                    availability = {
-                        "state": "blocked",
-                        "files": overlap,
-                        "holders": holders,
-                        "detail": "",
-                    }
-                elif select_issues_overlap._lane_resolved_to_nothing(a):
-                    # #809: every member of the lane side was well-formed and
-                    # checked, and the union still names zero files (an empty
-                    # glob, an empty directory, or a mix of the two). `overlap`
-                    # is `[]` here for the same reason it would be for a real,
-                    # disjoint, non-empty lane -- an empty set intersects
-                    # nothing -- so `overlap` alone cannot tell the two apart.
-                    # This must not read `available`: a lane nobody managed to
-                    # name is not a lane confirmed free.
-                    overlap_state = "resolved-to-nothing"
-                    availability = {
-                        "state": "resolved-to-nothing",
-                        "files": [],
-                        "holders": [],
-                        "detail": "this lane names no file on disk, so nothing "
-                        "was compared against the held set (#809)",
-                    }
-                else:
-                    availability = {
-                        "state": "available",
-                        "files": [],
-                        "holders": [],
-                        "detail": "",
-                    }
-    else:
-        b = (
-            select_issues_overlap.resolve_lane(repo, against_patterns)
-            if against_patterns
-            else None
-        )
-        b_refused = _refused_patterns(b)
-        if a is None or b is None:
-            overlap = None
-        elif a_refused or b_refused:
-            # #774: the wider half of #766 -- a refused pattern on either side
-            # means the comparison never ran, and must never render as the
-            # same `none` a real, checked, disjoint pair also prints.
-            overlap = None
-            overlap_state = "could-not-check"
-            overlap_detail = _unresolved_overlap_detail(a, a_refused, b, b_refused)
-        else:
-            overlap = select_issues_overlap.lane_overlap(a["files"], b["files"])
-            overlap_state = "resolved"
-            if select_issues_overlap._lane_resolved_to_nothing(
-                a
-            ) or select_issues_overlap._lane_resolved_to_nothing(b):
-                # #809: same reading as the `--derive-held` branch above -- an
-                # empty `overlap` from a side that named no file on disk is not
-                # the same claim as an empty `overlap` from two real, checked,
-                # disjoint sets, so the receipt's `overlap :` line must not
-                # print `none` for both. Checked on *both* sides here, unlike
-                # the `--derive-held` branch: `--against PATTERN` is itself a
-                # maintainer-typed pattern (dispatch.md's own documented
-                # fallback), not a derived held set, so it can resolve to
-                # nothing exactly the way `--lane` can -- an empty `overlap`
-                # from a typo'd or `**`-broken `--against` glob must not read
-                # as "checked, disjoint" either. Plain `--against` mode has no
-                # `availability` verdict to correct (that field only exists
-                # under `--derive-held`), so this is the only render this
-                # branch can carry the distinction on.
-                overlap_state = "resolved-to-nothing"
+    a = select_issues_overlap.resolve_lane(repo, lane_patterns)
     # #566: `repo` is threaded through so each guard's `status` is answered against
     # the repository the lane is actually dispatched into, never against claude-oss's
     # own tree by default -- the whole defect this issue is about.
-    guards = guards_for_files(a["files"], repo) if a else []
-    result = {
+    return {
         "lane": a,
-        "against": b,
-        "overlap": overlap,
-        "overlap_state": overlap_state,
-        "overlap_detail": overlap_detail,
-        "guards": guards,
+        "guards": guards_for_files(a["files"], repo) if a else [],
     }
-    if derived_held is not None:
-        # #734, review round: `derived_held["lanes"]["stale_pruned"]` names every
-        # registry record this call's own `derive_held_set` deleted as a side
-        # effect (a branch it corroborated as locally gone) -- surfaced here so a
-        # caller can see what was pruned rather than the deletion happening with
-        # no trace anywhere in this payload. Absent on the two shapes that carry
-        # no `lanes` sub-dict at all (no config loaded; a hand-built `derived_held`
-        # in an older test fixture), which is exactly "nothing pruned", not a
-        # different claim. `prune_failed` (#792) is the sibling of that same
-        # side effect gone wrong -- a record the deletion attempt could not
-        # actually remove -- and is surfaced the same way, never folded into
-        # `stale_pruned`.
-        result["held_source"] = {
-            "state": derived_held["state"],
-            "detail": derived_held["detail"],
-            "stale_pruned": derived_held.get("lanes", {}).get("stale_pruned", []),
-            "prune_failed": derived_held.get("lanes", {}).get("prune_failed", []),
-        }
-        result["availability"] = availability
-    return result
 
 
 #: `linked_worktree_state`'s own return values -- a repository's ordinary

@@ -3,7 +3,7 @@
 Selection used to be five scripts and a session doing the joins by hand:
 `select_issues_rank.py` for the order, `select_issues_claim_read.py --read` for who already
 holds an issue, `select_issues_preflight.py` for whether it is stale, and
-`lane_setup.py` for whether it collides with a lane already in flight. A
+`lane_setup.py` for the worktree and branch it will be cut into. A
 tick that finds no candidate after running all four and a tick that could
 not read one of the four inputs used to end the same way -- the `nothing
 left` state, whose own guard ("`gh-issues` and `gh-prs` both answered")
@@ -80,9 +80,10 @@ with the board, only with the caller's translation of it. `select()` itself
 keeps its old, payload-driven contract unchanged (still the primitive every
 test above exercises, `checker`/`search`/`resolve_lane`/`suggest_companions`
 injectable exactly as before); `select_fleet()`, below, is the new caller
-that fetches the board and the held set itself -- via `_fetch_board` and
-`lane_setup.derive_held_set` -- and hands `select()` an already-correct
-payload once per declared lane label. See "## Fleet" near the end of this
+that fetches the board itself -- via `_fetch_board` -- and hands `select()`
+an already-correct payload once per declared lane label. (It used to fetch a
+held set beside it, via `lane_setup.derive_held_set`; #1528 removed its last
+consumer and #1532 retired it.) See "## Fleet" near the end of this
 docstring.
 
 ## Groups, not only a flat list (#1068)
@@ -117,8 +118,8 @@ owns this, by rule" from "nobody could place this".
 
 `select_fleet(config, ...)` is `docs/pick-the-work.md` step 1: no input
 beyond an already-loaded `.oss.json` (`config`). It fetches the open board
-itself (`_fetch_board`, one `gh api graphql` call), derives the held set
-itself (`lane_setup.derive_held_set`), and returns **one group per lane**
+itself (`_fetch_board`, one `gh api graphql` call) and returns **one group
+per lane**
 instead of one partition of the whole board -- measured on the live
 board, 18 groups for a tick that dispatches at most five lanes, most of
 them never used. `select()` itself is unchanged and still the
@@ -219,7 +220,6 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import gh_which  # noqa: E402
-import lane_setup  # noqa: E402
 import oss_config  # noqa: E402
 import select_issues_claim_read  # noqa: E402
 import select_issues_companions  # noqa: E402
@@ -400,10 +400,9 @@ def select(
 ):
     """The join. `payload` is `{"declared": {...}, "issues": [...], ...}` --
     see the module docstring's per-issue optional fields (`preflight_pattern`
-    / `preflight_roots`, `lane_patterns`) and the top-level optional
-    `held_files`, `repo`, `lanes_read_ok` / `lanes_read_why` (#1067) and
-    `board_capped` / `board_cap_detail` (#1068, consumed only by grouping --
-    see "## Groups" above).
+    / `preflight_roots`, `lane_patterns`) and the top-level optional `repo`
+    and `board_capped` / `board_cap_detail` (#1068, consumed only by grouping
+    -- see "## Groups" above).
 
     `checker`/`search`/`resolve_lane`/`suggest_companions` default to
     `select_issues_claim_read.check`/`select_issues_preflight.search`/
@@ -413,23 +412,17 @@ def select(
 
     #1078: an optional top-level `lane_label` narrows candidate GENERATION to
     one GitHub label (a LABEL lane, e.g. `lane-dispatch`) before ranking
-    runs; see the guard just above `held_files` below for the full contract.
-    Never confuse it with a developer LANE, the worktree/branch sense this
-    module uses everywhere else.
+    runs. Never confuse it with a developer LANE, the worktree/branch sense
+    this module uses everywhere else.
 
-    #1067: `held_files` gets the same could-not-read treatment `board_read_ok`
-    already has, via a top-level `lanes_read_ok` / `lanes_read_why` pair --
-    `lanes_read_ok is False` forces `could-not-select` before `held_files` is
-    even read, the same way `board_read_ok is False` already does for the
-    board. Their producer is `lane_setup.derive_held_set(...)`: `held_files`
-    is `sorted(derive_held_set(...)["held"])`, `lanes_read_ok` is whether its
-    `state` came back `resolved`, and `lanes_read_why` is its `detail` when it
-    did not -- documented beside the dispatch directive that runs this script
-    in `skills/manager/phases/dispatch.md`. An absent `lanes_read_ok` (a
-    caller that never populated it, and every test fixture that predates this
-    fix) is read as "not attempted" rather than "failed" -- the same posture
-    `board_read_ok`'s own absence already gets -- so this stays additive
-    rather than breaking a caller that has no lane inventory to offer at all.
+    **#1532 removed `held_files` and its `lanes_read_ok` / `lanes_read_why`
+    pair.** They named the files every live lane and open pull request already
+    held, produced by `lane_setup.derive_held_set`, and #1067 gave them the
+    same could-not-read treatment `board_read_ok` still has. #1528 removed
+    their last consumer -- a collision no longer drops a candidate -- and
+    #1532 retired the registry half of the derivation, so what remained was a
+    forge round trip per tick whose answer nothing read. A caller still
+    passing them is not refused; they are simply ignored.
     """
     checker = select_issues_claim_read.check if checker is None else checker
     search = select_issues_preflight.search if search is None else search
@@ -459,14 +452,15 @@ def select(
     # #1078: an optional top-level `lane_label` narrows candidate GENERATION
     # to issues carrying that one GitHub LABEL (e.g. `lane-dispatch`) before
     # ranking ever runs. This is a LABEL lane -- never to be confused with a
-    # developer LANE (a worktree on `fix/N`, what `lane_setup.py` and
-    # `held_files` above are about); this module never uses the bare word
-    # "lane" for the label, only "lane label". #1530: `_group_candidates`
-    # (below) now groups directly on this same signal -- an issue's lane
-    # label IS the partition, not an input to a further overlap search --
-    # so filtering here and grouping there read the identical field.
-    # Absent or empty, nothing is filtered -- the historical, whole-board
-    # behaviour every caller before #1078 still gets.
+    # developer LANE (a worktree on `fix/N`, what `lane_setup.py` is about);
+    # this module never uses the bare word "lane" for the label, only "lane
+    # label". #1530: `_group_candidates` (below) now groups directly on this
+    # same signal -- an issue's lane label IS the partition, not an input to
+    # a further overlap search -- so filtering here and grouping there read
+    # the identical field. (#1530's own text named `held_files` beside
+    # `lane_setup.py` here; #1532 removed it, along with the held set it
+    # summarised.) Absent or empty, nothing is filtered -- the historical,
+    # whole-board behaviour every caller before #1078 still gets.
     lane_label = payload.get("lane_label")
     lane_label_filter = None
     if lane_label:
@@ -479,21 +473,6 @@ def select(
         # removed so the two cases are distinguishable in the receipt, even
         # when this label happens to match everything (`removed: 0`).
         lane_label_filter = {"label": lane_label, "removed": before - len(issues)}
-
-    # #1067: `held_files` used to have no unreadable state at all -- "the live
-    # lanes could not be enumerated" and "there are no live lanes" arrived as
-    # the identical empty set, and the collision check below then silently
-    # did nothing. `lanes_read_ok`/`lanes_read_why` give it the same treatment
-    # `board_read_ok` already has, above: `is False` (never falsy-but-absent)
-    # forces `could-not-select` before `held_files` is read at all, so an
-    # absent pair -- a caller that never populated it -- still reads as "not
-    # attempted", not as a failure.
-    if payload.get("lanes_read_ok") is False:
-        why = (
-            payload.get("lanes_read_why")
-            or "the caller reported the lane inventory read failed"
-        )
-        return _could_not_select("lanes: {0}".format(why))
 
     repo = payload.get("repo")
 
@@ -619,12 +598,11 @@ def select(
                 # empty union used to read as "no overlap" -- the same defect
                 # class #970 closed for the assignee read, one input over: an
                 # unreadable lane pattern is dark, never a clean disjointness
-                # result reached by accident. Hoisted out of `and held_files`
-                # (#1067): whether a lane pattern could be read at all does
-                # not depend on whether anything is currently held -- with
-                # `held_files` empty (lane 1 of any tick, and every tick #1067
-                # left unaffected before this fix), this guard used to never
-                # run at all.
+                # result reached by accident. #1067 hoisted this out of an
+                # `and held_files` condition, which meant it never ran at all
+                # whenever nothing was currently held; #1532 removed the held
+                # set entirely, so the guard now stands on its own terms --
+                # whether a lane pattern could be read is its own question.
                 dark_inputs.append(
                     "lane pattern for #{0}: {1}".format(
                         number, "; ".join(entry["detail"] for entry in refused)
@@ -1027,7 +1005,6 @@ def select_fleet(
     config,
     repo_root=".",
     fetcher=None,
-    held_fetcher=None,
     checker=None,
     search=None,
     resolve_lane=None,
@@ -1044,9 +1021,9 @@ def select_fleet(
     docstring's "## Fleet" section for the full reasoning; this docstring
     covers only the call's own shape.
 
-    `fetcher`/`held_fetcher` default to `_fetch_board`/`lane_setup.
-    derive_held_set` -- injectable exactly the way `select()`'s own `checker`
-    already is, so a test never needs a live `gh` session.
+    `fetcher` defaults to `_fetch_board` -- injectable exactly the way
+    `select()`'s own `checker` already is, so a test never needs a live `gh`
+    session. #1532 removed the `held_fetcher` that sat beside it.
     `checker`/`search`/`resolve_lane`/`suggest_companions` pass straight
     through to every `select()` call this makes.
 
@@ -1067,12 +1044,11 @@ def select_fleet(
                           available"` only if every one of them read
                           cleanly and found nothing, `"could-not-select"`
                           otherwise -- and ALWAYS `"could-not-select"`,
-                          immediately, when the board or held-set fetch
-                          itself failed, before any lane is attempted.
+                          immediately, when the board fetch itself failed,
+                          before any lane is attempted.
       board_read_ok/why  observed facts about the fetch this call made,
                           never a caller's assertion (#1145's own point).
       board_capped/detail   whether the board read was capped (`per=`).
-      lanes_read_ok/why  observed facts about the held-set derivation.
       lanes             `{label: <select() result>, ...}` -- one key per
                           declared lane label plus (when declared)
                           `lane_other`, always present even when its own
@@ -1092,7 +1068,6 @@ def select_fleet(
                           qualifies -- never a missing key.
     """
     fetcher = _fetch_board if fetcher is None else fetcher
-    held_fetcher = lane_setup.derive_held_set if held_fetcher is None else held_fetcher
 
     declared = (config or {}).get("labels") or {}
     repo_slug = (config or {}).get("repo")
@@ -1108,34 +1083,17 @@ def select_fleet(
             "board_read_why": board_read_why,
             "board_capped": False,
             "board_cap_detail": "",
-            "lanes_read_ok": None,
-            "lanes_read_why": None,
             "lanes": {},
             "dropped": [],
         }
 
-    held = held_fetcher(
-        repo_slug, (config or {}).get("worktree_root"), repo=Path(repo_root)
-    )
-    lanes_read_ok = held.get("state") == "resolved"
-    lanes_read_why = None if lanes_read_ok else held.get("detail")
-    if not lanes_read_ok:
-        return {
-            "state": STATE_COULD_NOT_SELECT,
-            "why": "lanes: {0}".format(lanes_read_why),
-            "board_read_ok": True,
-            "board_read_why": None,
-            "board_capped": board.get("capped"),
-            "board_cap_detail": board.get("cap_detail"),
-            "lanes_read_ok": False,
-            "lanes_read_why": lanes_read_why,
-            "lanes": {},
-            "dropped": [],
-        }
-
+    # #1532: a second fetch used to run here -- `lane_setup.derive_held_set`,
+    # one `gh pr list` round trip plus a walk of every live lane record, to
+    # build the set of files already spoken for. #1528 removed its last
+    # consumer and #1532 retired the registry half of it, so the tick no
+    # longer pays for an answer nothing reads.
     issues = board.get("issues") or []
     issues_by_number = {row.get("number"): row for row in issues}
-    held_files = sorted((held.get("held") or {}).keys())
 
     # Maintainer correction (#1146, #1130): the fleet is the declared lane
     # labels PLUS `labels.lane_other` -- read from config, never hardcoded,
@@ -1159,9 +1117,7 @@ def select_fleet(
         payload = {
             "declared": declared,
             "issues": filtered_issues,
-            "held_files": held_files,
             "board_read_ok": True,
-            "lanes_read_ok": True,
         }
         if lane_label is not None:
             payload["lane_label"] = lane_label
@@ -1248,8 +1204,6 @@ def select_fleet(
         "board_read_why": None,
         "board_capped": board.get("capped"),
         "board_cap_detail": board.get("cap_detail"),
-        "lanes_read_ok": True,
-        "lanes_read_why": None,
         "lanes": lanes,
         "dropped": dropped,
     }

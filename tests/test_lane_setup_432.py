@@ -145,21 +145,25 @@ def test_empty_file_list_trips_no_guard():
 def test_lane_report_carries_triggered_guards_for_the_lane_side(tmp_path):
     (tmp_path / "agents").mkdir()
     (tmp_path / "agents" / "developer.md").write_text("x\n")
-    report = lane_setup.lane_report(tmp_path, ["agents/developer.md"], None)
+    report = lane_setup.lane_report(tmp_path, ["agents/developer.md"])
     tests_hit = [entry["test"] for entry in report["guards"]]
     assert "tests/test_content_invariants.py" in tests_hit
 
 
-def test_lane_report_against_side_does_not_leak_into_triggered_guards(tmp_path):
-    """Only the lane a developer is about to touch should trigger a guard --
-    not the sibling lane's off-limits files, or a brief would be told to run
-    tests for files it must not edit."""
-    (tmp_path / "agents").mkdir()
-    (tmp_path / "agents" / "developer.md").write_text("x\n")
+def test_lane_report_with_no_lane_reports_no_guards_at_all(tmp_path):
+    """#1532: this used to be
+    `test_lane_report_against_side_does_not_leak_into_triggered_guards` --
+    guards had to be computed from the `lane` side only, never from `against`,
+    or a brief would be told to run tests for a sibling lane's off-limits
+    files. There is no `against` side to leak from any more, so the property
+    is structural rather than checked.
+
+    What is still worth pinning, and is the same shape: an absent ask produces
+    no guards, never guards for something nobody named. The positive control is
+    directly above."""
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "oss_state.py").write_text("x\n")
-    report = lane_setup.lane_report(tmp_path, None, ["scripts/oss_state.py"])
-    assert report["guards"] == []
+    assert lane_setup.lane_report(tmp_path, []) is None
 
 
 # --- receipt: the CLI surface a developer brief actually reads -----------------

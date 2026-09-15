@@ -61,10 +61,6 @@ def _no_op_checker(numbers, mode, run=None, repo=None):
     ]
 
 
-def _held(repo_slug, worktree_root, exclude_issue=None, repo=None):
-    return {"state": "resolved", "held": {}, "detail": ""}
-
-
 _LANE_OTHER_CONFIG = {
     "repo": "Digital-Process-Tools/claude-oss",
     "worktree_root": "/tmp/wt",
@@ -96,7 +92,6 @@ def test_select_issues_solo_lane_other_group_uses_the_shared_constant():
     result = select_issues.select_fleet(
         _LANE_OTHER_CONFIG,
         fetcher=_fetcher,
-        held_fetcher=_held,
         checker=_no_op_checker,
     )
     group = result["lanes"]["lane-other"]["groups"]["groups"][0]
@@ -131,7 +126,6 @@ def test_select_issues_solo_lane_other_group_actually_reads_the_constant_at_call
     result = select_issues.select_fleet(
         _LANE_OTHER_CONFIG,
         fetcher=_fetcher,
-        held_fetcher=_held,
         checker=_no_op_checker,
     )
     group = result["lanes"]["lane-other"]["groups"]["groups"][0]

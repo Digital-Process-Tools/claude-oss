@@ -226,7 +226,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # saying the rendered `prompt` is the whole spawn payload and no brief is
     # composed, one saying recon is the lane's own spawn rather than this
     # agent's. Ceiling unchanged; 953 B headroom.
-    "agents/sub-manager.md": (20047, 21000),
+    #
+    # Re-baselined again for #1532, stacked on that: 20047 B -> 19911 B. The
+    # registry paragraph -- `--claim` refuses without `--lane`, never claim on
+    # a probe, a phantom record blocks `--derive-held` for hours -- came out
+    # with the registry it was about. Both sides re-baselined from the same
+    # 19460 B starting point, so this number is `wc -c` on the rebased file,
+    # not 20047 minus this change's own delta. Ceiling unchanged; 1,089 B
+    # headroom, and this is a net shrink against #1535's number.
+    "agents/sub-manager.md": (19911, 21000),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

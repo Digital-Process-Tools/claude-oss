@@ -52,15 +52,19 @@ Measured on one lane (three issues): the recon cost 0.7M context tokens and the 
 134.4M for the comparable lane without one (#1499) -- the saving is the orientation reads being paid
 once in a context that dies, and that holds wherever the spawn is made.
 
-**One dispatcher-side use survives, and only until #1532 lands.** `--claim` needs `--lane` patterns
-before the lane exists, and recon's `## Lane file set` is the derivation this loop has for them. When
-you cannot name those patterns from the issues yourself, spawn one recon for that section alone:
+**One dispatcher-side use survives, and #1532 made it optional rather than required.** This said
+`--claim` needs `--lane` patterns before the lane exists; it no longer does (#788's rule protected
+the lane record, now retired). What is left is worth having and nothing forces it: `--lane` makes
+`lane_setup.py` report the cross-cutting guard tests those files trip, and `--suggest-companions`
+still requires it. For either, when you cannot name the patterns yourself, spawn one recon for that
+section alone:
 
     Agent(subagent_type: "oss:recon", model: "sonnet", run_in_background: false, prompt: "<the issue numbers, the repo root, and: locate, do not design>")
 
 Read its `## Lane file set` and its `RECON-COST:` line, which goes beside the lane's own `cost` in
 the handback. **Discard the rest rather than pasting it** -- pasting it is the double payment above.
-Once #1532 retires the registry there is nothing left on this side that needs a recon at all.
+Issue #1535 predicted that after #1532 nothing here would need a recon; that is true of *needs*,
+and whether to drop the optional use too is the maintainer's call, not this change's.
 
 **Spawn with the literal string, not the definition's name** -- `commands/tick.md` spells its own
 `oss:sub-manager` spawn out in full, and this step must do the same for the two it composes:
@@ -208,15 +212,13 @@ changelog fragment and none of that fixed cost, so leaving it undispatched while
 `filled` measures the cheap axis and reports it as the whole answer (#520). `filled` therefore reads
 on **both**: one developer per available file-disjoint lane, **and** each lane's brief carrying
 every further open issue whose files land inside its already-claimed set. Checking that second axis
-is the same mechanism run in reverse — `lane_setup.py <lane-issue> --lane <already-claimed paths>
---against <candidate-issue paths>` for every other open, dispatchable issue — and it stays a
-maintainer judgement the script supports rather than performs, for the same reason named above: an
-issue's files are not derivable from its body (#267), so naming the candidate issue to check is
-yours, not the script's. **`under-filled` on this axis names the shared, already-claimed file that
-blocked a further issue from joining a lane, and the issues queued behind that file** — not only a
-smaller count. When every remaining dispatchable issue routes through files a running lane already
-holds, that is itself the receipt: say which file, and which issues are queued behind it, rather
-than reporting the tick as `filled` because the lane count matched.
+stays a maintainer judgement `select_issues.py`'s own companion search supports rather than
+performs, for the same reason named above: an issue's files are not derivable from its body (#267),
+so naming the candidate issue to check is yours, not the script's. (#1532 retired `--against`, which
+used to be the direct two-lane form of this check; the companion search in `select_issues.py` and
+`lane_setup.py --suggest-companions` are what remain.) **`under-filled` on this axis names the
+shared file that blocked a further issue from joining a lane, and the issues queued behind that
+file** — not only a smaller count.
 
 **A declined dispatch cites the call that established it, made this tick, or it is not a reason
 (#866).** `under-filled`'s reason -- on either axis, and whether it parks a whole issue or shrinks a
@@ -226,62 +228,45 @@ assignee, `gh-prs` showing the PR holding the files. Checkable by shape, not by 
 reports `CITED` when the text carries a backtick-quoted call and `UNCITED` otherwise. An inherited or
 freehand reason with no such citation is not a reason, even a true one -- dispatch the issue instead
 of parking it on a stale handoff. **This check is advisory, not enforced** -- unlike `--lane-fill`,
-which refuses `--decision` outright on an unreasoned short lane, there is no lane record for an issue
-that was never dispatched to attach a refusal to. Run it and put `UNCITED` in the tick's own report;
+which refuses `--decision` outright on an unreasoned short lane, there is nothing for an issue that
+was never dispatched to attach a refusal to. Run it and put `UNCITED` in the tick's own report;
 nothing currently blocks the call the way a short lane is blocked.
 
 **Do not check that intersection by eye. `fix/247-244`'s lane was a literal path
 (`skills/manager/SKILL.md`) and `fix/262-248`'s was a glob (`commands/*.md`); the second agent's fix
 correctly touched `commands/tick.md`, and nothing caught the collision because a path and a glob do
 not intersect visibly (#267).** `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN
-[--lane PATTERN ...] --derive-held` is the route: it renders the new lane in canonical form -- a sorted, deduplicated
-list of repo-relative paths, each glob expanded against what is actually on disk -- and derives the
-held side itself, from every open pull request's own files and every live lane record's own files
-(#558), rather than asking you to retype what every other running lane already claimed. Run it with
-the new brief's lane as `--lane` before that brief is written, not after; the overlap and its holder
-come back in the payload (`--json`) or the receipt.
+[--lane PATTERN ...]` renders the new lane in canonical form -- a sorted, deduplicated list of
+repo-relative paths, each glob expanded against what is actually on disk -- so two lanes can be
+compared as file lists rather than as the strings somebody typed.
 
-**Derivation can fail to derive, and that is a third state, not a blocked one.** `gh` unreachable,
-the call timing out, a live lane record missing its own file list -- any of those and the payload's
-`availability` reads `could-not-derive-the-held-set`, #558's own words, never folded into `available`
-and never into `blocked`. Only there does the hand-typed side come back: `--against PATTERN
-[--against PATTERN ...]` still exists for that one case, spelling out every already-dispatched,
-still-running lane's files by hand -- the fallback for when the derivation cannot answer, not the
-default route it used to be. `--derive-held` and `--against` are mutually exclusive and the script
-refuses both together, because a derived exclusion and a hand-typed one beside it is exactly the
-ambiguity #558 exists to close.
+**#1532 retired the automatic comparison that used to sit on top of that.** `--derive-held` built
+the other side from every open pull request's own files plus every live lane record's own files
+(#558), and `--against PATTERN` was the hand-typed fallback when the derivation failed. The chain
+they fed ended at a per-candidate `availability` verdict -- `available`, `blocked`,
+`could-not-check` (#774), `resolved-to-nothing` (#809), `could-not-derive-the-held-set` --
+and #1528 had already stopped that verdict dropping a candidate, so what remained was a `gh pr list`
+round trip and a registry walk per probe whose answer nothing acted on. Both flags are gone and
+`lane_setup.py` refuses them as unknown arguments rather than accepting and ignoring them, so a call
+pasted from a stale runbook fails loudly.
 
-**A fourth state, `could-not-check` (#774), is not the same failure and does not take the same
-fallback.** `could-not-derive-the-held-set` means the *derivation itself* broke -- `gh`, a timeout, a
-missing record -- and retyping the held set by hand genuinely substitutes for it. `could-not-check`
-means the derivation ran and a specific pattern was refused by `_lane_pattern_problem` for cause:
-empty, drive-prefixed or leading-`/`, a `..` traversal, or a literal `|` (the repeatable-flag form
-spelled wrong, #766). Read `overlap_detail` (or the `overlap : COULD NOT CHECK -- N of N lane
-pattern(s) refused: PATTERN` receipt line) for which pattern and why, before doing anything else.
+**What answers the question now.** git reports a real collision at merge, which is where it has
+always genuinely been resolved. `supertool git-worktrees` reports which lanes are live, read from
+the filesystem, and is the single source of truth -- the registry was a second copy of that fact
+with a 240-minute TTL and no housekeeping, and a board read during this issue's own investigation
+showed 15 worktrees of which 11 were `idle, merged, clean`. Two lanes that do collide is a textual
+conflict somebody resolves once, not a silent wrong answer.
 
-If the refused pattern is on **your own `--lane` side**, retyping the identical string as `--against`
-gets refused identically -- the string is what is wrong, not the flag. Fix the pattern (correct the
-typo, drop the leading `/` or the `..`, split a `|`-joined value into one `--lane` per file) and
-re-run `--derive-held`. If the refused pattern is on the **derived-held side** -- a real git-tracked
-file whose own name trips the same refusal, such as a literal `|` in a filename -- there is no flag
-to fix: `--against` and `--derive-held` are mutually exclusive, so hand-typing that one file as
-`--against` refuses it the same way. Read that file's overlap by eye instead, and say in the record
-that the automated check could not vouch for it -- never dispatch on a bare `could-not-check` read as
-though it were `available`.
-
-**A fifth state, `resolved-to-nothing` (#809, #837), is not a sixth row beside `filled` /
-`under-filled` / `could-not-tell` above -- it is a reason `could-not-tell` carries, folded in rather
-than counted, and it must never read as `filled`.** It means every member of a candidate lane was
-individually well-formed and checked, and the whole lane still named zero files on disk -- a glob
-that matched nothing, a directory with nothing under it. `overlap` renders `[]` for exactly the same
-reason a real, disjoint, non-empty lane would, so `overlap` alone cannot tell the two apart;
-`lane_report` marks it separately (`availability.state` and `overlap_state` both
-`"resolved-to-nothing"`) and the receipt prints `verdict : RESOLVED TO NOTHING` /
-`overlap : n/a -- lane resolved to zero files on disk, nothing to compare (#809)` rather than
-folding it into either `available` or `COULD NOT CHECK`. A candidate that named nothing has not been
-confirmed free -- counting it toward `filled` is the exact fold this loop is named for catching, so
-it is reported the same way `could-not-tell` is reported above: the candidate and the pattern that
-resolved to nothing, not silence.
+**A lane that resolves to nothing has not been confirmed free (#809, #837).** Every member
+individually well-formed and checked, and the whole lane still naming zero files on disk -- a glob
+that matched nothing, a directory with nothing under it -- is not the same fact as a lane that
+really does touch nothing else. It reads `glob-no-match` on the pattern's own state in the `lane`
+side of the receipt. #1532 removed the `availability` verdict and the `overlap` line that used to
+carry this distinction on the comparison, but the underlying reading survives where it is still
+computed: `select_issues.py` reports a candidate whose lane resolved to no files on disk as a dark
+input rather than as a clean one, which is the same refusal to fold. When it shows up in a tick's
+own counting, it belongs under `could-not-tell`, folded in rather than counted, and never under
+`filled`.
 
 None of this touches the other side of the check -- naming which further open issues could join an
 already-claimed lane (above). An issue's own files are still not derivable from its body (#267), so
@@ -293,15 +278,19 @@ when and how far to bundle is below, beside the claim it is dispatched alongside
 other lever: branch the second agent off the first's branch rather than off the default branch. It
 costs a rebase per merge. Do not stack more than two deep without a reason.
 
-**Claim before you spawn, not after** — writing the primary issue's brief with `--claim` (#1069)
-writes every issue's own GitHub assignee AND registers the lane in one call:
+**Claim before you spawn, not after** — writing the primary issue's brief with `--claim`
+(#1069, #1532) writes every issue's own GitHub assignee:
 
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane PATTERN [--lane PATTERN ...] [--claim-also <N> ...]
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim [--lane PATTERN ...] [--claim-also <N> ...]
 
-Dispatch only what comes back `claimed`. `already-claimed` / `could-not-claim-assignee` /
-`assignee-rolled-back` / `rollback-failed-assignee-still-set` are the named failure states — see
-`lane_setup_claim.claim_and_register`'s own docstring for what each means and, for the last one,
-which issue is still assigned and needs releasing by hand. `could-not-read` is never `unassigned`.
+Dispatch only what comes back `claimed`. There are exactly three states, and the other two are
+`already-claimed` (somebody else holds at least one of the issues — nothing was written) and
+`could-not-claim-assignee` (the read/write itself did not complete for at least one). Those two are
+different facts and the second is never folded into the first: `could-not-read` is never
+`unassigned`. See `lane_setup_claim.claim_issues`'s own docstring. #1532 retired the two rollback
+states that used to sit beside them (`assignee-rolled-back`,
+`rollback-failed-assignee-still-set`) — they existed because the call also wrote a local lane
+record, and there is no second write left to fail.
 
 **Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself — this is the
 directive, not a description.** Board in, ranked claimable candidates out. It composes ranking,
@@ -311,11 +300,11 @@ per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale`
 `lane-collision`). It does not replace `--claim` above: reading who is claimable and writing a claim
 stay separate calls.
 
-**It takes no input (#1145).** No stdin payload, no `--fetch` mode. It fetches the board, reads
-`.oss.json` and derives the held set itself, so `board_read_ok` / `board_read_why` / `board_capped` /
-`board_cap_detail` / `lanes_read_ok` / `lanes_read_why` are facts it observed, and a failed read is
-`could-not-select`. It still never invents `lane_patterns` or `preflight_pattern` for an issue that
-declares neither (#267).
+**It takes no input (#1145).** No stdin payload, no `--fetch` mode. It fetches the board and reads
+`.oss.json` itself, so `board_read_ok` / `board_read_why` / `board_capped` / `board_cap_detail` are
+facts it observed, and a failed read is `could-not-select`. (#1532 removed the `lanes_read_ok` /
+`lanes_read_why` pair beside them, which reported on the held-set derivation.) It still never
+invents `lane_patterns` or `preflight_pattern` for an issue that declares neither (#267).
 
 **Read `lanes`, one entry per declared lane label, and dispatch its group (#1146, #1530).** The
 fleet is the lane labels `.oss.json` declares, `labels.lane_other` included. Each lane returns
@@ -378,11 +367,11 @@ failure to back it; a bundle claims only that the fixes share a worktree. A bund
 stays two or three fixes: **each issue keeps its own test story and its own changelog fragment**, and
 the pull request closes every issue it carries.
 
-**Never bundle an issue a running lane already touches.** `select_issues.py` derives the held set
-itself and excludes them. To check one named running lane directly, `lane_setup.py --lane
-PATTERN --against PATTERN` — overlap against a *running* lane means conflict; overlap against a
-*candidate's* declared lane means the two are worth bundling. Same flag, opposite readings; aim it
-deliberately.
+**Prefer not to bundle an issue a running lane already touches** — overlap against a *running* lane
+means a conflict somebody resolves by hand; overlap against a *candidate's* declared lane means the
+two are worth bundling. Since #1528 an overlap no longer drops a candidate, and since #1532 nothing
+computes it for you: read the running lanes off `git-worktrees` and judge it. A textual conflict at
+merge is the backstop, and it is a loud one.
 
 **The two-issue row must not become a rule (#586).** The cap's own measurement puts a two-issue lane
 worse per issue than a single-issue one at n=58, which is the size of result that reverses on more
@@ -479,23 +468,19 @@ who else is out there. `skills/manager/phases/tick-order.md` names the same call
 states in full (#1037: this content moved out of `commands/tick.md` into that phase file); this is
 the pointer, not a second copy of that explanation.
 
-**`--claim` belongs only here, never on a probe above** (#705): every call used to record this
-lane unconditionally, so probing several candidates before picking one left phantom records that
-blocked `--derive-held` for hours. The probe forms above are now read-only; only `--claim` writes.
+**`--claim` belongs only here, never on a probe above** (#705). The probe forms above are read-only;
+only `--claim` writes, and what it writes is the issue's GitHub assignee. Claiming on a probe takes
+an issue nobody is going to work.
 
-**`--claim` refuses without `--lane` (#788), and refuses a claim made from inside a worktree rather
-than the clone (#865) -- both enforced by `lane_setup.py` itself now, with the argument in its own
-code rather than only here.** #788 is an argparse `parser.error`; #865 is a report-time refusal (it
-sets `effective_claim` false and prints `CLAIM REFUSED` with the reason) rather than an argparse
-error -- same posture, different mechanism, both read by whoever edits the script next. Pass the
-same patterns this candidate was already probed
-with above; this is the one call that writes, so it is also the one call the files must be named on.
-When a dispatched lane's own brief tells it to run `--claim` as its own first call, that call must
-run from the clone, before the `git worktree add` (or equivalent `cd`) the brief also asks for — not
-after: `.oss.local.json` is git-excluded from every worktree this loop cuts, so `--claim` standing
-inside one would derive `worktree_root` from that worktree's own path and write into a registry
-sibling to it, invisible to every other lane's `--derive-held` -- which is exactly what the refusal
-now stops before it happens.
+**#1532 removed two refusals that went with the registry.** `--claim` no longer requires `--lane`
+(#788 -- a claim with no files wrote a fileless lane record that poisoned every later
+`--derive-held`; there is no record and no `--derive-held`), and it no longer refuses a claim made
+from inside a worktree rather than the clone (#865 -- standing in a worktree derived `worktree_root`
+from that worktree's own path and wrote into a registry sibling to it, invisible to every other
+lane). An assignee write reads no local path at all: it is a forge call against the issue number, so
+it is correct from any directory. Running `--claim` from the clone is still the better habit,
+because the same call's worktree and branch derivation does read `.oss.local.json`, and that file is
+git-excluded from every worktree this loop cuts.
 
 **`--stack-on BRANCH` (#1006) is the narrow escape from a `cannot tell` this loop caused itself,
 never a general substitute for the ordinary dispatch path above.** The incident it was built for:

@@ -339,9 +339,12 @@ def linked_worktree_state(repo):
     derives `<this worktree's own path>-wt` instead -- a value, not an
     absence, and a *wrong* one, sibling to the one worktree that asked rather
     than to the clone every other lane reads. Reproduced directly: a
-    `--claim` call from inside a real linked worktree recorded into
-    `<worktree>-wt/.oss-lanes`, invisible to `--derive-held` runs from
-    anywhere else.
+    `--claim` call from inside a real linked worktree recorded into a lane
+    registry sibling to that worktree, invisible to every other lane. (#1532
+    retired that registry, so `--claim` no longer has this failure mode --
+    an assignee write reads no local path at all. This function survives for
+    every OTHER caller that needs to know which kind of tree it is standing
+    in, which is a real question independent of the claim that motivated it.)
 
     Detecting "standing inside a linked worktree" needs a fact this module
     cannot derive from a path alone -- `worktree_root`'s own convention names

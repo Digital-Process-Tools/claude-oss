@@ -49,40 +49,34 @@ def _no_op_checker(numbers, mode, run=None, repo=None):
 
 
 # ---------------------------------------------------------------------------
-# 1: `lanes_read_ok` / `lanes_read_why` -- held_files gets a real third state
+# 1: `lanes_read_ok` / `lanes_read_why` -- RETIRED by #1532
 # ---------------------------------------------------------------------------
+#
+# `test_lanes_read_ok_false_forces_could_not_select_never_none_available` and
+# its positive control stood here. They pinned #1067's own first fix: a lane
+# inventory that could not be read had to force `could-not-select`, never
+# render as "no lanes are live".
+#
+# The inventory is gone. #1528 stopped an overlap with the held set dropping a
+# candidate, and #1532 retired the registry the lane half of it was derived
+# from, so `select()` no longer reads `held_files` and `select_fleet()` no
+# longer produces the `lanes_read_ok` / `lanes_read_why` pair that reported on
+# the derivation. There is no read left here to fail, which is why these are
+# deleted rather than rewritten: a test that drove the flag now would be
+# asserting that `select()` still honours an input nothing populates.
+#
+# What #1067 was ABOUT is untouched and still pinned below -- a dark input
+# must never present as a clean one. Sections 2 and 3 carry it for the two
+# cases that survive (a refused lane pattern, and one that resolves to no
+# files on disk), and `select_fleet`'s board half carries it in
+# `test_select_issues_fetch_1145.py`.
 
 
-def test_lanes_read_ok_false_forces_could_not_select_never_none_available():
-    """The negative half: a lane inventory that could not be read must never
-    render as "no lanes are live"."""
-    payload = {
-        "declared": DECLARED,
-        "issues": [_issue(1, ["priority-high"])],
-        "lanes_read_ok": False,
-        "lanes_read_why": "worktree_root is unreadable: PermissionError",
-    }
-    result = select_issues.select(payload, checker=_no_op_checker)
-    assert result["state"] == "could-not-select"
-    assert "worktree_root is unreadable" in result["why"]
-
-
-def test_lanes_read_ok_absent_is_not_a_failure_the_positive_control():
-    """The pair to the test above: a caller that never populated
-    `lanes_read_ok` at all (every fixture predating #1067, and a caller with
-    no lane inventory to offer) must not be treated as a failed read -- it is
-    read as "not attempted", the same posture `board_read_ok`'s own absence
-    already gets."""
-    payload = {"declared": DECLARED, "issues": [_issue(1, ["priority-high"])]}
-    result = select_issues.select(payload, checker=_no_op_checker)
-    assert result["state"] == "candidates"
-
-
-def test_lanes_read_ok_true_with_a_real_overlap_still_finds_it():
-    """`lanes_read_ok: True` alongside a genuine, populated `held_files` must
-    still leave a same-lane candidate eligible -- the new check does not
-    accidentally short-circuit the existing path. #1528: the candidate
-    stays a candidate, no longer dropped."""
+def test_a_populated_held_files_is_ignored_rather_than_refused():
+    """A caller still passing the retired keys -- a stale fixture, an older
+    runbook -- must not be refused, and must not have them acted on either.
+    #1528 already made an overlap non-fatal; #1532 makes the input inert.
+    The candidate survives on the same terms as any other."""
 
     def resolve(repo, patterns):
         return {"patterns": [], "files": list(patterns)}
@@ -91,7 +85,8 @@ def test_lanes_read_ok_true_with_a_real_overlap_still_finds_it():
         "declared": DECLARED,
         "issues": [_issue(1, ["priority-high"], lane_patterns=["scripts/held.py"])],
         "held_files": ["scripts/held.py"],
-        "lanes_read_ok": True,
+        "lanes_read_ok": False,
+        "lanes_read_why": "worktree_root is unreadable: PermissionError",
     }
     result = select_issues.select(payload, checker=_no_op_checker, resolve_lane=resolve)
     assert result["state"] == "candidates"

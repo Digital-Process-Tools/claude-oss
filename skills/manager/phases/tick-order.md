@@ -333,8 +333,8 @@ tool, and you are gone by the time step 7 would run.
    (`select_issues_rank.py`, the same module the `--board` receipt above renders from) with the
    staleness (`select_issues_preflight.py`) and lane-collision (`select_issues_overlap.py`,
    `select_issues_companions.py`) checks and the assignee read (`select_issues_claim_read.py`) into
-   one call. **It takes no input** (#1145): it fetches the board, reads `.oss.json` and derives the
-   held set itself. Those five are submodules now (#1069), none
+   one call. **It takes no input** (#1145): it fetches the board and reads `.oss.json` itself.
+   Those five are submodules now (#1069), none
    with a `__main__` of their own; `select_issues.py` is the one entry point. Three states,
    and the third must never render as the second: `candidates` (at least one issue survived, with
    the reason every dropped one was dropped), `none-available` (every input was read cleanly and
@@ -352,9 +352,8 @@ tool, and you are gone by the time step 7 would run.
    (`candidates`/`none`/`could-not-tell`) and, when short, why. Every group carries its issues'
    bodies (#1147), fenced as untrusted and reporting `body_truncated` when capped — read those
    rather than re-fetching. An issue with no `lane-*` label is not selected and appears in `dropped`
-   with the disposition `no-lane-label`. Do not re-run the sweep by hand, and never fill from
-   `--against` between lanes already picked, which is the conflict check answering a different
-   question (#918). A short lane with no reason is a defect in the tick -- and now one this loop
+   with the disposition `no-lane-label`. Do not re-run the sweep by hand.
+   A short lane with no reason is a defect in the tick -- and now one this loop
    can detect rather than only state: record every dispatched lane's fill with `--lane-fill
    PRIMARY:COUNT[:REASON]` on the same `oss_state.py --decision` call (#852), which refuses the
    whole call outright when a short lane arrives with no reason, the same way `--tick-cost-first`
@@ -397,12 +396,10 @@ tool, and you are gone by the time step 7 would run.
    and a `worktree_root` absent from this tree (as it always is inside a worktree this loop already
    cut) reads `unknown`, never a guessed path.
 
-   **`--claim` registers this lane in the worktree-root registry (#705); omit it for any earlier
-   disjointness probe on a candidate that might not be dispatched** — a probe that carries `--claim`
-   leaves a phantom record behind that can block a later `--derive-held` call for hours.
-
-   **`--claim` refuses without `--lane` (#788)** — pass the same `--lane` patterns this candidate
-   was already probed with.
+   **`--claim` writes the issue's GitHub assignee (#705, #1532); omit it for any earlier probe on a
+   candidate that might not be dispatched** — a probe that carries `--claim` takes an issue nobody
+   is working. It no longer writes a local lane record, so it no longer requires `--lane` (#788's
+   reason was the record, not the claim).
 
    **The merge call needs `|force`, and that is not a bypass.** `gh-pr-merge:N:squash` with no
    suffix previews its gate and merges nothing; `|force` is the confirmation, and every refusal the

@@ -58,13 +58,6 @@ def _fetcher(issues):
     return fetch
 
 
-def _held():
-    def held_fetcher(repo_slug, worktree_root, exclude_issue=None, repo=None):
-        return {"state": "resolved", "held": {}, "detail": ""}
-
-    return held_fetcher
-
-
 def _literal_resolve(repo, patterns):
     return {
         "patterns": [
@@ -79,7 +72,6 @@ def _select_fleet(issues, **kwargs):
     return select_issues.select_fleet(
         CONFIG,
         fetcher=_fetcher(issues),
-        held_fetcher=_held(),
         checker=_no_op_checker,
         resolve_lane=_literal_resolve,
         **kwargs,

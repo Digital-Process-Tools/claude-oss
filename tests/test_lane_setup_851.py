@@ -421,16 +421,14 @@ def test_cli_refuses_combination_with_release():
     assert "--release" in done.stderr
 
 
-def test_cli_refuses_combination_with_derive_held():
-    done = _run_cli(["--suggest-companions", "851", "--derive-held"])
-    assert done.returncode == 2
-    assert "--derive-held" in done.stderr
-
-
-def test_cli_refuses_combination_with_against():
-    done = _run_cli(["--suggest-companions", "851", "--against", "x"])
-    assert done.returncode == 2
-    assert "--against" in done.stderr
+# #1532: `test_cli_refuses_combination_with_derive_held` and
+# `test_cli_refuses_combination_with_against` stood here. Both flags are gone,
+# so argparse refuses them as unknown arguments before any mode check runs --
+# still exit 2, still naming the flag, but for a different reason and by a
+# different mechanism. That refusal belongs to the removal and is pinned in
+# `tests/test_lane_registry_retired_1532.py`; asserting it from here would look
+# like this file still testing a mode interaction that no longer exists.
+# The two surviving mode refusals (--claim, --release) are directly above.
 
 
 def test_cli_refuses_a_sweep_with_no_lane_at_all():

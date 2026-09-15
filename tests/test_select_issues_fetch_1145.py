@@ -25,7 +25,11 @@ DECLARED = {
     "lane_other": "lane-other",
 }
 
-CONFIG = {"repo": "Digital-Process-Tools/claude-oss", "worktree_root": "/tmp/wt", "labels": DECLARED}
+CONFIG = {
+    "repo": "Digital-Process-Tools/claude-oss",
+    "worktree_root": "/tmp/wt",
+    "labels": DECLARED,
+}
 
 
 def _issue(number, labels=None, **extra):
@@ -73,20 +77,6 @@ def _failing_fetcher(detail="gh api graphql timed out"):
     return fetch
 
 
-def _ok_held(held=None):
-    def held_fetcher(repo_slug, worktree_root, exclude_issue=None, repo=None):
-        return {"state": "resolved", "held": held or {}, "detail": ""}
-
-    return held_fetcher
-
-
-def _failing_held(detail="gh pr list timed out"):
-    def held_fetcher(repo_slug, worktree_root, exclude_issue=None, repo=None):
-        return {"state": "could-not-derive", "held": {}, "detail": detail}
-
-    return held_fetcher
-
-
 # --------------------------------------------------------------------- must-not
 
 
@@ -94,7 +84,6 @@ def test_a_failed_board_fetch_is_could_not_select_never_none_available():
     result = select_issues.select_fleet(
         CONFIG,
         fetcher=_failing_fetcher("gh api graphql timed out"),
-        held_fetcher=_ok_held(),
         checker=_no_op_checker,
     )
     assert result["state"] == "could-not-select"
@@ -102,21 +91,15 @@ def test_a_failed_board_fetch_is_could_not_select_never_none_available():
     assert result["board_read_ok"] is False
 
 
-def test_a_failed_held_set_read_is_could_not_select_for_the_whole_fleet():
-    """The demonstrated defect, one input over: the fetch that used to be a
-    caller's job is now this module's own, and a mis-shaped or failed read
-    of EITHER of its two inputs must never quietly present as an empty,
-    clean board."""
-    board = [_issue(1, ["priority-high", "lane-dispatch"])]
-    result = select_issues.select_fleet(
-        CONFIG,
-        fetcher=_ok_fetcher(board),
-        held_fetcher=_failing_held("gh pr list timed out"),
-        checker=_no_op_checker,
-    )
-    assert result["state"] == "could-not-select"
-    assert "gh pr list timed out" in result["why"]
-    assert result["lanes_read_ok"] is False
+# #1532: `test_a_failed_held_set_read_is_could_not_select_for_the_whole_fleet`
+# stood here. `select_fleet` had two inputs -- the board and a held set
+# derived from every open pull request plus every live lane record -- and the
+# test pinned that a failed read of EITHER must be `could-not-select` rather
+# than a quiet, clean, empty board. The held set is gone (#1528 removed its
+# last consumer, #1532 retired the registry it half came from), so there is
+# one input again and one `_ok_held`/`_failing_held` pair less. The rule the
+# deleted test defended is unchanged and still pinned, by the board half
+# directly above: a failed read is never `none-available`.
 
 
 # ------------------------------------------------------------------- positive
@@ -126,18 +109,18 @@ def test_a_genuinely_empty_board_is_none_available_the_positive_control():
     result = select_issues.select_fleet(
         CONFIG,
         fetcher=_ok_fetcher([]),
-        held_fetcher=_ok_held(),
         checker=_no_op_checker,
     )
     assert result["state"] == "none-available"
 
 
 def test_a_clean_fetch_with_real_candidates_reaches_candidates():
-    board = [_issue(1, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/a.py"])]
+    board = [
+        _issue(1, ["priority-high", "lane-dispatch"], lane_patterns=["scripts/a.py"])
+    ]
     result = select_issues.select_fleet(
         CONFIG,
         fetcher=_ok_fetcher(board),
-        held_fetcher=_ok_held(),
         checker=_no_op_checker,
     )
     assert result["state"] == "candidates"
@@ -167,7 +150,9 @@ def test_a_well_shaped_graphql_response_is_ok_the_positive_control():
             None,
         )
 
-    result = select_issues._fetch_board("Digital-Process-Tools/claude-oss", run=good_run)
+    result = select_issues._fetch_board(
+        "Digital-Process-Tools/claude-oss", run=good_run
+    )
     assert result["state"] == "ok"
     assert result["issues"][0]["number"] == 7
     assert result["issues"][0]["labels"] == ["lane-dispatch"]
@@ -183,7 +168,9 @@ def test_a_capped_page_is_reported_as_such():
             None,
         )
 
-    result = select_issues._fetch_board("Digital-Process-Tools/claude-oss", run=good_run)
+    result = select_issues._fetch_board(
+        "Digital-Process-Tools/claude-oss", run=good_run
+    )
     assert result["state"] == "ok"
     assert result["capped"] is True
     assert result["cap_detail"]

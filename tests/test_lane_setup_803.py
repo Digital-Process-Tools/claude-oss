@@ -76,100 +76,70 @@ def _release(tmp_path, issue=999):
     return json.loads(done.stdout)
 
 
-def test_arm_a_malformed_local_config_surfaces_the_parse_error(tmp_path):
-    (tmp_path / ".oss.json").write_text(json.dumps(PROJECT_CONFIG))
-    (tmp_path / ".oss.local.json").write_text("{not json")
+# #1532 changed what this arm is even asking. `--release` needed TWO config
+# values -- `worktree_root`, to find the lane registry holding the record to
+# release, and `repo`, to aim the assignee call. `worktree_root` lives only in
+# `.oss.local.json`, which is why an unparseable local half had to be told
+# apart from a benign missing key: the first is a read that failed, the second
+# is a value nobody set, and #803 was filed because they rendered identically.
+#
+# There is no registry, so `--release` no longer reads `worktree_root` at all.
+# `repo` comes from the project half. That collapses arms c, d and e (all
+# `worktree_root` shapes) to nothing, and inverts arm a: a malformed
+# `.oss.local.json` no longer blocks a release, because nothing the release
+# needs was in it.
+#
+# What survives is the distinction #803 and #791 were both really about, and it
+# is asserted below: a read that FAILED must never render as a benign absence.
 
-    payload = _release(tmp_path)
 
-    assert payload["state"] == "could-not-release"
-    assert "could not parse as JSON" in payload["detail"]
-    assert "no registry" not in payload["detail"]
-
-
-def test_arm_b_malformed_project_config_control(tmp_path):
-    """Control: #791's own case, already correct before this fix. Must still work
-    after #803's change to the same code path."""
+def test_a_malformed_project_config_still_blocks_and_names_the_parse_error(tmp_path):
+    """The project half carries `repo`. Unparseable, and the repository the
+    assignee call would be aimed at is genuinely unknown -- so this refuses,
+    and says why in the words of the parse error rather than as a bare
+    absence."""
     (tmp_path / ".oss.json").write_text("{not json")
 
     payload = _release(tmp_path)
 
     assert payload["state"] == "could-not-release"
     assert "could not parse as JSON" in payload["detail"]
-    assert "no registry" not in payload["detail"]
 
 
-def test_arm_c_no_local_file_stays_benign_and_differs_from_arm_a(tmp_path):
-    """#608: this arm's `worktree_root` used to be simply absent, and the "benign"
-    outcome pinned here was the "no registry" sentence. `oss_config.load` now
-    DERIVES it from the repository root instead, so the release proceeds against a
-    real (if empty) path and reports `not-found` -- still benign, and still clearly
-    distinct from arm A's genuine parse error.
-    """
-    (tmp_path / ".oss.json").write_text(json.dumps(PROJECT_CONFIG))
-
-    payload = _release(tmp_path)
-
-    assert payload["record"]["state"] == "not-found", payload
-
-    malformed_dir = tmp_path.parent / (tmp_path.name + "-arm-a")
-    malformed_dir.mkdir()
-    (malformed_dir / ".oss.json").write_text(json.dumps(PROJECT_CONFIG))
-    (malformed_dir / ".oss.local.json").write_text("{not json")
-    arm_a_payload = _release(malformed_dir)
-
-    assert arm_a_payload["state"] == "could-not-release"
-    assert arm_a_payload["detail"] != payload["record"]["detail"]
-
-
-def test_valid_local_config_missing_worktree_root_is_still_benign(tmp_path):
-    """Must-not-fire control for the naive "gate on any problems" fix: a
-    syntactically valid .oss.local.json that simply has no worktree_root key must
-    not be read as a read failure. #608: that key is now DERIVED from the
-    repository root rather than left missing, so `problems` carries no advisory
-    about it at all any more, and the release proceeds to the ordinary not-found
-    outcome instead of the old "no registry" sentence.
-    """
-    (tmp_path / ".oss.json").write_text(json.dumps(PROJECT_CONFIG))
-    (tmp_path / ".oss.local.json").write_text(
-        json.dumps({"clone": "/tmp/does-not-matter"})
-    )
-
-    payload = _release(tmp_path)
-
-    assert payload["record"]["state"] == "not-found", payload
-    assert "could not" not in payload["record"]["detail"]
-
-
-def test_unrelated_project_problem_naming_could_not_does_not_block_a_real_release(
+def test_an_absent_project_config_is_a_different_sentence_from_a_malformed_one(
     tmp_path,
 ):
-    """Must-not-fire control found in review: a fully-parseable, fully-known
-    .oss.local.json (worktree_root genuinely present and known) must let a real
-    release proceed even when the tracked .oss.json independently carries an
-    unrelated validation problem whose own prose contains the substring "could
-    not" -- `oss_config.test_command_problem`'s non-string-value message ("...or
-    null when the probe could not tell; got ...") is exactly such a case. A
-    naive substring scan over the whole merged `problems` list for "could not"
-    cannot tell that advisory apart from a genuine local-file read failure, and
-    would have blocked a release that has everything it needs."""
-    registry_dir = tmp_path / "registry"
-    project = dict(PROJECT_CONFIG)
-    project["test_command"] = (
-        123  # triggers test_command_problem's "could not tell" text
-    )
-    (tmp_path / ".oss.json").write_text(json.dumps(project))
-    (tmp_path / ".oss.local.json").write_text(
-        json.dumps(
-            {
-                "clone": "/tmp/does-not-matter",
-                "worktree_root": str(registry_dir),
-                "state_file": "/tmp/does-not-matter-state.json",
-            }
-        )
-    )
+    """The pair to the test above, and the whole point of both #791 and #803:
+    `not found` and `could not parse` are different facts and must not share a
+    sentence. Both refuse; only one of them is a file somebody wrote wrong."""
+    payload = _release(tmp_path)
+
+    assert payload["state"] == "could-not-release"
+    assert "not found" in payload["detail"]
+    assert "could not parse as JSON" not in payload["detail"]
+
+
+def test_a_malformed_local_config_no_longer_blocks_the_release(tmp_path):
+    """The inversion #1532 causes, asserted rather than left to be discovered.
+
+    This used to be arm a: a valid project config beside an unparseable
+    `.oss.local.json` refused, because `worktree_root` -- which lives only in
+    the local half -- was needed to find the lane record. It is not needed any
+    more, so refusing here would be refusing over a file the operation does not
+    read.
+
+    The release therefore proceeds past the config, to the assignee call. This
+    asserts only that it got that far -- that the config half did not stop it
+    -- and not what the forge answered, which needs a live `gh` this test has
+    no business requiring."""
+    (tmp_path / ".oss.json").write_text(json.dumps(PROJECT_CONFIG))
+    (tmp_path / ".oss.local.json").write_text("{not json")
 
     payload = _release(tmp_path)
 
-    assert payload["record"]["state"] == "not-found", payload
-    assert "worktree_root is not known" not in payload["record"]["detail"]
+    config_refusal = payload.get(
+        "state"
+    ) == "could-not-release" and "the repository is not known" in payload.get(
+        "detail", ""
+    )
+    assert not config_refusal, payload

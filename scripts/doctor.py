@@ -3017,10 +3017,14 @@ from doctor_check_statusline import (
 # check and its docstring, unchanged; this is a pure relocation.
 from doctor_check_trap_queue import check_trap_queue
 
-# scripts/doctor_check_vanished_worktree.py (#845), its own module per the
-# same #497/#630 convention -- see that module's docstring for why this
-# check exists and what it does not claim to fix.
-from doctor_check_vanished_worktree import check_vanished_worktrees
+# #845's `check_vanished_worktrees` lived here until #1532. It read the local
+# lane registry for records whose own worktree directory was already gone;
+# with the registry retired there is no record to read, and the question it
+# answered ("did a worktree disappear mid-run?") now has no local source of
+# truth other than `git worktree list` itself, which `check_worktree_remove_
+# permission` and its two siblings above already sit beside. Removed rather
+# than left reporting a permanent `unknown`, which would be a check that can
+# never answer -- this repository's own defect class pointed at its diagnostic.
 
 # scripts/doctor_check_script_call_survey.py (#1416), its own module per the
 # same #497/#630 convention -- a fact about the plugin, not the project, so
@@ -9611,11 +9615,6 @@ def main(argv=None):
     # two checks above for the same reason they are placed beside each other.
     check_worktree_remove_permission(project_dir)
     check_branch_delete_permission(project_dir)
-    # #845: a live lane record whose own worktree directory has already vanished --
-    # the loud detector filed in place of a fix, since the mechanism was not found
-    # in this plugin's own code. Placed beside the two checks above for the same
-    # reason: all three are about a worktree reap going wrong.
-    check_vanished_worktrees(project_dir, config)
     # #1350: is more than one scheduler-shaped process live against this same
     # clone right now? Placed beside the worktree-reap checks above for the
     # same reason -- a second scheduler sharing the clone can move HEAD or

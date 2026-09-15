@@ -109,14 +109,14 @@ the classification is surfaced rather than acted on.
 - **Cleanup is gated on the verified merge result — use the op's own `|cleanup` token rather than a
   second, separate call.** `gh-pr-merge:N:squash|force|cleanup` is the documented default, and its
   three deletions run only **after** the op's own `MERGED` read-back, never before.
-- **Release the merged issue's own lane record in the same breath.** A live record blocks a
-  follow-up for its full 240-minute TTL regardless of whether its own pull request merged (#734).
-  Once step 1 above verifies `state`/`mergedAt`/`mergeCommit`, run
-  `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --release --repo <clone>` -- `released` /
-  `not-found` (nothing to do, not a failure) / `could-not-release`. Skipping it is slower, not
-  wrong: `held_from_live_lanes` also prunes a record once its branch is confirmed gone from the
-  shared clone's local `refs/heads`, which `|cleanup`'s branch deletion above causes anyway -- the
-  explicit release just does not wait for a later lane to ask.
+- **Release the merged issue's own GitHub assignee in the same breath.** An issue still assigned to
+  a lane that no longer exists is indistinguishable from one still being worked, and nothing else
+  clears it (#734, #1532 -- the local lane record that used to age out on a 240-minute TTL is gone,
+  so there is no longer any mechanism that eventually does this for you). Once step 1 above verifies
+  `state`/`mergedAt`/`mergeCommit`, run
+  `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --release --repo <clone>
+  [--release-also <N> ...]` -- per issue: `released` / `not-assigned` / `not-mine` /
+  `could-not-read` / `could-not-release`.
 - **Verify the linked issue actually closed.** Write one `Closes #N` per issue — the *keyword*
   repeated, not just the `#`. `Closes #A B` silently references only A, and `Closes #A #B` links
   both and closes only A, so "each number has its own `#`" is not the rule and satisfying it is not
