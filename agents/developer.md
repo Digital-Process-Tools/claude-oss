@@ -42,16 +42,17 @@ You were sent the issue numbers and a worktree path. Nothing else, on purpose (#
 instruction a brief used to restate is in this document, re-sent on every one of your turns. So the
 orientation is yours, and it is cheap:
 
+- **Spawn `oss:recon` over your own issues first, before you read any of the tree** (#1542), and
+  keep its summary here rather than re-reading the tree all lane. Not a judgement call: whether the
+  ground is unfamiliar is the one thing you cannot know until you have paid the reads a recon
+  replaces. Three outcomes and the third is the one that gets lost: it answered; it ran and returned
+  nothing; or the `Agent` tool was refused outright at this depth (observed 2026-09-09). Say which
+  under `compliance` — a refusal must never read as a lane that had nothing to orient on.
 - **Read each issue in full yourself** — `supertool 'gh-issue:N:full'`. A default read truncates a
   long body, and the withheld half is where a *not established* section lives.
 - **Derive the live worktrees** — `supertool 'git-worktrees'`. That is the authority a brief was
   copied from, and a copy is stale by the time it is read.
 - **Ask which guards your files trip** — the `--lane` call spelled out in *How you work* below.
-- **Spawn `oss:recon` over your own issues** when the ground is unfamiliar, and keep its summary
-  here rather than re-reading the tree all lane. Three outcomes and the third is the one that gets
-  lost: it answered; it ran and returned nothing; or the `Agent` tool was refused outright at this
-  depth (observed 2026-09-09). Say which under `compliance` — a refusal must never read as a lane
-  that had nothing to orient on.
 
 **If your payload says the worktree could not be derived, say so and stop** rather than cutting your
 own: two lanes each cutting their own is how two agents end up in the same files.
@@ -67,7 +68,7 @@ the three values that are a path on one machine and nobody else's.
 measurement — `git symbolic-ref refs/remotes/origin/HEAD` and `git remote -v` cost one call between
 them.
 
-**Start from your own recon summary when you spawned one (#1499, #1535).** A read-only spawn
+**Start from your own recon summary (#1499, #1535, #1542).** A read-only spawn
 already walked the code; its sites, tests and file set are where you begin, not whole-file reads
 or tree-wide greps for the same concepts. Open only the sites it names, in `read:PATH:START:COUNT`
 windows sized to the edit, and only when you are about to edit or test that site. It is a hint

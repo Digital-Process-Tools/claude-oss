@@ -86,7 +86,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # work. #1499's "start from the brief's Recon brief section" paragraph is
     # rewritten in the same diff to name the lane's own spawn, since no brief
     # carries that section any more. Ceiling unchanged.
-    "agents/developer.md": (43639, 44100),
+    # #1542: the recon spawn became the lane's unconditional first step and
+    # moved to the head of the orientation list. 43639 B became 43780 B; the
+    # sentence that made it conditional was replaced by one saying why it
+    # cannot be one. Ceiling unchanged, 320 B of headroom left.
+    "agents/developer.md": (43780, 44100),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
@@ -299,7 +303,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # it -- so it now says who reads which part, since the spawn is told
     # neither. 3936 B -> 4348 B. Ceiling unchanged; 52 B headroom, which is
     # tight: the next edit here pays for itself or raises the ceiling.
-    "agents/recon.md": (4348, 4400),
+    # #1542: the frontmatter now says the lane spawns this first thing, and
+    # drops the claim that dispatch needs the file set "while the registry
+    # still needs it" -- the registry was retired by #1532. 4348 B became
+    # 4350 B. Ceiling unchanged, 50 B of headroom left.
+    "agents/recon.md": (4350, 4400),
 }
 
 
