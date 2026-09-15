@@ -412,7 +412,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # `--subagent-type` and `--model`, plus three lines saying that without the
     # first two it renders nothing at exit 0. 6302 B became 6696 B. Ceiling
     # unchanged; 204 B headroom.
-    "agents/tick-dispatch.md": (6696, 6900),
+    # Re-baselined for #1544 steps 3-4: 6696 B became 6829 B -- the "Why this
+    # file exists" sentence, stale since step 2 shipped and now doubly stale
+    # once steps 3-4 (this diff) shipped too, is fixed to say all four steps
+    # exist as their own spawns rather than claim steps 2-4 are still unsplit
+    # (trap.d/1544.tick-dispatch-why-section-now-overstates-what-stays-
+    # unsplit.md, filed against #1544 step 2, named this exact fix). Ceiling
+    # unchanged; 71 B headroom.
+    "agents/tick-dispatch.md": (6829, 6900),
     # #1544 step 2: new file. `oss:sub-manager` used to call `pr_green.py
     # --wait` and then read `skills/manager/phases/review.md`'s checklist
     # (together over 24,000 B) inline, in the same long-lived context that

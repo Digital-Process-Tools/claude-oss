@@ -108,22 +108,40 @@ def test_it_documents_the_validation_call_and_the_frame_terminator():
     assert "END OF MESSAGE" in text
 
 
+def _python3_lines(text=None):
+    return [
+        line.strip()
+        for line in (text if text is not None else _text()).splitlines()
+        if line.strip().startswith("python3 ")
+    ]
+
+
+def _writes_or_clears_marker(lines):
+    return [line for line in lines if "--write" in line or "--clear" in line]
+
+
 def test_it_never_writes_or_clears_the_role_marker():
     """Prose describing the caller's own `--write`/`--clear` calls is fine
     and expected (it is how this file explains inheriting the marker); a
     command LINE in this file doing either is not."""
-    lines = [
-        line.strip()
-        for line in _text().splitlines()
-        if line.strip().startswith("python3 ")
-    ]
-    for line in lines:
-        assert "--write" not in line, (
-            "documented command line writes the marker: {0!r}".format(line)
-        )
-        assert "--clear" not in line, (
-            "documented command line clears the marker: {0!r}".format(line)
-        )
+    offenders = _writes_or_clears_marker(_python3_lines())
+    assert not offenders, (
+        "documented command line writes/clears the marker: {0!r}".format(offenders)
+    )
+
+
+def test_the_marker_check_would_have_caught_a_real_violation():
+    """Positive control for the check above (found in the maintainer's own
+    review of #1544 step 3's sibling test file, the identical class of gap):
+    without this, a predicate over python3-prefixed lines could trivially
+    pass forever if it never actually matched anything real, giving false
+    confidence in a guarantee nothing here checks."""
+    bad_line = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --clear --root .'
+    offenders = _writes_or_clears_marker(_python3_lines(bad_line))
+    assert offenders == [bad_line], (
+        "fixture construction failed: the offending line was not caught, so "
+        "the control proves nothing"
+    )
 
 
 def test_tick_handback_classifies_only_the_message_it_is_given():

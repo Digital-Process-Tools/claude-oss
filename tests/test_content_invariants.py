@@ -4351,9 +4351,10 @@ def test_developer_definition_makes_no_forge_writes_for_the_claim():
     carry both flags (that is the whole point of #461), and if it does not, the
     substring test below is not measuring what it claims to.
 
-    `_MANAGER_ROLE_AGENTS` (`agents/sub-manager.md`, `agents/tick-dispatch.md`) is
-    excluded from the claim/release pairing check below (#1526, #1544) but not
-    from the raw-assignee-flag check -- see `_agent_definition_claim_findings`:
+    `_MANAGER_ROLE_AGENTS` (`agents/sub-manager.md`, `agents/tick-dispatch.md`,
+    `agents/tick-merge.md`) is excluded from the claim/release pairing check
+    below (#1526, #1544) but not from the raw-assignee-flag check -- see
+    `_agent_definition_claim_findings`:
     they are the manager's own agent files, not a worker the manager spawns, so
     they are held to the same positive-control expectation as the manager skill
     itself, checked separately just below.

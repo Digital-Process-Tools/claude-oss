@@ -32,12 +32,16 @@ def test_report_back_names_all_three_states():
         )
 
 
-def _bash_command_lines():
+def _bash_command_lines(text=None):
     return [
         line.strip()
-        for line in _text().splitlines()
+        for line in (text if text is not None else _text()).splitlines()
         if line.strip().startswith("python3 ") or line.strip().startswith("git ")
     ]
+
+
+def _writes_or_clears_marker(lines):
+    return [line for line in lines if "--write" in line or "--clear" in line]
 
 
 def test_it_never_writes_or_clears_the_role_marker():
@@ -47,13 +51,26 @@ def test_it_never_writes_or_clears_the_role_marker():
     describes the caller's own `--write`/`--clear` calls to explain
     inheritance -- what must never appear is one of THIS file's own commands
     doing either."""
-    for line in _bash_command_lines():
-        assert "--write" not in line, (
-            "documented command line writes the marker: {0!r}".format(line)
-        )
-        assert "--clear" not in line, (
-            "documented command line clears the marker: {0!r}".format(line)
-        )
+    offenders = _writes_or_clears_marker(_bash_command_lines())
+    assert not offenders, (
+        "documented command line writes/clears the marker: {0!r}".format(offenders)
+    )
+
+
+def test_the_marker_check_would_have_caught_a_real_violation():
+    """Positive control for the check above: without this, a predicate that
+    never matches anything (because agents/tick-merge.md happens to state its
+    two calls as prose rather than as ``python3 ...``/``git ...`` command
+    lines) would pass vacuously forever, giving false confidence that the
+    'no marker write/clear' guarantee is code-checked when nothing here
+    could ever fail (found in the maintainer's own review of this file's
+    first version)."""
+    bad_line = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write sub-manager --root .'
+    offenders = _writes_or_clears_marker(_bash_command_lines(bad_line))
+    assert offenders == [bad_line], (
+        "fixture construction failed: the offending line was not caught, so "
+        "the control proves nothing"
+    )
 
 
 def test_it_documents_no_tag_or_publish_call():
@@ -61,10 +78,23 @@ def test_it_documents_no_tag_or_publish_call():
     this file should ever run `git tag` or anything under `commands/
     release.md`. Prose stating that this file never runs those is fine and
     expected; a literal invocation of them is not."""
-    for line in _bash_command_lines():
-        assert not line.startswith("git tag"), (
-            "documents a git tag command: {0!r}".format(line)
-        )
+    offenders = [line for line in _bash_command_lines() if line.startswith("git tag")]
+    assert not offenders, "documents a git tag command: {0!r}".format(offenders)
+
+
+def test_the_git_tag_check_would_have_caught_a_real_violation():
+    """Positive control for the check above, the same reasoning as the marker
+    control: agents/tick-merge.md never states `git tag` as a command line
+    today, so without this the check above would pass regardless of whether
+    the underlying predicate can fail at all."""
+    bad_line = "git tag v9.9.9"
+    offenders = [
+        line for line in _bash_command_lines(bad_line) if line.startswith("git tag")
+    ]
+    assert offenders == [bad_line], (
+        "fixture construction failed: the offending line was not caught, so "
+        "the control proves nothing"
+    )
 
 
 def test_agent_role_withholds_release_for_sub_manager_and_nothing_else():

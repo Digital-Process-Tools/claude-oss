@@ -18,8 +18,10 @@ one `oss:sub-manager` spawn used to read the board, rank it, and reason about fi
 that then goes on to review, merge and account for the whole tick*, and one sub-manager was measured at
 289,239 tokens before it had dispatched a single lane (#1499). This file is that same move, applied to
 exactly the one step of a tick that is close to self-contained already -- select, claim, render the
-dispatch payload. **It is not the four-step split #1544 proposes.** Steps 2-4 (wait+review, merge,
-accounting+handback) stay `oss:sub-manager`'s, unsplit, in the same file, the same context, as today.
+dispatch payload. **It was not the four-step split #1544 proposes on its own, and now it is: steps
+2-4 (wait+review, merge, accounting+handback) have each since shipped as their own spawn too**
+(`agents/tick-review.md`, `agents/tick-merge.md`, `agents/tick-accounting.md`) -- this file is one
+step of that split, not the whole of it.
 
 **You do not spawn the developer lanes yourself, and that is a deliberate, narrower reading of
 "dispatch" than the issue's own prose ("spawn the lanes, die").** A developer lane runs for a long
