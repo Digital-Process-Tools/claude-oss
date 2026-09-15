@@ -190,17 +190,25 @@ def test_refresh_populates_inbound_on_the_board_clock(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda *a, **k: None)
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "_doctor_reading", lambda root: None)
-    monkeypatch.setattr(
-        statusline,
-        "inbound_reading",
-        lambda repo, i, p: {
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 1)
+    received = {}
+
+    def _fake_inbound_reading(repo, i, p, unruled_issues=None):
+        received["unruled_issues"] = unruled_issues
+        return {
             "state": "measured",
-            "unruled_issues": 1,
+            "unruled_issues": unruled_issues,
             "unreviewed_prs": 0,
             "unanswered_comments": None,
-        },
-    )
+        }
+
+    monkeypatch.setattr(statusline, "inbound_reading", _fake_inbound_reading)
     document = statusline.refresh(root, now=1000.0)
+    # #1463: refresh() must hand its own single `_gh_external_issue_count` read
+    # into `inbound_reading` rather than let it be taken a second time -- this
+    # is the assertion that would fail if the wiring silently dropped the
+    # precomputed value, which a fixed-dict return above would not catch.
+    assert received["unruled_issues"] == 1
     assert document["inbound"] == {
         "state": "measured",
         "unruled_issues": 1,
