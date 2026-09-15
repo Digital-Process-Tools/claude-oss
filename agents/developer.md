@@ -134,6 +134,20 @@ file. **Your changelog fragment is always a new file**, so every task reaches th
 raw `cat > file <<EOF` is not a substitute and does not fail loudly when you use it: it runs no
 post-write validator, cannot roll back, and tells you nothing about what it wrote.
 
+**`read:` caps at 20,000 B, and a capped read is not a whole file.** A bare `read:` against a large
+file returns one window and says so in its meta line — skim past that line and a page reads exactly
+like a complete file, which is this project's own defect class arriving in your own tool output.
+Locate with `grep:PATTERN:PATH` first, then `read:PATH:START:COUNT` over the range it named. One
+lane spent ~68k tokens across 18 reads, seven of them exactly at the cap, to reach one function in
+two files.
+
+**Never re-read what you already have.** A file you read, a brief you were handed, a file you just
+edited (`edit` returns the result) and a `--help` whose call shape your brief states are all paid
+for; fetching them again pays twice and tells you nothing new. Measured across five lanes: 1.26 MB
+re-read over 47 paths, one script fetched 39 times for 444,962 B. A file outside your worktree costs
+the same, so prefix `cwd:PATH` rather than reaching for `python3 -c`, which has neither cap nor
+range.
+
 **The guard's own reach is wider than the three ops above.** It refuses any raw invocation an op
 supersedes — a `gh issue list` as much as a `git commit` — not a file write alone (#729). Do not
 work from a hand-kept list of the rest; `supertool 'ops'`, pointed to below, is the live answer.
