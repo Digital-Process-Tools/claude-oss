@@ -126,7 +126,7 @@ step 1 has already decided better.
 | | |
 | --- | --- |
 | **Who** | the sub-manager, once per surviving group |
-| **Runs** | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane <pattern> --claim-also <N> ... --phrase "<phrase>" --subagent-type oss:developer --brief <brief-file>` |
+| **Runs** | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --claim-also <N> ... --phrase "<phrase>" --subagent-type oss:developer --brief <brief-file>` |
 | **Input** | one group from step 1, and a brief file the caller wrote |
 | **Output** | a pasteable `Agent(...)` line, the `--lane-fill` token for step 5 -- and the claim, the lane registration and the worktree are now written |
 

@@ -159,7 +159,10 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # wait still said it calls `pr_green.py --wait` directly, which #1544
         # step 2 moved into a spawn (`oss:tick-review`). Budget unchanged;
         # comfortably under it.
-        42670,
+        # Re-baselined for #1579: 42670 B became 42649 B -- the `--claim`
+        # call's own row dropped `--lane`, same fix as the phase files.
+        # Budget unchanged.
+        42649,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),

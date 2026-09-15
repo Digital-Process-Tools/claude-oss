@@ -387,7 +387,7 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,670 B | 44,800 B |
+| `skills/manager/SKILL.md` | 42,649 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 57,948 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |

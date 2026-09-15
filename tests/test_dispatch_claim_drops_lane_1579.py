@@ -20,7 +20,9 @@ This file only checks that the *dispatch call shape documented in the loop's
 own prose* stopped composing it.
 """
 
+import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -93,15 +95,35 @@ def test_no_documented_claim_call_passes_lane():
 
 def test_suggest_companions_still_requires_lane():
     """The positive control for the negative assertion above: `--lane` is not
-    being deleted from the script, only from the `--claim` call shape. If
-    `--suggest-companions` ever stopped requiring it, the assertion above
-    would be guarding a flag that no longer means anything.
+    being deleted from the script, only from the `--claim` call shape. Found
+    by both self-review spawns as a vacuous first draft -- the original body
+    only checked that the substring "--suggest-companions" appeared in prose
+    and that `lane_setup` had a `main` attribute, which would still pass with
+    the requirement itself deleted from the CLI. This actually runs the CLI
+    with `--suggest-companions` and no `--lane`, the same shape
+    `tests/test_lane_setup_851.py::test_cli_refuses_a_sweep_with_no_lane_at_all`
+    already pins -- a second, narrower witness kept here so a reader of this
+    file's own claim does not have to trust a docstring pointing elsewhere.
     """
-    import lane_setup
-
-    text = DISPATCH.read_text(encoding="utf-8")
-    assert "--suggest-companions" in text, (
-        "skills/manager/phases/dispatch.md no longer mentions "
-        "--suggest-companions -- nothing here proves it still requires --lane"
+    board_json = json.dumps(
+        {
+            "capped": False,
+            "cap_detail": "",
+            "issues": [
+                {"number": 1579, "title": "t", "body": "`scripts/lane_setup.py`"}
+            ],
+        }
     )
-    assert hasattr(lane_setup, "main"), "lane_setup.main missing entirely"
+    done = subprocess.run(
+        [sys.executable, "scripts/lane_setup.py", "--suggest-companions", "1579"],
+        input=board_json,
+        capture_output=True,
+        text=True,
+        cwd=str(REPO_ROOT),
+    )
+    assert done.returncode == 2, done.stdout
+    assert "--lane" in done.stderr, (
+        "lane_setup.py --suggest-companions with no --lane no longer refuses "
+        "on --lane specifically -- the requirement this test exists to pin "
+        "has moved or disappeared: {0!r}".format(done.stderr)
+    )
