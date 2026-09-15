@@ -288,7 +288,36 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # carve-out, which a tick decides at the moment a lane comes back red and so
     # cannot be left only in the phase file it would have to go and read first.
     # Budget unchanged; 331 B headroom.
-    "agents/sub-manager.md": (21469, 21800),
+    # Re-baselined for #1544 step 2: 21469 B became 21993 B. The CI-wait
+    # fourth shape's steps 1-2 now spawn `oss:tick-review` and translate its
+    # `REVIEW:` report instead of calling `pr_green.py` and reasoning about
+    # the wait inline; step 3 (the hand-back shape itself) is unchanged,
+    # since the scheduler still resumes this file, never the spawn. Ceiling
+    # moves to 22300 B: the replacement block, trimmed twice, still nets
+    # larger than the block it replaced, because it also has to state what
+    # the spawn's three report states mean for this file's own decision --
+    # weighed against holding `ci-green.md`'s wait procedure and
+    # `review.md`'s >24,000 B checklist out of this file's own context for
+    # the rest of every tick that reaches this shape, which is the entire
+    # point of #1544.
+    # Re-baselined in the same lane's own self-review round: 21993 B became
+    # 22184 B after two reviewers found the same real gap this file's own
+    # step 2 needed to state -- that `oss:tick-review` files/comments/writes
+    # a below-bar line itself, so this file never needs to redo it.
+    # Re-baselined on the maintainer's own review return: 22184 B became
+    # 22298 B -- step 2's own call description now says `oss:tick-review`
+    # waits one call per pull request, not one for the whole batch, matching
+    # the fix in `agents/tick-review.md`'s own step 1 (pr_green.py's real
+    # contract cannot verdict more than one named pull request per call).
+    # Ceiling raised 22300 -> 22900 in the same maintainer review, and the
+    # headroom is itself the subject: 2 B is a tripwire rather than a budget.
+    # The next lane to touch this file for any reason -- a typo, a renamed
+    # script path -- goes red on arrival, and CLAUDE.md's own rule then makes
+    # it write a weighed sentence for a one-line edit, which is a whole extra
+    # review cycle bought for nothing. Weighed against leaving it: this file
+    # grew 1,618 B across #1544's three rounds and has no further growth
+    # planned, so 602 B is roughly one more paragraph, not a licence.
+    "agents/sub-manager.md": (22298, 22900),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -374,6 +403,40 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # first two it renders nothing at exit 0. 6302 B became 6696 B. Ceiling
     # unchanged; 204 B headroom.
     "agents/tick-dispatch.md": (6696, 6900),
+    # #1544 step 2: new file. `oss:sub-manager` used to call `pr_green.py
+    # --wait` and then read `skills/manager/phases/review.md`'s checklist
+    # (together over 24,000 B) inline, in the same long-lived context that
+    # goes on to merge and account for the whole tick. This agent holds only
+    # the wait-then-review step: it is handed the pull request number(s)
+    # already open this tick, waits on CI itself, and applies `review.md`'s
+    # checklist -- including the report-for-filing/below-bar routing -- in
+    # a throwaway context, then dies. It does not merge and does not write
+    # the tick's own handback (#1544's steps 3-4), the same boundary
+    # `agents/tick-dispatch.md` draws around steps 2-4. Budgeted from the
+    # day it was added, the same posture #1414, #1499 and #1544 step 1
+    # already take for a new file.
+    # Re-baselined in the same lane's own self-review round: 7110 B became
+    # 8741 B after two spawned reviewers (Explore, oss:auditor) independently
+    # found the same real gap -- the "filing an issue, commenting on one" was
+    # withheld in the same sentence review.md assigns it to whoever is doing
+    # the review, leaving no-op handling for report-for-filing/below-bar
+    # items -- plus a genuine forging risk in "carried verbatim" with no
+    # quoting convention (unlike tick-dispatch.md's nonce-wrapped payload),
+    # and a mixed-batch report shape review.md's own routing table never
+    # named. All three were real findings on a brand-new file, so nothing
+    # here argued for cutting rather than fixing.
+    # Re-baselined on the maintainer's own review return: 8741 B became
+    # 10697 B. pr_green.py's real contract is "one call resolves at most one
+    # named pull request" (`scan()` stops at the first non-pending; `--wait`
+    # returns on the first actionable one or reports every name pending) --
+    # this file's step 1 previously documented a single call over the whole
+    # batch as though it verdicted every pull request, which it cannot. Step
+    # 1 now documents N sequential per-pull-request calls, states the N*T
+    # worst-case wall-clock cost this creates explicitly, and "Why this file
+    # exists" now says outright that the caller's own `Agent(...)` blocks
+    # for the whole of that wait. Nothing here argued for cutting length to
+    # avoid stating a real cost. Ceiling moves to 11200 B, ~5% headroom.
+    "agents/tick-review.md": (10697, 11200),
 }
 
 

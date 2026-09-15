@@ -154,7 +154,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1532: 42893 B became 42577 B -- the op table's
         # two `--derive-held`/`--against` probe rows collapsed into one
         # read row with the retired flags named as retired.
-        42577,
+        # Re-baselined for #1544 step 2 self-review: 42577 B became 42670 B --
+        # the "Operational hazards" bullet describing the sub-manager's CI
+        # wait still said it calls `pr_green.py --wait` directly, which #1544
+        # step 2 moved into a spawn (`oss:tick-review`). Budget unchanged;
+        # comfortably under it.
+        42670,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
