@@ -466,7 +466,18 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # classifies only the sub-manager's own final message, so the sub-manager
     # still pastes what it drafts. Budgeted from the day each was added, the
     # same posture #1414, #1499 and #1544 steps 1-2 already take.
-    "agents/tick-merge.md": (5905, 6300),
+    # Re-baselined for #1571: 5905 B became 7058 B, ceiling 6300 -> 7300 B. The
+    # file shipped stating merge.md's gates in prose and giving the spawn no call
+    # that establishes any of them -- it is handed a bare pull request number, and
+    # its first documented action was the confirm-gated merge itself. Gate 3
+    # caught it before this spawn had ever run once. The new step 0 is the two
+    # reads plus the could-not-merge arm, placed ahead of the merge because the
+    # file is read top-down by an agent that acts as it reads. Nothing here was
+    # cut for it: every other paragraph in this file is an obligation that
+    # survives the merge (the read-back, the assignee release, the Closes #N
+    # verification, the default-branch recheck), and a gate that runs before the
+    # write cannot be paid for by weakening the checks that run after it.
+    "agents/tick-merge.md": (7058, 7300),
     "agents/tick-accounting.md": (7219, 7700),
 }
 
