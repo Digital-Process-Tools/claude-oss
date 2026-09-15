@@ -477,7 +477,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Nothing already in the file argued that point, so nothing was
         # cut to make room; ceiling moved to 3050 B, ~10% headroom over
         # the new size.
-        2761,
+        # Re-baselined for #1554: 2761 B became 2988 B -- the shown
+        # canonical `pr_green.py` call example now carries `--timeout N`,
+        # reconciling it with `agents/sub-manager.md`'s own call shape,
+        # which the two loop documents previously disagreed about.
+        # Comfortably under the 3050 B ceiling; ceiling unchanged.
+        2988,
         3050,
         "the pr_green.py wait, its four states, and the #1086 substring trap -- shared by a sub-manager merging and a releaser landing gate 3's own fix",
     ),
@@ -621,7 +626,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # three states in place of the old by-hand instruction and the manual
         # oss_state.py two-route CLI example. Comfortably under the 25900 B
         # ceiling; ceiling unchanged.
-        25243,
+        # Re-baselined for #1515: 25243 B became 25651 B -- the could-not-
+        # freeze hand-remedy paragraph was replaced (cohort_freeze.py now
+        # creates the missing label itself under --execute), and a self-
+        # review finding fixed a second, stale "maintainer's own act, by
+        # hand" sentence in the Cadence section. Comfortably under the
+        # 25900 B ceiling; ceiling unchanged.
+        25651,
         25900,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),

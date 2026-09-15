@@ -352,13 +352,13 @@ enters it.
 | `skills/manager/SKILL.md` | 42,577 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 55,195 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
-| `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
+| `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,308 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
 | `skills/manager/phases/merge.md` | 15,385 B | 15,400 B |
-| `skills/manager/phases/ci-green.md` | 2,761 B | 3,050 B |
+| `skills/manager/phases/ci-green.md` | 2,988 B | 3,050 B |
 | `skills/manager/phases/inbound.md` | 6,799 B | 6,900 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces
