@@ -24,8 +24,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import lane_setup  # noqa: E402
+import select_issues_claim_read  # noqa: E402
 
 TICK_DISPATCH = REPO_ROOT / "agents" / "tick-dispatch.md"
+
+#: Any path will do -- the brief schema checks that the composed prompt names
+#: the worktree the claim derived, not that it exists on disk.
+WORKTREE = "/wt/1546"
 
 
 def _documented_claim_lines():
@@ -82,20 +87,80 @@ def test_a_documented_subagent_type_is_one_lane_setup_accepts():
         )
 
 
+def _rendering_payload():
+    """A payload that actually reaches the ``subagent_type`` branch.
+
+    ``compose_claim_label`` derives its held set from
+    ``claim_result["assignee"]["rows"]`` (`_claimed_issue_numbers`), and returns
+    ``no-claimed-issues`` *before* the ``subagent_type`` branch when that set is
+    empty. A payload carrying only ``{"state": "claimed"}`` therefore returns
+    the identical dict with and without a type -- which is what the first draft
+    of the control below asserted over, and it could not fail.
+
+    The worktree is a keyword argument rather than a payload key: passed in the
+    payload it is never read, the brief schema reports ``worktree: missing``,
+    and the call returns ``brief-structural-finding`` -- a second early return,
+    one step past the first, that would have made this control vacuous again in
+    a way its own assertion message would have named but nothing else would.
+    """
+    return {
+        "issue": 1546,
+        "claim_result": {
+            "state": "claimed",
+            "assignee": {
+                "rows": [
+                    {
+                        "issue": 1546,
+                        "state": select_issues_claim_read.STATE_CLAIMED,
+                    }
+                ]
+            },
+        },
+        "branch": "fix/1546",
+    }
+
+
+def test_the_control_payload_actually_reaches_the_render():
+    """The control's own control: prove the fixture is not short-circuiting.
+
+    Found by the v0.35.0 gate 3 release audit, round 2. The first version of
+    this file asserted the withholding below over a payload that returned
+    ``no-claimed-issues`` either way, so both assertions passed on an early
+    return and the guard pinned nothing at all.
+    """
+    rendered = lane_setup.compose_claim_label(
+        _rendering_payload(),
+        "a phrase",
+        subagent_type="oss:developer",
+        model="sonnet",
+        worktree=WORKTREE,
+    )
+    assert rendered.get("state") == "rendered", (
+        "the control payload does not reach the render at all (state={0!r}) -- "
+        "every assertion below it would pass on the early return".format(
+            rendered.get("state")
+        )
+    )
+    assert "Agent(" in (rendered.get("text") or ""), (
+        "the control payload reached `rendered` without producing an Agent(...) "
+        "call, so the withholding test below compares nothing against nothing"
+    )
+
+
 def test_compose_claim_label_really_does_withhold_the_render_without_a_type():
     """The positive control for the two negative assertions above.
+
+    Paired with the test above, which proves this payload would otherwise have
+    rendered: without that pairing, an early return makes both assertions here
+    pass for a reason that has nothing to do with ``subagent_type``.
 
     If this ever stops holding, the documentation checks are guarding a
     mechanism that no longer exists and should be deleted rather than kept
     passing.
     """
-    payload = {
-        "issue": 1546,
-        "claim_result": {"state": "claimed"},
-        "branch": "fix/1546",
-        "worktree": "/wt/1546",
-    }
-    without = lane_setup.compose_claim_label(payload, "a phrase")
+    without = lane_setup.compose_claim_label(
+        _rendering_payload(), "a phrase", worktree=WORKTREE
+    )
     assert "Agent(" not in (without.get("text") or ""), (
         "compose_claim_label rendered an Agent(...) call with no subagent_type -- "
         "the flags this file checks for no longer decide anything"
