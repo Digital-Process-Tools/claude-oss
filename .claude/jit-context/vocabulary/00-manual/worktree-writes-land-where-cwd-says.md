@@ -51,6 +51,27 @@ very lane assigned to investigate it.
   patch` in the polluted tree, `git apply` in the correct worktree, `git checkout -- <files>` in
   the polluted one -- clean because the base commit was identical in both trees.
 
+- **Reading outside the worktree: `cwd:DIR` and `read:PATH` are two
+  separate quoted arguments in the same call, never one string.**
+  `read:cwd:/path/to/file` parses the whole thing as an offset/limit
+  token and fails; a bare `read:/abs/path` is correctly refused as
+  escaping cwd, but that refusal's own suggested-fix text names only
+  the token `cwd:PATH`, not the two-argument shape. The working call is
+  `supertool "cwd:/dir" "read:relative/path"` -- two strings, not a
+  prefix glued onto the read op (#1467).
+
+- **A supertool write issued as its own Bash call, not chained with
+  `cd &&`, needs its own `cwd:` prefix on the same call, every time.**
+  A bare `supertool 'edit:@-' <<'TOML' ...` with no `cd` and no `cwd:`
+  prefix operated against the main clone, not the worktree a
+  `cd <worktree> && supertool 'read:...'` had shown correctly moments
+  earlier in a *separate* Bash invocation -- cwd resets between calls,
+  and `edit:@-` inherits none of it. Three files landed in the wrong
+  tree before a routine `wc -c` byte-count in the worktree caught it.
+  Recovered with `git checkout --` in the main clone; redone as
+  `supertool 'cwd:<worktree>' 'edit:@-'` on one call, confirmed by the
+  edit receipt's own `[branch: ...]` footer (#1573).
+
 For `tree_snapshot` specifically -- where to write the before-snapshot,
 what `compare` already defaults to, and why `could-not-compare` is not
 `clean` -- see `tools/00-manual/tree-snapshot-compare.md`, which owns

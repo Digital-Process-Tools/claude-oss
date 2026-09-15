@@ -54,6 +54,7 @@ import oss_rules  # noqa: E402
 OP_INVENTORY = {
     "batch": None,
     "channel": "watch",
+    "cwd": None,
     # #1577: `scripts/doctor_check_supertool_validators.py` is the first shipped
     # document to name `supertool 'doctor:probe'` -- confirmed to resolve here as
     # a built-in, always-loaded core op (`supertool 'doctor'` and `doctor:probe`

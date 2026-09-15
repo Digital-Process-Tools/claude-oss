@@ -41,3 +41,41 @@ match: (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$
   `--cov-fail-under=85`, so a perfectly green 3-file run prints `FAIL Required test coverage of 85%
   not reached. Total coverage: 3.62%` -- a line that names no test and no file and reads as a failure
   when nothing failed.
+- **A file split that changes what stays unsplit makes an older file's own
+  "why this file exists" section wrong, one line at a time.**
+  `agents/tick-dispatch.md` still said, verbatim, that steps 2-4 "stay
+  `oss:sub-manager`'s, unsplit, in the same file, the same context, as
+  today" after #1544 step 2 split step 2 out into `agents/tick-review.md`
+  -- true for steps 3-4, false for step 2, in a file the maintainer's own
+  brief said not to touch for this lane. Narrow the claim to the steps
+  still true of, or point at whichever file states the live split, the
+  next time the file carrying the claim is touched for any other reason.
+- **A procedure that names every state up front has to act on every one
+  of them, not just rescue the last one from the report-back section.**
+  `agents/tick-review.md`'s step 1 named all four of `pr_green.py`'s exit
+  states (`green`, `red`, `pending`, `could-not-read`), but no numbered
+  step ever said what to do with `could-not-read` -- the report-back
+  section eventually handled it, so nothing was lost, but a spawn
+  following "what you do" top-to-bottom reached the end of the procedure
+  with that pull request's disposition still unhandled. Give every state
+  named at the top a step of its own, even a one-line one, rather than
+  leaving the last state to be inferred from the report shape.
+- **A documented command that wraps across a line break inside its own
+  backticks reads as two fragments, not one runnable call.**
+  `skills/manager/phases/merge.md` rendered a corrected `gh api
+  repos/{owner}/{repo}/pulls/N --jq .author_association` call split by
+  the line wrap, so a reader reconstructing it from the rendered prose
+  sees two backtick-fenced pieces rather than one command. A table's
+  command cells already have to run verbatim, above; the same holds for
+  a command named inline in a sentence -- keep it on one line, or reflow
+  the sentence so the wrap does not fall inside the backticks.
+- **A new dispatch state's docstrings and canonical sentences need the
+  same sweep as its behaviour.** #1567 added a fourth `lane_dispatch`
+  state and wired it everywhere the behaviour is read, but left
+  `oss_state.py`'s own `_lane_dispatch_state_argument` docstring saying
+  "one of the three declared words" and `dispatch.md`'s own canonical
+  WHY-flag sentence naming only two of the four states by name. A tick
+  working from the canonical sentence alone omits the WHY a new state
+  requires and gets refused. A behaviour change that adds a state is not
+  done until every docstring and canonical sentence claiming a fixed
+  count of them is grepped and updated too.

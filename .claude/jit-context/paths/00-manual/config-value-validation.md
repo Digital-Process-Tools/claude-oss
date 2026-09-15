@@ -43,3 +43,11 @@ match: (^|/)scripts/(oss_config|scaffold|fix_commit_scope)\.py$
   asserting `not Path("/tmp/pwned.txt").exists()` is vacuous: that path is absent both before and
   after the fix, for two different wrong reasons. Two independent review spawns caught this in the
   same first-draft test.
+- **A key added to `OPTIONAL_KEYS` validates clean whether or not anything
+  reads it.** `outbound_route_threshold` passed `.oss.json` validation
+  from the moment it was declared, but `workspace_routes.THRESHOLD_KEY`
+  had no `outbound` entry and `next_action.py` had no branch for it --
+  two hits in the whole repo, the declaration and the changelog
+  fragment. A configured value that never fires renders identically to
+  one that fired and found nothing to route. Grep for a reader before
+  considering a new optional key wired, not just a validator.

@@ -51,6 +51,41 @@ found in a different module from the others, in the same release-audit round
   or at least a printed notice, in any new `_arg_value`-shaped helper rather
   than repeating the same silent collapse.
 
+- **A gate that returns early on one failure mode hides a sibling failure mode
+  present in the same run.** `doctor_check_action_pins.py`'s `if drifted: ...
+  return` fires before `if unresolved:` is ever reached, so a run carrying
+  both an unresolved pin (a live SHA that could not be fetched) and a
+  drifted one reports only the drift -- the unresolved action drops out
+  with no mention it was never checked. Confirmed with a synthetic run
+  carrying both. Never let one non-`ok` branch `return` before every other
+  one has had a chance to report; fold every reportable state into one
+  combined report instead.
+
+- **A parser that skips a name it cannot classify has to say so, not
+  silently under-count.** `outbound_draft.py`'s `pending_count` increments
+  no bucket for an entry that fails `FRAGMENT_RE` (an unparseable draft
+  name), so a directory entirely full of unparseable names reports the
+  same `0` a genuinely empty directory would -- the function's own
+  docstring promises `None` only for `could-not-read`, silent on this
+  third case. `render()` gets this right elsewhere in the same module
+  (`[name does not parse as ...]` per entry); a summary counter sitting
+  next to a correct per-entry reporter is the harder version of this bug
+  to catch.
+
+- **Two independent implementations of one naming convention will
+  disagree, with nothing comparing them.** `statusline.py`'s
+  `_outbound_count` and `outbound_draft.py`'s `FRAGMENT_RE` both parse
+  `outbound/<n>.<state>.<slug>.md` and already accept different inputs
+  (one requires a non-empty slug, the other does not) -- deliberate
+  duplication (`statusline.py` ships standalone and cannot import the
+  other), but nothing pins them to agreement the way
+  `tests/test_supertool_rule_sync_577.py` already does for exactly this
+  shape. The same gap recurs at `release_ci_wait.py`'s and
+  `pr_green.py`'s rate-limit backoff constants: two copies, both correct
+  today, nothing comparing them to each other. **A deliberately
+  duplicated fact needs a same-value test between the two copies**, not
+  just a test pinning each copy alone.
+
 **Must-fire control:** a script under `scripts/` that drops a malformed record
 with a bare `continue` and no counter. **Must-not-fire control:** the
 identical shape inside `tests/` (this rule is about the loop's own operational
@@ -60,5 +95,9 @@ sits right beside the file this rule actually governs and must stay silent.
 Routed via /oss:curate from `trap.d/1499.agent-cost-unreadable-transcript-
 dropped-silently.md`, `trap.d/1499.loop-cost-report-drops-unparseable-
 timestamp-silently.md`, `trap.d/1499.lane-setup-brief-schema-recon-check-no-
-word-boundary.md` and `trap.d/1508.doctor-event-filter-reports-one-poller-as-
-all.md`.
+word-boundary.md`, `trap.d/1508.doctor-event-filter-reports-one-poller-as-
+all.md`, `trap.d/1571.doctor-action-pins-drops-unresolved-when-drift-present.md`,
+`trap.d/1519.outbound-draft-pending-count-renders-unparseable-names-as-zero.md`,
+`trap.d/1519.outbound-naming-convention-forked-and-the-two-copies-already-
+disagree.md` and `trap.d/1571.ratelimit-backoff-constants-duplicated-with-no-
+cross-check.md`.
