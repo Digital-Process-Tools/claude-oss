@@ -292,7 +292,7 @@ when a file crosses it.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 20,629 B | 21,000 B |
+| `agents/sub-manager.md` | 21,515 B | 21,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
@@ -302,6 +302,13 @@ when a file crosses it.
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
 Weighed against cutting the ranged-read technique or the supertool guard's reach to make room --
 both of which a lane trips in its first few turns, and the first of which the cap is what motivates.
+
+**`agents/sub-manager.md`'s ceiling went from 21,000 B to 21,800 B (#1499)**, its second raise in
+three days, to hold the optional `COST:` self-report on top of the measurement of whose context a
+tick spends. Both halves of #1499 landed in this file as separate pull requests and neither argued
+the other's point, so nothing was cut. Weighed: a tick is already the loop's most expensive spawn
+and re-sends this file on every turn, against a tick that cannot report its own spend and so cannot
+be measured at all.
 
 **`agents/sub-manager.md`'s ceiling went from 18,800 B to 21,000 B (#1526)** to hold the literal
 `lane_setup.py --claim` call shape: a measured tick paged two phase files three times each hunting

@@ -249,12 +249,23 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 19460 B starting point, so this number is `wc -c` on the rebased file,
     # not 20047 minus this change's own delta. Ceiling unchanged; 1,089 B
     # headroom, and this is a net shrink against #1535's number.
-    # #1499, rebased over #1532's shrink: the measurement of whose context a
-    # tick actually spends -- lanes 6% of context sent against 59% for the
-    # coordination layer, one sub-manager at 289,239 tokens before dispatching
-    # anything. The file said how to read cheaply and never why it mattered
-    # here. 19911 B became 20629 B. Ceiling unchanged; 371 B headroom.
-    "agents/sub-manager.md": (20629, 21000),
+    # #1499, first half: the measurement of whose context a tick actually
+    # spends -- lanes 6% of context sent against 59% for the coordination
+    # layer, one sub-manager at 289,239 tokens before dispatching anything.
+    # The file said how to read cheaply and never why it mattered here.
+    # 19911 B became 20629 B.
+    #
+    # #1499, second half, rebased on top of the first: the optional `COST:`
+    # self-report and what a tick is expected to say about its own spend.
+    # 20629 B became 21515 B, which is 515 B over the old 21,000 B ceiling, so
+    # the CEILING MOVES to 21,800 B. The two halves landed as separate pull
+    # requests into the same file and neither argued the other's point, so
+    # there was nothing to cut. Weighed: this file is re-sent on every turn of
+    # a tick that is already the most expensive spawn in the loop, so the raise
+    # is paid where it hurts most -- against a tick that cannot report its own
+    # spend and therefore cannot be measured at all, which is the thing #1499
+    # exists to fix. 285 B headroom.
+    "agents/sub-manager.md": (21515, 21800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

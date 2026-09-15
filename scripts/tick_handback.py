@@ -91,6 +91,12 @@ frame parser is a second place for that bug to recur.
                     pointing at `TICK: paused` instead of the generic
                     no-header reason.
 
+Every state above may also carry an optional `COST:` line (#1499) -- a sub-manager's own free-text
+token-spend self-report, folded to one line, from `scripts/agent_cost.py`. It never affects which
+of the states above is chosen: a missing or duplicated `COST:` line folds to the same "absent"
+answer (`cost=None`), on the same reasoning `release_handback.py`'s own optional `GATE:` field
+already documents for a paused release.
+
 ## What this deliberately does not do
 
 Release authority is not a state here and never will be. A sub-manager's
@@ -219,6 +225,26 @@ _TICK_ENDS = re.compile(
 )
 _KNOWN_TICK_ENDS = ("work-started", "blocked", "nothing-left")
 
+# #1499: an optional self-report of the sub-manager's own token spend, one
+# free-text line -- COST: <whatever `scripts/agent_cost.py --json`'s render()
+# printed, verbatim>, never a structured value this module parses further.
+# It never decides the outcome, so unlike TICK-ENDS:/BLOCKER:/REASON: above,
+# a missing or duplicated COST: line is not a classification failure --
+# release_handback.py's own GATE: field (optional on a paused release) is
+# the existing precedent for folding "absent" and "ambiguous" onto one
+# answer rather than promoting either to could-not-classify.
+_COST = re.compile(r"^[ \t>*_#]*COST:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
+
+
+def _find_optional_field(pattern, tail):
+    """Like ``_find_field``, but zero or several matches both fold to
+    ``None`` rather than refusing classification -- this is metadata beside
+    the outcome, not part of what decides it."""
+    matches = list(pattern.finditer(tail))
+    if len(matches) != 1:
+        return None
+    return _rr.fold_to_one_ascii_line(matches[0].group(1))
+
 
 def _verdict(state, reason, **extra):
     out = {
@@ -230,6 +256,7 @@ def _verdict(state, reason, **extra):
         "ends": None,
         "wait_dispatch": None,
         "wait_observable": None,
+        "cost": None,
     }
     out.update(extra)
     return out
@@ -350,6 +377,7 @@ def classify(message):
     # be read as that header's own detail, even once the header itself was
     # picked correctly.
     tail = text[header.end() :]
+    cost = _find_optional_field(_COST, tail)
 
     if declared == "completed":
         match, count = _find_field(_TICK_ENDS, tail)
@@ -399,6 +427,7 @@ def classify(message):
             declared="completed",
             ends=ends,
             quoted=header_line,
+            cost=cost,
         )
 
     if declared == "blocked":
@@ -428,6 +457,7 @@ def classify(message):
             declared="blocked",
             detail=detail,
             quoted=header_line,
+            cost=cost,
         )
 
     if declared == "could-not-run":
@@ -457,6 +487,7 @@ def classify(message):
             declared="could-not-run",
             detail=detail,
             quoted=header_line,
+            cost=cost,
         )
 
     # declared == "paused" -- the only remaining alternative in _TICK (#818)
@@ -492,6 +523,7 @@ def classify(message):
         wait_dispatch=wait_dispatch,
         wait_observable=wait_observable,
         quoted=header_line,
+        cost=cost,
     )
 
 
@@ -556,6 +588,8 @@ def main(argv=None):
         print("  wait_dispatch: {0}".format(verdict["wait_dispatch"]))
     if verdict["wait_observable"]:
         print("  wait_observable: {0}".format(verdict["wait_observable"]))
+    if verdict["cost"]:
+        print("  cost: {0}".format(verdict["cost"]))
     if verdict["quoted"]:
         print("  quoted: {0}".format(verdict["quoted"]))
     return EXIT_CODES[verdict["state"]]
