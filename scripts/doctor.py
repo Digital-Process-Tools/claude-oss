@@ -7734,6 +7734,9 @@ NOT_COMPARED_TOP_LEVEL = {
     "read at runtime by an installed plugin copy",
     ".github": "runs in this repository's CI, never in an install",
     ".gitignore": "a checkout's own bookkeeping, not read at runtime",
+    ".markdownlint.json": "markdownlint's own config for this checkout (#1576), not read from "
+    "a plugin copy -- scaffold deliberately does not ship markdownlint at all, since it needs "
+    "an external binary install",
     ".oss.json": "the config of whatever repo is being diagnosed, not of a plugin copy",
     ".supertool.json": "op configuration for a checkout, not read from a plugin copy",
     "CHANGELOG.md": "release history; a copy behind the clone is expected to differ and "
