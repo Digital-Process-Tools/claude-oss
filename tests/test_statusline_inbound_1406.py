@@ -190,10 +190,11 @@ def test_refresh_populates_inbound_on_the_board_clock(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda *a, **k: None)
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "_doctor_reading", lambda root: None)
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 1)
     monkeypatch.setattr(
         statusline,
         "inbound_reading",
-        lambda repo, i, p: {
+        lambda repo, i, p, unruled_issues=None: {
             "state": "measured",
             "unruled_issues": 1,
             "unreviewed_prs": 0,

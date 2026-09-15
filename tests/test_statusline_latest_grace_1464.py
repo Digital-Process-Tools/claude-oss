@@ -198,7 +198,9 @@ def test_refresh_records_a_failure_when_a_due_ask_gets_nothing_back(
     )
     monkeypatch.setattr(statusline, "check_rollup_counts", lambda rollups, prs: None)
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: None)
-    monkeypatch.setattr(statusline, "inbound_reading", lambda repo, i, p: None)
+    monkeypatch.setattr(
+        statusline, "inbound_reading", lambda repo, i, p, unruled_issues=None: None
+    )
     monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda repo, b: None)
     monkeypatch.setattr(
         statusline, "_channel_reading", lambda root, config: (None, None)
@@ -249,7 +251,9 @@ def test_refresh_clears_a_prior_failure_on_a_successful_ask(monkeypatch, tmp_pat
     )
     monkeypatch.setattr(statusline, "check_rollup_counts", lambda rollups, prs: None)
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: None)
-    monkeypatch.setattr(statusline, "inbound_reading", lambda repo, i, p: None)
+    monkeypatch.setattr(
+        statusline, "inbound_reading", lambda repo, i, p, unruled_issues=None: None
+    )
     monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda repo, b: None)
     monkeypatch.setattr(
         statusline, "_channel_reading", lambda root, config: (None, None)
