@@ -108,12 +108,19 @@ def _git(repo, *args):
     git_bin = gh_which.safe_which("git")
     if git_bin is None:
         return False, "", "git is not on PATH"
+    # #1566: `_stale_local_head` below is the first caller in this module to
+    # reach the network (`git fetch`). A credential prompt would hang a check
+    # nobody is watching -- the same reasoning `release_delta._git` already
+    # states for its own sibling call.
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
     try:
         proc = subprocess.run(
             (git_bin, "-C", str(repo)) + args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=_TIMEOUT,
+            env=env,
         )
     except FileNotFoundError:
         return False, "", "git is not on PATH"
@@ -201,11 +208,19 @@ def _stale_local_head(repo):
     in question, and renders identically to a range that is genuinely short.
 
     `git fetch` here brings the local remote-tracking ref honest before the
-    comparison. A failed fetch (no network, no remote, a repository nobody
-    expects to reach a forge) or a `HEAD` with no configured upstream (a
-    detached checkout, a fresh worktree with nothing to compare against)
-    leaves this check unable to improve on the status quo, so it returns
-    ``None`` and the caller proceeds exactly as it always has.
+    comparison, and its own result matters as much as the comparison that
+    follows it: a `HEAD` with no configured upstream at all (a detached
+    checkout, a fresh worktree with nothing to compare against) leaves this
+    check unable to improve on the status quo, so it returns ``None`` and the
+    caller proceeds exactly as it always has -- but a fetch that was
+    *attempted and failed* (no network, an expired credential, the forge
+    unreachable) must not fall through the same way. Discarding that failure
+    and comparing against whatever remote-tracking ref happened to be on disk
+    already would answer from a ref that might be exactly as stale as `HEAD`
+    itself -- the identical silent-wrong-count shape #1566 exists to close,
+    just gated by network reachability instead of by "nobody ever fetched."
+    So a failed fetch reports `could-not-evaluate` too, in its own words,
+    rather than silently reusing an unrefreshed ref.
     """
     ok, upstream, _ = _git(
         repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"
@@ -214,7 +229,13 @@ def _stale_local_head(repo):
     if not ok or not upstream or "/" not in upstream:
         return None
     remote = upstream.split("/", 1)[0]
-    _git(repo, "fetch", "--quiet", remote)
+    fetched, _, fetch_detail = _git(repo, "fetch", "--quiet", remote)
+    if not fetched:
+        return (
+            "could not fetch {0} to confirm local HEAD is current with {1}: {2}".format(
+                remote, upstream, fetch_detail or "unknown error"
+            )
+        )
     ok, out, _ = _git(repo, "rev-list", "--count", "HEAD..{0}".format(upstream))
     out = out.strip() if out else ""
     if not ok or not out.isdigit():

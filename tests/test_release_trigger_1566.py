@@ -143,3 +143,21 @@ def test_a_repo_with_no_upstream_is_unaffected_by_the_new_check(tmp_path):
     row = release_trigger.merged_prs_condition(repo, 1)
     assert row["state"] == release_trigger.MET, row
     assert row["count"] == 1
+
+
+def test_a_failed_fetch_is_could_not_evaluate_not_a_silent_reuse_of_a_stale_ref(
+    stale_clone, tmp_path
+):
+    """A fetch that cannot reach the remote at all must not fall through to
+    comparing against whatever remote-tracking ref happens to already be on
+    disk -- that ref can be exactly as stale as local HEAD, which would
+    silently reproduce #1566 under the one condition (no network) this check
+    exists to guard against. Point origin somewhere unreachable so the fetch
+    itself fails, while the clone's own `origin/main` remote-tracking ref
+    stays at the same stale commit as HEAD (unset by the fixture's own
+    unfetched squash merge) -- the exact shape a discarded fetch result
+    would silently trust."""
+    _git(stale_clone, "remote", "set-url", "origin", str(tmp_path / "no-such-remote"))
+    row = release_trigger.merged_prs_condition(stale_clone, 1)
+    assert row["state"] == release_trigger.COULD_NOT_EVALUATE, row
+    assert "could not fetch" in row["detail"], row
