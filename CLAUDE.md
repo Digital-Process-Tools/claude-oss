@@ -423,25 +423,35 @@ maintainer's session with their credentials.
 
 ## What is not proven yet
 
-**The marker below names `v0.34.0`, and it was written inside the v0.34.0 release commit.**
+**The marker below names `v0.35.0`, and it was written inside the v0.35.0 release commit.**
 
-**Delta, taken two ways that agree.** The range is `v0.33.1..HEAD` at `c2e9c13`: `git rev-list
---count v0.33.1..HEAD` returns **22**, and `gh pr list --state merged` since the `v0.33.1` tag
-timestamp returns **22** merged pull requests. Gate 1 was green on 22 legs across 3 runs at that
-commit: CodeQL 2, push-triggered `tests` 6, and dispatched full-matrix `tests` 14 (run
-`34883685439`); `changelog` is `pull_request`-only and does not re-run at the tag. Gate 3 ran two
-rounds over the range, 9 findings in total, none in a blocking row; `gate3_disposition.py`
-returned `stop-tag` for round one and `carry-forward-and-proceed` for round two, and every finding
-was routed to `trap.d/` or filed (#1512) before this commit. 2 of 4 classes were `read` rather
-than `exercised` in each round; the auditor reasoned about the test suite rather than running it.
+**Delta, taken two ways that agree.** The range is `v0.34.0..HEAD` at `bd75d86`: `git rev-list
+--count v0.34.0..HEAD` returns **15**, and `gh-prs:merged-since=v0.34.0` returns **15** merged pull
+requests, its own cross-check reporting `RAN and AGREED`. Gate 3 ran two rounds over the range, 14
+findings in total, none in a blocking row; `gate3_disposition.py` returned `stop-tag` for round one
+and `carry-forward-and-proceed` for round two. Round one's stop was load-bearing rather than
+procedural: it caught a defect the ranking table would have shipped, in `agents/tick-dispatch.md`
+(#1546), whose own documented call rendered nothing at exit 0. Every other finding was routed to
+`trap.d/`. Both rounds graded 2 of 4 classes `read` rather than `exercised`; round two exercised the
+platform band and `ships-local-state` with a stated control, which round one did not.
 
-**Cohort freeze: cohort-31 at 31.** This marker cites a cohort that has already finished freezing,
-never this release's own, because the freeze runs after the tag. The state file records `cohort-31`
-as `measured` at 31, frozen at the `v0.33.1` tag; two routes first disagreed (31 against 30,
-recorded as `unknown`) and agreed at 31 on the re-count. `cohort_citation_order.py --state
-.max/claude-oss-watch.json --at <now>` was run against this paragraph before committing.
+**Gate 1 is the weakest claim in this paragraph and is stated as such.** At `8074934`, the
+pre-release head, push-triggered `tests` was green 6 of 6 and CodeQL's `Analyze (python)` leg
+**failed** on GitHub's own incremental-analysis disk-space error -- no alert, no finding, and
+unretryable, because default-setup CodeQL runs on a `dynamic` event GitHub refuses to re-run. A
+full-matrix `tests` run was dispatched against that commit. The verdict that actually gated the tag
+is this release commit's own run, waited on with `release_ci_wait.py --require-event
+workflow_dispatch`; read that run, not this sentence, for whether CodeQL cleared.
 
-**The reach probe was NOT re-derived at `v0.34.0`.** It is still `v0.21.0`'s:
+**Cohort freeze: cohort-32 at 15.** This marker cites a cohort that has already finished freezing,
+never this release's own, because the freeze runs after the tag. The state file records `cohort-32`
+as `measured` at 15, frozen at the `v0.34.0` tag; two routes first disagreed (15 against 14,
+recorded as `unknown`) and agreed at 15 on the re-count -- the fifth consecutive cohort where the
+label filter read low first, which is a property of GitHub's label index rather than of any cohort.
+`cohort_citation_order.py --state .max/claude-oss-watch.json --at <now>` was run against this
+paragraph before committing.
+
+**The reach probe was NOT re-derived at `v0.35.0`.** It is still `v0.21.0`'s:
 `gh repo list Digital-Process-Tools --limit 100`, run at `c565488`, returns eleven repositories in
 that one GitHub organisation, four carrying `.oss.json`, each confirmed by its own contents read. The count is
 scoped to the organisation the command names, never to "the field": a repository under a different

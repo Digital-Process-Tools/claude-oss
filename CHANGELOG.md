@@ -7,6 +7,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-09-15
+
+### Added
+
+- `scripts/tick_handback.py` and `scripts/release_handback.py` can now both classify an
+  optional `COST:` field, a free-text one-line self-report of an agent's own token spend
+  (from `scripts/agent_cost.py`), the same shape the developer report's own `cost` block
+  already gets. `agents/sub-manager.md` was updated to emit it; `agents/releaser.md` was
+  not, since no unique, already-established string exists yet for a releaser to match
+  its own transcript against, so `release_handback.py`'s side of this is classifier-only
+  for now. The field never blocks classification either way -- a missing or duplicated
+  line folds to the same "absent" answer `release_handback.py`'s existing optional
+  `GATE:` field already gets on a paused release (#1499).
+
+- Added a `oss:tick-dispatch` spawn (#1544): the sub-manager's own
+  select-the-board, claim-the-issue and render-the-dispatch-call step now
+  runs in its own throwaway context, spawned by `oss:sub-manager` as its
+  very first action, instead of inline in the context that goes on to
+  review, merge and account for the whole tick. It renders the
+  ready-to-paste developer-lane `Agent(...)` call and dies; the
+  sub-manager pastes and executes it, since it is the context every
+  dispatched lane's completion notification reaches. This is step 1 of
+  #1544's four-step proposal only -- steps 2-4 (wait+review, merge,
+  accounting+handback) are unchanged.
+
+### Changed
+
+- The read-cost and CI-trust rules now ship to every repository rather than living only in this
+  one's `CLAUDE.md` (#1499). `agents/developer.md` gains the 20,000 B read cap and the rule against
+  re-reading a file already in context; `agents/sub-manager.md` gains the measurement showing whose
+  context a tick actually spends; and the `CLAUDE.md` written into a scaffolded repository gains an
+  "If an agent is doing the work" section covering trust-CI-rather-than-replay, reading CI's answer
+  rather than assuming it, and reading narrowly and never twice.
+- Known limit: the scaffolded `CLAUDE.md` is in the defaults ownership class -- created once when
+  absent, then the repository's forever -- so this reaches repositories scaffolded after it and
+  never an existing one.
+- Compatibility: compatible - prose in agent definitions and in a scaffold template; no interface,
+  flag or payload changes.
+
+- Dispatch selection (`select_issues.py`) no longer drops a candidate outright when its declared
+  files overlap the fleet's already-held file set -- the `lane-collision` disposition and its
+  exclusion are gone, and the candidate stays `eligible`. No replacement `overlap` field was
+  built: per-issue file-set declaration (`lane_patterns`, its label fallback, the held-set
+  derivation this fed) is being removed altogether in a follow-up (#1530), so this fix does not
+  invest in a surface only to have it deleted again. `lane_setup.py`'s own `--derive-held` receipt
+  keeps its underlying `blocked` verdict state (unchanged, still documented in
+  `skills/manager/phases/dispatch.md`) but renders it as `verdict : OVERLAP -- ... -- information,
+  not a block` rather than `verdict : BLOCKED`, independent of this change (that wording draws
+  from `derive_held_set`'s own held map, not from anything removed here). Closes #1528.
+
+- Retired the lane claim registry (#1532). `lane_setup.py --claim` no longer
+  writes a local lane record with a 240-minute TTL, and `--derive-held`,
+  `--against` and `--check-vanished` are removed along with the held-set
+  derivation they fed. A collision with the held set stopped dropping a
+  candidate in #1528 and the declared file sets it collided on went in #1530,
+  which left a record nothing read for a decision -- a second, staler copy of
+  what `git-worktrees` answers from the filesystem, on a TTL long enough that
+  a phantom record blocked real work for hours.
+- `--claim` and `--release` keep their names and now mean the GitHub assignee
+  alone (#1532) -- the one claim with a real owner and a real atomicity story.
+  It was already the only thing stopping two lanes taking the same issue: the
+  assignee was read, and an `already-claimed` refused, before the registry was
+  ever reached, so retiring the registry removes no guarantee. `--claim` no
+  longer requires `--lane` and no longer refuses a claim made from inside a
+  worktree, both of which existed only to protect the record.
+- `doctor` no longer reports `vanished worktrees` (#1532) -- it read the live
+  lane records for one whose own worktree directory had disappeared, and there
+  are no records to read.
+
+- Dispatching a developer lane now sends the issue numbers and the worktree path, and nothing else
+  (#1535). `agents/developer.md` is the lane's system prompt and is re-sent on every turn, so a
+  brief restating supertool, the TDD order, the docs duty, the publishing clause, pushback and
+  untrusted input paid ~7,900 B per spawn to tell the reader what it was already holding. The lane
+  now fetches what it needs itself: the issue text with `gh-issue:N:full`, the live worktrees with
+  `git-worktrees`, its guard tests with `lane_setup.py --lane`, and its own `oss:recon` summary.
+- `lane_setup.py --claim --subagent-type` composes the whole prompt itself, from the issues the
+  claim actually holds and the worktree it derived, and `--brief` becomes optional extra per-lane
+  context appended to it rather than a required file. `--subagent-type` no longer requires
+  `--brief`; `--brief` still requires `--subagent-type`.
+- `lane_setup_brief_schema` drops its eight restatement elements -- each was a substring match over
+  the brief's own text, satisfied by the words appearing, so it measured compliance with itself --
+  and checks three structural elements over the composed prompt instead: `issues` and `worktree`,
+  verified against the values the claim derived rather than against any-number-any-path, and
+  `placeholder`, the leftover `{{...}}` marker check (#1022), unchanged. Any finding refuses the
+  `Agent(...)` render; `could-not-read` stays its own state.
+- Compatibility: compatible - `--brief` still parses and is still checked; a caller passing one gets
+  the same refusal on a leftover placeholder. The retired elements were enforced only inside this
+  loop's own dispatch path, which this change updates in the same commit.
+
+- A developer lane now spawns `oss:recon` over its own issues unconditionally, as the first thing it
+  does and before it reads any of the tree (#1542). The spawn was conditional on the ground being
+  "unfamiliar", which is a judgement a lane cannot make: it is handed issue numbers and a worktree
+  path and nothing else (#1535), so at the moment it would evaluate that condition it has read the
+  issue bodies and none of the code. Measured on one lane of three issues (#1499), the recon cost
+  0.7M context tokens against a lane cost of 65.8M, where the comparable lane without one cost
+  134.4M.
+- The three outcomes are unchanged and matter more under a mandate: the recon answered, it ran and
+  returned nothing, or the `Agent` tool was refused outright at this depth. The lane still says which
+  under `compliance`, so a refusal never reads as a lane that had nothing to orient on.
+- Compatibility: compatible - prose in the lane's own system prompt; no interface, flag or payload
+  changes, and `skills/manager/phases/dispatch.md`'s optional dispatcher-side recon is untouched.
+
+### Removed
+
+- `select_issues.py` groups issues by their `lane-*` GitHub label directly instead of by a
+  per-issue declared-file overlap search: the label a triager already applied states the
+  partition, so no per-issue file set needs deriving to bundle same-lane candidates into one
+  dispatchable lane (#1530). Board-measured against today's 27 open issues: 7 full groups of
+  three, 1 group of two, 2 genuine singletons -- label grouping is not "mostly singletons" on a
+  real board.
+- Removed the machinery that existed only to feed that overlap search: `.oss.json`'s
+  `labels.lane_patterns` (the label-to-glob mapping), its validation in `oss_config.py`,
+  `select_issues.py`'s `_derive_lane_patterns_from_labels` and the `lane_patterns_source` field,
+  and the `scripts/doctor_check_lane_patterns.py` / `scripts/lane_pattern_coverage.py` diagnostic
+  pair (#1530). An issue's own explicit `lane_patterns` field and a body-declared path (#1135)
+  are unaffected -- only the label-derived fallback, which fed grouping alone, is gone. No
+  scaffolded repository ever received this key (0 references in `scripts/scaffold.py`,
+  `commands/**`, `agents/**`), so this is a local removal for this repository rather than an
+  ownership-contract change; a hand-maintained repository that copied the key on its own would
+  see it silently stop being consulted.
+- Compatibility: breaking - `labels.lane_patterns` is no longer read or validated by this loop.
+
+### Fixed
+
+- `pr_green.py --wait` polled at a fixed 45-second cadence regardless of how close GitHub's shared
+  REST rate-limit budget was to the wall, contributing to an overnight `/oss:run` session exhausting
+  the 5000/h budget three times. It now reads the remaining core budget before every sleep and
+  widens the interval in steps as it runs low -- doubled under 25% remaining, quadrupled under 10% --
+  leaving the interval unchanged when the read itself fails rather than guessing (#1492).
+
+- The dispatch-selection call `scripts/select_issues.py` already lived literally in
+  `agents/sub-manager.md` (#1179); the `lane_setup.py --claim` call now lives beside it, so a
+  dispatching tick no longer pages `skills/manager/phases/tick-order.md` and
+  `skills/manager/phases/dispatch.md` (66,441 B combined, measured three reads of each) hunting for
+  the shape, then reaching for `--help` and making a malformed call before dispatching a single lane
+  (#1526).
+- `scripts/loop_cost_report.py`'s `classify()` misattributed a real sub-manager to `other`, or worse
+  to `developer`, whenever its first prompt lacked the literal phrase `spawn token` -- inflating the
+  very number used to argue developer lanes are the dominant cost. It now reads the declared
+  `attributionAgent` (the `subagent_type` Claude Code itself records at spawn time) first, and falls
+  back to the prompt-phrase sniff only for a transcript that carries no such field (#1526).
+
+- `agents/tick-dispatch.md`'s own documented `lane_setup.py --claim` call now carries `--phrase`,
+  `--subagent-type` and `--model` (#1546). Without the first two, `lane_setup.py` renders the bare
+  description and no `Agent(...)` call at all -- exit 0, no error -- so a spawn following its own
+  documented shape handed its caller a `DISPATCH: rendered` report with nothing pasteable in it,
+  indistinguishable from a lane that legitimately rendered nothing. Found by the v0.35.0 gate 3
+  release audit before the tag moved.
+- Compatibility: compatible - prose in an agent definition shipped hours earlier in the same
+  release cycle; no interface, flag or payload changes.
+
 ## [0.34.0] - 2026-09-14
 
 ### Added
@@ -11341,7 +11492,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.34.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.35.0
 [0.34.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.34.0
 [0.33.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.33.1
 [0.33.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.33.0
