@@ -13,12 +13,14 @@ columns and a multi-word anchor can land across a reflow.
 """
 
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
+
+import spawn_guard  # noqa: E402
 
 MERGE_BASE = "5aa0534574b9b1ed5a781e5a030bc92f97f1d33a"
 
@@ -35,8 +37,9 @@ def _flatten(text: str) -> str:
 
 def _blob_at(rev: str, path: Path) -> str:
     rel = path.relative_to(REPO_ROOT).as_posix()
-    result = subprocess.run(
+    result = spawn_guard.run(
         ["git", "show", "{0}:{1}".format(rev, rel)],
+        subject="reading the pre-fix blob for the positive control",
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
