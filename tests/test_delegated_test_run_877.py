@@ -84,6 +84,7 @@ REQUIRED_MARKER = {
     "release-auditor.md": "may not ask a spawned agent for a verdict on one",
     "sub-manager.md": "A tick reads CI; it does not reproduce it.",
     "releaser.md": "may not ask a spawned agent for a verdict\non one.",
+    "tick-review.md": "A tick reads CI; it does not reproduce it.",
 }
 
 
@@ -189,6 +190,16 @@ def test_release_auditor_bounds_test_behaviour_to_reasoned_not_run():
 def test_sub_manager_reads_ci_rather_than_reproducing_it():
     _assert_marker_with_control("sub-manager.md", REQUIRED_MARKER["sub-manager.md"])
     text = _text("sub-manager.md")
+    assert "not a local suite run" in text
+
+
+def test_tick_review_reads_ci_rather_than_reproducing_it():
+    """#1544 step 2: `oss:tick-review` inherits the CI-wait + review step this
+    module already guards on `sub-manager.md` -- it now runs the same
+    `pr_green.py`/`review.md` work, just in a throwaway context, so it is
+    bound by the identical rule rather than a rewritten copy of it."""
+    _assert_marker_with_control("tick-review.md", REQUIRED_MARKER["tick-review.md"])
+    text = _text("tick-review.md")
     assert "not a local suite run" in text
 
 

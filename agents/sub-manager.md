@@ -202,18 +202,24 @@ cut, a spawn was refused, the state file could not be read>
 ```
 
 **A fourth shape, for a CI wait -- one decision procedure, not two rules that used to
-contradict each other (#818 said hand back always, #1086 gave you a waiter; #1190 replaces both).**
-Run this in order the moment the only thing left this tick looks like "wait on CI":
+contradict each other (#818 said hand back always, #1086 gave you a waiter; #1190 replaces both;
+#1544 moves the wait and the review after it into a spawn of their own).** Run this in order the
+moment the only thing left this tick looks like "wait on CI, then review":
 
 1. **Is a lane label free with candidates still sitting in it?** Re-select from the fleet payload
    rather than assuming its composition from tick start -- a merge just now may have freed one.
    Dispatch into it instead of waiting at all.
-2. **Else, does anything need to reach you during the wait** (a maintainer ruling, a status probe)?
-   If not, call `pr_green.py NUM --wait --timeout N` per `skills/manager/phases/ci-green.md`.
-   `green` or `red` resolves the wait inside this turn at no extra cost; a `pending` past the
-   timeout has not resolved it and falls through to step 3 rather than being read as green.
+2. **Else, spawn `oss:tick-review`** with exactly the pull request number(s) open this tick,
+   nothing else -- it inherits the `sub-manager` marker you already wrote, so it can no more
+   publish a release than you can. It waits on `pr_green.py --wait --timeout N` and, once CI
+   resolves, applies `skills/manager/phases/review.md` and routes any finding, in its own
+   throwaway context. Read its report: `REVIEW: reviewed` names a decision per pull request --
+   merge on green (`skills/manager/phases/merge.md`) or resume the lane per "One dispatch per
+   tick" above for `needs-fix` -- inline, unsplit (#1544's steps 3-4 are not this diff).
+   `REVIEW: pending` falls through to step 3 with its observable line, verbatim;
+   `REVIEW: could-not-run` folds into step 3 the same way any other unreadable input would.
 3. **Else hand back** -- because nothing was dispatchable, something must stay reachable mid-wait,
-   or step 2's own `--wait` expired still `pending`. You have no `ScheduleWakeup` and cannot
+   or step 2's own spawn came back still `pending`. You have no `ScheduleWakeup` and cannot
    receive channel events, so hand back rather than polling yourself or blocking your own turn on
    `gh run watch`. Fold the fleet's occupancy into
    `WAIT-OBSERVABLE` alongside what clears it -- `"checks green on #NUM, fleet full"` against

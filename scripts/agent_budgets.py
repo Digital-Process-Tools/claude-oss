@@ -288,7 +288,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # carve-out, which a tick decides at the moment a lane comes back red and so
     # cannot be left only in the phase file it would have to go and read first.
     # Budget unchanged; 331 B headroom.
-    "agents/sub-manager.md": (21469, 21800),
+    # Re-baselined for #1544 step 2: 21469 B became 21993 B. The CI-wait
+    # fourth shape's steps 1-2 now spawn `oss:tick-review` and translate its
+    # `REVIEW:` report instead of calling `pr_green.py` and reasoning about
+    # the wait inline; step 3 (the hand-back shape itself) is unchanged,
+    # since the scheduler still resumes this file, never the spawn. Ceiling
+    # moves to 22300 B: the replacement block, trimmed twice, still nets
+    # larger than the block it replaced, because it also has to state what
+    # the spawn's three report states mean for this file's own decision --
+    # weighed against holding `ci-green.md`'s wait procedure and
+    # `review.md`'s >24,000 B checklist out of this file's own context for
+    # the rest of every tick that reaches this shape, which is the entire
+    # point of #1544. ~300 B headroom.
+    "agents/sub-manager.md": (21993, 22300),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -374,6 +386,20 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # first two it renders nothing at exit 0. 6302 B became 6696 B. Ceiling
     # unchanged; 204 B headroom.
     "agents/tick-dispatch.md": (6696, 6900),
+    # #1544 step 2: new file. `oss:sub-manager` used to call `pr_green.py
+    # --wait` and then read `skills/manager/phases/review.md`'s checklist
+    # (together over 24,000 B) inline, in the same long-lived context that
+    # goes on to merge and account for the whole tick. This agent holds only
+    # the wait-then-review step: it is handed the pull request number(s)
+    # already open this tick, waits on CI itself, and applies `review.md`'s
+    # checklist -- including the report-for-filing/below-bar routing -- in
+    # a throwaway context, then dies. It does not merge and does not write
+    # the tick's own handback (#1544's steps 3-4), the same boundary
+    # `agents/tick-dispatch.md` draws around steps 2-4. Budgeted from the
+    # day it was added, the same posture #1414, #1499 and #1544 step 1
+    # already take for a new file. 7110 B measured; ceiling gives ~9%
+    # headroom for the same reason #1544 step 1's own file was given some.
+    "agents/tick-review.md": (7110, 7800),
 }
 
 

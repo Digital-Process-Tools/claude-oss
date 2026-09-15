@@ -293,12 +293,13 @@ when a file crosses it.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 21,469 B | 21,800 B |
+| `agents/sub-manager.md` | 21,993 B | 22,300 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 4,350 B | 4,400 B |
 | `agents/tick-dispatch.md` | 6,696 B | 6,900 B |
+| `agents/tick-review.md` | 7,110 B | 7,800 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
@@ -325,6 +326,14 @@ be measured at all.
 **`agents/sub-manager.md`'s ceiling went from 18,800 B to 21,000 B (#1526)** to hold the literal
 `lane_setup.py --claim` call shape: a measured tick paged two phase files three times each hunting
 for it. Nothing already in the file argued that point, so nothing was cut to make room.
+
+**`agents/sub-manager.md`'s ceiling went from 21,800 B to 22,300 B (#1544 step 2)** to hold the CI
+wait + review step spawning `oss:tick-review` instead of running inline. The replacement block,
+trimmed twice, still nets larger than the block it replaced, because it also has to state what the
+spawn's three report states mean for this file's own decision. Weighed against the alternative of
+leaving `ci-green.md`'s wait procedure and `review.md`'s own >24,000 B checklist landing in this
+file's own context for the rest of every tick that reaches this shape, which is the saving #1544
+exists to produce -- a new agent, `agents/tick-review.md`, holds that cost instead.
 
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
