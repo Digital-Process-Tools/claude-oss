@@ -43,8 +43,6 @@ import glob
 import json
 import os
 
-import doctor
-
 TIER = "gh-prs"
 KEY = "pr_exclude_events"
 
@@ -87,6 +85,8 @@ def event_filter_state(project_dir):
     answer: without the file nothing can say whether a tier is registered, and
     the remedy (write or fix the file) is the same one a parse failure needs.
     """
+    import doctor
+
     doc, problem, detail = doctor._supertool_document(project_dir)
     if problem is not None:
         return "could-not-read", detail
@@ -113,6 +113,8 @@ def event_filter_state(project_dir):
 
 def _slot_dir(project_dir):
     """``(path, problem)`` -- the poller slot directory, or why it cannot be named."""
+    import doctor
+
     override = os.environ.get(STATE_DIR_ENV)
     if override:
         return override, None
@@ -197,6 +199,8 @@ def branch_filter_state(project_dir):
 
 def check_branch_filter(project_dir):
     """#1508: is the default-branch poller subscribed to only what a scheduler acts on?"""
+    import doctor
+
     state, ref, detail = branch_filter_state(project_dir)
     remedy = "supertool 'unwatch:{0}:{1}' 'watch:{0}:{1}:only={2}' before the next radar heal".format(
         BRANCH_SOURCE, ref or "<default_branch>", ",".join(BRANCH_KEEP)
@@ -236,6 +240,8 @@ def check_branch_filter(project_dir):
 
 def check_event_filter(project_dir):
     """#1499: is the scheduler's per-PR event noise filtered at the source?"""
+    import doctor
+
     state, detail = event_filter_state(project_dir)
     key_path = "ops.{}.{}.{}.{}".format(
         doctor.RADAR_OP, doctor.RADAR_TIERS_KEY, TIER, KEY

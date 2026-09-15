@@ -69,7 +69,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import doctor
 from prose_script_refs import OP_TEXT_ROOTS, _tier2_windows, real_scripts
 
 #: A runner verb, inside the SAME documented-command-line window as a script
@@ -112,6 +111,8 @@ def _bin_files(root):
     """Every regular file directly under `bin/` -- not recursive, and not
     filtered by extension: `bin/oss-workspace` itself has none, and its
     embedded heredocs are literal Python source read as plain text here."""
+    import doctor
+
     directory = root / "bin"
     state, detail = doctor._dir_state(directory)
     if state == "unreadable":
@@ -135,6 +136,8 @@ def survey(plugin_root=None):
     already uses. `notes` is a list of standalone strings for corpus-wide
     facts that cannot be attributed to one script (see the module docstring).
     """
+    import doctor
+
     root = doctor.PLUGIN_ROOT if plugin_root is None else Path(plugin_root)
     scripts_dir = root / "scripts"
     names = real_scripts(scripts_dir)

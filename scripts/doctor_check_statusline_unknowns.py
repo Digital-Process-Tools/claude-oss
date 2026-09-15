@@ -420,7 +420,17 @@ _BRANCH_EXPLAIN = {
         "{remedy}",
     ),
     "stale": (
-        "WARN",
+        # #1479: the same #1440 reasoning `_CHANNEL_EXPLAIN["stale"]` above
+        # already applies here -- this row already names a `{fork_sentence}`
+        # because the cache clock running out forks its own background
+        # refresh (test_doctor_statusline_stale_fork_1373.py), the very
+        # thing that makes a "stale" reading settle on its own rather than
+        # needing a maintainer or the loop to clear it. Leaving this row WARN
+        # while the channel row beside it was already WAIT is exactly the
+        # asymmetry #1479 reported: the same repo, no code change, printing
+        # a different WARN/NOTICE count run to run purely because this clock
+        # crossed its own boundary between two runs.
+        "WAIT",
         "statusline default-branch marker: the cached board (including the "
         "default branch's own CI state, which shares its clock, #856) is "
         "older than its own refresh interval, or was marked stale by a "
@@ -471,7 +481,11 @@ _DOCTOR_EXPLAIN = {
         "this repo (no cached `doctor_verdict`) -- renders `dr?`. {remedy}",
     ),
     "stale": (
-        "WARN",
+        # #1479: same reasoning as `_BRANCH_EXPLAIN["stale"]` above -- a real
+        # clock (the fork this row's own `{fork_sentence}` names) already
+        # settles this without a manual op or a scaffold run, so it is a
+        # WAIT, not a WARN, matching the channel and branch rows beside it.
+        "WAIT",
         "/oss:doctor reading: the cached doctor reading is older than its "
         "own refresh interval -- renders `dr?`. {fork_sentence} Or force it "
         "synchronously now: {remedy}",

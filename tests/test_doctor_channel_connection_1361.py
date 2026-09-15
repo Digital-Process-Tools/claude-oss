@@ -453,35 +453,29 @@ def test_a_failed_row_with_no_usable_health_reading_still_warns():
         assert _levels() == ["WARN"], reading
 
 
-# --------------------------------------------------------------- #1440: WAIT
+# --------------------------------------------------------- #1440/#1523: WARN
 
 
-def test_a_failed_row_waits_rather_than_warns_when_not_launched_1440():
-    """A session opened any other way than `bin/oss-workspace` cannot have
-    bound the consumer at all -- nothing in it arms one. A failed transport
-    there is the expected reading, not a fault, and it settles the next time
-    a session IS opened through the launcher."""
-    conn.check_mcp_channel_connection(
-        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
-        which=lambda _name: "/usr/bin/claude",
-        env={},
-        resolve=lambda _root: ("not_delivering", "cached", 3),
-    )
-    assert _levels() == ["WAIT"]
-    assert "not opened through bin/oss-workspace" in _text()
-    assert "settle" in _text().lower()
-
-
-def test_a_failed_row_still_warns_when_launched_positive_control_1440():
-    """The positive control for the test above: LAUNCHED is exactly what
-    `test_a_failed_transport_warns_rather_than_passing` already asserts --
-    restated here beside its own WAIT sibling so the two cannot silently
-    drift onto the same reading."""
-    conn.check_mcp_channel_connection(
-        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
-        which=lambda _name: "/usr/bin/claude",
-        env=LAUNCHED,
-        resolve=lambda _root: ("not_delivering", "cached", 3),
-    )
-    assert _levels() == ["WARN"]
-    assert "not opened through bin/oss-workspace" not in _text()
+def test_a_failed_row_warns_regardless_of_how_the_session_was_opened_1523():
+    """#1440 introduced a WAIT here, gated on `OSS_WORKSPACE_MCP_LIST_
+    CHECKED`, claiming a session not opened through `bin/oss-workspace`
+    "cannot have bound a consumer at all". #1523 found that claim false: a
+    plugin-declared consumer or a persisted launcher registration is started
+    by the harness regardless of how the session was opened, and the
+    sentinel that would have told this check apart was itself dropped by
+    #1432/#1474, making the WAIT branch fire unconditionally with no real
+    clock behind it. Both LAUNCHED and un-launched envs must now warn
+    identically -- there is no more WAIT arm to tell them apart."""
+    for env in ({}, LAUNCHED):
+        doctor.FINDINGS.clear()
+        conn.check_mcp_channel_connection(
+            run=lambda *a, **k: type(
+                "C", (), {"returncode": 0, "stdout": FAILED_ROW}
+            )(),
+            which=lambda _name: "/usr/bin/claude",
+            env=env,
+            resolve=lambda _root: ("not_delivering", "cached", 3),
+        )
+        assert _levels() == ["WARN"], env
+        assert "not opened through bin/oss-workspace" not in _text()
+        assert "nothing in a session opened another way arms" not in _text()
