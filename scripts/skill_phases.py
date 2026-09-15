@@ -316,8 +316,19 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # which still named five claim states and a deleted docstring. #1530
         # and #1532 both re-baselined from the same 56678 B, so this is
         # `wc -c` on the rebased file rather than either side's arithmetic.
-        # Budget unchanged; 2,502 B headroom.
-        54898,
+        #
+        # +297 B on top of that, in the same change: #1535 left a
+        # dispatcher-side recon use standing "only until #1532 lands", on the
+        # stated grounds that `--claim` needs `--lane`. #1532 removed that
+        # requirement, so the paragraph's REASON is false while the use itself
+        # is still worth having (guard lookup, `--suggest-companions`). It is
+        # corrected rather than deleted -- dropping a surface that landed
+        # hours earlier is the maintainer's call. Weighed against replace-
+        # don't-append: the correction is shorter than the paragraph it
+        # replaces would have been if left and footnoted, and a false stated
+        # reason in the phase file a dispatcher actually follows is the
+        # expensive kind of stale prose. Budget unchanged; 2,205 B headroom.
+        55195,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
