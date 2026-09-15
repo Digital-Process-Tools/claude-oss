@@ -309,8 +309,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # waits one call per pull request, not one for the whole batch, matching
     # the fix in `agents/tick-review.md`'s own step 1 (pr_green.py's real
     # contract cannot verdict more than one named pull request per call).
-    # Budget unchanged; 2 B headroom.
-    "agents/sub-manager.md": (22298, 22300),
+    # Ceiling raised 22300 -> 22900 in the same maintainer review, and the
+    # headroom is itself the subject: 2 B is a tripwire rather than a budget.
+    # The next lane to touch this file for any reason -- a typo, a renamed
+    # script path -- goes red on arrival, and CLAUDE.md's own rule then makes
+    # it write a weighed sentence for a one-line edit, which is a whole extra
+    # review cycle bought for nothing. Weighed against leaving it: this file
+    # grew 1,618 B across #1544's three rounds and has no further growth
+    # planned, so 602 B is roughly one more paragraph, not a licence.
+    "agents/sub-manager.md": (22298, 22900),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
