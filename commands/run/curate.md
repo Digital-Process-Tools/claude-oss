@@ -38,6 +38,12 @@ the same way every other write this loop makes into this repository already work
 decision's reason **in the PR body** as a sentence a reviewer can disagree with — never a bare
 verdict — because that sentence is what gets reviewed, not the fact that a decision was made.
 
+**Cut the branch as `curate/<UTC timestamp>`, never `fix/{issue}` — this run is not attached to one
+issue.** The marker is not cosmetic: this pull request is authored by the same account as every
+other loop PR, so nothing else lets the loop's own merge phase tell it apart from one a developer
+lane finished. A head branch matching `^curate/` is what `skills/manager/phases/merge.md` gates on
+to hold this pull request for the maintainer instead of merging it on green (#1467).
+
 ## Read every fragment first, then decide
 
 Read them all before deciding any of them. A fragment read alone gets promoted; the same fragment

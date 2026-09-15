@@ -40,6 +40,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import agent_budgets  # noqa: E402
 import audit_shared  # noqa: E402
+import claude_md_budget  # noqa: E402
 import command_budgets  # noqa: E402
 import developer_phases  # noqa: E402
 import skill_phases  # noqa: E402
@@ -91,6 +92,9 @@ def _declared_pairs():
         }
     )
     pairs[audit_shared.FRAGMENT] = audit_shared.BASELINE
+    pairs.update(
+        {rel: baseline for rel, (baseline, _budget) in claude_md_budget.BUDGETS.items()}
+    )
     return pairs
 
 
@@ -145,6 +149,22 @@ def test_declared_pairs_covers_command_budgets():
     missing = [rel for rel in command_budgets.BUDGETS if rel not in pairs]
     assert not missing, (
         "command_budgets.BUDGETS path(s) missing from _declared_pairs(): "
+        + ", ".join(missing)
+    )
+
+
+def test_declared_pairs_covers_claude_md_budget():
+    """Must-fire control for #1556, the same shape as #1438's control just
+    above: `_declared_pairs()` merges in `claude_md_budget.BUDGETS` via its
+    own `pairs.update(...)` call, easy to delete without any other assertion
+    here noticing -- `test_declared_baselines_match_disk` would keep passing
+    (vacuously) even with `claude_md_budget.BUDGETS` entirely absent from the
+    comparison.
+    """
+    pairs = _declared_pairs()
+    missing = [rel for rel in claude_md_budget.BUDGETS if rel not in pairs]
+    assert not missing, (
+        "claude_md_budget.BUDGETS path(s) missing from _declared_pairs(): "
         + ", ".join(missing)
     )
 
