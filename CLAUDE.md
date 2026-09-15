@@ -298,7 +298,7 @@ when a file crosses it.
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 4,350 B | 4,400 B |
-| `agents/tick-dispatch.md` | 6,302 B | 6,900 B |
+| `agents/tick-dispatch.md` | 6,696 B | 6,900 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
