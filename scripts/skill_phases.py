@@ -449,7 +449,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # release bullet no longer describes the lane record's TTL or the
         # prune that used to clear it for you; there is no longer any
         # mechanism that does, which the bullet now says outright.
-        14715,
+        # Re-baselined for #1467: 14715 B became 15385 B -- a curate-authored
+        # pull request (head branch matching `^curate/`) joins the
+        # never-auto-merge list, with a paragraph saying why it needs its own
+        # marker: it is authored by the same account as every other loop PR,
+        # so `author_association` cannot tell it apart the way an external
+        # contributor's PR is told apart. Ceiling unchanged; 15 B headroom.
+        15385,
         15400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),

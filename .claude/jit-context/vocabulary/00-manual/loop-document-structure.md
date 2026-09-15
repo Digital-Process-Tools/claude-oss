@@ -31,12 +31,13 @@ to dispatch. Make that argument in the diff; a byte count is not it.
 one session -- a directive moved there reaches an agent only if nothing earlier tripped the same
 match. That is a rule that silently did not run.
 
-**Budgets: replace, don't append.** `scripts/agent_budgets.py`, `skill_phases.py` and
-`command_budgets.py` declare them; `CLAUDE.md` carries three hand-copied tables of the same numbers.
-Pay for a paragraph by cutting one, or raise the ceiling in the same diff with a sentence saying what
-was weighed. **Move baseline and budget together** -- `check()` compares only against the ceiling, so
-a baseline can drift from disk unnoticed, which is why `tests/test_baseline_matches_disk_1014.py`
-exists and why #1029 went red on `main`.
+**Budgets: replace, don't append.** `scripts/agent_budgets.py`, `skill_phases.py`,
+`command_budgets.py` and `claude_md_budget.py` (#1556) declare them; `CLAUDE.md` carries four
+hand-copied tables of the same numbers, the last one describing itself. Pay for a paragraph by
+cutting one, or raise the ceiling in the same diff with a sentence saying what was weighed. **Move
+baseline and budget together** -- `check()` compares only against the ceiling, so a baseline can
+drift from disk unnoticed, which is why `tests/test_baseline_matches_disk_1014.py` exists and why
+#1029 went red on `main`.
 
 **Do not propose a deduplication sweep.** Measured 2026-09-05 over 27 files / 598,017 B: 6 exact
 duplicate paragraph classes (~7 KB, mostly the phase headers the split knowingly pays for) and 4 file
