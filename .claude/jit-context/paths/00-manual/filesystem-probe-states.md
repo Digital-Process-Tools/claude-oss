@@ -46,3 +46,15 @@ ran and a check that found nothing must not render identically.**
 - **Grep for the second copy once the first is confirmed.** That same `_undeclared_rows` body is
   copy-pasted verbatim into `developer_phases.py`, scanning a different directory. Same bug, fixed
   in the same commit even though nothing writes concurrently there today.
+- **A helper whose "nothing to report" case is a falsy check (`not x`) rather than an explicit "was
+  this computed at all" check folds two different facts into one output.** `select_issues.py`'s
+  draft `_overlap_info(files)` returned `None` whenever `files` was falsy -- both for a candidate
+  genuinely checked against the held set and found disjoint (`lane_overlap` returns `[]`, falsy) and
+  for a candidate whose lane pattern was never derived at all, so the check never ran and the key was
+  never set (#1528). Both rendered as the bare `overlap: None`. The fix is `files is None` (or a
+  sentinel / missing-key check) rather than `not files`, distinguishing `{"state": "not-checked"}`
+  from `{"state": "checked", "files": [...]}` where `files` may legitimately be empty. Confirmed with
+  a positive-control test: an issue with no `lane_patterns` at all, against a non-empty held set,
+  produced the identical `overlap: None` as a genuinely checked, disjoint candidate. Cheap to get
+  right the first time and easy to introduce by accident, since "nothing found" and "never asked"
+  naturally share one default (`None`, `[]`, `0`).
