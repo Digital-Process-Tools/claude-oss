@@ -27,6 +27,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import spawn_guard
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS_DIR = REPO_ROOT / "scripts"
@@ -46,7 +47,7 @@ MODULES = [
 def _import_standalone(module_name):
     """Runs a fresh interpreter that imports ONLY `module_name` first --
     never `doctor` -- and reports whether that import itself raised."""
-    return subprocess.run(
+    return spawn_guard.run(
         [
             sys.executable,
             "-c",
@@ -54,6 +55,8 @@ def _import_standalone(module_name):
                 str(SCRIPTS_DIR), module_name
             ),
         ],
+        subject="whether {} raises a circular ImportError when imported "
+        "before doctor.py (#1512)".format(module_name),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         timeout=30,
@@ -79,7 +82,7 @@ def test_importing_doctor_first_still_works_positive_control():
     first, the way `doctor.py`'s own `main()` and every existing test in this
     suite already does it) has to keep working, so a harness that could not
     see ANY import failure would not pass this suite silently."""
-    completed = subprocess.run(
+    completed = spawn_guard.run(
         [
             sys.executable,
             "-c",
@@ -87,6 +90,7 @@ def test_importing_doctor_first_still_works_positive_control():
             "import doctor_check_event_filter; "
             "import doctor_check_mcp_channel_connection".format(str(SCRIPTS_DIR)),
         ],
+        subject="whether importing doctor first still works (positive control)",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         timeout=30,
