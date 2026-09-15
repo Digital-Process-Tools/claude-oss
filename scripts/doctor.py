@@ -3930,6 +3930,14 @@ from doctor_check_mcp_channel_connection import (
 # at the top of this file.
 from doctor_check_statusline_unknowns import check_statusline_unknowns
 
+# check_supertool_validators lives in
+# scripts/doctor_check_supertool_validators.py (#1577) -- a new check, so it
+# never goes inline in doctor.py at all; see the per-check module convention
+# at the top of this file. Half two of #633: fold supertool's own
+# `doctor:probe` per-validator resolution states into this diagnostic instead
+# of reporting nothing about them in any state.
+from doctor_check_supertool_validators import check_supertool_validators
+
 
 def _plugin_root_from_path(path):
     """Walk up from PATH for a directory carrying ``.claude-plugin/plugin.json``.
@@ -9711,6 +9719,14 @@ def main(argv=None):
     # working. Every declared dependency ships its own diagnostic for that
     # question, and relaying it costs under 1s combined, measured (#638).
     check_dependency_diagnostics(project_dir)
+    # #1577: `check_dependency_diagnostics` above already runs `supertool
+    # doctor` and relays its trailing VERDICT line, discarding the "Toolchain
+    # validators" section that answers a different question -- whether a
+    # configured validator's own toolchain resolves here. Placed right after
+    # it for the same reason #810 and #860 placed theirs beside the
+    # registration checks: this reads the same relay's subject, one section
+    # deeper.
+    check_supertool_validators(project_dir)
     # #1519: no config or project-dir dependency -- reads scaffold.py's own
     # template string and a live GitHub API call. Placed last among the
     # substantive checks, beside the other network-optional ones above.

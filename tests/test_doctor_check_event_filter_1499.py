@@ -207,6 +207,9 @@ def test_doctor_main_runs_the_check(tmp_path, monkeypatch, capsys):
     """The check is registered: doctor's own run prints its line."""
     _write(tmp_path, {"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}})
     monkeypatch.setattr(doctor, "PLUGIN_ROOT", REPO_ROOT)
+    # #1577: a real `supertool doctor:probe` call, answering about this
+    # machine's install rather than this fixture's tmp_path tree.
+    monkeypatch.setattr(doctor, "check_supertool_validators", lambda *a, **k: None)
     doctor.main(["--root", str(tmp_path), "--plugin-root", str(REPO_ROOT)])
     out = capsys.readouterr().out
     assert "event filter" in out
