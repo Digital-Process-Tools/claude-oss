@@ -35,8 +35,6 @@ import re
 import shutil
 import subprocess
 
-import doctor
-
 
 # The MCP registration that carries the channel into a session (#621). Named
 # separately from CHANNEL_SERVER's own definition in `bin/oss-workspace` -- shell
@@ -118,6 +116,8 @@ def mcp_channel_registration_state(server=None, run=None, which=None, env=None):
     handoff answering the wrong question. A malformed `_STATUS` (not an integer)
     falls through the same way rather than guessing.
     """
+    import doctor
+
     server = server or CHANNEL_SERVER
     env = os.environ if env is None else env
     which = shutil.which if which is None else which
@@ -234,6 +234,8 @@ def check_mcp_channel_registration(
     read here to render `not-registered` as `ok` with the real target named,
     rather than as the ordinary registration gap.
     """
+    import doctor
+
     env = os.environ if env is None else env
     state, detail = (
         precomputed
@@ -1059,6 +1061,8 @@ def check_channel_consumer_census(
     filtering (`_entry_in_scope`) -- `doctor.py`'s own call site passes its
     `project_dir` here for exactly that reason.
     """
+    import doctor
+
     state, detail = channel_consumer_census_state(
         run=run,
         which=which,

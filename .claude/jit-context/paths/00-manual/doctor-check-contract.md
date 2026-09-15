@@ -54,12 +54,15 @@ confirmed absent; `branch protection` already does this and is the model.
   readable install record and no clock coming to settle them -- a standing,
   actionable WARN prints as WAIT and never gets counted.
 - **A dead sentinel makes a real WARN unreachable, permanently, with no
-  trace.** `doctor_check_mcp_channel_connection.py`'s WAIT/WARN split reads
-  an env sentinel whose only writer was removed by a later change as "dead,
-  never read" -- true for that writer, false for this reader. The condition
-  is now always true, the WAIT arm always fires, the WARN arm (a real gap:
-  something should have bound the socket and did not) is unreachable, and
-  nothing anywhere records that this happened. **Before removing an env
+  trace.** `doctor_check_mcp_channel_connection.py`'s WAIT/WARN split used to
+  read an env sentinel whose only writer had been removed by a later change
+  as "dead, never read" -- true for that writer, false for this reader. The
+  condition was always true, the WAIT arm always fired, the WARN arm (a real
+  gap: something should have bound the socket and did not) was unreachable,
+  and nothing anywhere recorded that this had happened. #1523 found the WAIT
+  text was also making a false claim on its own terms and removed the arm
+  entirely rather than re-wiring the dead sentinel -- `check_mcp_channel_
+  connection` now reports the WARN unconditionally. **Before removing an env
   relay as a dead writer, grep for every reader too** (`grep -rn NAME`,
   not just `grep -rn` the export site) -- a stale claim about consumers is
   the exact shape the defect class at the top of `CLAUDE.md` names.

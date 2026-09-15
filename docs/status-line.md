@@ -11,7 +11,7 @@ Left to right:
 | --- | --- | --- |
 | model · context | `Opus · 42%` | Claude Code's own session facts, passed straight through. |
 | repo | `claude-oss✓ main v0.15.0` | repo name, glued to a glyph for whether the *default branch's own head commit* is currently green (`✓`/`✗`/`⋯`/`?`; `#856`), then the current branch (only when it is not the declared default) and the tracked version. |
-| board | `4pr 2ok 1x 1... 0? · 23is / 2eis` | open pull requests, then a CI breakdown (green/red/running/unknown, every group shown even at zero), then open issues and how many of those arrived from outside repository membership. |
+| board | `4pr 2ok 1x 1... 0? · 23is` | open pull requests, then a CI breakdown (green/red/running/unknown, every group shown even at zero), then open issues. How many of those arrived from outside repository membership is the `inb` field below (#1463 removed the duplicate render here). |
 | unlabelled | `0np 1nl` | open issues carrying none of the declared priority labels (`np`), then open issues carrying none of the declared lane labels (`nl`) — reported separately, never summed. `?` for an axis this repository declares no spellings for, or for a reading the forge could not take, same as every other cached count on this line. |
 | release | `rel 4/17` | commits banked since the last release, over what a release here usually costs. Either half is `?` on its own when only one could be measured. |
 | trap | `trap 3` | `.md` fragments in `trap.d/` waiting for `/oss:curate` (same filter as `trap_curate.waiting`, so `.gitkeep` and any other dotfile do not count). Read straight off the filesystem at render time, no forge call. A missing `trap.d/` is a real `0`; `?` is only for a directory that exists and could not be listed. |

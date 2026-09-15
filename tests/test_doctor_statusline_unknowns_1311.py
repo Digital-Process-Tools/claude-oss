@@ -244,6 +244,55 @@ def test_channel_stale_reports_wait_not_warn_1440(monkeypatch, tmp_path):
     assert "fork" in msg.lower() and "background refresh" in msg
 
 
+def test_branch_stale_reports_wait_not_warn_1479(monkeypatch, tmp_path):
+    """#1479: the default-branch marker's own "stale" row used to stay WARN
+    while the channel row beside it (test_channel_stale_reports_wait_not_
+    warn_1440 above) was already WAIT for the identical reason -- both name
+    a `{fork_sentence}` because a stale cache forks its own background
+    refresh (test_doctor_statusline_stale_fork_1373.py) and settles without
+    a manual op or a scaffold run. The asymmetry was #1479's own reproduction:
+    the same repo, no code change, a different WARN/NOTICE count run to run
+    purely because this clock crossed its own boundary between two runs."""
+    cache = {
+        "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
+        "default_branch_state": "green",
+    }
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+    branch_findings = [
+        (state, msg)
+        for state, msg in doctor.FINDINGS
+        if msg.startswith("statusline default-branch marker")
+    ]
+    state, msg = branch_findings[0]
+    assert state == "WAIT", doctor.FINDINGS
+    assert "fork" in msg.lower()
+
+
+def test_doctor_stale_reports_wait_not_warn_1479(monkeypatch, tmp_path):
+    """#1479, the `/oss:doctor` reading's own copy of the fix above -- same
+    fork-based clock, same asymmetry, a third field the issue's own recon
+    did not name but shares the identical shape."""
+    cache = {
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": NOW - statusline.DOCTOR_REFRESH_AFTER - 10,
+    }
+    monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
+    mod.check_statusline_unknowns(
+        str(tmp_path), {"repo": "a/b", "default_branch": "main"}, now=NOW
+    )
+    doctor_findings = [
+        (state, msg)
+        for state, msg in doctor.FINDINGS
+        if msg.startswith("/oss:doctor reading")
+    ]
+    state, msg = doctor_findings[0]
+    assert state == "WAIT", doctor.FINDINGS
+    assert "fork" in msg.lower()
+
+
 def test_channel_not_attributable_stays_warn_with_a_fixable_remedy(
     monkeypatch, tmp_path
 ):

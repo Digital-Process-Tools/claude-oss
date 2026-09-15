@@ -11,10 +11,12 @@ own trap: the op prints `NOT ALL GREEN`, which *contains* the substring `ALL GRE
 exited green with checks still pending. A hand-rolled prose match cannot tell a negated line from
 the positive it negates.
 
-Call the script instead, verbatim:
+Call the script instead, verbatim -- with a `--timeout`, always: line 47 below is the reason,
+and #1554 found `agents/sub-manager.md`'s own call carrying one while this line did not, the two
+loop documents disagreeing about which shape is canonical.
 
 ```
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pr_green.py" NUM [NUM...] --wait
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/pr_green.py" NUM [NUM...] --wait --timeout N
 ```
 
 (or `--all-open` in place of one or more numbers, to scan every open pull request). It answers as

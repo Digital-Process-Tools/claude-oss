@@ -32,7 +32,6 @@ Python 3.9 compatible.
 import os
 import time
 
-import doctor
 from doctor_check_mcp_channel_registration import channel_consumer_census_state
 
 try:
@@ -282,6 +281,8 @@ def check_channel_health_agreement(
     an environment or timing fact that can clear on its own without a config
     edit.
     """
+    import doctor
+
     env = os.environ if env is None else env
     if allow_probe is None:
         allow_probe = bool(env.get(CHANNEL_HEALTH_PROBE_ENV))

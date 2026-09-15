@@ -36,6 +36,16 @@ Three rules, in order of how much they buy:
 The same defect in GitHub's own parser rather than a shell:
 `pr-body-closing-keywords.md` -- writing "does not close #N" closes #N.
 
+**A written-out third state hands a substring match more vocabulary to collide with, not less.**
+`gh-branch:main`'s own Verdict line, being careful to say a commit's checks have not concluded
+rather than claiming green or red, printed `NOT GREEN -- nothing has failed, but CodeQL and tests
+have not concluded on 8e15621, so they are neither a pass nor a fail` (#1530). A wait loop grepping
+`^Verdict: (GREEN|NOT GREEN -- .*(failed|FAIL))` stopped on the first poll, 19 seconds after a
+merge, because `nothing has failed` contains `failed`. The more honest the status line, the more
+words it hands the alternation. What worked: wait on the transient state disappearing and read the
+counted line rather than the prose one -- grep the line starting `Legs:` and keep sleeping while it
+contains `pending`; a tally carries no vocabulary to collide with.
+
 **Enumerating the transient side is still a bet that the tool's vocabulary is closed, and it
 usually is not.** `gh api .../actions/runs ... .status` returned `pending` -- a real, undocumented-
 in-the-loop value neither `queued` nor `in_progress` named -- and a loop enumerating only those two

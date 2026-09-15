@@ -1,22 +1,18 @@
-"""The board field separates two populations of open issue (#595).
+"""Where the external-issue count comes from and how it is cached (#595).
 
-`_board_field` used to fold every open issue into one number. The number that changes
-what a maintainer does next -- an issue filed by someone outside the repository -- was
-invisible inside it unless somebody opened the tracker. This splits it into a second
-group, `Neis`, read off GitHub's own `authorAssociation` rather than `-author:@me`: the
-latter is a fact about whoever is authenticated on this machine, and this repository's
-own governing rule is that a fact about one machine does not stand in for a fact about
-the repository (CLAUDE.md).
+The number that changes what a maintainer does next -- an issue filed by someone
+outside the repository -- is read off GitHub's own `authorAssociation` rather than
+`-author:@me`: the latter is a fact about whoever is authenticated on this machine, and
+this repository's own governing rule is that a fact about one machine does not stand in
+for a fact about the repository (CLAUDE.md).
 
-Three renders, in the same fixture, so none of them is vacuous:
-
-- both counts taken -- `14is / 2eis`;
-- the external count absent or unreadable -- `14is / ?eis`, and *not* `0eis`;
-- an external count that is genuinely zero -- `14is / 0eis`, distinct from the line above.
-
-The middle one is the assertion that matters, because it is the one a renderer that
-always prints `0eis` when it has nothing would still pass, if it were not sitting next
-to a fixture that prints a real zero right beside it.
+`_board_field` used to render this count a second time, as `/ Neis`, beside the
+identical number `_inbound_field`'s `is` group already carries (#1406) -- #1463 removed
+that duplicate render, so this file now covers only the reading and the cache, not the
+`_board_field` output. The three-way `?`/`0`/measured distinction this issue's own
+"must-fire control" reasoning established still matters; it is exercised on the
+surviving renderer in `tests/test_statusline_inbound_1406.py` and on the raw reading
+below (`_gh_external_issue_count`), not here.
 """
 
 import json
@@ -33,52 +29,19 @@ def _symbols(ascii_only=True):
     return statusline._symbols(ascii_only)
 
 
-# --------------------------------------------------------------------------- rendering
-
-
-def test_both_counts_taken_render_together():
-    field = statusline._board_field(
-        {"prs": 0, "issues": 14, "issues_external": 2, "checks": None}, _symbols()
-    )
-    assert field == "0pr ? . 14is / 2eis"
-
-
-def test_an_external_count_nobody_could_take_is_a_question_mark_not_zero():
-    """The assertion that matters: absent must not render as the same digit a real
-    zero renders as -- asserted beside the real zero below in the same fixture."""
-    field = statusline._board_field(
-        {"prs": 0, "issues": 14, "issues_external": None, "checks": None}, _symbols()
-    )
-    assert field == "0pr ? . 14is / ?eis"
-    assert "0eis" not in field
-
-
-def test_the_must_fire_control_a_genuine_zero_is_a_measurement():
-    field = statusline._board_field(
-        {"prs": 0, "issues": 14, "issues_external": 0, "checks": None}, _symbols()
-    )
-    assert field == "0pr ? . 14is / 0eis"
-    assert field != statusline._board_field(
-        {"prs": 0, "issues": 14, "issues_external": None, "checks": None}, _symbols()
-    )
-
-
-def test_a_board_dict_with_no_key_at_all_is_the_absent_case():
-    """A cache written before this field existed carries no `issues_external` key at
-    all -- the same absence as a live read that failed, not a fresh zero."""
-    field = statusline._board_field(
-        {"prs": 0, "issues": 14, "checks": None}, _symbols()
-    )
-    assert field == "0pr ? . 14is / ?eis"
-
-
 # ------------------------------------------------------------------------- the cache
+#
+# `_board_field`'s own rendering of this field (the `?`/`0`/measured
+# distinction #595 established) moved to `tests/test_statusline_eis_dedup_
+# 1463.py` and `tests/test_statusline_inbound_1406.py` -- #1463 removed the
+# render from `_board_field` itself, so there is nothing left of it to
+# assert here. This file keeps covering the cache round trip and the raw
+# `_gh_external_issue_count` reading below.
 
 
 def test_a_cache_with_issues_but_no_external_count_leaves_it_none():
     """No `state` field to distinguish this any more (#597) -- `issues_external`
-    being `None` while `prs`/`issues` are ints is the whole answer, and it is what
-    `_board_field` renders `?eis` from directly."""
+    being `None` while `prs`/`issues` are ints is the whole answer."""
     board = statusline.board_from_cache({"prs": 2, "issues": 14, "fetched_at": 0})
     assert board["issues"] == 14
     assert board["issues_external"] is None
