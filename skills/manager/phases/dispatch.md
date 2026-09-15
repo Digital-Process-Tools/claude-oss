@@ -404,6 +404,16 @@ fresh developer spawn's measured 150k-290k tokens).
 `agent-unreachable`, distinct from `resumed`.** A re-dispatch with neither an attempted resume nor
 that finding is the defect this section stops; state which one applied in the handback.
 
+**A task-notification whose `result` is a single present-tense sentence with no report path is a
+lane that stopped, not one that finished (#1518).** Observed: a lane hit the harness's own
+auto-mode Bash classifier going down mid-call and ended its turn on "Waiting for the classifier to
+recover" -- the notification carried only that sentence, indistinguishable at a glance from a lane
+genuinely still working. Before treating it as `agent-unreachable` or re-dispatching, open the
+task's own output file and read its last tool calls: a classifier refusal there ("auto mode cannot
+determine the safety of Bash right now") is transient and per-call, not the lane being gone, and the
+right response is the same `SendMessage` resume `agent-unreachable` above already uses -- the lane
+in question finished normally once resumed, after about two minutes down.
+
 **#978: `agents/sub-manager.md`'s frontmatter grants `SendMessage`, and some harness versions are
 documented as still refusing it as gated behind an opt-in feature even so.** Two live sub-manager
 spawns hit exactly this before the grant existed at all -- reporting no `SendMessage` tool -- and

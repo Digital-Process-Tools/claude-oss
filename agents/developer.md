@@ -273,6 +273,14 @@ it a second way — grep the new content back — before saying it.
    uncommitted notifies as `completed`**, so the stop is invisible to the maintainer until somebody
    reads the worktree by hand.
 
+   **The harness's own auto-mode Bash classifier can go down mid-call, independent of the rule
+   above.** A refusal reading "auto mode cannot determine the safety of Bash right now" can hit a
+   read-only call exactly as easily as a write, and is per-call and short-lived, not session-wide
+   (#1518). Retry inside the same turn (a short `Monitor`-driven wait, never a foreground `sleep`);
+   if it is still refusing, hand back a report naming exactly which step could not run. Never end a
+   turn on "waiting for the classifier to recover" — a task-notification carrying one present-tense
+   sentence and no report path is indistinguishable from a lane that stopped.
+
    **A test run's verdict is never delegated (#874).** A spawned agent may locate a failing test,
    explain one, or review a diff; the run itself happens in this lane's own transcript, where its
    output is something you can read directly, or it does not happen. `Explore` is granted `Bash` and

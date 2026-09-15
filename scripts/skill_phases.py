@@ -328,7 +328,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # replaces would have been if left and footnoted, and a false stated
         # reason in the phase file a dispatcher actually follows is the
         # expensive kind of stale prose. Budget unchanged; 2,205 B headroom.
-        55195,
+        # Re-baselined for #1518: 55195 B became 56050 B -- the
+        # agent-unreachable paragraph gained a sibling stating that a
+        # task-notification carrying one present-tense sentence and no
+        # report path is a lane that stopped, not one that finished, naming
+        # the harness's own auto-mode Bash classifier outage as the observed
+        # cause; read the task's output file before re-dispatching. Budget
+        # unchanged; 1,350 B headroom.
+        56050,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),

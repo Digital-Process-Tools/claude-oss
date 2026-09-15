@@ -289,7 +289,7 @@ when a file crosses it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 44,788 B | 45,300 B |
+| `agents/developer.md` | 45,460 B | 46,000 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
@@ -304,6 +304,16 @@ when a file crosses it.
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
 Weighed against cutting the ranged-read technique or the supertool guard's reach to make room --
 both of which a lane trips in its first few turns, and the first of which the cap is what motivates.
+
+**`agents/developer.md`'s ceiling went from 45,300 B to 46,000 B (#1518)** to hold a retry-then-
+handback rule for the harness's own auto-mode Bash classifier going down mid-call: an outage was
+observed refusing five consecutive read-only calls, ending a lane's turn on a bare "waiting"
+sentence with no report path, which cost a sub-manager one `SendMessage` resume. Placed in the
+spine rather than a phase file because the classifier can refuse any Bash call at any point in a
+lane's life, not only inside self-review, review-return or the report. Weighed against cutting
+something else in this already-tight file: nothing else here argued a weaker case, so the ceiling
+moved instead, ~1.2% headroom rather than the usual ~10% -- this file is already the largest
+single turn-1 cost in the loop.
 
 **`agents/sub-manager.md`'s ceiling went from 21,000 B to 21,800 B (#1499)**, its second raise in
 three days, to hold the optional `COST:` self-report on top of the measurement of whose context a
@@ -350,7 +360,7 @@ enters it.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,577 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 55,195 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 56,050 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,308 B | 36,000 B |
