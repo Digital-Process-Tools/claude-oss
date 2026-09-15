@@ -308,14 +308,16 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # survives on this side, until #1532 retires the registry that needs
         # it.
         #
-        # #1532 is that retirement, stacked here: 56754 B -> 54641 B. The
+        # #1532 is that retirement, stacked here: 56754 B -> 54898 B. The
         # held-set derivation, its `--against` fallback and the five-state
         # `availability` verdict chain they fed are gone, replaced by a shorter
-        # note saying what answers the question now. #1530 and #1532 both
-        # re-baselined from the same 56678 B, so this is `wc -c` on the rebased
-        # file rather than either side's arithmetic. Budget unchanged; 2,759 B
-        # headroom.
-        54641,
+        # note saying what answers the question now, plus this change's own
+        # self-review round rewriting the *Claim before you spawn* paragraph,
+        # which still named five claim states and a deleted docstring. #1530
+        # and #1532 both re-baselined from the same 56678 B, so this is
+        # `wc -c` on the rebased file rather than either side's arithmetic.
+        # Budget unchanged; 2,502 B headroom.
+        54898,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),

@@ -35,8 +35,16 @@ if you are moving several, add the forward guard (#1069) with a positive control
 trap to watch for.** `issue_claim.py --claim` used to write the assignee while `lane_setup.py
 --claim` registered the lane -- two scripts, two calls, both meaning *this issue is taken* -- and
 the split was why rolling back a half-finished lane lived in prose (a jit-context reminder to run
-`gh issue edit --remove-assignee @me` by hand) rather than in either script. `lane_setup.py --claim`
-now does both in one call (`lane_setup_claim.claim_and_register`), rolling the assignee write back
-in code when registration fails, named states throughout. The general lesson survives the specific
-fix: **two names for one act is a signal to fold them**, checked the next time a script grows a
-second vocabulary for something another script already claims to do.
+`gh issue edit --remove-assignee @me` by hand) rather than in either script. #1069 folded them into
+one call.
+
+**#1532 then went further and removed one of the two acts outright.** The lane registry is retired,
+so `lane_setup.py --claim` writes the GitHub assignee and nothing else, via
+`lane_setup_claim.claim_issues` — three states (`claimed` / `already-claimed` /
+`could-not-claim-assignee`), and no rollback, because there is no second write to fail.
+`claim_and_register` and `release_lane_and_assignee` no longer exist; the mirror is
+`release_assignees`.
+
+The general lesson survives both fixes, and #1532 sharpens it: **two names for one act is a signal
+to fold them — and then to ask whether the second act was load-bearing at all.** Folding made it
+visible that the registry half answered a question nothing acted on.

@@ -78,8 +78,9 @@ This file crossed 3,600 lines and took `doctor.py`'s own medicine: it is the
 entry point now, and every function it used to define outright lives in one
 of `lane_setup_worktree.py` (the base commit, branch, worktree path and
 their occupancy checks), `lane_setup_patterns.py` (cross-cutting guard
-lookup, and the disjointness report a lane brief reads), `lane_setup_claim.py`
-(the lane registry, held-set derivation, and the claim/release logic below)
+lookup, and the lane report a brief reads), `lane_setup_claim.py`
+(the GitHub assignee -- claiming an issue and releasing it again; #1532
+retired the lane registry and held-set derivation that lived there too)
 or `lane_setup_brief_schema.py` (whether the composed prompt carries the two
 per-lane facts and no leftover template marker, checked before `--claim`
 renders an `Agent(...)` line -- #1143, #1535). Every name is imported here and re-exported at module level,
@@ -121,18 +122,22 @@ carry on from. A schema pass is still not a review: it says the two facts are
 there and no template marker survived, never that dispatching this lane is a
 good idea.
 
-## Claim in both senses, in one call (#1069)
+## Claiming an issue, in one call (#1069, #1532)
 
 Claiming used to be two scripts and two calls: `issue_claim.py --claim`
 wrote the GitHub assignee, and this file's own `--claim --lane` registered
 the lane, with nothing rolling the first back when the second failed and
-nothing releasing the assignee when a lane ended. `--claim` now writes the
-assignee for the positional issue (and every `--claim-also` issue) AND
-registers the lane in one call, via `lane_setup_claim.claim_and_register` --
-rolling every freshly-written assignee back if the registration fails, and
-naming the outcome as its own state rather than a silent partial claim.
-`--release` is the mirror: it releases the local lane record AND the GitHub
-assignee together, via `lane_setup_claim.release_lane_and_assignee`.
+nothing releasing the assignee when a lane ended. #1069 folded them into one
+call; #1532 then retired the registry half, because #1528 stopped a held-set
+collision dropping a candidate and left a record nothing read for a decision.
+
+So `--claim` writes the GitHub assignee for the positional issue and every
+`--claim-also` issue, via `lane_setup_claim.claim_issues`, in three states --
+`claimed` / `already-claimed` / `could-not-claim-assignee`. `--release` is
+the mirror, via `lane_setup_claim.release_assignees`. There is no second
+write to fail, so the rollback states #1069 needed (`could-not-register`,
+`assignee-rolled-back`, `rollback-failed-assignee-still-set`) are gone with
+it.
 
 ## --claim also renders step 5's own token now (#1148)
 
@@ -1747,15 +1752,37 @@ def main(argv=None):
                 also_release=args.release_also,
                 repo=config.get("repo"),
             )
+            # Self-review, both spawns independently (#1532): this read
+            # `assignee_row is not None`, which is true in every real call --
+            # `select_issues_claim_read.check` returns exactly one row per
+            # number it is given, whatever happened. So the top line printed
+            # `released` for a release that came back `not-mine`,
+            # `could-not-read` or `could-not-release`, with the real answer
+            # only on the second line. That is this repository's own defect
+            # class inside the receipt reporting it. Read the row's own state
+            # against the same ok-set `select_issues_claim_read` already
+            # declares for this mode, rather than a second idea of it here.
             assignee_row = combined["assignee"]
-            result = {
-                "state": "released"
-                if assignee_row is not None
-                else "could-not-release",
-                "detail": ""
-                if assignee_row is not None
-                else "the assignee release returned no row at all",
-            }
+            if assignee_row is None:
+                result = {
+                    "state": "could-not-release",
+                    "detail": "the assignee release returned no row at all",
+                }
+            elif (
+                assignee_row["state"] in select_issues_claim_read._OK_STATES["release"]
+            ):
+                result = {"state": assignee_row["state"], "detail": ""}
+            else:
+                result = {
+                    "state": "could-not-release",
+                    "detail": "the assignee for #{0} was not released: {1}{2}".format(
+                        args.issue,
+                        assignee_row["state"],
+                        " -- " + assignee_row["detail"]
+                        if assignee_row.get("detail")
+                        else "",
+                    ),
+                }
         if args.json:
             print(
                 json.dumps(

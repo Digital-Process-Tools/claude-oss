@@ -39,16 +39,21 @@ is the correct answer rather than a silent `lane-collision: no`.
 
 **Every input owes a third state, and the join is where they get lost.** The module's whole reason
 for existing (#970) is that `none-available` must never be reachable through a read that failed:
-`could-not-select` names which input went dark. The board has that (`board_read_ok`); as of #1067
-three inputs on the collision path do not --
+`could-not-select` names which input went dark. The board has that (`board_read_ok`).
 
-* `held_files` defaults to an empty set, so *could not enumerate the lanes* and *no lanes* are one
-  value, and it has no documented producer in the loop's prose at all;
-* the `refused`-pattern dark check sits inside `if lane_patterns and held_files:`, so an empty
-  inventory skips the guard rather than the comparison;
+Issue #1067 named three gaps on the collision path. **Two were closed by deletion rather
+than by a third state, and #1532 is where that happened** -- the held set is gone, so there is no
+longer a `held_files` that defaults to an empty set and no longer a producer to document for it,
+and the `refused`-pattern dark check no longer sits inside `if lane_patterns and held_files:`; it
+stands on its own, which is what #1067 asked for. `lanes_read_ok` / `lanes_read_why` went with
+them. Do not go looking for these in `select_issues.py`; they are not there.
+
+The third gap is real and still the live one:
+
 * a member resolving to `glob-no-match` contributes `files: []` and reads as disjoint --
-  `select_issues_overlap._lane_resolved_to_nothing()` exists for exactly this and is never called
-  from here.
+  `select_issues_overlap._lane_resolved_to_nothing()` exists for exactly this. `select()` now calls
+  it and reports such a lane as a dark input; check any NEW consumer of a resolved lane against
+  the same rule, because an empty file list is the shape that reads as clean by accident.
 
 When grouping lands, each member's own state has to survive into the group rather than being
 flattened: a capped board read makes the whole grouping `could-not-tell`, because members may exist

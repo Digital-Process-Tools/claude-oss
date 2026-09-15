@@ -8,9 +8,10 @@ repository's own forge were MERGED-only leftovers, months old, and nothing in
 correctly for a fresh merge, but the leaks predate that convention, or came
 from a merge where cleanup was correctly `refused` (visible at the time, in
 that tick's own output, and never looked at again). Nothing re-checks after a
-refusal, so this set only grows -- the same shape `check_trap_queue` and
-`check_vanished_worktrees` exist to catch for their own queues: a fact that
-was reported once and then only lived in a transcript nobody re-reads.
+refusal, so this set only grows -- the same shape `check_trap_queue` exists
+to catch for its own queue: a fact that was reported once and then only lived
+in a transcript nobody re-reads. (`check_vanished_worktrees` was the third
+member of that family until #1532 retired the lane registry it read.)
 
 **Read from the tracker, never from ancestry.** `skills/manager/phases/
 merge.md` states this explicitly for the analogous worktree-cleanup case,
@@ -50,13 +51,13 @@ delete command `|cleanup` itself already runs, for a maintainer to run by
 hand.
 
 **No age threshold.** #1046's own second open question asked whether
-"stale enough to report" needs an age cutoff. `check_vanished_worktrees`
-and `check_trap_queue` -- the two closest siblings, both drift detectors
-over a set that only grows if unwatched -- report every instance they find
-the moment they find it, with no threshold of their own: a live lane record
-whose worktree vanished is reported the first time doctor runs after it
-vanishes, and a trap fragment is reported the first time doctor runs after
-it is logged. A branch is merged-but-undeleted as soon as its PR merges and
+"stale enough to report" needs an age cutoff. `check_trap_queue` -- the
+closest surviving sibling, a drift detector over a set that only grows if
+unwatched -- reports every instance it finds the moment it finds it, with no
+threshold of its own: a trap fragment is reported the first time doctor runs
+after it is logged. (`check_vanished_worktrees` was the other such sibling
+and made the same choice, until #1532 retired the lane registry it read.)
+A branch is merged-but-undeleted as soon as its PR merges and
 `|cleanup` did not run or was refused; there is no "grace period" during
 which that state is expected or benign, so none is added here. A one-day-old
 merge and a one-year-old one are reported identically, and that is a choice,

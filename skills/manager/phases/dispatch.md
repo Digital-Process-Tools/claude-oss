@@ -274,15 +274,19 @@ when and how far to bundle is below, beside the claim it is dispatched alongside
 other lever: branch the second agent off the first's branch rather than off the default branch. It
 costs a rebase per merge. Do not stack more than two deep without a reason.
 
-**Claim before you spawn, not after** — writing the primary issue's brief with `--claim` (#1069)
-writes every issue's own GitHub assignee AND registers the lane in one call:
+**Claim before you spawn, not after** — writing the primary issue's brief with `--claim`
+(#1069, #1532) writes every issue's own GitHub assignee:
 
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane PATTERN [--lane PATTERN ...] [--claim-also <N> ...]
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim [--lane PATTERN ...] [--claim-also <N> ...]
 
-Dispatch only what comes back `claimed`. `already-claimed` / `could-not-claim-assignee` /
-`assignee-rolled-back` / `rollback-failed-assignee-still-set` are the named failure states — see
-`lane_setup_claim.claim_and_register`'s own docstring for what each means and, for the last one,
-which issue is still assigned and needs releasing by hand. `could-not-read` is never `unassigned`.
+Dispatch only what comes back `claimed`. There are exactly three states, and the other two are
+`already-claimed` (somebody else holds at least one of the issues — nothing was written) and
+`could-not-claim-assignee` (the read/write itself did not complete for at least one). Those two are
+different facts and the second is never folded into the first: `could-not-read` is never
+`unassigned`. See `lane_setup_claim.claim_issues`'s own docstring. #1532 retired the two rollback
+states that used to sit beside them (`assignee-rolled-back`,
+`rollback-failed-assignee-still-set`) — they existed because the call also wrote a local lane
+record, and there is no second write left to fail.
 
 **Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself — this is the
 directive, not a description.** Board in, ranked claimable candidates out. It composes ranking,

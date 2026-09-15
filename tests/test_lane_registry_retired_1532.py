@@ -195,6 +195,52 @@ def test_release_removes_the_assignee_only(tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir()) == []
 
 
+def test_release_receipt_reports_the_row_state_not_merely_that_a_row_arrived(
+    monkeypatch, capsys
+):
+    """Found by BOTH self-review spawns, independently.
+
+    `main()`'s `--release` arm computed its top-level state as
+    `"released" if assignee_row is not None else "could-not-release"`.
+    `select_issues_claim_read.check` returns exactly one row per number it is
+    given whatever happened, so `assignee_row is not None` is true in every
+    real call -- the headline read `released`, and exited 0, for a release that
+    came back `not-mine`, `could-not-read` or `could-not-release`. The true
+    answer was on the second line only, and only in non-JSON mode.
+
+    That is this repository's own defect class inside the receipt reporting it,
+    and nothing pinned the line (`grep 'RELEASE #' tests/` returned nothing
+    before this test). Both ok-states and all three failure states are driven
+    here, so the must-fire and must-not-fire halves sit in one fixture."""
+    seen = []
+
+    def stub(issue, also_release=None, repo=None, checker=None):
+        return {
+            "assignee": {"issue": issue, "state": seen[-1], "detail": "stubbed"},
+            "also_released": [],
+        }
+
+    monkeypatch.setattr(lane_setup_claim, "release_assignees", stub)
+
+    # Must NOT report a failure: the two states `select_issues_claim_read`
+    # itself declares ok for this mode.
+    for state in ("released", "not-assigned"):
+        seen.append(state)
+        code = lane_setup.main(["999", "--repo", ".", "--release"])
+        top = capsys.readouterr().out.splitlines()[0]
+        assert code == 0, (state, code)
+        assert top == "RELEASE #999: {0}".format(state), top
+
+    # Must fire: every state that is not one of those two.
+    for state in ("not-mine", "could-not-read", "could-not-release"):
+        seen.append(state)
+        code = lane_setup.main(["999", "--repo", ".", "--release"])
+        top = capsys.readouterr().out.splitlines()[0]
+        assert code != 0, (state, code)
+        assert "could-not-release" in top, top
+        assert state in top, top
+
+
 SCANNED_DIRS = ("scripts", "skills", "agents", "commands")
 
 
