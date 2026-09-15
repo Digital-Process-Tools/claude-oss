@@ -491,8 +491,22 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # marker: it is authored by the same account as every other loop PR,
         # so `author_association` cannot tell it apart the way an external
         # contributor's PR is told apart. Ceiling unchanged; 15 B headroom.
-        15385,
-        15400,
+        # Re-baselined for #1571: 15385 B became 16285 B, ceiling 15400 -> 16400
+        # B. Gate 3's round-one audit of the v0.36.0 delta found this file
+        # stating two gates -- external-contributor, and a `^curate/` head
+        # branch -- as rules with no read attached, which was free while merging
+        # lived inside `oss:sub-manager` (it already held a board read carrying
+        # both) and stopped being free the moment #1544 split merging into a
+        # spawn handed a bare pull request number. The addition names the two
+        # reads and points at `inbound_triage.classify_pr` rather than
+        # re-translating GitHub's association vocabulary a second time. Weighed
+        # against cutting: the #1467 curate paragraph below it is the incident
+        # that put the `^curate/` gate here at all, and the #1394 paragraph
+        # under that is the one an external-contributor PR is held by -- cutting
+        # either to pay for a read they both depend on trades the rule for the
+        # measurement instead of having both.
+        16285,
+        16400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),
     # New for #1162: the pr_green.py wait and its #1086 substring trap used to

@@ -64,6 +64,18 @@ curate-authored pull request (head branch matching `^curate/`), anything irrever
 invent gates** — parking a real bug as "the owner's call" when it is not on this list is just a way
 of not fixing things.
 
+**Two of those gates are facts, not judgements, so read them rather than recall them (#1571):** the
+head branch, from `gh-pr:N:status`'s own `branch:` line, against an anchored `^curate/`; and whether
+the pull request is contributor-authored, from `gh-prs:state=open,external,iids` — or, where the
+caller already holds a board read carrying `author_association`, from
+`inbound_triage.classify_pr(pr)`, which translates GitHub's own vocabulary and returns
+`could-not-tell` rather than guessing at a value it does not recognise.
+
+A caller holding those off an earlier board read does not re-read them. A spawn handed only a pull
+request number holds neither, and has to. Gate 3 caught exactly that in `agents/tick-merge.md`
+before its first run: the rules were stated in the file and the read was not, which is a rule and a
+measurement rendering identically right up to the moment something merges.
+
 **A curate-authored pull request is never merged by a sub-manager (#1467).** The same account
 authors it as every other loop PR, so `author_association` cannot tell it apart the way `inbound.md`
 tells an external contributor's PR apart. `commands/run/curate.md` cuts its branch as

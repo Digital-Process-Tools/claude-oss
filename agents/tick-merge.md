@@ -50,6 +50,25 @@ of which process is asking. You never write or clear that marker yourself, the s
 Read `skills/manager/phases/merge.md` and follow it in full, for the one pull request your prompt
 named:
 
+0. **Derive the gate facts before you merge, because your prompt carries none of them (#1571).** You
+   are handed a bare pull request number. Two of `merge.md`'s gates turn on facts that number does
+   not tell you, so read them first, in one call:
+
+   ```bash
+   supertool 'gh-pr:N:status' 'gh-prs:state=open,external,iids'
+   ```
+
+   `gh-pr:N:status` names the head branch (`branch: <head> -> <base>`). A head branch matching
+   `^curate/` -- anchored, so a branch merely containing the word is not one -- is a curate-authored
+   pull request. `gh-prs:...,external` is the board-level filter for contributor-authored pull
+   requests; your number appearing in it is the external-contributor gate. Either gate holds the
+   pull request: report it, do not merge it.
+
+   **Three states, and the third is the one that matters here.** If either read fails, or the
+   `external` listing cannot be fetched, that is `could-not-merge` with the failure quoted -- never
+   a merge on the grounds that nothing objected. **A gate you did not read and a gate that passed
+   produce the same merge**, which is why this step is numbered before the one that writes.
+
 1. The confirm-gated merge call (`gh-pr-merge:N:squash|force|cleanup`, run from the clone root with
    the bare `supertool` spelling -- never `python3 supertool.py` for this one call). Read
    `state`/`mergedAt`/`mergeCommit` back; a zero exit is not a merge.
