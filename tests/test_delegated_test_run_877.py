@@ -65,7 +65,18 @@ ALREADY_COVERED_ELSEWHERE = {"developer.md"}
 #:
 #: `recon.md` (#1499) joins it: read-only reconnaissance that is told never
 #: to run the suite -- the lane it briefs runs `test_command`, not the recon.
-NO_TEST_CONCERN = {"triager.md", "scheduler-step.md", "doctor.md", "recon.md"}
+#:
+#: `tick-dispatch.md` (#1544) joins it too: it runs `select_issues.py` and
+#: `lane_setup.py --claim`, never `test_command`, and its own job description
+#: forbids calling `Agent` at all -- there is no test suite and no delegated
+#: agent verdict in its scope for a rule to bind.
+NO_TEST_CONCERN = {
+    "triager.md",
+    "scheduler-step.md",
+    "doctor.md",
+    "recon.md",
+    "tick-dispatch.md",
+}
 
 #: filename -> the marker that must survive in the file, verbatim.
 REQUIRED_MARKER = {

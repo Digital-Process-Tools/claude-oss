@@ -22,8 +22,9 @@ A transcript's kind (`classify`) is read primarily off `attributionAgent` --
 the `subagent_type` Claude Code itself records on every record of a spawned
 agent's own transcript, present from spawn time and never guessed at. Known
 values map directly: `oss:sub-manager` -> `sub-manager`, `oss:releaser` ->
-`releaser`, `oss:scheduler-step` -> `scheduler-step`, `oss:developer` ->
-`developer`, `oss:auditor`/`oss:release-auditor` -> `audit-review`; any other
+`releaser`, `oss:scheduler-step` -> `scheduler-step`, `oss:tick-dispatch` ->
+`tick-dispatch`, `oss:developer` -> `developer`,
+`oss:auditor`/`oss:release-auditor` -> `audit-review`; any other
 declared agent (`Explore`, `general-purpose`, `oss:triager`, `oss:recon`,
 `oss:doctor`, `claude-code-guide`, a forked session, ...) -> `other`, visible
 in the table rather than silently folded into a neighbour. A file that is not
@@ -78,6 +79,7 @@ KINDS = (
     "sub-manager",
     "releaser",
     "scheduler-step",
+    "tick-dispatch",
     "developer",
     "audit-review",
     "other",
@@ -103,6 +105,7 @@ ATTRIBUTION_MAP = {
     "oss:sub-manager": "sub-manager",
     "oss:releaser": "releaser",
     "oss:scheduler-step": "scheduler-step",
+    "oss:tick-dispatch": "tick-dispatch",
     "oss:developer": "developer",
     "oss:auditor": "audit-review",
     "oss:release-auditor": "audit-review",

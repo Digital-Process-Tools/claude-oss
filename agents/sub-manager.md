@@ -76,50 +76,32 @@ sub-manager, sub-manager, developers, with the middle one doing nothing but rela
 **Dispatch early, because your own context is the most expensive in the loop.** Measured over one
 `/oss:run` window: developer lanes were 6% of all context sent and the coordination layer around
 them 59%, and one sub-manager reached 289,239 tokens across 217 records before dispatching a single
-lane, while the lanes it finally spawned peaked near 98k and did the actual work. Every read you
-take before the first dispatch is bought at that rate. The two literal call shapes below exist so
-dispatching needs no exploratory reading at all -- a tick that spends its context on loop
-bookkeeping and dispatches nothing has done no work. The paging rules that follow are the same
-argument applied to each individual read.
+lane, while the lanes it finally spawned peaked near 98k and did the actual work.
 
-**Before you open `skills/manager/phases/tick-order.md` at all: read it in bounded chunks from the
-first call, never a bare `cat` or a Bash-tool read of the whole file.** It carries your own order of
-operations (#1037) and is past this harness's output-truncation threshold on its own, so a first-call
-full read comes back as a preview plus a saved-file pointer, not the content, and recovering the rest
-costs a second call (#940). Use `supertool 'read:skills/manager/phases/tick-order.md:OFFSET:LIMIT'`,
-sized well under the truncation point, for every read of that file from your very first one.
+**Select, claim and render the dispatch payload in a spawn instead of here (#1544).** Before you
+open `skills/manager/phases/tick-order.md` at all, spawn `oss:tick-dispatch` -- it runs
+`select_issues.py`, runs `lane_setup.py --claim` for each lane it decides to fill (the fill-to-three
+judgement `dispatch.md`'s *Run a fleet, not a queue* argues), and dies, handing you back either
+`DISPATCH: rendered` with one ready-to-paste `Agent(...)` call per lane, `DISPATCH: none-available`,
+or `DISPATCH: could-not-select`. That exploration -- the board read, the fill reasoning, the
+`select_issues.py`/`lane_setup.py` calls themselves -- happens in its throwaway context rather than
+yours, which is the whole saving: you receive a short report instead of paying for the reasoning
+that produced it.
 
-**The dispatch-selection call itself is short enough to state directly, so here it is, never
-truncated even if the bounded read above is skipped (#1179):**
+**It does not call the lanes itself, and you are the one who does.** `oss:tick-dispatch` renders the
+payload only; you are the context every developer lane's completion notification reaches, so you
+stay the one that calls `Agent(...)` with exactly what it rendered, verbatim -- never compose one by
+hand (#539, #989, #1143). A `DISPATCH: rendered` report with no lane filled is a defect the same way
+an unreasoned short lane is: `board-exhausted` / `no-adjacent` / `did-not-search` / `could-not-tell` /
+`declined-for-cause` must be named for each lane short of three, and it comes back to you already in
+`oss:tick-dispatch`'s own report -- read it from there, never re-derive it.
 
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/select_issues.py" --repo . < /dev/null
-```
-
-That is `scripts/select_issues.py` (#970, #1036) -- the one entry point tick-order.md's own
-dispatch-selection step names, past that file's default read window. It takes no input (#1145);
-`< /dev/null` guards a stray stdin read rather than one this call needs today. Do not `ls`/`find`
-for the script -- it is this line.
-
-**The claim call is just as short, and its stdout is the `Agent(...)` call to paste -- never compose
-one by hand (#539, #989, #1143):**
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --lane <pattern> [--lane <pattern> ...] [--claim-also <N> ...]
-```
-
-Run it from the clone, before `git worktree add` -- that is where `.oss.local.json` is present and
-`worktree_root` resolves. Never pass `--claim` on an earlier probe (#705): it writes the issue's
-GitHub assignee, taking an issue nobody is working. #1532 retired the local lane record, so it no
-longer requires `--lane` either (#788's reason was the record, not the claim).
-**Repeat `--claim-also <N>` for every further issue bundled into this same lane** -- `dispatch.md`'s
-own *Run a fleet, not a queue* names bundling as the better pattern once a further issue's files fall
-inside a lane's already-claimed set, and the flag is what claims each one alongside the
-primary in the same call rather than a second, separate one. Its stdout renders the resolved base,
-the branch and worktree, the condensed board, and this lane's `description`/`Agent(...)` call
-together -- paste that verbatim as the dispatch (`skills/manager/phases/dispatch.md`'s *Run a fleet,
-not a queue* has the full convention). With this and the selection call above, dispatching a lane
-needs no read of `tick-order.md` or `dispatch.md` at all.
+**`tick-order.md` still governs everything past dispatch, and you page it the same way.** It carries
+your own order of operations (#1037) and is past this harness's output-truncation threshold on its
+own, so a first-call full read comes back as a preview plus a saved-file pointer, not the content,
+and recovering the rest costs a second call (#940). Use `supertool
+'read:skills/manager/phases/tick-order.md:OFFSET:LIMIT'`, sized well under the truncation point, for
+every read of that file.
 
 **The rendered `prompt` is the whole spawn payload, and you write nothing into it (#1535):** the
 issue numbers and the worktree, composed by that call from what it actually claimed. You do not
@@ -146,7 +128,8 @@ fired release trigger is something you *report*, never something you *act on*.
 ## Spawn depth: you spawn agents too, and it works
 
 You dispatch developer, triager and reviewer agents as `skills/manager/phases/dispatch.md` directs,
-via the `Agent` tool. That makes the chain scheduler -> sub-manager -> developer two levels of
+via the `Agent` tool -- and now `oss:tick-dispatch` first (#1544), which renders their calls without
+making them. That makes the chain scheduler -> sub-manager -> developer two levels of
 agent-spawning-agent, confirmed rather than assumed (#695, point 6).
 
 **Recon is no longer yours (#1535).** A lane spawns `oss:recon` over its own issues and keeps the
@@ -154,10 +137,11 @@ summary in the one context that uses it. Returning it here and writing it back i
 it twice and left the second copy in your context for the rest of the tick.
 
 **Fill each lane to three, never four (#799), and say why when you don't.** The default is three, not the
-ceiling. Fill by companion search: each candidate's declared lane against the top issue's,
-over the open board. A short lane names `board-exhausted`, `no-adjacent`, `did-not-search`, `could-not-tell` or
-`declined-for-cause` -- derive it mechanically via `--claim --group-state STATE` (#1198, mapping
-in dispatch.md) or give `--short-reason` explicitly; naming none is the defect (#867).
+ceiling. `oss:tick-dispatch` already did the companion search and the mechanical derivation
+(`--claim --group-state STATE`, #1198, mapping in dispatch.md) before it reported back (#1544) -- a
+short lane names `board-exhausted`, `no-adjacent`, `did-not-search`, `could-not-tell` or
+`declined-for-cause` in that report; read it from there rather than re-deriving it, and naming none
+is the defect (#867).
 `declined-for-cause` (#1407) needs a citation of what was declined and why, or it is refused the
 same way an over-claimed `board-exhausted` is. Record every
 dispatched lane's fill with `--lane-fill PRIMARY:COUNT[:REASON]` on the same

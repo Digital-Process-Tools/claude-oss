@@ -252,6 +252,7 @@ agents/triager.md           labels only; Bash and TodoWrite, nothing else
 agents/auditor.md           one diff, four classes, one verdict each; annotates, never blocks
 agents/release-auditor.md   the whole delta since the last tag, once per release; blocks
 agents/sub-manager.md       one tick, then dies with its context; never tags, never publishes
+agents/tick-dispatch.md     one tick's select+claim+dispatch-render step, then dies; spawned by sub-manager, renders the developer-lane Agent(...) call without making it
 agents/releaser.md          one release, fresh context; the only spawn holding tag-and-publish authority
 agents/scheduler-step.md    one /oss:run sub-step (setup scaffold install-audit triage curate changelog), then dies with its context
 agents/recon.md             read-only reconnaissance over one lane's issues before its brief is written; the lane starts from its summary
@@ -292,11 +293,12 @@ when a file crosses it.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 21,515 B | 21,800 B |
+| `agents/sub-manager.md` | 20,680 B | 21,800 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 4,350 B | 4,400 B |
+| `agents/tick-dispatch.md` | 6,302 B | 6,900 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
