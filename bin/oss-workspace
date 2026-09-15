@@ -141,6 +141,17 @@ oss_fireworks
 # nobody earned. Silent when the fireworks were (no terminal, TERM=dumb, opted
 # out): every line below is decoration over stderr prose that still prints as
 # it always did, which is what the launcher tests read.
+# oss_step_begin prints the same aligned line a step will end on, but with an
+# in-flight mark instead of a verdict -- so whichever step is currently slow
+# is visible as "running", not as nothing (#1511). oss_step then overwrites
+# it in place: a carriage return moves to column 0 and the ANSI clear-line
+# sequence erases the rest of the line before the real verdict prints, so a
+# step called with no matching begin (most call sites, unchanged) still
+# renders exactly as before -- the clear is a no-op on an already-blank line.
+oss_step_begin() {
+    [ "${oss_steps:-0}" -eq 1 ] || return 0
+    printf '  %s▸%s %-9s %-40s %s...' "$d" "$r" "$1" "$2" "$d$r"
+}
 oss_step() {
     [ "${oss_steps:-0}" -eq 1 ] || return 0
     case $3 in
@@ -150,7 +161,7 @@ oss_step() {
         go)   mark="${w}▸${r}" ;;
         *)    mark="${y}?${r}" ;;
     esac
-    printf '  %s▸%s %-9s %-40s %s\n' "$d" "$r" "$1" "$2" "$mark"
+    printf '\r%s[K  %s▸%s %-9s %-40s %s\n' "$e" "$d" "$r" "$1" "$2" "$mark"
 }
 
 CHANNEL_FLAG="--dangerously-load-development-channels"
@@ -259,6 +270,7 @@ fi
 # immediately without touching the network, so an opted-out machine pays nothing
 # extra by this running here instead of in the background.
 if [ -n "$python_bin" ]; then
+    oss_step_begin plugin "checking for an update"
     auto_update_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
         --root "$repo_root" --caller launcher --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
     if [ "$auto_update_status" -ne 0 ]; then
@@ -579,6 +591,7 @@ fi
 # heredoc opened by the right-hand side of `&&` and then followed by `|| true` is
 # a syntax error under bash -- `syntax error near unexpected token ||` -- while
 # macOS's /bin/sh parsed it and every local run stayed green.
+oss_step_begin channel "deriving the channel name"
 watch_name=""
 watch_name_state=undeclared
 read_name_out=""
@@ -2114,6 +2127,7 @@ if [ "$channel_ready" -eq 1 ]; then
 else
     oss_step channel "opening without a channel (see above)" skip
 fi
+oss_step_begin session "opening"
 if [ "$#" -eq 0 ]; then
     oss_step session "opening $prompt" go
 else
