@@ -303,7 +303,7 @@ when a file crosses it.
 | `agents/recon.md` | 4,350 B | 4,400 B |
 | `agents/tick-dispatch.md` | 6,829 B | 6,900 B |
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
-| `agents/tick-merge.md` | 7,058 B | 7,300 B |
+| `agents/tick-merge.md` | 7,233 B | 7,300 B |
 | `agents/tick-accounting.md` | 7,219 B | 7,700 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
@@ -395,7 +395,7 @@ enters it.
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
-| `skills/manager/phases/merge.md` | 16,285 B | 16,400 B |
+| `skills/manager/phases/merge.md` | 16,380 B | 16,400 B |
 | `skills/manager/phases/ci-green.md` | 2,988 B | 3,050 B |
 | `skills/manager/phases/inbound.md` | 6,799 B | 6,900 B |
 
