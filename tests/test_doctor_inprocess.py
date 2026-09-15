@@ -390,6 +390,11 @@ def _quiet_main(monkeypatch, tmp_path):
         "check_vulnerability_alerts",
         "check_automated_security_fixes",
         "check_codeql_scan",
+        # #1519 self-review finding: the same "gh api family" this docstring
+        # already names -- check_action_pins spawns up to two live `gh api`
+        # calls to api.github.com, answering about the live tip of a GitHub
+        # Action's tag, which is nothing this helper's caller asserts on.
+        "check_action_pins",
     ):
         monkeypatch.setattr(doctor, name, lambda *a, **k: None)
 
@@ -1315,6 +1320,13 @@ def test_verdict_distinguishes_gaps_from_failures(tmp_path, monkeypatch, capsys)
     # `check_mcp_channel_registration` has the same property and predates this
     # change; it is left alone here rather than fixed in passing.
     monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
+    # #1519 (self-review finding): the same class -- nothing else here stops
+    # `gh_which.safe_which("gh")` from resolving to a real binary, so without
+    # this `check_action_pins` spawns two live `gh api` calls to
+    # api.github.com on any machine with `gh` on PATH, twice per
+    # `doctor.main()` below, purely as a side effect of running this unit
+    # test. Same substring-check blindness as the comment above.
+    monkeypatch.setattr(doctor, "check_action_pins", lambda: None)
     doctor.main()
     out = capsys.readouterr().out
     assert "VERDICT: not usable" in out

@@ -998,7 +998,9 @@ def _render_trap_readme(config, plugin_root):
     return TRAP_README
 
 
-#: #1395: the outbound half of #1394's `trap.d/` precedent. Same reason this
+#: #1395: the outbound half of `trap.d/`'s own precedent (#1079/#1302, not
+#: #1394 -- #1394 is #1395's own dependency, `inbound_triage.py`'s classifier,
+#: not the trap.d/ precedent this mirrors). Same reason this
 #: is its own directory rather than a section under trap.d/: a public act is a
 #: different kind of thing from a lesson logged for later, and the two must
 #: never share a threshold or a README that documents them as one queue.
