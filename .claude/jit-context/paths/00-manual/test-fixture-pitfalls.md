@@ -100,3 +100,37 @@ that mattered was "do the two walks land on the same file", not "do they spell t
 identically"; the fix was `os.path.normcase`, which `safe_which`'s own dedup already uses. The
 strongest property is the one likeliest to be an artifact of the single platform actually testing
 it. (Root cause of the case difference itself: still unexplained.)
+
+- **Monkeypatching a re-exported name patches the copy nobody calls.** `scripts/lane_setup.py`
+  re-exports every submodule name at module level for backward compatibility, but `compute()` calls
+  through the submodule (`lane_setup_worktree.resolve_base(...)`), not the re-exported alias. A
+  `monkeypatch.setattr(lane_setup, "resolve_base", ...)` rebinds an attribute nothing reads; the
+  real function then runs against the test's throwaway fixture, hits its own error path, and the
+  test's asserted exit code arrives from a code path the test was never exercising (#1535). This hid
+  a genuine regression for some time -- the fixture had gone stale and the code under test had
+  changed shape, and the test stayed green throughout because the dead patch was supplying the exit
+  code by itself. Grep for `setattr(<module>, "<name>"` to find the sites; only reading the *call*
+  tells you which binding is live. Confirm by adding a paired positive control in the same fixture
+  -- the identical call with the failure condition removed must reach the real success path, not
+  just avoid the error one.
+- **Deleting a surface needs a derived caller sweep, not a hand-picked one, and re-run after any
+  rebase onto a moved base.** A sweep that greps every removed name across `scripts/`, `skills/`,
+  `agents/`, `commands/` and `tests/` before deleting is necessary but not sufficient: a sibling PR
+  can land a new test file that references the same names while your branch is in review, and a
+  rebase with nothing to conflict on will not surface it because you never touched that file (#1532).
+  Re-run the same grep after any rebase onto a moved base. Choosing the test set to run is the same
+  problem one layer down -- a hand-picked "lane's own tests plus the named guards" list cannot
+  contain a file that set never named; deriving it instead (every `tests/test_*.py` whose source
+  imports one of the touched modules) is far cheaper than the full suite and is the one that would
+  have caught a stale reference before CI did. Also check for orphaned fixture helpers left behind
+  by a deleted parameter -- an unused nested `def _helper()` is silent, so only a name-based grep
+  finds it; deleting a parameter and deleting the fixture that fed it are two edits.
+- **Use a synthetic fixture path, not a real lane-owned one.** A new test file's own fixture data
+  reusing a real cross-lane path (`CLAUDE.md` is the headline example) trips
+  `doctor_check_lane_coupling.py`'s whole-test-tree static scan for literal paths matching two or
+  more declared lanes' globs -- a check a lane's own targeted `--lane`/`--derive-held` guard list
+  cannot surface, because it answers "which guard does this lane's own file set trip", never "does a
+  new test file about to be written trip a repo-wide invariant" (#1528). The new file does not exist
+  on disk until the guard already needs to see it. Prefer an obviously synthetic fixture string
+  (`fixtures/example-a.md`, `held-example.txt`) over a real, well-known repo path whenever the test's
+  own subject does not actually depend on the path being real.

@@ -1,6 +1,7 @@
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
 (^|/)scripts/(oss_config|scaffold|fix_commit_scope)\.py$	config-value-validation.md
 (^|/)scripts/[^/]+\.py$	counter-scripts-silent-gaps.md
+(^|/)trap\.d/	curate-pass-git-add-before-delete.md
 (^|/)(scripts/doctor(_check_[a-z0-9_]+)?\.(py|sh)|commands/doctor\.md)$	doctor-check-contract.md
 (^|/)scripts/doctor_check_[^/]+\.py$	doctor-check-module-scope-import.md
 (^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
