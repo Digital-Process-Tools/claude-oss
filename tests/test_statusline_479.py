@@ -459,6 +459,10 @@ def _facts(**overrides):
         },
         "release": {"since": 4, "typical": 17},
         "traps": 2,
+        # #1395: render() reads facts.get("outbound") the same way it reads
+        # facts.get("traps") immediately above, so it needs the same fixture
+        # entry for the identical reason -- see the #613 comment below.
+        "outbound": 2,
         "last": "23:47",
         "plugins": [
             ("oss", {"state": "current", "installed": "0.10.0", "latest": "0.10.0"}),

@@ -998,6 +998,56 @@ def _render_trap_readme(config, plugin_root):
     return TRAP_README
 
 
+#: #1395: the outbound half of #1394's `trap.d/` precedent. Same reason this
+#: is its own directory rather than a section under trap.d/: a public act is a
+#: different kind of thing from a lesson logged for later, and the two must
+#: never share a threshold or a README that documents them as one queue.
+OUTBOUND_DIR = "outbound"
+
+OUTBOUND_README = """# outbound/ — drafted public acts, waiting to be sent
+
+Managed by the oss plugin. This file, `outbound/README.md`, is OVERWRITTEN every
+time `/oss:scaffold` runs. Everything else in this directory -- every draft an
+agent writes here -- is yours; the plugin never reads it, never replaces it, and
+never deletes it.
+
+## What this directory is for
+
+`trap.d/` is for a lesson that dies with the session that paid for it unless it
+is written down. This directory is the same idea for a *public* act: a refusal
+with its reason, a reply to a comment, a review on an outside pull request.
+Writing the file is not the act -- it is a draft, and drafting needs no
+permission. Posting it does, because it happens in the maintainer's name, on a
+public tracker, from an unattended loop.
+
+**The queue waits. The loop does not.** A draft sitting here is never a reason
+a tick pauses, blocks or waits on a human. It is written, recorded, and the
+loop moves on.
+
+## Naming
+
+```
+outbound/<issue>.<state>.<slug>.md
+```
+
+`<state>` is one of `pending` (written, not sent), `sent` (posted, its receipt
+recorded in the body), `dropped` (read and declined) or `stale` (what it was
+written against has moved -- it needs rewriting, not sending). Both `<issue>`
+and `<slug>` are required, the same reason `trap.d/`'s own fragments require
+both: a name missing either is a path two acts on one issue would collide on.
+
+## Drafts are inert
+
+Nothing here posts on its own. A draft is read, and the state it moves to is
+decided, by a separate pass -- the same relationship `/oss:curate` has to
+`trap.d/`'s fragments.
+"""
+
+
+def _render_outbound_readme(config, plugin_root):
+    return OUTBOUND_README
+
+
 OWNED_DIR = ".oss"
 
 # Repeated in every owned file, because that is where somebody about to edit one is
@@ -1526,6 +1576,11 @@ OWNED = {
     # another name is not an answer about trap.d/, the same reasoning #479 already gives
     # for the workflow and the assembler above.
     TRAP_DIR + "/README.md": _render_trap_readme,
+    # #1395: same reasoning as trap.d/README.md immediately above -- not gated
+    # on _detect_changelog_gate either, for the identical reason (#1302/#479):
+    # a changelog gate running under another name says nothing about whether
+    # this repository wants an outbound/ queue.
+    OUTBOUND_DIR + "/README.md": _render_outbound_readme,
 }
 
 #: The owned files whose delivery is gated on `_detect_changelog_gate`. That gate asks

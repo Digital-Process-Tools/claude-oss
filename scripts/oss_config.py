@@ -66,6 +66,10 @@ OPTIONAL_KEYS = {
     "triage_route_threshold",
     "curate_route_threshold",
     "release_route_threshold",
+    # #1395: outbound/'s own threshold, on the identical rule -- absent means
+    # this repository does not want the route, so nothing here drains a
+    # queue it never opted into.
+    "outbound_route_threshold",
 }
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer

@@ -2999,6 +2999,12 @@ from doctor_check_auto_update import check_auto_update
 # tests/test_doctor_check_relocation_497.py at the moment it landed.
 from doctor_check_latest_skew import check_latest_skew
 
+# #1519: the two GitHub Action SHAs CHANGELOG_WORKFLOW pins are embedded in a
+# .py string, not a real workflow file, so Dependabot's github-actions watch
+# never sees them drift. Wired the same way as every other module here --
+# see scripts/doctor_check_action_pins.py for the check and its docstring.
+from doctor_check_action_pins import check_action_pins
+
 
 # Moved to scripts/doctor_check_statusline.py (#497) -- see that module for
 # the check, its private helper and their docstrings, unchanged; this is a
@@ -9703,6 +9709,10 @@ def main(argv=None):
     # working. Every declared dependency ships its own diagnostic for that
     # question, and relaying it costs under 1s combined, measured (#638).
     check_dependency_diagnostics(project_dir)
+    # #1519: no config or project-dir dependency -- reads scaffold.py's own
+    # template string and a live GitHub API call. Placed last among the
+    # substantive checks, beside the other network-optional ones above.
+    check_action_pins()
 
     fails = sum(1 for state, _ in FINDINGS if state == "FAIL")
     warns = sum(1 for state, _ in FINDINGS if state == "WARN")

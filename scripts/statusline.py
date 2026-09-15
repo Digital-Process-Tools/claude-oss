@@ -933,6 +933,42 @@ def _trap_count(root):
     )
 
 
+# ------------------------------------------------------------------------- outbound
+
+
+def _outbound_count(root):
+    """How many drafts in `outbound/` are `pending` -- written, not yet sent
+    (#1395). Same split as `_trap_count` immediately above, for the identical
+    reason: a missing `outbound/` means nobody has drafted anything yet, a
+    real, measured `0`, while any other `OSError` means this listing could
+    not be taken at all and folds to `None` so it renders `?` rather than a
+    zero it never measured.
+
+    Vendored standalone, like `_trap_count`: this module ships into
+    `.oss/statusline.py` on its own, and `scripts/outbound_draft.py` is not
+    part of what gets copied there, so the state is parsed straight out of
+    each filename here rather than imported. `<issue>.<state>.<slug>.md` is
+    `outbound_draft.py`'s own naming convention; a name that does not match
+    it is not counted either way, the same as an unparsed `trap.d/` fragment
+    is still listed but not counted against a state it never declared.
+    """
+    path = Path(root) / "outbound"
+    try:
+        names = os.listdir(str(path))
+    except FileNotFoundError:
+        return 0
+    except OSError:
+        return None
+    count = 0
+    for name in names:
+        if not name.endswith(".md") or name.startswith(".") or name == "README.md":
+            continue
+        parts = name[: -len(".md")].split(".")
+        if len(parts) >= 3 and parts[0].isdigit() and parts[1] == "pending":
+            count += 1
+    return count
+
+
 def _render_stamp(now):
     """The wall-clock reading for the "stamp of the last render" field (#504).
 
@@ -1041,6 +1077,17 @@ def _trap_field(traps):
     that is read straight off the filesystem rather than off a cache.
     """
     return "trap " + ("?" if not isinstance(traps, int) else str(traps))
+
+
+def _outbound_field(outbound):
+    """`out 2` / `out ?` -- drafts in `outbound/` waiting `pending`, beside the
+    `trap.d/` backlog and the inbound counts above (#1395).
+
+    `?`, never `0`, for a directory this render could not list -- the same
+    rule `_trap_field` already follows, applied to the one other count read
+    straight off the filesystem rather than off a cache.
+    """
+    return "out " + ("?" if not isinstance(outbound, int) else str(outbound))
 
 
 def _inbound_field(inbound):
@@ -1469,6 +1516,7 @@ def render(facts, ascii_only=False, color=False):
     blocks.append(_unlabelled_field(board))
     blocks.append(_release_field(facts.get("release")))
     blocks.append(_trap_field(facts.get("traps")))
+    blocks.append(_outbound_field(facts.get("outbound")))
     blocks.append(_inbound_field(board.get("inbound")))
     blocks.append(_last_field(facts.get("last")))
 
@@ -3301,6 +3349,7 @@ def gather(payload, root, now=None):
         "board": board,
         "release": git_release_progress(root),
         "traps": _trap_count(root),
+        "outbound": _outbound_count(root),
         "last": _render_stamp(now),
         "plugins": plugin_facts(
             loop_name, installed_plugins(root), latest, stale=stale_latest
