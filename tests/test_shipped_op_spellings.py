@@ -54,6 +54,7 @@ import oss_rules  # noqa: E402
 OP_INVENTORY = {
     "batch": None,
     "channel": "watch",
+    "cwd": None,
     "edit": None,
     "gh-branch": "github",
     "gh-issue": "github",
