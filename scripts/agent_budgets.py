@@ -265,7 +265,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # is paid where it hurts most -- against a tick that cannot report its own
     # spend and therefore cannot be measured at all, which is the thing #1499
     # exists to fix. 285 B headroom.
-    "agents/sub-manager.md": (21515, 21800),
+    # Re-baselined for #1544: 21515 B became 20680 B. Select+claim+dispatch-
+    # render moved into a new spawn (agents/tick-dispatch.md) that renders
+    # the developer-lane `Agent(...)` calls without making them; this file
+    # now spawns it, pastes what it renders, and no longer states the
+    # select_issues.py/lane_setup.py call shapes or the fill-to-three
+    # derivation inline. Ceiling unchanged; net shrink, 1120 B headroom.
+    "agents/sub-manager.md": (20680, 21800),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -335,6 +341,18 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # still needs it" -- the registry was retired by #1532. 4348 B became
     # 4350 B. Ceiling unchanged, 50 B of headroom left.
     "agents/recon.md": (4350, 4400),
+    # #1544: new file. `oss:sub-manager` used to read the board, rank it and
+    # reason about dispatch fill inline, in the same context that goes on to
+    # review, merge and account for the whole tick -- one sub-manager was
+    # measured at 289,239 tokens before it had dispatched a single lane
+    # (#1499). This agent holds only the select+claim+dispatch-render step:
+    # `select_issues.py`, `lane_setup.py --claim`, and the fill-to-three
+    # judgement `dispatch.md` already argues, moved into a throwaway
+    # context. It does not spawn developer lanes itself -- see the file's
+    # own "Why this file exists" section for why that boundary is
+    # deliberate. Budgeted from the day it was added, the same posture
+    # #1414 and #1499 already take for a new file.
+    "agents/tick-dispatch.md": (6302, 6900),
 }
 
 
