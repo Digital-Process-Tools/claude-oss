@@ -155,13 +155,37 @@ KNOWN_AGENT_TYPES = ("oss:developer", "oss:triager")
 # `dispatched` more than once -- the receipt for the defect this issue was filed for --
 # and requires `why` on `agent-unreachable`, because "the agent is gone" with no
 # account of which of the two ways is indistinguishable from an excuse.
+#
+# #1567 adds a fourth: `respawned-for-cost`, a second fresh spawn taken because
+# resuming the lane's own agent was the more expensive route, not because that
+# agent was gone. Measured 2026-09-15: a resumed lane spent 15,558,821 tokens
+# across 38 turns at an average call-time context of 409,443 -- within 3% of its
+# own maximum, because a lane already at its ceiling pays that ceiling on every
+# turn after the resume. The rule it relaxes had priced only the fresh spawn.
+# It requires `why` for the same reason `agent-unreachable` does: a cost claim
+# with no measurement behind it is indistinguishable from an excuse, and folding
+# it into either neighbouring state is this repository's own named defect one
+# level down.
 DISPATCH_STATE_DISPATCHED = "dispatched"
 DISPATCH_STATE_RESUMED = "resumed"
 DISPATCH_STATE_AGENT_UNREACHABLE = "agent-unreachable"
+DISPATCH_STATE_RESPAWNED_FOR_COST = "respawned-for-cost"
 DISPATCH_STATES = (
     DISPATCH_STATE_DISPATCHED,
     DISPATCH_STATE_RESUMED,
     DISPATCH_STATE_AGENT_UNREACHABLE,
+    DISPATCH_STATE_RESPAWNED_FOR_COST,
+)
+
+# The states that must carry their own `why`. Both are a claim about something
+# the record cannot check, so an unreasoned one renders as an excuse. They are
+# also the two states under which a second fresh spawn at an issue this tick
+# already dispatched is correct -- the #880 refusal below counts only DISPATCHED
+# entries, so both are exempt from it by construction rather than by a list here
+# that could drift away from the one the refusal actually consults.
+DISPATCH_STATES_NEEDING_WHY = (
+    DISPATCH_STATE_AGENT_UNREACHABLE,
+    DISPATCH_STATE_RESPAWNED_FOR_COST,
 )
 
 # A dispatched lane's own fill (#852): how many issues it carried, and -- when that is
@@ -1314,14 +1338,13 @@ def lane_models(lanes, window, why=None):
             )
 
         dispatch_why = lane.get("dispatch_state_why")
-        if dispatch_state == DISPATCH_STATE_AGENT_UNREACHABLE:
+        if dispatch_state in DISPATCH_STATES_NEEDING_WHY:
             if not dispatch_why or not str(dispatch_why).strip():
                 raise StateError(
-                    "lane {} (issue {}): dispatch_state agent-unreachable needs a "
+                    "lane {} (issue {}): dispatch_state {} needs a "
                     "dispatch_state_why -- context died, or resumed and silent twice, "
-                    "are different facts and must not render the same way".format(
-                        position, issue
-                    )
+                    "or the resume was priced and lost, are different facts and must "
+                    "not render the same way".format(position, issue, dispatch_state)
                 )
             dispatch_why = str(dispatch_why).strip()
         else:
@@ -1379,10 +1402,10 @@ def lane_models(lanes, window, why=None):
         raise StateError(
             "issue(s) {} recorded as a fresh dispatch more than once in this tick "
             "(#880) -- a tick performs exactly one dispatch; resume the lane's own "
-            "agent instead (dispatch_state resumed), or record dispatch_state "
-            "agent-unreachable with why if it is genuinely gone".format(
-                ", ".join(str(issue) for issue in redispatched)
-            )
+            "agent instead (dispatch_state resumed), record dispatch_state "
+            "agent-unreachable with why if it is genuinely gone, or dispatch_state "
+            "respawned-for-cost with why if resuming it was the more expensive "
+            "route (#1567)".format(", ".join(str(issue) for issue in redispatched))
         )
 
     return {"state": LANES_RECORDED, "window": window, "lanes": normalized, "why": None}
@@ -1455,11 +1478,18 @@ def _lane_models_sentence(record):
                 if isinstance(lane, dict)
                 and lane.get("dispatch_state") == DISPATCH_STATE_AGENT_UNREACHABLE
             )
+            respawned = sum(
+                1
+                for lane in lanes
+                if isinstance(lane, dict)
+                and lane.get("dispatch_state") == DISPATCH_STATE_RESPAWNED_FOR_COST
+            )
         else:
             counts = record.get("counts") or {}
             overrides = record.get("overrides") or 0
             resumed = record.get("resumed") or 0
             unreachable = record.get("unreachable") or 0
+            respawned = record.get("respawned_for_cost") or 0
             # #862: the trend shape (`lane_model_trend`'s own dict) carries its own
             # already-collected `unexpected` list, since `lanes` here is a count, not
             # the list this branch's own per-lane scan above needs.
@@ -1471,8 +1501,10 @@ def _lane_models_sentence(record):
         mix = head + "{} ({} override{})".format(
             parts or "no lanes", overrides, "" if overrides == 1 else "s"
         )
-        if resumed or unreachable:
-            mix += " ({} resumed, {} agent-unreachable)".format(resumed, unreachable)
+        if resumed or unreachable or respawned:
+            mix += " ({} resumed, {} agent-unreachable, {} respawned-for-cost)".format(
+                resumed, unreachable, respawned
+            )
         if unexpected:
             mix += " -- {} dispatched as {}, not {}".format(
                 ", ".join("#{}".format(issue) for issue, _ in unexpected),
@@ -1511,6 +1543,7 @@ def lane_model_trend(entries):
     overrides = 0
     resumed_total = 0
     unreachable_total = 0
+    respawned_total = 0
     counted = 0
     uncounted = 0
     without_record = 0
@@ -1543,6 +1576,8 @@ def lane_model_trend(entries):
                     resumed_total += 1
                 elif lane.get("dispatch_state") == DISPATCH_STATE_AGENT_UNREACHABLE:
                     unreachable_total += 1
+                elif lane.get("dispatch_state") == DISPATCH_STATE_RESPAWNED_FOR_COST:
+                    respawned_total += 1
                 agent_type = lane.get("agent_type")
                 if agent_type and agent_type not in KNOWN_AGENT_TYPES:
                     unexpected.append((lane.get("issue"), agent_type))
@@ -1559,6 +1594,7 @@ def lane_model_trend(entries):
         "overrides": overrides if counted else None,
         "resumed": resumed_total if counted else None,
         "unreachable": unreachable_total if counted else None,
+        "respawned_for_cost": respawned_total if counted else None,
         "unexpected": unexpected,
         "why": None,
         "ticks_counted": counted,
@@ -3471,11 +3507,14 @@ def _main(argv=None):
         "--lane-dispatch-state",
         action="append",
         type=_lane_dispatch_state_argument,
-        help="#880: which of dispatched/resumed/agent-unreachable a --lane issue is "
-        "in, ISSUE=STATE[:WHY]; repeatable, needs a matching --lane for the same "
-        "issue. Omit for an ordinary fresh dispatch -- dispatched is the default. "
-        "The whole --decision call is refused if the same issue is recorded "
-        "dispatched more than once in it.",
+        help="#880: which of dispatched/resumed/agent-unreachable/respawned-for-cost "
+        "a --lane issue is in, ISSUE=STATE[:WHY]; repeatable, needs a matching "
+        "--lane for the same issue. Omit for an ordinary fresh dispatch -- "
+        "dispatched is the default. agent-unreachable and respawned-for-cost each "
+        "require a WHY. The whole --decision call is refused if the same issue is "
+        "recorded dispatched more than once in it; respawned-for-cost (#1567) is "
+        "the state for a second fresh spawn taken because resuming the lane's own "
+        "agent would have cost more than re-deriving from nothing.",
     )
     parser.add_argument(
         "--lanes",

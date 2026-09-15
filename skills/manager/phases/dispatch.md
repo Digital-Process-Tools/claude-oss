@@ -393,11 +393,27 @@ Launch every dispatched lane — bundled or not — in a single message so they 
 tick sees those lanes through to merge -- a second fan-out is a second tick inside the first, and
 the receipt lies for it (three lanes, one re-dispatched twice, reads as five).
 
-**A red lane, or one whose base moved, is resumed via `SendMessage` to its own agent -- never
+**A red lane, or one whose base moved, is resumed via `SendMessage` to its own agent rather than
 re-dispatched fresh at the same issue.** The agent that wrote the diff knows why; a fresh spawn
 re-derives everything from nothing, paying #695's saving back as a cost (`commands/tick.md` step 7,
 #818, already resumes a paused sub-manager this way; a resumed lane costs the message against a
 fresh developer spawn's measured 150k-290k tokens).
+
+**That prices one side of the ledger; the other was measured on 2026-09-15 (#1567).** The 150k-290k
+above is a fresh spawn's total over its whole life. A resume's cost is the lane's context re-sent on
+every turn after it, never costed. One resumed lane: 38 records, 15,558,821 sent, max 421,672 -- an
+average call-time context of 409,443, within 3% of its own maximum, because a lane already at its
+ceiling pays the ceiling on every later turn.
+
+**So a red lane whose context has grown large may be re-spawned fresh instead, recorded
+`respawned-for-cost` with the context figure as its `why`.** The re-derivation argument is weakest
+here: a red leg names its own site in the failing log, and `oss:recon` (#1542) re-orients a fresh
+lane for one read-only spawn. It stays strongest for a review return spanning a whole diff, which
+this does not cover. The threshold is a judgement the tick states, not a constant -- one reading is
+one reading, and a lane resumed at 80k is still the cheaper resume. It is a fourth state, never a
+softer spelling of its neighbours: `oss_state.py` requires the `why` for that reason, and the #880
+refusal exempts it by counting only `dispatched`. A fresh spawn recorded `resumed`, or a cost
+respawn recorded `agent-unreachable`, is this repository's own defect one level down.
 
 **A lane's own agent can genuinely be gone -- context died, or resumed and silent twice, the bar
 `agents/developer.md` sets its own review spawns -- and that is its own named state,

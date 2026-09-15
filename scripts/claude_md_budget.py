@@ -49,7 +49,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # this lane's own "ours" ownership-table row gained one entry
     # (outbound/README.md, #1395), the only change to this file in that
     # diff. Budget unchanged; comfortably under the 35900 B ceiling.
-    "CLAUDE.md": (33441, 35900),
+    # Re-baselined for #1567: 33441 B became 34266 B -- the dispatch.md ceiling
+    # raise and its weighed sentence, under the third editing exception (a lane
+    # whose own diff moves a budgeted file's row). Budget unchanged.
+    "CLAUDE.md": (34266, 35900),
 }
 
 
