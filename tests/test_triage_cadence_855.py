@@ -48,10 +48,10 @@ def test_skill_orders_triage_immediately_before_the_next_run_of_ticks():
 
 
 def test_skill_keeps_the_freeze_and_the_sweep_apart():
-    """The cohort freeze is the maintainer's own act by hand, at the tag; the
-    triager must never write a cohort-* label, and the sweep is a separate
-    step that follows the freeze. Losing this distinction is exactly the
-    failure #855 warns against repeating."""
+    """The cohort freeze is the release's own automated act (#1410, #1515),
+    never by hand; the triager must never write a cohort-* label, and the
+    sweep is a separate step that follows the freeze. Losing this
+    distinction is exactly the failure #855 warns against repeating."""
     assert "triager must never write" in SKILL
     assert re.search(r"triage\s+sweep is a separate step", SKILL, re.IGNORECASE)
 
