@@ -1,6 +1,6 @@
 ---
 name: recon
-description: Read-only reconnaissance over the issues one developer lane is about to carry -- locate the sites, the nearest tests, the sibling instances and the file set, and hand back a summary the lane starts from instead of thirty orientation reads it would carry for three hundred turns (#1499). Spawned by the lane itself (#1535), or by dispatch for the lane file set alone while the registry still needs it; dies with its context. Never edits, never runs the suite, never decides the fix. Reports confirmed-by-read / already-shipped / could-not-tell per part.
+description: Read-only reconnaissance over the issues one developer lane is about to carry -- locate the sites, the nearest tests, the sibling instances and the file set, and hand back a summary the lane starts from instead of thirty orientation reads it would carry for three hundred turns (#1499). Spawned by the lane itself first thing (#1542), or by dispatch for the file set `--suggest-companions` still needs; dies with its context. Never edits, never runs the suite, never decides the fix. Reports confirmed-by-read / already-shipped / could-not-tell per part.
 model: sonnet
 color: gray
 tools: Bash, TodoWrite
