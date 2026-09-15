@@ -142,3 +142,46 @@ def test_gated_off_by_the_same_flag_oss_step_already_used():
     off = _run_steps(0, "oss_step_begin plugin 'checking for an update'")
     assert on != ""
     assert off == ""
+
+
+def _run_steps_coloured(calls):
+    """Like `_run_steps`, but with REAL dim/reset escape codes rather than the
+    empty placeholders every other test in this file uses. Needed for exactly
+    one assertion: whether the in-flight mark is actually dim, which a
+    colour-free run cannot see either way (found in self-review -- the first
+    version of `oss_step_begin` put the dim-on/reset pair around an empty
+    argument and left the literal "..." outside it, unstyled).
+    """
+    script = "\n".join(
+        [
+            "e=$(printf '\\033')",
+            "r=\"${e}[0m\"; d=\"${e}[2m\"; y=''; g=''; w=''",
+            "oss_steps=1",
+            _extract_step_functions(),
+            calls,
+        ]
+    )
+    done = subprocess.run(
+        [BASH, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+    return done.stdout.decode("utf-8", "replace")
+
+
+def test_the_in_flight_mark_is_actually_dim():
+    """The literal "..." has to sit INSIDE the dim-on/reset pair, not after it.
+
+    A dim-on immediately followed by reset, with the plain "..." only after
+    both, would satisfy every other assertion in this file (which run with
+    colours emptied out) while rendering the mark in the terminal's default
+    style rather than dim -- exactly the bug self-review caught.
+    """
+    _require_shell()
+    out = _run_steps_coloured("oss_step_begin plugin 'checking for an update'")
+    dim_on = "\x1b[2m"
+    reset = "\x1b[0m"
+    assert dim_on + "..." + reset in out, (
+        "the in-flight mark is not wrapped in dim/reset: %r" % out
+    )

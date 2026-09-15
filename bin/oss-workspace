@@ -148,9 +148,18 @@ oss_fireworks
 # sequence erases the rest of the line before the real verdict prints, so a
 # step called with no matching begin (most call sites, unchanged) still
 # renders exactly as before -- the clear is a no-op on an already-blank line.
+#
+# ONLY safe to pair with a step whose body writes NOTHING else to the
+# terminal between the begin call and the matching oss_step call. Neither
+# stream is buffered by line here, so an echo ... >&2 in between lands
+# glued onto the begin line's own unterminated "..." instead of on a line of
+# its own -- caught in self-review against the plugin and channel steps,
+# both of which have branches that echo diagnostic prose before reporting,
+# and removed from both for that reason. session has no such branch, which
+# is why it is the one call site this lands on.
 oss_step_begin() {
     [ "${oss_steps:-0}" -eq 1 ] || return 0
-    printf '  %s▸%s %-9s %-40s %s...' "$d" "$r" "$1" "$2" "$d$r"
+    printf '  %s▸%s %-9s %-40s %s...%s' "$d" "$r" "$1" "$2" "$d" "$r"
 }
 oss_step() {
     [ "${oss_steps:-0}" -eq 1 ] || return 0
@@ -270,7 +279,6 @@ fi
 # immediately without touching the network, so an opted-out machine pays nothing
 # extra by this running here instead of in the background.
 if [ -n "$python_bin" ]; then
-    oss_step_begin plugin "checking for an update"
     auto_update_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
         --root "$repo_root" --caller launcher --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
     if [ "$auto_update_status" -ne 0 ]; then
@@ -591,7 +599,6 @@ fi
 # heredoc opened by the right-hand side of `&&` and then followed by `|| true` is
 # a syntax error under bash -- `syntax error near unexpected token ||` -- while
 # macOS's /bin/sh parsed it and every local run stayed green.
-oss_step_begin channel "deriving the channel name"
 watch_name=""
 watch_name_state=undeclared
 read_name_out=""
