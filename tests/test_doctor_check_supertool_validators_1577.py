@@ -212,6 +212,36 @@ def test_an_absent_validator_warns_and_names_it(monkeypatch):
     assert "tomllint" in _text()
 
 
+def test_zero_resolves_with_everything_not_applicable_does_not_claim_all_resolve(
+    monkeypatch,
+):
+    """Self-review finding: every configured validator can be `not_applicable`
+    at once (a repo tracking none of the file types any of them match) -- the
+    resolving-count branch must not claim a resolution that never happened
+    for zero validators.
+    """
+    monkeypatch.setattr(
+        m,
+        "supertool_validator_probe_state",
+        lambda *a, **k: (
+            "reported",
+            {
+                "version": VERSION,
+                "configured": 3,
+                "resolves": 0,
+                "absent": 0,
+                "could_not_tell": 0,
+                "not_applicable": 3,
+                "offending": [],
+            },
+        ),
+    )
+    m.check_supertool_validators(".")
+    assert _levels() == ["OK"]
+    assert "all resolve" not in _text()
+    assert "none in scope" in _text()
+
+
 def test_op_unavailable_warns_via_unmeasured_never_silently(monkeypatch):
     monkeypatch.setattr(
         m,

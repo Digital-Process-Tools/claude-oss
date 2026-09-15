@@ -257,13 +257,27 @@ def check_supertool_validators(project_dir, record=None, run=None, which=None):
     # state == "reported"
     d = detail
     if d["absent"] == 0 and d["could_not_tell"] == 0:
-        _doctor.report(
-            "OK",
-            "supertool validators ({}): {} configured, all resolve ({} not "
-            "applicable to this tree)".format(
-                d["version"], d["configured"], d["not_applicable"]
-            ),
-        )
+        if d["resolves"] == 0:
+            # Self-review finding: every configured validator can be
+            # `not_applicable` at once (a repo tracking none of the file
+            # types any of them match) -- "all resolve" would claim a
+            # resolution that never happened for zero of them.
+            _doctor.report(
+                "OK",
+                "supertool validators ({}): {} configured, none in scope "
+                "for this tree ({} not applicable) -- nothing here for "
+                "any of them to check".format(
+                    d["version"], d["configured"], d["not_applicable"]
+                ),
+            )
+        else:
+            _doctor.report(
+                "OK",
+                "supertool validators ({}): {} configured, {} resolve ({} "
+                "not applicable to this tree)".format(
+                    d["version"], d["configured"], d["resolves"], d["not_applicable"]
+                ),
+            )
         return
 
     detail_rows = (
