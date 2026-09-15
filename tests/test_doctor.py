@@ -275,13 +275,39 @@ def test_no_config_leaves_no_config_dependent_check_silent(tmp_path):
         assert "not checked" in matched[0]
 
 
+#: Checks this test's blanket "not checked" search deliberately excludes,
+#: because each depends on real machine/network state `run()`'s subprocess
+#: inherits (its own docstring: "CLAUDE_PROJECT_DIR is scrubbed unless a
+#: test asks for it" -- nothing else is), not on whether THIS fixture's
+#: minimal config was found. Confirmed empirically, not guessed: with a
+#: clean ambient cache this test passes outright; with the machine's real,
+#: possibly stray `~/.cache`, `check_latest_skew` can report "not checked"
+#: for a repo (`owner/name`, this fixture's placeholder) that was never a
+#: real installed plugin's source repo (#1428's own class, not previously
+#: reachable from this specific test). `check_action_pins` (#1519) makes a
+#: real, live `gh api` call against GitHub's own rate limit or auth state,
+#: which is likewise nothing about whether a found config is measured.
+_LIVE_MACHINE_STATE_LABELS = ("latest skew", "action pins")
+
+
 def test_a_found_config_measures_those_same_checks(tmp_path):
-    """Positive control. Without it, the assertions above pass on a dead harness."""
+    """Positive control. Without it, the assertions above pass on a dead harness.
+
+    Excludes _LIVE_MACHINE_STATE_LABELS from the blanket "not checked"
+    search -- see that constant's own comment for why a blanket search
+    over the whole output is the wrong question for those two specifically.
+    """
     target = tmp_path / "target"
     target.mkdir()
     _write_config(target)
     out = run(tmp_path, args=["--root", target]).stdout
-    assert "not checked" not in out, out
+    lines = out.splitlines()
+    filtered = "\n".join(
+        ln
+        for ln in lines
+        if not any(label in ln for label in _LIVE_MACHINE_STATE_LABELS)
+    )
+    assert "not checked" not in filtered, filtered
 
 
 def _write_config(root, overrides=None, extra=None):

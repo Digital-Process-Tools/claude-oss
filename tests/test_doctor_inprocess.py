@@ -1276,6 +1276,23 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_scheduler_processes",
         lambda *a, **kw: doctor.report("OK", "scheduler processes"),
     )
+    # #1519: `check_action_pins` makes up to two real `gh api
+    # repos/actions/checkout(setup-python)/commits/v7` calls against GitHub's
+    # own live state -- not a fact this fixture's tree can fake or control,
+    # exactly the same reason every #759-#1350 check above is stubbed rather
+    # than measured here. Unlike those, the target repos (`actions/checkout`,
+    # `actions/setup-python`) are real and public, so this call can succeed
+    # on a machine with a working, rate-limit-headroom `gh` -- and fail on a
+    # CI runner sharing an egress IP against GitHub's anonymous rate limit,
+    # or one with no `gh` auth wired for anonymous reads, turning this
+    # "fully configured, everything clean" fixture into a `not-checked` WARN
+    # over a fact that is about GitHub's live tag state and this runner's
+    # network access, never about the fixture's tree.
+    monkeypatch.setattr(
+        doctor,
+        "check_action_pins",
+        lambda: doctor.report("OK", "action pins"),
+    )
     doctor.main()
     out = capsys.readouterr().out
     # #495 self-review: whether the Windows gap below is real is a question about
