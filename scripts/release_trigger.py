@@ -32,6 +32,13 @@ none of those:
                  tick that ran no audit report that no blocking finding
                  exists.
 
+`merged_prs` also goes `could-not-evaluate` when local `HEAD` is behind the
+branch it tracks (#1566): a fetch is attempted first, and a `HEAD` still
+behind afterwards means the range `release_delta.compute` would measure
+predates merges that already landed on the tracked branch -- a real,
+computable count that is silently wrong rather than a range that is
+genuinely short.
+
 ## What counts as a user-visible fix
 
 The changelog fragment's own section: `added`, `changed`, `deprecated`,
@@ -101,12 +108,19 @@ def _git(repo, *args):
     git_bin = gh_which.safe_which("git")
     if git_bin is None:
         return False, "", "git is not on PATH"
+    # #1566: `_stale_local_head` below is the first caller in this module to
+    # reach the network (`git fetch`). A credential prompt would hang a check
+    # nobody is watching -- the same reasoning `release_delta._git` already
+    # states for its own sibling call.
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
     try:
         proc = subprocess.run(
             (git_bin, "-C", str(repo)) + args,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=_TIMEOUT,
+            env=env,
         )
     except FileNotFoundError:
         return False, "", "git is not on PATH"
@@ -181,6 +195,81 @@ def _condition(name, state, **extra):
     return row
 
 
+def _one_line(text, limit=200):
+    """Text from outside this module, reduced to one printable ASCII line.
+
+    Duplicated from `release_delta._one_line` rather than imported across
+    modules -- a small, private helper, and this repository already accepts
+    that shape (`triage_trigger._git`'s own docstring cites the same
+    precedent). `git fetch`'s stderr can carry a `remote: <message>` line the
+    far end chose, including a newline; `receipt()` joins condition rows with
+    a newline and prints `detail` as one of them, so an unflattened newline
+    here would splice an extra line into the printed receipt, indistinguishable
+    from a genuine additional condition (#1566 second-pass review).
+    """
+    flat = " ".join(str(text).split())
+    safe = "".join(ch if 32 <= ord(ch) < 127 else "?" for ch in flat)
+    return safe[:limit]
+
+
+def _stale_local_head(repo):
+    """``None`` when this check does not apply, or a reason when local `HEAD`
+    has fallen behind the branch it tracks.
+
+    #1566: a tick merges pull requests on the forge by squash and nothing in
+    the tick pulls the scheduler's own long-lived clone afterwards. Its local
+    `HEAD` then sits at whatever commit it was last checked out to while the
+    branch it tracks keeps moving, and `release_delta.compute` measures a
+    range from that local `HEAD` alone -- a real, computable answer
+    (`count: 0`) that is silently wrong about a tree that predates the merges
+    in question, and renders identically to a range that is genuinely short.
+
+    `git fetch` here brings the local remote-tracking ref honest before the
+    comparison, and its own result matters as much as the comparison that
+    follows it: a `HEAD` with no configured upstream at all (a detached
+    checkout, a fresh worktree with nothing to compare against) leaves this
+    check unable to improve on the status quo, so it returns ``None`` and the
+    caller proceeds exactly as it always has -- but a fetch that was
+    *attempted and failed* (no network, an expired credential, the forge
+    unreachable) must not fall through the same way. Discarding that failure
+    and comparing against whatever remote-tracking ref happened to be on disk
+    already would answer from a ref that might be exactly as stale as `HEAD`
+    itself -- the identical silent-wrong-count shape #1566 exists to close,
+    just gated by network reachability instead of by "nobody ever fetched."
+    So a failed fetch reports `could-not-evaluate` too, in its own words,
+    rather than silently reusing an unrefreshed ref.
+    """
+    ok, upstream, _ = _git(
+        repo, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"
+    )
+    upstream = upstream.strip() if upstream else ""
+    if not ok or not upstream or "/" not in upstream:
+        return None
+    remote = upstream.split("/", 1)[0]
+    fetched, _, fetch_detail = _git(repo, "fetch", "--quiet", remote)
+    if not fetched:
+        return (
+            "could not fetch {0} to confirm local HEAD is current with {1}: {2}".format(
+                remote,
+                upstream,
+                _one_line(fetch_detail) if fetch_detail else "unknown error",
+            )
+        )
+    ok, out, _ = _git(repo, "rev-list", "--count", "HEAD..{0}".format(upstream))
+    out = out.strip() if out else ""
+    if not ok or not out.isdigit():
+        return None
+    behind = int(out)
+    if behind <= 0:
+        return None
+    return (
+        "local HEAD is {0} commit(s) behind its own upstream {1}, so a range "
+        "measured from HEAD would predate work already landed there".format(
+            behind, upstream
+        )
+    )
+
+
 def merged_prs_condition(repo, threshold, delta=None):
     """Merged pull requests since the last tag against `release.triggers.merged_prs`.
 
@@ -192,11 +281,21 @@ def merged_prs_condition(repo, threshold, delta=None):
     A `first-release` range is not an error and not a firing: there is no tag
     to count from, and inventing "everything counts" would fire the trigger on
     a repository that has never released and may not be ready to.
+
+    When the caller has not already supplied a `delta` -- the ordinary case,
+    since `compute()` calls this with none -- local `HEAD` is checked against
+    its own upstream first (#1566). A caller that passed its own `delta`
+    already made whatever measurement it trusts; this function does not
+    second-guess it.
     """
     if threshold is None:
         return _condition(
             "merged_prs", NOT_MET, detail="no release.triggers.merged_prs declared"
         )
+    if delta is None:
+        stale = _stale_local_head(repo)
+        if stale:
+            return _condition("merged_prs", COULD_NOT_EVALUATE, detail=stale)
     payload = delta if delta is not None else release_delta.compute(repo)
     if release_delta.blocked(payload):
         return _condition(
