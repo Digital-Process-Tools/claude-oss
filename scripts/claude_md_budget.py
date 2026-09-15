@@ -2,13 +2,20 @@
 
 `CLAUDE.md` is loaded whole on every session of every agent in the loop --
 scheduler, sub-manager, releaser, every developer lane -- and #1556 found it
-was the largest single document any of them holds, 2.2x the ceiling on
-`skills/manager/SKILL.md`, with none of its own: `scripts/agent_budgets.py`
-covers `agents/*.md`, `scripts/skill_phases.py` covers `skills/manager/**`,
+had none of its own: `scripts/agent_budgets.py` covers `agents/*.md`,
+`scripts/skill_phases.py` covers `skills/manager/**`,
 `scripts/command_budgets.py` covers `commands/tick.md` and `commands/run.md`,
 and nothing covered `CLAUDE.md` itself. `tests/test_agent_definition_budget_
 491.py` says so explicitly: "`skills/manager/SKILL.md` and `CLAUDE.md` are
-read by the same mechanism but are not agent definitions in that sense."
+read by the same mechanism but are not agent definitions in that sense." At
+the time #1556 was filed CLAUDE.md measured 95,439 B, 2.2x the ceiling on
+`skills/manager/SKILL.md` (44,800 B) and larger than every other single
+document in the loop; a same-day cut (commit cb75d5c5, citing the same
+finding) brought it to 32,621 B before this module landed, well under
+`skills/manager/phases/dispatch.md` (55,195 B) and several other files --
+so neither claim holds against the file's current size. What #1556 asked
+for and this module supplies is unchanged by that cut: a ceiling and a
+test, so growth back toward the old number is visible rather than silent.
 
 This module is the missing fourth. Same shape as the other three
 deliberately -- one dict, one `check()`, one `missing`/`ok`/`over` verdict --

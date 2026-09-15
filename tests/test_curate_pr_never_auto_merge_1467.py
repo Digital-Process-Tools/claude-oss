@@ -50,6 +50,27 @@ def test_merge_never_auto_merges_a_curate_authored_pr():
     )
 
 
+def test_merge_holds_a_curate_authored_pr_for_the_maintainer_not_just_names_it():
+    """A keyword-proximity match alone would still pass a paragraph rewritten to
+    say the *opposite* -- that a curate-authored PR no longer needs holding back,
+    now that `author_association` can tell it apart. This is the directional half:
+    the actual verb (held for the maintainer / never merged on green) has to be
+    present too, or the finding a reviewer spawn raised against #1467's own test
+    (too loose to catch an inverted rewrite) would still be open."""
+    collapsed = _collapse(_skill_text())
+    assert re.search(
+        r"curate-authored.{0,300}?(held for the maintainer|never merged (on green )?"
+        r"by a sub-manager|waits? for the maintainer)",
+        collapsed,
+        re.IGNORECASE,
+    ), (
+        "merge.md names a curate-authored pull request near the never-auto-merge "
+        "list, but nowhere nearby says it is actually held for the maintainer / "
+        "never merged by a sub-manager -- the keyword alone does not prove the "
+        "rule points the right direction"
+    )
+
+
 def test_merge_names_the_curate_branch_prefix_as_the_marker():
     collapsed = _collapse(_skill_text())
     assert "^curate/" in collapsed, (
