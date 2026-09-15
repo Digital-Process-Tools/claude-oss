@@ -7,6 +7,162 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-09-15
+
+### Added
+
+- `outbound/` -- the drafting half of `trap.d/`'s own precedent, for public acts
+  rather than lessons: the loop writes one file per intended act (a refusal, a
+  reply, a review on an outside pull request) and something else sends it later.
+  (This depends on #1394, `inbound_triage.py`'s classifier, but #1394 is the
+  dependency, not the `trap.d/` precedent -- that precedent is #1079/#1302.)
+  This change ships the scaffolding (the directory and its owned README, on the
+  `trap.d/README.md` ownership precedent), the `.oss.json` threshold key
+  (`outbound_route_threshold`), `scripts/outbound_draft.py` (read `outbound/`'s
+  four draft states -- pending, sent, dropped, stale -- report them, never post
+  anything), and a status line field beside the `trap.d/` backlog count. The
+  drain pass that moves a draft between states and the send-policy graduation
+  #1395 also asks for are follow-on work: nothing here posts to a tracker (#1395).
+
+- `doctor` now compares the two GitHub Action commit SHAs the scaffolded changelog
+  workflow's template pins (`actions/checkout`, `actions/setup-python`) against the
+  live tip of their major tag, and reports drift. The pin lives inside a Python
+  string in `scripts/scaffold.py`, not a real workflow file, so Dependabot's own
+  `github-actions` watch never sees it move -- nothing else in this repository
+  re-derives whether it is still current (#1519).
+
+- Added a PreToolUse guard (`hooks/sub-manager-spawn-guard.sh`,
+  `scripts/sub_manager_spawn_guard.py`) that refuses an `Agent(subagent_type:
+  "oss:sub-manager")` spawn attempted from inside an already-running
+  sub-manager, reading the same code-level role marker
+  `scripts/agent_role.py` already uses to withhold release authority (#695).
+  Confirms and builds the guard #1022/PR #1034 found plausible but declined
+  to build on an unconfirmed `tool_input` field name (#1520).
+
+- A tick's four steps -- select+claim+dispatch, wait+review, merge, and the
+  final state-file write + handback -- are now each their own spawn instead of
+  one `oss:sub-manager` context holding all four (#1544). `oss:tick-dispatch`
+  and `oss:tick-review` shipped first; this adds `oss:tick-merge`, which runs
+  the confirm-gated merge and its post-merge obligations for one
+  `ready-to-merge` pull request, and `oss:tick-accounting`, which runs the
+  tick's `oss_state.py --decision` call and drafts an already-validated
+  `TICK:` handback. `oss:tick-accounting` cannot end the tick itself --
+  `tick_handback.py` classifies only the sub-manager's own final message --
+  so `oss:sub-manager` still pastes what it drafts, the same way it already
+  pastes `oss:tick-dispatch`'s rendered `Agent(...)` calls.
+
+- `CLAUDE.md` was the largest single document every agent in the loop loads, loaded whole on
+  every session, and the only one of the four budgeted subjects (`agents/*.md`,
+  `skills/manager/**`, `commands/tick.md` and `commands/run.md`) with no ceiling and no test.
+  `scripts/claude_md_budget.py` is the missing fourth budget module, folded into the existing
+  baseline-drift check (`tests/test_baseline_matches_disk_1014.py`) so its declared baseline
+  cannot go stale unnoticed either (#1556).
+
+- A red developer lane, or one whose base moved, used to have exactly two answers: resume it via
+  `SendMessage`, or record `agent-unreachable`. That rule priced only the fresh spawn it was
+  avoiding. Measured on 2026-09-15, a resumed lane spent 15,558,821 tokens across 38 turns at an
+  average call-time context of 409,443 -- within 3% of its own maximum, because a lane already at
+  its ceiling pays that ceiling on every later turn. `respawned-for-cost` is the third answer: a
+  fresh spawn at the same issues, taken because resuming would have cost more, recorded with the
+  context figure as its own required `why` so it can never be folded into either neighbouring
+  state (#1567).
+
+### Fixed
+
+- The status line no longer renders the external-issue count twice: `_board_field`'s
+  `/ Neis` group duplicated the identical number the `inb` block's `is` group already
+  carried (#1406). `refresh()` now takes that count once and feeds both the cached
+  `issues_external` and the `inb` reading from it, instead of asking the forge for it
+  a second time on every refresh (#1463).
+
+- `skills/manager/phases/merge.md` had no arm for a loop-authored curate pull request, so
+  #1443's "the pull request is the review" premise had no reader -- a sub-manager reaching a
+  curate PR in its merge phase would merge it on green with no human ever having read the
+  promoted jit-context rule it carries. `commands/run/curate.md` now cuts its branch as
+  `curate/<timestamp>` rather than a developer lane's `fix/{issue}`, and `merge.md`'s
+  never-auto-merge list gates on that `^curate/` head-branch prefix the same way it already
+  holds an external-contributor pull request for the maintainer (#1467).
+
+- `doctor.sh`'s printed WARN/NOTICE count used to flake run-to-run on the
+  same repository with no code change: the statusline default-branch
+  marker's own "stale" reading, and the `/oss:doctor` cached-verdict
+  reading's own "stale" reading, stayed WARN while the channel field's
+  identical "stale" reading was already converted to WAIT (#1440). All three
+  name the same fork-based clock that settles them without a manual op or a
+  scaffold run, so a run straddling that clock's boundary printed a
+  different warning count than the run before it. Both now report WAIT,
+  matching the channel field (#1479).
+
+- Six `doctor_check_*` modules (`doctor_check_event_filter.py`,
+  `doctor_check_script_call_survey.py`, `script_call_survey.py`,
+  `doctor_check_mcp_channel_connection.py`,
+  `doctor_check_mcp_channel_registration.py`,
+  `doctor_check_channel_health_agreement.py`) carried `import doctor` at
+  module scope, re-entering `doctor.py`'s own circular import the moment one
+  of them was imported before `doctor.py` finished loading -- reproducible
+  live as `ImportError: cannot import name ... from partially initialized
+  module ...`. `import doctor` now happens inside each function that needs
+  it, matching the convention every other `doctor_check_*` module already
+  follows (#1512).
+
+- A release that reaches the cohort freeze with the `cohort-N` label missing no longer stops
+  with a hand remedy: `cohort_freeze.py`'s `--execute` path now creates the label itself -- a
+  composed name, the fixed colour, the same description text the freeze already writes -- and
+  only reports `label-missing` when that create attempt itself fails (#1515).
+
+- Fixed: a dispatched developer lane that hit the harness's own auto-mode
+  Bash classifier going down mid-call used to end its turn on a bare
+  "waiting" sentence with no report path, indistinguishable from a lane that
+  had genuinely stopped. `agents/developer.md` now names the retry-then-
+  handback rule, and `skills/manager/phases/dispatch.md` tells the
+  sub-manager side to read the task's own output file before treating it as
+  `agent-unreachable` (#1518).
+
+- The `channel MCP connection` doctor check's WAIT text claimed "nothing in
+  a session opened another way arms or binds the consumer" for a session not
+  opened through `bin/oss-workspace` -- false: a plugin-declared
+  claude-channel consumer, or a persisted launcher registration, is started
+  by the harness regardless of how the session was opened, confirmed
+  directly on this repository (two armed, failed consumers in a hand-opened
+  session). The sentinel this WAIT arm gated on was also already dropped
+  (#1432/#1474), so the branch fired unconditionally with no real clock left
+  to settle it. `check_mcp_channel_connection` now reports WARN
+  unconditionally for this case instead of a WAIT resting on a false
+  premise (#1523).
+
+- `pr_green.py --wait --timeout N`, the loop's own sanctioned call shape, could never widen its
+  poll interval under a low GitHub REST rate-limit budget: the timeout cap discarded the whole
+  backoff rather than only bounding its overshoot past the deadline. `release_ci_wait.py`, the
+  releaser's own gate-3 wait sharing the same budget, had no rate-limit backoff at all. Both are
+  fixed, and the two loop documents naming `pr_green.py`'s canonical call shape now agree (#1554).
+
+- `test_classifier_outage_handback_1518.py`'s positive control no longer breaks under CI's
+  shallow checkout: it hardcoded a merge-base commit SHA and read that blob with `git show`,
+  which fails with a misleading "path exists on disk, but not in that commit" error once enough
+  squash merges land ahead of it in one tick, since `actions/checkout@v7`'s default fetch depth
+  is 1 commit. `_blob_at` now retries once through a targeted `git fetch --depth=1 origin <sha>`
+  and skips with a stated reason if that still can't reach the commit, instead of asserting a
+  false negative (#1563).
+
+- `agents/tick-merge.md` -- the spawn #1544 split merging out into -- stated
+  `skills/manager/phases/merge.md`'s gates in prose and gave the spawn no call that establishes any
+  of them. It is handed a bare pull request number, and its first documented action was the
+  confirm-gated merge itself. Those facts used to be free because merging stayed inside
+  `oss:sub-manager`, which already held a board read carrying them; the split spawn holds nothing.
+  A gate nobody read and a gate that passed produce the same merge, so the file now derives the head
+  branch and the external-contributor answer before it merges, and reports `could-not-merge` when
+  either read fails. Found by the release gate's own audit, before this spawn had ever run (#1571).
+
+- The external-contributor gate #1571 added to `agents/tick-merge.md` and
+  `skills/manager/phases/merge.md` named a `gh-prs` filter, `external`, that
+  does not exist -- the live call was refused outright, and followed
+  literally the gate never clears, so every spawn returns `could-not-merge`
+  forever. Both files now derive the answer from `inbound_triage.classify_pr`,
+  fed by a raw `gh api repos/{owner}/{repo}/pulls/N --jq .author_association`
+  call for a bare pull request number, since no supertool op returns that
+  field for a single pull request. Found by gate 3's round-two audit of the
+  v0.36.0 delta, on the release's critical path (#1573).
+
 ## [0.35.0] - 2026-09-15
 
 ### Added
@@ -11492,7 +11648,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.36.0
 [0.35.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.35.0
 [0.34.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.34.0
 [0.33.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.33.1

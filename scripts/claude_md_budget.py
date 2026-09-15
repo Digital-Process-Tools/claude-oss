@@ -64,7 +64,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # missing from that block; tick-merge.md and tick-accounting.md are
     # new), all under the third editing exception. Ceiling moves to
     # 37500 B, ~2% headroom.
-    "CLAUDE.md": (36705, 37500),
+    # Re-baselined for the v0.36.0 release commit's "What is not proven yet" marker
+    # rewrite (the release session's own editing exception): 36705 B became
+    # 37500 B, landing exactly at the existing ceiling. Ceiling unchanged --
+    # no headroom left; the next marker rewrite that grows the section will
+    # need to raise it.
+    "CLAUDE.md": (37500, 37500),
 }
 
 

@@ -486,40 +486,50 @@ maintainer's session with their credentials.
 
 ## What is not proven yet
 
-**The marker below names `v0.35.0`, and it was written inside the v0.35.0 release commit.**
+**The marker below names `v0.36.0`, and it was written inside the v0.36.0 release commit.**
 
-**Delta, taken two ways that agree.** The range is `v0.34.0..HEAD` at `bd75d86`: `git rev-list
---count v0.34.0..HEAD` returns **15**, and `gh-prs:merged-since=v0.34.0` returns **15** merged pull
-requests, its own cross-check reporting `RAN and AGREED`. Gate 3 ran two rounds over the range, 14
-findings in total, none in a blocking row; `gate3_disposition.py` returned `stop-tag` for round one
-and `carry-forward-and-proceed` for round two. Round one's stop was load-bearing rather than
-procedural: it caught a defect the ranking table would have shipped, in `agents/tick-dispatch.md`
-(#1546), whose own documented call rendered nothing at exit 0. Every other finding was routed to
-`trap.d/`. Both rounds graded 2 of 4 classes `read` rather than `exercised`; round two exercised the
-platform band and `ships-local-state` with a stated control, which round one did not.
+**Delta, taken two ways that agree.** The range is `v0.35.0..HEAD` at `0d6aa65`: `git rev-list
+--count v0.35.0..HEAD` returns **13**, and `gh-prs:merged-since=v0.35.0` returns **13** merged pull
+requests, its own cross-check reporting `RAN and AGREED`. Gate 3 ran three rounds over the range,
+each on the full delta as it stood at the time. Round one, in an earlier session, returned
+`stop-tag` on a blocking finding in `agents/tick-merge.md` and `skills/manager/phases/merge.md`
+(#1571): the external-contributor gate was a rule with no working read, and its first documented
+action was the merge call itself. Fixed and merged as PR #1572. Round two re-audited the full delta
+(12 commits at that point) and found 8 findings, one `unranked` and ranked here as blocking
+(#1573): the corrected read in the same two files called a supertool filter token
+(`gh-prs:...,external`) that does not exist and is refused outright, so the gate it named could
+never run. `gate3_disposition.py` returned `stop-tag`; the other 7 findings were non-blocking
+`misreports`, routed to `trap.d/`. #1573 was fixed and merged as PR #1574 (a raw `gh api
+.../pulls/N --jq .author_association` call feeding the existing `inbound_triage.classify_pr`). A
+continuation audit against the now-13-commit delta confirmed #1573 resolved by direct command, not
+by reading the commit message, and found 3 further non-blocking findings -- a scalar/dict mismatch
+between the corrected call and `classify_pr`, a tautological positive control in the new regression
+test, and a command wrapped across a line break in `merge.md`'s own prose -- all routed to
+`trap.d/`. `gate3_disposition.py` has no vocabulary for a third round, so this continuation's
+disposition was computed under round two's own slot: `carry-forward-and-proceed`. Twenty findings
+in total across every round; two were blocking, both fixed and merged before this commit; none of
+the rest sit in a blocking row.
 
-**Gate 1 is the weakest claim in this paragraph and is stated as such.** At `8074934`, the
-pre-release head, push-triggered `tests` was green 6 of 6 and CodeQL's `Analyze (python)` leg
-**failed** on GitHub's own incremental-analysis disk-space error -- no alert, no finding, and
-unretryable, because default-setup CodeQL runs on a `dynamic` event GitHub refuses to re-run. A
-full-matrix `tests` run was dispatched against that commit. The verdict that actually gated the tag
-is this release commit's own run, waited on with `release_ci_wait.py --require-event
-workflow_dispatch`; read that run, not this sentence, for whether CodeQL cleared.
+**Gate 1 held cleanly this time.** At `0d6aa65`, the pre-release head, both the ordinary
+push-triggered run (8 legs, 2 workflows, all passed) and a dispatched full-matrix
+`workflow_dispatch` run against the same commit concluded GREEN, with no CodeQL infrastructure
+failure of the kind `v0.35.0`'s own marker recorded. The verdict that actually gates the tag is
+still this release commit's own run, waited on with `release_ci_wait.py --require-event
+workflow_dispatch`; read that run, not this sentence, for whether it cleared.
 
-**Cohort freeze: cohort-32 at 15.** This marker cites a cohort that has already finished freezing,
-never this release's own, because the freeze runs after the tag. The state file records `cohort-32`
-as `measured` at 15, frozen at the `v0.34.0` tag; two routes first disagreed (15 against 14,
-recorded as `unknown`) and agreed at 15 on the re-count -- the fifth consecutive cohort where the
-label filter read low first, which is a property of GitHub's label index rather than of any cohort.
+**Cohort freeze: cohort-33 at 25.** This marker cites a cohort that has already finished freezing,
+never this release's own, because the freeze runs after the tag. The state file records
+`cohort-33` as `measured` at 25, frozen at the `v0.35.0` tag, both routes it was taken from
+(`cutoff_scan` and `label_filter`) agreeing at 25.
 `cohort_citation_order.py --state .max/claude-oss-watch.json --at <now>` was run against this
 paragraph before committing.
 
-**The reach probe was NOT re-derived at `v0.35.0`.** It is still `v0.21.0`'s:
+**The reach probe was NOT re-derived at `v0.36.0`.** It is still `v0.21.0`'s:
 `gh repo list Digital-Process-Tools --limit 100`, run at `c565488`, returns eleven repositories in
 that one GitHub organisation, four carrying `.oss.json`, each confirmed by its own contents read. The count is
 scoped to the organisation the command names, never to "the field": a repository under a different
 account renders identically to one that does not exist. The owned-files table, the two installs and
-the `doctor` run are still `v0.17.0`'s, carried through eighteen tags; `#1127` tracks re-deriving
+the `doctor` run are still `v0.17.0`'s, carried through nineteen tags; `#1127` tracks re-deriving
 them. The readings live in `docs/release-currency.md`; re-derive them inside the release commit
 rather than editing this section.
 
