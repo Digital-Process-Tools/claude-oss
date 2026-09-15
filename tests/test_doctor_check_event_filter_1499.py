@@ -30,7 +30,11 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import doctor  # noqa: E402
 import doctor_check_event_filter as dcef  # noqa: E402
 
-INITIAL = ["checks_pending", "checks_succeeded", "conflicts_appeared"]
+#: Read from the module rather than retyped, so this test cannot drift from the
+#: real default the way the original hardcoded copy did (#1499's own comment
+#: thread: `checks_succeeded` sat in a retyped copy here for the same reason
+#: it sat in `INITIAL_EXCLUDE` -- nobody re-derived it).
+INITIAL = list(dcef.INITIAL_EXCLUDE)
 
 
 @pytest.fixture(autouse=True)
@@ -48,6 +52,19 @@ def _write(tmp_path, doc):
 def _only():
     assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
     return doctor.FINDINGS[0]
+
+
+def test_checks_succeeded_is_not_excluded_1499():
+    """The fix's own claim (#1499's comment thread): `checks_succeeded` was
+    swept into the blacklist alongside `checks_pending` on the shared prefix,
+    not on the merits, while `checks_failed` was never excluded -- the same
+    asymmetry `BRANCH_KEEP` avoids for the default-branch poller. A PR going
+    green now costs the scheduler the same one turn a PR going red already
+    costs.
+    """
+    assert "checks_succeeded" not in dcef.INITIAL_EXCLUDE
+    assert "checks_failed" not in dcef.INITIAL_EXCLUDE
+    assert "checks_pending" in dcef.INITIAL_EXCLUDE
 
 
 def test_ok_names_the_excluded_events(tmp_path):
@@ -190,6 +207,9 @@ def test_doctor_main_runs_the_check(tmp_path, monkeypatch, capsys):
     """The check is registered: doctor's own run prints its line."""
     _write(tmp_path, {"ops": {"radar": {"radar_tiers": {"gh-prs": {}}}}})
     monkeypatch.setattr(doctor, "PLUGIN_ROOT", REPO_ROOT)
+    # #1577: a real `supertool doctor:probe` call, answering about this
+    # machine's install rather than this fixture's tmp_path tree.
+    monkeypatch.setattr(doctor, "check_supertool_validators", lambda *a, **k: None)
     doctor.main(["--root", str(tmp_path), "--plugin-root", str(REPO_ROOT)])
     out = capsys.readouterr().out
     assert "event filter" in out

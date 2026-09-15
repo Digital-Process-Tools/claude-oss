@@ -377,6 +377,13 @@ def _quiet_main(monkeypatch, tmp_path):
         "check_lane_other_label",
         "check_dependency_diagnostics",
         "check_dependency_resolution",
+        # #1577: `check_supertool_validators` shells out to `supertool
+        # doctor:probe`, answering about the supertool installed on THIS
+        # machine and the `.supertool.json` this fixture's own tree carries
+        # (or does not) -- the identical reason `check_dependency_diagnostics`
+        # and `check_supertool_ops` are already stubbed above rather than
+        # measured here.
+        "check_supertool_validators",
         "check_supertool_entry_point",
         "check_git_push_budget",
         "check_publish_confirm",
@@ -1155,6 +1162,16 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
         "check_dependency_diagnostics",
         lambda *a, **kw: doctor.report("OK", "dependency diagnostics"),
     )
+    # #1577: `check_supertool_validators` shells out to `supertool
+    # doctor:probe`, answering about the supertool installed on THIS machine
+    # and the `.supertool.json` this fixture's own tree carries -- the
+    # identical reason `check_dependency_diagnostics` immediately above is
+    # stubbed rather than measured here.
+    monkeypatch.setattr(
+        doctor,
+        "check_supertool_validators",
+        lambda *a, **kw: doctor.report("OK", "supertool validators"),
+    )
     # #808: `check_auto_update` reads THIS machine's real SessionStart-updater
     # receipt (via `plugin_update.read_receipt`), not this fixture's tree --
     # exactly the same reason `check_mcp_channel_registration`,
@@ -1337,6 +1354,16 @@ def test_verdict_distinguishes_gaps_from_failures(tmp_path, monkeypatch, capsys)
     # `check_mcp_channel_registration` has the same property and predates this
     # change; it is left alone here rather than fixed in passing.
     monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
+    # #1577: same class -- nothing else here stops `check_supertool_validators`
+    # from spawning a real `supertool doctor:probe`, twice per `doctor.main()`
+    # below, purely as a side effect of running this unit test. That real call
+    # was observed touching ambient machine state a LATER, unrelated test in
+    # this same file reads for real (`test_verdict_says_ok_only_when_nothing_
+    # warned`'s unstubbed `check_channel_delivery`), turning a clean fixture
+    # there into a stale-cache WARN with no code path connecting the two
+    # except pytest's own shared process. Same substring-check blindness as
+    # the comment above.
+    monkeypatch.setattr(doctor, "check_supertool_validators", lambda *a, **k: None)
     # #1519 (self-review finding): the same class -- nothing else here stops
     # `gh_which.safe_which("gh")` from resolving to a real binary, so without
     # this `check_action_pins` spawns two live `gh api` calls to
@@ -2126,6 +2153,9 @@ def test_main_reports_the_watch_channel(tmp_path, monkeypatch, capsys):
     # same reason.
     monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
     monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
+    # #1577: same shape -- a real `supertool doctor:probe`, answering about
+    # THIS machine, not this fixture.
+    monkeypatch.setattr(doctor, "check_supertool_validators", lambda *a, **k: None)
     assert doctor.main(["--root", str(tmp_path)]) == 0
     out = capsys.readouterr().out
     assert doctor.WATCH_NAME_ENV in out
@@ -2800,6 +2830,9 @@ def test_main_reports_whether_anything_publishes_to_the_board(tmp_path, monkeypa
     # same reason.
     monkeypatch.setattr(doctor, "check_mcp_channel_registration", lambda **k: None)
     monkeypatch.setattr(doctor, "check_supertool_ops", lambda **k: None)
+    # #1577: same shape -- a real `supertool doctor:probe`, answering about
+    # THIS machine, not this fixture.
+    monkeypatch.setattr(doctor, "check_supertool_validators", lambda *a, **k: None)
     assert doctor.main(["--root", str(tmp_path)]) == 0
     assert [m for _s, m in doctor.FINDINGS if m.startswith("radar board:")]
 

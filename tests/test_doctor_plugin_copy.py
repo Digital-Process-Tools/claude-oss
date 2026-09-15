@@ -609,6 +609,14 @@ def test_main_still_exits_zero_with_one_verdict_and_prints_the_new_lines(
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
     monkeypatch.delenv("SUPERTOOL_WATCH_NAME", raising=False)
     monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
+    # #1577: `doctor.shutil.which` above does not shield this check --
+    # `check_supertool_validators` resolves `supertool` through
+    # `gh_which.safe_which`, which never calls `shutil.which` at all (#1172).
+    # Left unstubbed, this test spawns a real `supertool doctor:probe`
+    # subprocess as a side effect, answering about THIS machine rather than
+    # this fixture's tree -- the same reason every other machine-dependent
+    # check in this suite is stubbed rather than measured here.
+    monkeypatch.setattr(doctor, "check_supertool_validators", lambda *a, **k: None)
 
     assert doctor.main(["--root", str(tmp_path)]) == 0
     out = capsys.readouterr().out
@@ -626,6 +634,10 @@ def test_a_plugin_root_that_does_not_exist_still_produces_both_lines(
     monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
     monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
     monkeypatch.setattr(doctor.shutil, "which", lambda name, **kwargs: None)
+    # #1577: same gap as the sibling test above -- `check_supertool_
+    # validators` resolves `supertool` through `gh_which.safe_which`, which
+    # `doctor.shutil.which` does not shield.
+    monkeypatch.setattr(doctor, "check_supertool_validators", lambda *a, **k: None)
 
     assert (
         doctor.main(["--root", str(tmp_path), "--plugin-root", str(tmp_path / "nope")])

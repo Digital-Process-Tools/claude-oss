@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -201,6 +202,82 @@ def test_curate_count_on_a_stale_branch_reads_origin_default_branch_not_the_chec
     )
     assert count == 0, why
     assert "origin/main" in why, why
+
+
+def test_curate_count_on_a_stale_branch_with_no_fetch_ever_run_says_so(repo_on_main):
+    """#1522: `curate_count` reads `origin/<default_branch>` via `git
+    ls-tree` and nothing on that path fetches, so a confident count is
+    attributed to the default branch with no signal of how fresh that
+    remote-tracking ref actually is. `repo_on_main` fakes `origin/main`
+    with `git update-ref`, never a real `git fetch` -- no `FETCH_HEAD`
+    exists in this checkout at all, which is the honest state for a
+    freshly cloned or never-fetched repo. `why` must say so rather than
+    silently omitting any freshness signal, exactly as before this fix."""
+    root = repo_on_main
+    env = _git_env()
+    _run(["git", "checkout", "--quiet", "-b", "fix/999"], cwd=root, env=env)
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count == 0, why
+    assert "no fetch recorded" in why, why
+
+
+def test_curate_count_on_a_stale_branch_reports_fetch_age(repo_on_main):
+    """Positive control for the case above: once a fetch HAS actually
+    happened in this checkout (`FETCH_HEAD` exists), `why` must carry how
+    long ago that was, not the same 'no fetch recorded' text the case
+    above asserts. #1522's own incident: a curate count read from a
+    pre-merge `origin/main` rendered identically to a fresh one -- this is
+    the signal that would have told the two apart."""
+    root = repo_on_main
+    env = _git_env()
+    _run(["git", "checkout", "--quiet", "-b", "fix/999"], cwd=root, env=env)
+    git_dir = root / ".git"
+    (git_dir / "FETCH_HEAD").write_text("deadbeef\tnot-for-merge\t\n")
+    old = time.time() - 3661  # a little over an hour ago
+    os.utime(str(git_dir / "FETCH_HEAD"), (old, old))
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count == 0, why
+    assert "no fetch recorded" not in why, why
+    assert "last fetched" in why, why
+
+
+def test_curate_count_on_a_stale_branch_with_git_dir_lookup_failure_does_not_claim_no_fetch(
+    repo_on_main,
+):
+    """Self-review finding (oss:auditor, #1522): the first version of
+    `_fetch_head_age_seconds` collapsed "the git-dir lookup itself
+    failed" into the identical `None` -- and identical rendered text --
+    as "FETCH_HEAD genuinely does not exist", so a real fetch could have
+    happened and this would still have confidently claimed none had. The
+    two must render differently: this checkout HAS a real FETCH_HEAD
+    (written just below), but a `run` that fails the `rev-parse
+    --git-dir` call must never be read as though that FETCH_HEAD did not
+    exist."""
+    root = repo_on_main
+    env = _git_env()
+    _run(["git", "checkout", "--quiet", "-b", "fix/999"], cwd=root, env=env)
+    (root / ".git" / "FETCH_HEAD").write_text("deadbeef\tnot-for-merge\t\n")
+
+    real_run = subprocess.run
+
+    def _boom(command, *args, **kwargs):
+        if "rev-parse" in command and "--git-dir" in command:
+            return subprocess.CompletedProcess(command, 1, stdout=b"", stderr=b"boom")
+        return real_run(command, *args, **kwargs)
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}, run=_boom
+    )
+    assert count == 0, why
+    assert "no fetch recorded" not in why, why
+    assert "last fetched" not in why, why
+    assert "could not be determined" in why, why
 
 
 def test_curate_count_on_the_default_branch_itself_still_counts_real_fragments(
