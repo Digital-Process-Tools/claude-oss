@@ -180,3 +180,39 @@ def test_main_never_crashes_on_empty_stdin():
         rc = guard.main(stdin_text="")
     assert rc == 0
     assert json.loads(buf.getvalue()) == {}
+
+
+def test_main_reports_allow_could_not_tell_on_stderr_distinctly_from_allow():
+    """An auditor spawn found ALLOW and ALLOW_COULD_NOT_TELL printed the
+    identical `{}` on stdout -- this repository's own named defect class
+    (an absence produced by 'could not look' rendering identically to one
+    produced by 'nothing there'). stdout stays `{}` for both (the harness
+    contract does not change), but stderr must now tell them apart."""
+    import io
+    import contextlib
+
+    stdout_could_not_tell = io.StringIO()
+    stderr_could_not_tell = io.StringIO()
+    with (
+        contextlib.redirect_stdout(stdout_could_not_tell),
+        contextlib.redirect_stderr(stderr_could_not_tell),
+    ):
+        rc = guard.main(stdin_text="not json{{{")
+    assert rc == 0
+    assert json.loads(stdout_could_not_tell.getvalue()) == {}
+    assert "allow-could-not-tell" in stderr_could_not_tell.getvalue()
+
+    stdout_allow = io.StringIO()
+    stderr_allow = io.StringIO()
+    with (
+        contextlib.redirect_stdout(stdout_allow),
+        contextlib.redirect_stderr(stderr_allow),
+    ):
+        rc = guard.main(
+            stdin_text=json.dumps(
+                {"tool_name": "Bash", "tool_input": {"command": "ls"}}
+            )
+        )
+    assert rc == 0
+    assert json.loads(stdout_allow.getvalue()) == {}
+    assert stderr_allow.getvalue() == ""

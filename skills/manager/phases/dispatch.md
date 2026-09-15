@@ -408,11 +408,20 @@ that finding is the defect this section stops; state which one applied in the ha
 lane that stopped, not one that finished (#1518).** Observed: a lane hit the harness's own
 auto-mode Bash classifier going down mid-call and ended its turn on "Waiting for the classifier to
 recover" -- the notification carried only that sentence, indistinguishable at a glance from a lane
-genuinely still working. Before treating it as `agent-unreachable` or re-dispatching, open the
-task's own output file and read its last tool calls: a classifier refusal there ("auto mode cannot
-determine the safety of Bash right now") is transient and per-call, not the lane being gone, and the
-right response is the same `SendMessage` resume `agent-unreachable` above already uses -- the lane
-in question finished normally once resumed, after about two minutes down.
+genuinely still working. Every task-notification names an `output-file` path in its own metadata --
+the full JSONL transcript of that spawn -- and this is what settles the ambiguity; a report path in
+`result` is the normal case and needs none of this.
+
+**Do not open that file whole.** The harness's own instruction on receiving a task-notification
+says not to Read or tail it -- it is a full subagent JSONL transcript and can be large enough to
+overflow the very context trying to answer one narrow question. Grep it instead, for
+the harness's own classifier-refusal wording -- `grep:auto mode cannot determine the safety:
+<output-file path>` -- rather than reading it end to end. A hit there is transient and per-call, not
+the lane being gone, and the right response is the same `SendMessage` resume `agent-unreachable`
+above already uses -- the lane in question finished normally once resumed, after about two minutes
+down. No hit, or the file cannot be read at all, is not evidence either way on its own; fall back to
+`agent-unreachable`'s own two-strikes rule (a resumed lane silent twice) rather than guessing from
+absence.
 
 **#978: `agents/sub-manager.md`'s frontmatter grants `SendMessage`, and some harness versions are
 documented as still refusing it as gated behind an opt-in feature even so.** Two live sub-manager

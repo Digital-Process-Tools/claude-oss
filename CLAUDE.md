@@ -360,7 +360,7 @@ enters it.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,577 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 56,050 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 56,712 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,308 B | 36,000 B |

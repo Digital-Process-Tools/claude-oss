@@ -132,6 +132,24 @@ def main(argv=None, stdin_text=None):
                 "permissionDecisionReason": reason,
             }
         }
+    elif decision == DECISION_ALLOW_COULD_NOT_TELL:
+        # An auditor spawn found that ALLOW and ALLOW_COULD_NOT_TELL printed
+        # the identical `{}` on stdout, collapsing "looked and found nothing
+        # to deny" and "could not look at all" into one indistinguishable
+        # answer -- this repository's own named defect class, aimed back at
+        # this module's own docstring, which already promised the
+        # distinction would exist for a future caller to read. The stdout
+        # contract for a PreToolUse hook stays `{}` for every non-deny
+        # decision (a stray key there is a harness-facing change, not a
+        # diagnostic one); stderr is where the distinction now actually
+        # lives, so it does not have to be re-derived from a JSONL
+        # transcript by whoever investigates why a spawn was allowed
+        # through on a payload this hook could not actually evaluate.
+        print(
+            "sub_manager_spawn_guard: allow-could-not-tell (payload or role "
+            "could not be evaluated)",
+            file=sys.stderr,
+        )
     print(json.dumps(output))
     return 0
 

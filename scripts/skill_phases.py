@@ -335,7 +335,17 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # the harness's own auto-mode Bash classifier outage as the observed
         # cause; read the task's output file before re-dispatching. Budget
         # unchanged; 1,350 B headroom.
-        56050,
+        # Re-baselined in the same lane's own self-review round: 56050 B
+        # became 56712 B -- a reviewer spawn found "read its last tool
+        # calls" named no real mechanism (no per-task output-file artifact
+        # is documented anywhere else in this repo, and the phrase read as
+        # invented). Corrected to name the harness's own `output-file`
+        # metadata field on a task-notification, and to grep it for the
+        # classifier's own refusal wording rather than reading it whole --
+        # the harness's own guidance on receiving a task-notification
+        # already says not to Read/tail that file, since it is a full JSONL
+        # transcript. Budget unchanged; 688 B headroom.
+        56712,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),

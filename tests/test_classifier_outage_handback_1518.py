@@ -63,8 +63,9 @@ def test_developer_md_anchor_is_absent_from_the_pre_fix_blob():
 def test_dispatch_md_carries_the_read_the_output_file_rule():
     body = _flatten(DISPATCH_MD.read_text(encoding="utf-8"))
     assert SUB_MANAGER_ANCHOR in body
-    assert "open the task's own output file" in body
-    assert "auto mode cannot determine the safety of bash" in body
+    assert "output-file" in body
+    assert "do not open that file whole" in body
+    assert "grep:auto mode cannot determine the safety" in body
 
 
 def test_dispatch_md_anchor_is_absent_from_the_pre_fix_blob():
