@@ -48,10 +48,13 @@ at all). Idempotent: re-running a completed freeze reads every route again but c
 disk when what it reads back already matches, and reports `frozen` again rather than silently
 doing nothing. Without `--execute` it only previews `cohort_freeze.py`'s own dry run.
 
-**`could-not-freeze` from a missing label (#956) means the cohort label itself does not exist on the
-tracker yet** -- neither script creates one; that write is yours: `gh label create <cohort-label>
---repo <repo> --description "..." --color ededed`. Re-run the identical `cohort_freeze_record.py`
-call afterward; nothing was written on that run, so there is nothing to reconcile.
+**A missing cohort label no longer stops the freeze (#1515).** `cohort_freeze.freeze` creates it
+itself under `--execute` -- a composed name (`cohort-<int>`), the fixed colour, and the same
+description text `ensure_label_description` writes -- and only reports `could-not-freeze` here when
+that create attempt itself failed (the `gh` error is in the reason, and the hand remedy `gh label
+create <cohort-label> --repo <repo> --description "..." --color ededed` is still named there as the
+fallback). Re-run the identical `cohort_freeze_record.py` call afterward either way; nothing was
+written on a `could-not-freeze` run, so there is nothing to reconcile.
 
 **The freeze is a label, and a label write can silently delete it.** `gh api -X PATCH issues/N -f
 'labels[]=…'` **replaces the whole label set** — so a later write setting priority or lane removes
