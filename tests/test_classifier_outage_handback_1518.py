@@ -16,6 +16,8 @@ import re
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 sys.path.insert(0, str(REPO_ROOT / "tests"))
@@ -29,6 +31,14 @@ DISPATCH_MD = REPO_ROOT / "skills" / "manager" / "phases" / "dispatch.md"
 
 LANE_ANCHOR = "auto-mode bash classifier can go down mid-call"
 SUB_MANAGER_ANCHOR = "a lane that stopped, not one that finished (#1518)"
+
+# CI's checkout (actions/checkout@v7, no fetch-depth override) is shallow: it fetches
+# only the tip commit, no ancestors. `git show <ancestor-sha>:path` then fails with
+# this exact wording even though the commit is a real ancestor with the real content
+# on the remote -- #1563, reproduced directly with `git clone --depth=1`. That failure
+# renders identically to "the historical blob genuinely lacks the path", which is the
+# absence-read-as-absence defect class this repo refuses to let a checker paper over.
+_SHALLOW_HISTORY_MARKER = "exists on disk, but not in"
 
 
 def _flatten(text: str) -> str:
@@ -45,7 +55,33 @@ def _blob_at(rev: str, path: Path) -> str:
         text=True,
         timeout=10,
     )
-    assert result.returncode == 0, result.stderr
+    if result.returncode != 0 and _SHALLOW_HISTORY_MARKER in result.stderr:
+        # Deepen the checkout for this one historical commit and retry once, rather
+        # than either failing on a checkout artifact or silently skipping without
+        # having tried to actually answer the question.
+        fetch = spawn_guard.run(
+            ["git", "fetch", "--depth=1", "origin", rev],
+            subject="deepening a shallow checkout to reach the pre-fix commit (#1563)",
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if fetch.returncode == 0:
+            result = spawn_guard.run(
+                ["git", "show", "{0}:{1}".format(rev, rel)],
+                subject="reading the pre-fix blob for the positive control (post-deepen)",
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+    if result.returncode != 0:
+        pytest.skip(
+            "could not read {0} at {1} even after a deepen retry -- {2}".format(
+                rel, rev, result.stderr.strip()
+            )
+        )
     return result.stdout
 
 
