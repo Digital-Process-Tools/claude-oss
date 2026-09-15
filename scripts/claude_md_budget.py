@@ -44,7 +44,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # landed on top of #1556's declared baseline, which #1556 could not have
     # seen since it merged first. Budget unchanged; comfortably under the
     # 35900 B ceiling.
-    "CLAUDE.md": (33419, 35900),
+    #
+    # Re-baselined again for #1519/#1395/#581: 33419 B became 33441 B --
+    # this lane's own "ours" ownership-table row gained one entry
+    # (outbound/README.md, #1395), the only change to this file in that
+    # diff. Budget unchanged; comfortably under the 35900 B ceiling.
+    "CLAUDE.md": (33441, 35900),
 }
 
 

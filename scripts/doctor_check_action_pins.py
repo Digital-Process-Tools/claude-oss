@@ -35,7 +35,6 @@ sentence telling a maintainer to re-pin the template by hand.
 import re
 import subprocess
 
-import doctor
 import gh_which
 
 #: (action, major tag) pairs this check watches -- named directly out of
@@ -112,7 +111,14 @@ def check_action_pins():
       imported, `gh` is not on PATH, or the live read did not answer for
       every watched action. Never folded into `OK`: an unread pin is not an
       agreeing one.
+
+    Deferred, module-scope `import doctor` above would re-enter `doctor.py`
+    while it is still mid-load whenever this module is imported before
+    `doctor.py` finishes -- the exact #1512 shape `doctor_check_scheduler_
+    processes.py` already works around the same way.
     """
+    import doctor
+
     if doctor.scaffold is None:
         doctor.unmeasured("action pins", doctor.NO_SCAFFOLD)
         return
