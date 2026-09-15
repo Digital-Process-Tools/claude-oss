@@ -21,16 +21,18 @@ in its own file, read when you reach that phase**, not before (#568, #939).
 | --- | --- | --- |
 | Self-review | `agents/developer/review.md` | you have committed and are about to spawn the two reviewers |
 | Review returns | `agents/developer/review-return.md` | a reviewer's final message has arrived |
-| Report | `agents/developer/report.md` | before the first write outside your branch directory: the note, the report, the pull request payload |
+
+The report is a third late phase but not a third row here (#1583): it is a spawn,
+`oss:lane-report`, rather than a file you `cat` -- see "Report" near the end of this file.
 
 Resolve each against `${CLAUDE_PLUGIN_ROOT}`, the same way every script path in this file resolves:
 `cat "${CLAUDE_PLUGIN_ROOT}/agents/developer/review.md"`, since a `read:` op refuses a path outside
 the current directory and the plugin cache is outside every worktree. In a clone of this plugin,
 this tree's own copy is the one your branch is measured against, so read that one instead -- the
-same rule the report validator in `agents/developer/report.md` follows for its two copies.
+same rule the report validator in `agents/lane-report.md` follows for its two copies.
 
-**A phase file that was not read is not a phase that went smoothly.** Say which of the three
-happened -- `read`, `not-read` with the reason, `could-not-read` -- and for the two that are not
+**A phase file that was not read is not a phase that went smoothly.** Say which of these
+happened -- `read`, `not-read` with the reason, `could-not-read` -- and for the ones that are not
 `read`, name the file as an item under the report's `compliance` survey. The split moves no rule
 from binding to optional, and an unread file is exactly how it would, invisibly.
 `scripts/developer_phases.py` holds each file's budget and fails when this spine stops naming one of
@@ -373,7 +375,7 @@ it a second way — grep the new content back — before saying it.
    such reference calls.
 
    This is not the only requirement here whose checker `test_command` cannot reach — the report
-   itself has one, `report_schema.py`, named explicitly in `agents/developer/report.md` — but it is
+   itself has one, `report_schema.py`, named explicitly in `agents/lane-report.md` — but it is
    the only *other* one backed by a real automated gate. Docs review and the diagnostic convention,
    both just below, have no script to run; they are judged by a human reading the diff, which is why
    both are marked **observed rather than enforced** rather than given a command.
@@ -454,8 +456,9 @@ Two traps sit beside that one, and both arrive wearing the costume of a fix:
 ## An adjacent finding: fix it or file it
 
 You will find defects nobody filed. Three answers are legitimate and your report records which one
-you took — `action` is `fixed`, `report-for-filing` or `below-bar`. What decides it is not obvious, and left
-undecided it drifts one way on its own: filing costs a sentence and draining costs an agent plus a
+you took — `action` is `fixed`, `report-for-filing` or `below-bar`. What decides it is not
+obvious, and left undecided it drifts one way on its own: filing costs a sentence and draining
+costs an agent plus a
 full CI matrix, so intake wins forever and the board grows while everybody is busy. You are already
 in the file with the context loaded, which is the one moment the fix is cheap.
 
@@ -634,18 +637,52 @@ A citation in a brief is a claim. `supertool 'gh-issue:N'` costs one call, and a
 trusted where a wrong fact would get checked.
 
 
-## Notes and the report: where the long half goes
+## Report: spawn `oss:lane-report` as your last act (#1583)
 
-**Read `agents/developer/report.md` before you write anything outside your branch directory** -- the
-note, the report and the pull request payload. It carries where each one goes
-(`<worktree_root>/notes/` and `<worktree_root>/reports/`, branch flattened, UTC timestamp, and why a
-fixed filename under the shared scratchpad is a collision), why `cd <worktree_root>` prefixes every
-one of those writes rather than being run once (#685), which `report_schema.py` copy is the
-authority when the installed cache and this tree disagree (#732), the `compliance` survey, the
-tooling-friction lines, the pull request payload with its `Closes #N` binding, and why a structured
-report is easier to accept unread.
+Once you have committed and finished self-review, spawn the report out rather than writing it
+yourself, in this same long-lived context -- one measured lane spent 90 of 396 turns and 35% of its
+total context sent on exactly this work, at an average context of 401,416, 3.4x the cost of the
+same work at orientation. Moving it to a fresh spawn starts the same work at the floor:
 
-The shape in one line: one JSON report validated before you hand it over, one pull request payload
-the forge can consume unchanged -- title, body, head, base -- and a reply of the absolute report path
-plus at most two lines. Everything you return in chat is paid for twice. No preamble, no
-retrospective, no restating the brief.
+```text
+Agent(subagent_type: "oss:lane-report", model: "sonnet", run_in_background: false, prompt: "<worktree root, branch, issue numbers, every review finding with its disposition, the compliance survey, red/green test commands with the exact commands, the tree_snapshot verdict, adjacent findings, tooling friction, any disagreement with the brief, and your incremental note if you kept one>")
+```
+
+It derives the diff, the issue bodies and the schema itself (`schemas/agent-report.schema.json`,
+`report_schema.py`) -- everything in that prompt is what only you know and cannot be re-derived.
+The pull request payload it writes is four fields the forge consumes unchanged:
+
+```json
+{"title": "…", "body": "…", "head": "<your branch>", "base": "<default branch>"}
+```
+
+validated against the schema (either or both copies of `report_schema.py`, per #732), carrying the
+`compliance` survey, the tooling-friction lines and the pull request's `Closes #N` binding. Read
+`agents/lane-report.md` once yourself if you want the full shape of what it writes.
+
+**Keep an incremental note as you go, not only at the end.** Append to
+`<worktree_root>/notes/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.md`, outside every worktree
+directory proper, after recon, after each test cycle, after each review return -- material worth
+keeping as evidence but not worth injecting into the report, written at the moment it is cheapest
+rather than re-derived at turn 350. Hand the spawn this note if you kept one. Prefix
+`cd <worktree_root>` to that write, or supertool refuses it with `ERROR: path escapes cwd` -- move
+the cwd, never the guard.
+
+**Note every friction you hit using the ops as you go, one line each, in `adjacent` -- for the
+length of this task you are a primary user of these ops, and that is signal nobody else can see.**
+The spawn carries your lines forward; it cannot see what you saw. The bar is that it **cost this
+run something you can name**: a round-trip spent recovering, a call you got wrong the first time.
+An op that told you enough to proceed **is not friction** -- a preference is not reported anywhere.
+Third state: you hit something and cannot tell whether it cost you anything -- a line prefixed
+`tooling-unclear:` naming what you could not decide.
+
+**It reports `written` / `could-not-write` / `handoff-incomplete`, the last one naming which field
+above your prompt did not carry.** If it returns nothing, errors, or reports either failure state,
+write the report yourself: read `agents/lane-report.md` directly and follow it exactly as though it
+were addressed to you, the same way `agents/developer/review.md` already is. That fallback costs
+nothing when the spawn succeeds, which is the ordinary case.
+
+The shape in one line, whichever path writes it: one JSON report validated before it is handed
+over, one pull request payload the forge can consume unchanged -- title, body, head, base -- and a
+reply of the absolute report path plus at most two lines. Everything you return in chat is paid for
+twice. No preamble, no retrospective, no restating the brief.

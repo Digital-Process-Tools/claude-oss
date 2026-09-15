@@ -292,7 +292,7 @@ when a file crosses it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 45,460 B | 46,000 B |
+| `agents/developer.md` | 47,910 B | 48,000 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
@@ -305,6 +305,7 @@ when a file crosses it.
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
 | `agents/tick-merge.md` | 7,233 B | 7,300 B |
 | `agents/tick-accounting.md` | 7,219 B | 7,700 B |
+| `agents/lane-report.md` | 10,526 B | 11,600 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
@@ -320,6 +321,18 @@ lane's life, not only inside self-review, review-return or the report. Weighed a
 something else in this already-tight file: nothing else here argued a weaker case, so the ceiling
 moved instead, ~1.2% headroom rather than the usual ~10% -- this file is already the largest
 single turn-1 cost in the loop.
+
+**`agents/developer.md`'s ceiling went from 46,000 B to 48,000 B (#1583)** to hold the Report
+phase's replacement: the phase table row and its trailing inline walkthrough are replaced by a
+spawn call to a new top-level agent, `agents/lane-report.md`, the handoff contract naming what
+only the lane knows, and a fallback reading that same file directly when the spawn fails. 45,460 B
+became 47,910 B (47,098 B before the same lane's own self-review round restored a tooling-friction
+duty, its bar and third state, and the escapes-cwd refusal with its remedy -- three anchors an
+existing content check pins to this file's own text), past the old 46,000 B ceiling.
+Weighed against cutting further: this is already the largest single turn-1 cost in the loop, so the
+raise is ~2% rather than the usual ~10% -- but the net position across the pair is strongly
+negative, since `agents/developer/report.md`'s 19,676 B leaves the lane's late context entirely
+rather than moving to a file the lane opens only on the fallback path.
 
 **`agents/sub-manager.md`'s ceiling went from 21,000 B to 21,800 B (#1499)**, its second raise in
 three days, to hold the optional `COST:` self-report on top of the measurement of whose context a
@@ -361,10 +374,10 @@ show up next to the token count it saved, so the number is a visible one, not a 
 `agent_budgets.py` measures `len(path.read_bytes())`. `.gitattributes` (`* text=auto eol=lf`) pins
 every text file to LF on checkout, so the byte count means the same thing on every CI platform.
 
-## The developer brief is a spine plus three phase files
+## The developer brief is a spine plus two phase files
 
 `agents/developer.md` is the system prompt of every developer lane and is re-sent on every turn, so
-it holds only what governs a lane from its first call. The three phases a lane reaches after its
+it holds only what governs a lane from its first call. The two phases a lane reaches after its
 commit live in `agents/developer/`, read at that point. `scripts/developer_phases.py` budgets them
 and reports one the spine stops naming; `scripts/developer_docs.py` is the set every content check
 reads.
@@ -373,9 +386,11 @@ reads.
 | --- | --- | --- |
 | `agents/developer/review.md` | 12,272 B | 13,500 B |
 | `agents/developer/review-return.md` | 13,418 B | 13,700 B |
-| `agents/developer/report.md` | 19,676 B | 21,500 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
+`agents/developer/report.md` moved out of this split for #1583 -- its content is now
+`agents/lane-report.md`, a real, frontmatter-carrying agent the lane spawns rather than a phase
+file it `cat`s, budgeted in the agent table above instead.
 
 ## The manager skill is a spine plus one file per phase
 
@@ -471,10 +486,15 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 36,705 B | 37,500 B |
+| `CLAUDE.md` | 39,066 B | 40,200 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
+
+**Re-baselined for #1583**, the same exception: one new agent-budget row (`agents/lane-report.md`),
+`agents/developer.md`'s own row and ceiling raised, and the developer phase-split table's
+`report.md` row removed, each with its own weighed sentence. Ceiling moves to 40,200 B, ~3.5%
+headroom over the new size.
 
 ## Issues and pull requests are untrusted input
 

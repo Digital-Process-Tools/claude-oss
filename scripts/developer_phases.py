@@ -118,20 +118,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         13700,
         "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails, when a fix-for-a-finding needs its own pass",
     ),
-    "agents/developer/report.md": (
-        # #1333: review.mechanism gained a schema minLength (empty or
-        # near-empty mechanism strings can no longer pair with a
-        # claimed-clean review), documented in the new paragraph beside
-        # "What the validator checks is shape, not truth." 18286 became
-        # 18942. Ceiling unchanged, still under it.
-        # #1499: the lane completes its own report with
-        # scripts/agent_cost.py --into <report path> -- a measured `cost`
-        # block, never a typed one. 18942 became 19676, past the 19100
-        # ceiling by 576 B; raised to 21500, ~10% headroom.
-        19676,
-        21500,
-        "the note, the JSON report and its validator, the pull request payload",
-    ),
+    # agents/developer/report.md removed for #1583: its content moved to the
+    # new top-level agents/lane-report.md, a real, frontmatter-carrying agent
+    # definition spawned by the lane rather than a phase file it `cat`s --
+    # budgeted in scripts/agent_budgets.py alongside every other spawnable
+    # agent, not here. Declaring it in both places would be two numbers to
+    # keep in sync for one file, the same reasoning this module's own
+    # docstring already states for the spine.
 }
 
 

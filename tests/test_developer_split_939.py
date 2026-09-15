@@ -91,13 +91,16 @@ def test_undeclared_rows_tolerates_a_file_vanishing_mid_scan(tmp_path, monkeypat
 
 def test_check_reports_over_when_a_budget_is_crossed():
     # Positive control: the check must fire, not merely refrain from firing.
+    # Pinned to review.md rather than report.md (#1583 removed the latter
+    # from this split entirely) -- any real, still-declared phase file works
+    # here, since the control only needs a real path on disk.
     orig = developer_phases.DOCUMENTS
-    developer_phases.DOCUMENTS = {"agents/developer/report.md": (1, 2, "control")}
+    developer_phases.DOCUMENTS = {"agents/developer/review.md": (1, 2, "control")}
     try:
         rows = {r["path"]: r for r in developer_phases.check()}
     finally:
         developer_phases.DOCUMENTS = orig
-    assert rows["agents/developer/report.md"]["state"] == "over"
+    assert rows["agents/developer/review.md"]["state"] == "over"
 
 
 def test_check_reports_missing_rather_than_ok():
@@ -213,7 +216,7 @@ def test_documents_reports_an_unreadable_phases_directory(tmp_path):
 import re  # noqa: E402
 
 CLAUDE_MD = ROOT / "CLAUDE.md"
-SECTION_HEADING = "## The developer brief is a spine plus three phase files"
+SECTION_HEADING = "## The developer brief is a spine plus two phase files"
 ROW = re.compile(
     r"^\| `(agents/developer/[\w./-]+\.md)` \| ([\d,]+) B \| ([\d,]+) B \|\s*$",
     re.MULTILINE,
