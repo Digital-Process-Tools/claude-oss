@@ -229,10 +229,10 @@ by the time step 7 would run. It stays here, unmoved.
 
    **On `paused` (#818), this session does the waiting the sub-manager could not.** It holds the two
    things a `paused` handback names as missing — the channel connection and `ScheduleWakeup` — so arm
-   a short poll-timer wakeup for the `WAIT-OBSERVABLE:` field. The timer is the arm, not a channel
-   event: the per-PR pollers exclude `checks_succeeded` and `checks_pending` by design (#1499, #1508),
-   so a wait for green is never delivered by one, and a `checks_failed` that does arrive is a reason
-   to resume early, not the thing being waited for. Either way, do not
+   a short poll-timer wakeup for the `WAIT-OBSERVABLE:` field as a backstop. The per-PR pollers exclude
+   `checks_pending` by design (#1499, #1508) but no longer exclude `checks_succeeded` or
+   `checks_failed` — a PR going green now arrives on the channel the same as one going red, either of
+   which is a reason to resume early. Either way, do not
    spawn a fresh sub-manager: **resume the same one** with `SendMessage`, addressed to the sub-manager
    that reported `paused` — measured twice on #818, both replies context-intact — so the tick's own
    context, worktree state and everything dispatched this tick survive the wait rather than being
