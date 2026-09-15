@@ -500,7 +500,11 @@ def test_apply_labels_decodes_nonutf8_bytes_without_raising():
 
 
 def _freeze_script(
-    members_numbers, already_numbers, apply_ok=True, label_missing=False
+    members_numbers,
+    already_numbers,
+    apply_ok=True,
+    label_missing=False,
+    create_ok=True,
 ):
     label = "cohort-16"
     script = _annotated_tag_script()
@@ -509,6 +513,22 @@ def _freeze_script(
         if label_missing
         else _Done(0, json.dumps({"name": label}))
     )
+    if label_missing:
+        description = cohort_freeze.desired_label_description(TAG, CUTOFF)
+        script[
+            (
+                "gh",
+                "label",
+                "create",
+                label,
+                "--repo",
+                REPO,
+                "--description",
+                description,
+                "--color",
+                cohort_freeze.LABEL_COLOR,
+            )
+        ] = _Done(0, "") if create_ok else _Done(1, "", "HTTP 422: already_exists")
     lines = "\n".join(
         json.dumps({"number": n, "created_at": CUTOFF, "closed_at": None})
         for n in members_numbers
@@ -667,31 +687,60 @@ def test_freeze_dry_run_reports_label_missing_not_frozen():
     """MUST-FIRE: `--dry-run` (the default) must not report `frozen` /
     `would add ... to N issue(s)` when the cohort label does not exist on the
     tracker yet -- the label existence precondition must be checked before
-    the write is even rehearsed, not discovered only when `--execute` runs."""
+    the write is even rehearsed, not discovered only when `--execute` runs.
+    A dry run must never create the label either (#1515): the whole point of
+    a dry run is to certify without touching anything."""
     script = _freeze_script(
         members_numbers=[1, 2, 3], already_numbers=[], label_missing=True
     )
     run = _scripted_run(script)
     result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=False)
     assert result["state"] == cohort_freeze.STATE_LABEL_MISSING
+    assert result["created_label"] is False
     assert "cohort-16" in result["reason"]
     assert "gh label create" in result["reason"]
+    assert not any(call[:3] == ["gh", "label", "create"] for call in run.calls)
 
 
-def test_freeze_execute_against_missing_label_is_one_finding_not_23():
-    """MUST-FIRE: `--execute` against a missing label must report a single,
-    correctly-named finding, never one identical failure per issue -- and
-    must never be `could-not-read`, which points a maintainer at permissions
-    or the network rather than at the actual cause."""
+def test_freeze_execute_creates_missing_label_then_freezes():
+    """MUST-FIRE for #1515: `--execute` against a missing label creates it
+    (composed name, fixed colour, the shared description text) and then
+    proceeds to label every member in the same call -- no hand step, and no
+    wall of per-issue `not found` failures. `created_label` says the create
+    actually happened, distinguishing this from the ordinary case where the
+    label already existed."""
     script = _freeze_script(
         members_numbers=list(range(1, 24)), already_numbers=[], label_missing=True
     )
     run = _scripted_run(script)
     result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=True)
+    assert result["state"] == cohort_freeze.STATE_FROZEN
+    assert result["created_label"] is True
+    assert sorted(result["added"]) == list(range(1, 24))
+    create_calls = [call for call in run.calls if call[:3] == ["gh", "label", "create"]]
+    assert len(create_calls) == 1
+
+
+def test_freeze_execute_missing_label_create_fails_stays_label_missing():
+    """MUST-FIRE: when the create attempt itself fails, `--execute` must
+    report a single, correctly-named finding carrying the `gh` error --
+    never `frozen` (nothing was written), never `could-not-read` (the cause
+    is known), and never a wall of per-issue failures, since `freeze` must
+    return before `apply_labels` ever runs."""
+    script = _freeze_script(
+        members_numbers=list(range(1, 24)),
+        already_numbers=[],
+        label_missing=True,
+        create_ok=False,
+    )
+    run = _scripted_run(script)
+    result = cohort_freeze.freeze(REPO, TAG, 16, "gh", run, execute=True)
     assert result["state"] == cohort_freeze.STATE_LABEL_MISSING
+    assert result["created_label"] is False
     assert result["state"] != "could-not-read"
-    assert result["reason"].count("not found") <= 1
+    assert "already_exists" in result["reason"]
     assert "gh label create" in result["reason"]
+    assert not any(call[:3] == ["gh", "issue", "edit"] for call in run.calls)
 
 
 def test_freeze_still_frozen_when_label_exists():

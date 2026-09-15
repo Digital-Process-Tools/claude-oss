@@ -46,8 +46,13 @@ read failure (#956):
                     `gh issue edit --add-label` never creates one, so this
                     is checked before any write is even rehearsed by a dry
                     run, not discovered as N identical per-issue failures
-                    once `--execute` runs. This script never creates the
-                    label itself: that write is the maintainer's own act.
+                    once `--execute` runs. On a dry run that is the whole
+                    story. On `--execute` this script creates the label
+                    itself (#1515) -- a composed name and fixed colour,
+                    never a caller's string -- so `label-missing` on
+                    execute now means that create attempt itself failed;
+                    `created_label` on the result says whether this call
+                    brought the label into existence.
   could-not-read    the tag could not be resolved, the issue list could not
                     be read, current label membership could not be read, or
                     a write failed partway for a reason other than the
@@ -103,6 +108,7 @@ EXIT_COULD_NOT_READ = 3
 EXIT_LABEL_MISSING = 4
 
 LABEL_PREFIX = "cohort-"
+LABEL_COLOR = "ededed"
 
 ISSUES_LISTING_JQ = (
     ".[] | select(.pull_request == null) | {number, created_at, closed_at}"
@@ -436,11 +442,65 @@ def label_exists(repo, label, gh, run, timeout=25):
     }
 
 
+def desired_label_description(tag, cutoff):
+    """The description a cohort label carries -- the tag and the cutoff
+    date, never a count (`cohort_freeze_record.py`'s own reason: a count
+    baked into text is exactly the copy CLAUDE.md's governing rule warns
+    against). Shared by `create_label` here and by
+    `cohort_freeze_record.ensure_label_description`, which refreshes the
+    same text after the fact -- one definition rather than two copies to
+    keep in sync (#1515)."""
+    date = cutoff.split("T")[0] if cutoff else "an unknown date"
+    return "Open at the {} tag, {}. Frozen: nothing joins a cohort.".format(tag, date)
+
+
+def create_label(repo, label, description, gh, run, timeout=25):
+    """Create `label` on `repo`'s tracker (#1515).
+
+    Only ever called from `freeze`'s own `--execute` path, for a `label`
+    this script itself composed (`LABEL_PREFIX` plus an `argparse
+    type=int` cohort number) -- never for a caller-supplied string, so the
+    only way a junk label reaches the tracker is a wrong `--cohort`
+    argument, not unvalidated text passed straight to `gh label create`.
+    `--color` is always `LABEL_COLOR`. Returns
+    ``{"state": "ok"|"could-not-create", "reason": str}``.
+    """
+    command = [
+        gh,
+        "label",
+        "create",
+        label,
+        "--repo",
+        repo,
+        "--description",
+        description,
+        "--color",
+        LABEL_COLOR,
+    ]
+    try:
+        done = run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "state": "could-not-create",
+            "reason": "{} did not run ({})".format(_command_text(command), exc),
+        }
+    if done.returncode == 0:
+        return {"state": "ok", "reason": ""}
+    message = (_decode_output(done.stderr) or _decode_output(done.stdout) or "").strip()
+    return {
+        "state": "could-not-create",
+        "reason": "{} failed: {}".format(_command_text(command), message),
+    }
+
+
 def _label_missing_reason(label, repo):
     """The one sentence #956 asks for in place of 23 identical per-issue
-    failures: name the cause once and give the remedy. Never issued as a
-    silent write of its own -- creating the label is a decision the
-    maintainer makes, not this script (#956)."""
+    failures: name the cause once and give the remedy. `--execute` no
+    longer stops here (#1515) -- `freeze` calls `create_label` first,
+    using this same name and colour -- so this text now reaches a caller
+    only on a dry run, or when that create attempt itself failed."""
     return (
         "{} does not exist on {} yet -- gh issue edit --add-label does not "
         "create a missing label. Create it first: "
@@ -537,6 +597,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
             "members": None,
             "added": None,
             "dry_run": not execute,
+            "created_label": False,
         }
     cutoff = resolved["timestamp"]
 
@@ -552,6 +613,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
             "members": None,
             "added": None,
             "dry_run": not execute,
+            "created_label": False,
         }
 
     members = cohort_members(fetched["issues"], cutoff)
@@ -570,6 +632,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
             "members": members,
             "added": None,
             "dry_run": not execute,
+            "created_label": False,
         }
 
     already = set(existing["numbers"])
@@ -586,6 +649,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
             "members": members,
             "added": [],
             "dry_run": not execute,
+            "created_label": False,
         }
 
     checked = label_exists(repo, label, gh, run)
@@ -602,19 +666,42 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
             "members": members,
             "added": None,
             "dry_run": not execute,
+            "created_label": False,
         }
+    created_label = False
     if not checked["exists"]:
-        return {
-            "state": STATE_LABEL_MISSING,
-            "reason": _label_missing_reason(label, repo),
-            "label": label,
-            "tag": tag,
-            "cutoff": cutoff,
-            "count": len(members),
-            "members": members,
-            "added": None,
-            "dry_run": not execute,
-        }
+        if not execute:
+            return {
+                "state": STATE_LABEL_MISSING,
+                "reason": _label_missing_reason(label, repo),
+                "label": label,
+                "tag": tag,
+                "cutoff": cutoff,
+                "count": len(members),
+                "members": members,
+                "added": None,
+                "dry_run": True,
+                "created_label": False,
+            }
+        created = create_label(
+            repo, label, desired_label_description(tag, cutoff), gh, run
+        )
+        if created["state"] != "ok":
+            return {
+                "state": STATE_LABEL_MISSING,
+                "reason": "{} -- {}".format(
+                    created["reason"], _label_missing_reason(label, repo)
+                ),
+                "label": label,
+                "tag": tag,
+                "cutoff": cutoff,
+                "count": len(members),
+                "members": members,
+                "added": None,
+                "dry_run": False,
+                "created_label": False,
+            }
+        created_label = True
 
     if not execute:
         return {
@@ -627,6 +714,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
             "members": members,
             "added": to_add,
             "dry_run": True,
+            "created_label": False,
         }
 
     result = apply_labels(repo, label, to_add, gh, run)
@@ -642,6 +730,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
                 "members": members,
                 "added": result["added"],
                 "dry_run": False,
+                "created_label": created_label,
             }
         return {
             "state": STATE_COULD_NOT_READ,
@@ -655,6 +744,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
             "members": members,
             "added": result["added"],
             "dry_run": False,
+            "created_label": created_label,
         }
 
     return {
@@ -667,6 +757,7 @@ def freeze(repo, tag, cohort, gh, run, execute=False):
         "members": members,
         "added": result["added"],
         "dry_run": False,
+        "created_label": created_label,
     }
 
 
@@ -723,7 +814,16 @@ def _emit(payload, as_json):
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
     print("cohort_freeze: {}".format(payload.get("state")))
-    for key in ("label", "tag", "cutoff", "count", "added", "dry_run", "reason"):
+    for key in (
+        "label",
+        "tag",
+        "cutoff",
+        "count",
+        "added",
+        "dry_run",
+        "created_label",
+        "reason",
+    ):
         if key in payload:
             print("  {}: {}".format(key, payload[key]))
 

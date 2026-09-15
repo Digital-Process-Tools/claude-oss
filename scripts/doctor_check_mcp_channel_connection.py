@@ -35,7 +35,6 @@ import subprocess
 
 import re
 
-import doctor
 from doctor_check_mcp_channel_registration import (
     _CHANNEL_CONSUMER_SUFFIX_RE,
     _MCP_LIST_LINE_RE as _LIST_LINE_RE,
@@ -80,6 +79,8 @@ def channel_consumer_connections(text):
     closed``), and the whole unrecognised remainder for an ``unknown`` one, so
     a reader is never told only that parsing failed.
     """
+    import doctor
+
     rows = []
     for raw in text.splitlines():
         line = raw.rstrip("\r")
@@ -126,6 +127,8 @@ def mcp_channel_connection_state(run=None, which=None, env=None):
     census verdict, not connection statuses, so reading it would answer a
     different question with a stale-looking confidence.
     """
+    import doctor
+
     env = os.environ if env is None else env
     which = shutil.which if which is None else which
     run = subprocess.run if run is None else run
@@ -219,6 +222,8 @@ def check_mcp_channel_connection(
     `check_channel_delivery` injects it and read for one arm only: a `failed`
     listing beside a `forwarding` consumer. See that arm for why.
     """
+    import doctor
+
     state, detail = mcp_channel_connection_state(run=run, which=which, env=env)
     if state == "could-not-ask":
         # NOTICE, not WARN, when the reason is that `claude` is not on PATH at
@@ -335,28 +340,25 @@ def check_mcp_channel_connection(
                 "alike.".format(detail, aged),
             )
             return
-        # #1440: a `failed` listing binds nothing to this session's own
-        # subprocess consumer -- only `bin/oss-workspace`'s launcher census
-        # (relayed via `OSS_WORKSPACE_MCP_LIST_CHECKED`, the same sentinel
-        # `mcp_channel_connection_state` above trusts for the SAME reason)
-        # ever arms one. A session opened any other way cannot have bound a
-        # consumer at all, so a failed transport there is the expected
-        # reading, not a fault -- and it settles the next time a session IS
-        # opened through the launcher. A session that WAS opened through the
-        # launcher and still reports failed is a real gap: something that
-        # should have bound the socket did not.
-        env_ = os.environ if env is None else env
-        if env_.get("OSS_WORKSPACE_MCP_LIST_CHECKED") != "1":
-            doctor.report(
-                "WAIT",
-                "channel MCP connection: every MCP server resolving to the "
-                "claude-channel consumer reports a failed transport ({}), and this "
-                "session was not opened through bin/oss-workspace -- nothing in a "
-                "session opened another way arms or binds the consumer, so this is "
-                "the expected reading rather than a fault. Settles the next time a "
-                "session is opened through the launcher.".format(detail),
-            )
-            return
+        # #1440 introduced a WAIT here, gated on `OSS_WORKSPACE_MCP_LIST_
+        # CHECKED`, claiming that a session not opened through bin/oss-
+        # workspace "cannot have bound a consumer at all". #1523 found that
+        # claim false on its own terms: `arm_target_liveness`'s own docstring
+        # a few lines above states that an installed plugin DECLARES a
+        # claude-channel consumer in its own `.mcp.json`, which the harness
+        # starts at session-open regardless of how the session was opened,
+        # and a launcher-written `oss-channel` registration persists in
+        # settings and is started the same way on every later session too --
+        # confirmed directly on this repository: a hand-opened session still
+        # showed two armed consumers, both failed, and the WAIT text still
+        # read that as "nothing... arms or binds the consumer". #1432 also
+        # dropped the sentinel's only writer, so this branch has been
+        # unconditionally true in every real session since -- there was no
+        # clock left to settle it by, only an always-true gate. Per this
+        # repository's own doctor-check-contract ("WARN only when no manual
+        # op, no scaffold run and no clock clears it -- WAIT needs a real
+        # clock"), a state with no working clock is not a WAIT; report it as
+        # the same WARN below unconditionally.
         doctor.report(
             "WARN",
             "channel MCP connection: every MCP server resolving to the "
@@ -398,6 +400,9 @@ def check_channel_delivery(project_dir, resolve=None):
     not a subscriber -- three separate facts that this repository's diagnostic
     reported as one `OK` for the whole life of the channel.
 
+    Imports `doctor` lazily, inside the function, for the same reason every
+    sibling check in this module does -- see the module docstring.
+
     Reuses the cached `channel:health` reading `check_channel_health_agreement`
     already resolves, at its own staleness bound and with no fresh probe, so
     this costs nothing: that reading was being taken and then used only to
@@ -410,6 +415,8 @@ def check_channel_delivery(project_dir, resolve=None):
     modules are imported by `doctor.py` and neither may depend on the other's
     import order.
     """
+    import doctor
+
     if resolve is None:
         from doctor_check_channel_health_agreement import (
             resolve_channel_health_reading,
@@ -523,6 +530,8 @@ def arm_target_liveness(name, run=None, which=None, env=None):
     different, per-name ask that leaves the relay untouched, and it prints the
     same `Status:` line.
     """
+    import doctor
+
     env = os.environ if env is None else env
     which = shutil.which if which is None else which
     run = subprocess.run if run is None else run

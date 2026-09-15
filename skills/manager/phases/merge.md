@@ -59,9 +59,18 @@ bugfix / docs / test / chore.** Then verify the merge landed — read `state` / 
 `skills/manager/phases/ci-green.md`'s subject, not this file's**: the `pr_green.py` call and its
 #1086 substring trap, never a hand-written wait loop.
 
-**Never auto-merge:** feature scope, public API or behaviour renames, external-contributor PRs,
-anything irreversible. **And do not invent gates** — parking a real bug as "the owner's call" when it
-is not on this list is just a way of not fixing things.
+**Never auto-merge:** feature scope, public API or behaviour renames, external-contributor PRs, a
+curate-authored pull request (head branch matching `^curate/`), anything irreversible. **And do not
+invent gates** — parking a real bug as "the owner's call" when it is not on this list is just a way
+of not fixing things.
+
+**A curate-authored pull request is never merged by a sub-manager (#1467).** The same account
+authors it as every other loop PR, so `author_association` cannot tell it apart the way `inbound.md`
+tells an external contributor's PR apart. `commands/run/curate.md` cuts its branch as
+`curate/<timestamp>` for exactly that reason: a head branch matching `^curate/` gets the same
+treatment as an external-contributor PR above -- held for the maintainer, never merged on green --
+because a promoted jit-context rule fires in every later session and the pull request has to
+actually be read, not merely exist.
 
 **An external-contributor PR is never dispatched-past silently (#1394).** `skills/manager/phases/
 inbound.md` classifies it -- `green-and-mergeable`, `needs-answer`, or `could-not-tell` -- from the

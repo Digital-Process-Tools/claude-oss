@@ -48,10 +48,13 @@ at all). Idempotent: re-running a completed freeze reads every route again but c
 disk when what it reads back already matches, and reports `frozen` again rather than silently
 doing nothing. Without `--execute` it only previews `cohort_freeze.py`'s own dry run.
 
-**`could-not-freeze` from a missing label (#956) means the cohort label itself does not exist on the
-tracker yet** -- neither script creates one; that write is yours: `gh label create <cohort-label>
---repo <repo> --description "..." --color ededed`. Re-run the identical `cohort_freeze_record.py`
-call afterward; nothing was written on that run, so there is nothing to reconcile.
+**A missing cohort label no longer stops the freeze (#1515).** `cohort_freeze.freeze` creates it
+itself under `--execute` -- a composed name (`cohort-<int>`), the fixed colour, and the same
+description text `ensure_label_description` writes -- and only reports `could-not-freeze` here when
+that create attempt itself failed (the `gh` error is in the reason, and the hand remedy `gh label
+create <cohort-label> --repo <repo> --description "..." --color ededed` is still named there as the
+fallback). Re-run the identical `cohort_freeze_record.py` call afterward either way; nothing was
+written on a `could-not-freeze` run, so there is nothing to reconcile.
 
 **The freeze is a label, and a label write can silently delete it.** `gh api -X PATCH issues/N -f
 'labels[]=…'` **replaces the whole label set** — so a later write setting priority or lane removes
@@ -287,9 +290,11 @@ moment it actually consumes them, and the cohort burn-down a triage sweep feeds 
 release has already stopped editing.
 
 **Keep the freeze and the sweep apart.** The cohort freeze -- defined above, under *The backlog
-needs a terminating condition* -- is the maintainer's own act, by hand, in the same minute as the
-tag; the triager must never write a `cohort-*` label. The triage sweep is a separate step that
-follows the freeze, run over the tracker's priority and lane labels, never over cohorts.
+needs a terminating condition* -- is the release's own act, run by `cohort_freeze_record.py` in
+the same minute as the tag (#1410), never by hand and, since #1515, never needing a hand step even
+when the label itself is still missing; the triager must never write a `cohort-*` label. The
+triage sweep is a separate step that follows the freeze, run over the tracker's priority and lane
+labels, never over cohorts.
 
 **The last-triaged half is recorded, read, and now consumed (#855, #1386); the label-coverage half
 is still unbuilt.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file>

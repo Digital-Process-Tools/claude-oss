@@ -30,9 +30,12 @@ freeze is *done*, not a maintainer reading which finer-grained reason applied:
                      updated. `count`, `added` and `description` together say exactly
                      what completed, so a re-run is never a guess about what is left.
   could-not-freeze  nothing was written at all -- the tag could not be resolved, the
-                     issue list could not be read, or the label does not exist yet. Same
-                     meaning as `cohort_freeze.py`'s own `could-not-read` /
-                     `label-missing` when neither one left a partial write behind.
+                     issue list could not be read, or the label could not be created
+                     (`cohort_freeze.freeze` now creates a missing label itself under
+                     `--execute` -- #1515 -- so `label-missing` reaching here means
+                     that create attempt failed, not that nobody tried). Same meaning
+                     as `cohort_freeze.py`'s own `could-not-read` / `label-missing`
+                     when neither one left a partial write behind.
 
 Without `--execute` this is a fourth, separate thing -- a `preview` of what
 `cohort_freeze.freeze`'s own dry run would do -- reported as `mode: "preview"` rather
@@ -141,20 +144,17 @@ def _label_description(repo, label, gh, run, timeout=25):
     return data.get("description"), ""
 
 
-def _desired_description(tag, cutoff):
-    date = cutoff.split("T")[0] if cutoff else "an unknown date"
-    return "Open at the {} tag, {}. Frozen: nothing joins a cohort.".format(tag, date)
-
-
 def ensure_label_description(repo, label, tag, cutoff, gh, run, timeout=25):
     """Refresh `label`'s description to name `tag` and `cutoff`'s date.
 
-    Never creates a label (`cohort_freeze.py` already refuses that -- creating one
-    is the maintainer's own act) and never touches `--color`. Returns
-    ``(state, reason)`` where `state` is one of `DESCRIPTION_UPDATED` /
-    `DESCRIPTION_ALREADY_SET` / `DESCRIPTION_COULD_NOT_UPDATE`.
+    Never creates a label itself -- `cohort_freeze.freeze` already does that,
+    inside its own `--execute` path (#1515), using the same
+    `cohort_freeze.desired_label_description` text this refresh reuses -- and
+    never touches `--color`. Returns ``(state, reason)`` where `state` is one
+    of `DESCRIPTION_UPDATED` / `DESCRIPTION_ALREADY_SET` /
+    `DESCRIPTION_COULD_NOT_UPDATE`.
     """
-    desired = _desired_description(tag, cutoff)
+    desired = cohort_freeze.desired_label_description(tag, cutoff)
     current, read_reason = _label_description(repo, label, gh, run, timeout=timeout)
     if current is None and read_reason:
         return DESCRIPTION_COULD_NOT_UPDATE, read_reason

@@ -759,6 +759,12 @@ def wait_for_first_actionable(
     interval widens in steps as the shared budget runs low, rather than
     polling at a fixed cadence regardless of how close to the wall it is.
     ``None`` (the default) preserves the original fixed cadence exactly.
+
+    A ``timeout`` never lets the backoff push a sleep past the deadline by
+    more than one base ``interval`` (#1492's own bound) -- but it no longer
+    suppresses the backoff outright the way #1492's first cut did (#1554):
+    a caller with plenty of time left before the deadline still gets the
+    widened interval, and only the sleep closest to the deadline is clamped.
     """
     start = clock()
     while True:
@@ -771,24 +777,35 @@ def wait_for_first_actionable(
         )
         if entry is not None:
             return entry
-        if timeout is not None and (clock() - start) >= timeout:
-            return None
+        elapsed = None
+        if timeout is not None:
+            elapsed = clock() - start
+            if elapsed >= timeout:
+                return None
         wait_interval = interval
         if rate_limit_reader is not None:
             remaining, limit = rate_limit_reader()
             wait_interval = _rate_limit_backoff(interval, remaining, limit)
             if timeout is not None:
-                # Self-review (#1492): a backed-off interval must never widen
-                # how far a `--timeout` caller can be kept waiting past the
-                # deadline it asked for. Pre-backoff, the worst-case overshoot
-                # was one `interval` (the check above only runs again after
-                # `sleep` returns); left uncapped here, a low-budget backoff
-                # could push that to 4x `interval`, exactly when the caller
-                # most needs a prompt, bounded PENDING handback. Capping to
-                # the base `interval` whenever a timeout is set keeps the
-                # original overshoot bound and simply forgoes the extra
-                # back-off for that one poll.
-                wait_interval = min(wait_interval, interval)
+                # Self-review (#1492), corrected by #1554: a backed-off
+                # interval must never widen how far a `--timeout` caller can
+                # be kept waiting past the deadline it asked for -- but the
+                # fix landed as `min(wait_interval, interval)`, which is
+                # `interval` whenever backoff has widened anything at all
+                # (it can only ever grow), so on the loop's own sanctioned
+                # `--wait --timeout N` call the backoff could never widen a
+                # single sleep. The actual bound #1492 wanted was on the
+                # OVERSHOOT past the deadline -- at most one base `interval`,
+                # matching the pre-backoff worst case -- not on the backoff
+                # itself. Early in a long wait `elapsed` is small and this
+                # ceiling has no effect, so a caller with plenty of time left
+                # still gets the wider poll interval GitHub's own low-budget
+                # state calls for; only once the deadline is close does it
+                # clamp the sleep back down to the original bound. Reuses the
+                # `elapsed` already read above for the timeout check itself,
+                # rather than calling `clock()` a second time this iteration.
+                overshoot_ceiling = max(timeout - elapsed, 0) + interval
+                wait_interval = min(wait_interval, overshoot_ceiling)
         sleep(wait_interval)
 
 

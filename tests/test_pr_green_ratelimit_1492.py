@@ -172,12 +172,13 @@ def test_wait_backs_off_when_the_budget_is_low():
     assert sleeps == [180, 180]
 
 
-def test_wait_caps_backoff_to_the_base_interval_when_timeout_is_set():
-    """Self-review finding: a backed-off interval must never widen how far a
-    `--timeout` caller can be kept waiting past the deadline it asked for --
-    pre-backoff the worst-case overshoot was one base `interval`, and an
-    uncapped 4x backoff would have made that worse exactly in the low-budget
-    case this fix targets."""
+def test_wait_bounds_backoff_overshoot_near_the_deadline_when_timeout_is_set():
+    """#1554, correcting #1492's own first cut: a backed-off interval must
+    never widen how far a `--timeout` caller can be kept waiting past the
+    deadline it asked for -- but it must not be discarded outright either.
+    10s left of a 20s timeout, base interval 45: a 4x backoff (180) is
+    clamped to `(timeout - elapsed) + interval` = 10 + 45 = 55, never to the
+    bare `interval` #1492's original fix collapsed it to."""
     pending_rows = [_row("tests", "tests", status="IN_PROGRESS", conclusion=None)]
     run = _run_sequence(
         [
@@ -199,7 +200,40 @@ def test_wait_caps_backoff_to_the_base_interval_when_timeout_is_set():
         rate_limit_reader=lambda: (100, 5000),  # 2% remaining -- would be 4x uncapped
     )
     assert entry is None
-    assert sleeps == [45]
+    assert sleeps == [55]
+
+
+def test_wait_backoff_still_widens_early_in_a_long_timeout_window():
+    """MUST-FIRE control for the test above: with plenty of time left before
+    the deadline, the overshoot ceiling must not clamp anything -- a
+    `--timeout` caller early in a long wait still gets the full backoff,
+    the exact behaviour #1492's original fix accidentally suppressed on
+    every `--wait --timeout N` call regardless of how much time was left
+    (#1554)."""
+    pending_rows = [_row("tests", "tests", status="IN_PROGRESS", conclusion=None)]
+    green_rows = [_row("tests", "tests")]
+    run = _run_sequence(
+        [
+            (0, _rollup_json(1, "fix/1", "a", pending_rows), ""),
+            (0, _rollup_json(1, "fix/1", "a", pending_rows), ""),
+            (0, _rollup_json(1, "fix/1", "a", green_rows), ""),
+        ]
+    )
+    clock = iter([0.0, 1.0, 2.0])
+    sleeps = []
+    entry = pr_green.wait_for_first_actionable(
+        [1],
+        "gh",
+        run,
+        workflows_dir=None,
+        interval=45,
+        timeout=3600,
+        sleep=sleeps.append,
+        clock=lambda: next(clock),
+        rate_limit_reader=lambda: (100, 5000),  # 2% remaining
+    )
+    assert entry["state"] == pr_green.STATE_GREEN
+    assert sleeps == [180, 180]
 
 
 def test_cli_wait_warns_once_to_stderr_when_the_rate_limit_read_fails(

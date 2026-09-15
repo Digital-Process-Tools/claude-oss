@@ -8,8 +8,6 @@ be a deliberate human-run tool, and this check lists, it does not judge
 (#1416).
 """
 
-import doctor
-
 
 def check_script_call_survey(plugin_root=None):
     """#1416: for every `scripts/<name>.py`, does anything under `commands/`,
@@ -36,6 +34,7 @@ def check_script_call_survey(plugin_root=None):
     registration._drop_dead_plugin_consumers` already documents for the
     identical shape.
     """
+    import doctor
     from script_call_survey import survey
 
     rows, roots, notes = survey(plugin_root)

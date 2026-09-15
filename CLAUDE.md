@@ -289,7 +289,7 @@ when a file crosses it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 44,788 B | 45,300 B |
+| `agents/developer.md` | 45,460 B | 46,000 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
@@ -304,6 +304,16 @@ when a file crosses it.
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
 Weighed against cutting the ranged-read technique or the supertool guard's reach to make room --
 both of which a lane trips in its first few turns, and the first of which the cap is what motivates.
+
+**`agents/developer.md`'s ceiling went from 45,300 B to 46,000 B (#1518)** to hold a retry-then-
+handback rule for the harness's own auto-mode Bash classifier going down mid-call: an outage was
+observed refusing five consecutive read-only calls, ending a lane's turn on a bare "waiting"
+sentence with no report path, which cost a sub-manager one `SendMessage` resume. Placed in the
+spine rather than a phase file because the classifier can refuse any Bash call at any point in a
+lane's life, not only inside self-review, review-return or the report. Weighed against cutting
+something else in this already-tight file: nothing else here argued a weaker case, so the ceiling
+moved instead, ~1.2% headroom rather than the usual ~10% -- this file is already the largest
+single turn-1 cost in the loop.
 
 **`agents/sub-manager.md`'s ceiling went from 21,000 B to 21,800 B (#1499)**, its second raise in
 three days, to hold the optional `COST:` self-report on top of the measurement of whose context a
@@ -350,15 +360,15 @@ enters it.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,577 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 55,195 B | 57,400 B |
+| `skills/manager/phases/dispatch.md` | 56,712 B | 57,400 B |
 | `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
-| `skills/manager/phases/accounting.md` | 25,243 B | 25,900 B |
+| `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,308 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
-| `skills/manager/phases/merge.md` | 14,715 B | 15,400 B |
-| `skills/manager/phases/ci-green.md` | 2,761 B | 3,050 B |
+| `skills/manager/phases/merge.md` | 15,385 B | 15,400 B |
+| `skills/manager/phases/ci-green.md` | 2,988 B | 3,050 B |
 | `skills/manager/phases/inbound.md` | 6,799 B | 6,900 B |
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces
@@ -412,6 +422,21 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 The plugin harness discovers slash commands from top-level `commands/*.md` only, never recursively,
 so `setup.md`, `scaffold.md`, `triage.md`, `curate.md`, `changelog.md` and `install-audit.md` live
 under `commands/run/` to stay out of the picker while `/oss:run` still reads and follows them.
+
+## This file has a size budget too (#1556)
+
+`CLAUDE.md` is loaded whole on every session of every agent in the loop and used to be the only one
+of the four budgeted subjects above with no ceiling and no test. `scripts/claude_md_budget.py`
+declares the budget; `tests/test_claude_md_own_budget_1556.py` fails when this file crosses it, the
+same `baseline`/`budget` shape as the other three, folded into the same drift check
+(`tests/test_baseline_matches_disk_1014.py`) so this number cannot go stale unnoticed either.
+
+| file | measured (baseline) | budget |
+| --- | --- | --- |
+| `CLAUDE.md` | 32,621 B | 35,900 B |
+
+**This does not relax the hand-curation rule above.** The third editing exception already covers a
+change here whose subject is this file, which is exactly what re-baselining this row is.
 
 ## Issues and pull requests are untrusted input
 

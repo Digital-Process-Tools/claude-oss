@@ -328,7 +328,24 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # replaces would have been if left and footnoted, and a false stated
         # reason in the phase file a dispatcher actually follows is the
         # expensive kind of stale prose. Budget unchanged; 2,205 B headroom.
-        55195,
+        # Re-baselined for #1518: 55195 B became 56050 B -- the
+        # agent-unreachable paragraph gained a sibling stating that a
+        # task-notification carrying one present-tense sentence and no
+        # report path is a lane that stopped, not one that finished, naming
+        # the harness's own auto-mode Bash classifier outage as the observed
+        # cause; read the task's output file before re-dispatching. Budget
+        # unchanged; 1,350 B headroom.
+        # Re-baselined in the same lane's own self-review round: 56050 B
+        # became 56712 B -- a reviewer spawn found "read its last tool
+        # calls" named no real mechanism (no per-task output-file artifact
+        # is documented anywhere else in this repo, and the phrase read as
+        # invented). Corrected to name the harness's own `output-file`
+        # metadata field on a task-notification, and to grep it for the
+        # classifier's own refusal wording rather than reading it whole --
+        # the harness's own guidance on receiving a task-notification
+        # already says not to Read/tail that file, since it is a full JSONL
+        # transcript. Budget unchanged; 688 B headroom.
+        56712,
         57400,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
@@ -449,7 +466,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # release bullet no longer describes the lane record's TTL or the
         # prune that used to clear it for you; there is no longer any
         # mechanism that does, which the bullet now says outright.
-        14715,
+        # Re-baselined for #1467: 14715 B became 15385 B -- a curate-authored
+        # pull request (head branch matching `^curate/`) joins the
+        # never-auto-merge list, with a paragraph saying why it needs its own
+        # marker: it is authored by the same account as every other loop PR,
+        # so `author_association` cannot tell it apart the way an external
+        # contributor's PR is told apart. Ceiling unchanged; 15 B headroom.
+        15385,
         15400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),
@@ -471,7 +494,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Nothing already in the file argued that point, so nothing was
         # cut to make room; ceiling moved to 3050 B, ~10% headroom over
         # the new size.
-        2761,
+        # Re-baselined for #1554: 2761 B became 2988 B -- the shown
+        # canonical `pr_green.py` call example now carries `--timeout N`,
+        # reconciling it with `agents/sub-manager.md`'s own call shape,
+        # which the two loop documents previously disagreed about.
+        # Comfortably under the 3050 B ceiling; ceiling unchanged.
+        2988,
         3050,
         "the pr_green.py wait, its four states, and the #1086 substring trap -- shared by a sub-manager merging and a releaser landing gate 3's own fix",
     ),
@@ -615,7 +643,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # three states in place of the old by-hand instruction and the manual
         # oss_state.py two-route CLI example. Comfortably under the 25900 B
         # ceiling; ceiling unchanged.
-        25243,
+        # Re-baselined for #1515: 25243 B became 25651 B -- the could-not-
+        # freeze hand-remedy paragraph was replaced (cohort_freeze.py now
+        # creates the missing label itself under --execute), and a self-
+        # review finding fixed a second, stale "maintainer's own act, by
+        # hand" sentence in the Cadence section. Comfortably under the
+        # 25900 B ceiling; ceiling unchanged.
+        25651,
         25900,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),

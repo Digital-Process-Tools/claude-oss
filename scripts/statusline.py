@@ -1096,10 +1096,13 @@ def _inbound_field(inbound):
 
     `inbound` is `board.get("inbound")` -- the cached `inbound_reading()`
     document, or `None` for a cache written before this field existed. Each
-    count renders `?`, never `0`, exactly the rule `_trap_field` and
-    `_board_field`'s own `eis` group already follow: a zero from a read that
-    never happened and a zero from one that happened and found nothing must
-    not be the same pixels, which is the whole reason #1406 exists.
+    count renders `?`, never `0`, exactly the rule `_trap_field` already
+    follows: a zero from a read that never happened and a zero from one that
+    happened and found nothing must not be the same pixels, which is the
+    whole reason #1406 exists. `_board_field` used to render this exact
+    number a second time, as its own `eis` group, following the identical
+    rule -- #1463 removed that render, so this field is now the only one
+    that does.
 
     `unanswered_comments` is deliberately not a third number here.
     `inbound_reading` always reports it as `None` (see that function's own
@@ -1134,8 +1137,7 @@ def _last_field(stamp):
 
 
 def _board_field(board, symbols, color=False):
-    """`4pr 2ok 1x 1... 0? . 23is / 2eis` -- how many are open, what CI says about each,
-    and how many of the issues arrived from outside repository membership (#595).
+    """`4pr 2ok 1x 1... 0? . 23is` -- how many are open and what CI says about each.
 
     Lowercase because the fields either side of it are, and a status line that shouts one
     field trains the eye to read that one first regardless of what it says.
@@ -1144,14 +1146,16 @@ def _board_field(board, symbols, color=False):
     makes the reader subtract to find what is missing, and `0x` -- nothing red -- and `0...`
     -- nothing on the way -- are two of the more useful things this line can say. The one
     thing that does collapse is a reading that never happened: rollups nobody could fetch
-    render as a single `?`, never as four zeros. `eis` follows the same rule: `0eis` is a
-    real reading -- nobody outside has filed anything -- and it must stay visibly different
-    from `?eis`, a count nobody could take, because zero external issues is both a common
-    true answer and exactly what a failed call looks like.
+    render as a single `?`, never as four zeros.
+
+    Used to also render `/ Neis`, the count of open issues filed from outside repository
+    membership (#595) -- the identical number `_inbound_field`'s `is` group already carries
+    (#1406), taken from the same call. #1463 drops the duplicate render here; `refresh()`
+    still caches the count under `issues_external` (old caches still parse), it is just no
+    longer rendered twice on the one line.
     """
     prs = board.get("prs")
     issues = board.get("issues")
-    issues_external = board.get("issues_external")
     checks = board.get("checks")
     if isinstance(checks, dict):
         groups = " ".join(
@@ -1165,12 +1169,11 @@ def _board_field(board, symbols, color=False):
         )
     else:
         groups = symbols["unk"]
-    return "{}pr {}{}{}is / {}eis".format(
+    return "{}pr {}{}{}is".format(
         "?" if not isinstance(prs, int) else prs,
         groups,
         symbols["dot"],
         "?" if not isinstance(issues, int) else issues,
-        "?" if not isinstance(issues_external, int) else issues_external,
     )
 
 
@@ -1997,7 +2000,12 @@ def _gh_external_pr_count(repo, total):
     return external
 
 
-def inbound_reading(repo, issues_total, prs_total):
+_NOT_GIVEN = (
+    object()
+)  # sentinel: distinguishes "no precomputed count" from a real `None`
+
+
+def inbound_reading(repo, issues_total, prs_total, unruled_issues=_NOT_GIVEN):
     """How much of what arrived from outside is still waiting -- #1405/#1406.
 
     **One module, two consumers**, per the design note on #1405: `refresh()`
@@ -2005,7 +2013,7 @@ def inbound_reading(repo, issues_total, prs_total):
     the statusline must never block a prompt on a fresh forge round trip.
     `scripts/next_action.py`'s own `_fresh_inbound_reading` calls this
     function directly, with totals it took a moment ago, because the loop is
-    about to act on the answer and can afford the two calls. Neither is a
+    about to act on the answer and can afford the reads. Neither is a
     second opinion about the other; both call this.
 
     `unruled_issues` -- open issues authored by someone outside repository
@@ -2016,6 +2024,14 @@ def inbound_reading(repo, issues_total, prs_total):
     that. `unreviewed_prs` -- the identical reading for open pull requests
     (`_gh_external_pr_count` against `prs_total`): the loop's own review has
     not landed a merge or a close on it yet.
+
+    The `unruled_issues` *parameter* (confusingly the same name as the
+    return key -- see below) lets a caller that already took this exact
+    reading hand it in rather than pay for it twice (#1463): `refresh()`
+    passes its own `document["issues_external"]`, `None` included, so a
+    failed read is not retried here either. Left unset (`next_action.py`'s
+    own call shape, three positional arguments, nothing precomputed), this
+    function takes the reading itself, exactly as it always has.
 
     `unanswered_comments` is always `None` here. Counting it for real means
     walking every open issue and pull request's own comment thread -- one
@@ -2031,7 +2047,10 @@ def inbound_reading(repo, issues_total, prs_total):
     quietly reads as `0`, the same discipline `_gh_external_issue_count`
     already applies to its own row-count cross-check.
     """
-    unruled = _gh_external_issue_count(repo, issues_total)
+    if unruled_issues is _NOT_GIVEN:
+        unruled = _gh_external_issue_count(repo, issues_total)
+    else:
+        unruled = unruled_issues
     unreviewed = _gh_external_pr_count(repo, prs_total)
     state = (
         "measured"
@@ -2900,13 +2919,21 @@ def refresh(root, now=None, session_id=None):
         document["issues_no_priority"] = (unlabelled or {}).get("no_priority")
         document["issues_no_lane"] = (unlabelled or {}).get("no_lane")
         document["pr_checks"] = check_rollup_counts(_gh_rollups(repo), document["prs"])
-        # Same board clock as everything above (#1406): two more calls of the
+        # Same board clock as everything above (#1406): one more call of the
         # identical shape `issues_external` already makes, so folding this
         # into the existing REFRESH_AFTER cadence rather than inventing a
         # separate clock is a deliberate choice, not an oversight -- see
         # `inbound_reading`'s own docstring for the "one module, two
-        # consumers" design this composes into.
-        document["inbound"] = inbound_reading(repo, document["issues"], document["prs"])
+        # consumers" design this composes into. `unruled_issues` is handed
+        # the count `issues_external` above already took (#1463) rather than
+        # letting `inbound_reading` take it a second time -- None included,
+        # so a failed read is not silently retried into a second forge call.
+        document["inbound"] = inbound_reading(
+            repo,
+            document["issues"],
+            document["prs"],
+            unruled_issues=document["issues_external"],
+        )
         # Same call group, same `fetched_at`, same `stale_after` (#856): the default
         # branch's own CI state is exactly as time-sensitive as the pull-request board
         # it sits beside, and it shares the moment (a merge or an issue close in this

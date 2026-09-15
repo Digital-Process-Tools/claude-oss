@@ -179,6 +179,53 @@ def _gh(gh, args, run, timeout=30):
     return stdout, None
 
 
+def _read_core_rate_limit(gh, run, timeout=10):
+    """``(remaining, limit)`` from ``gh api rate_limit``'s ``resources.core``
+    -- or ``(None, None)`` when the read itself failed. #1554: the identical
+    read `pr_green.py`'s own `_read_core_rate_limit` already does, ported
+    rather than imported -- these two scripts already duplicate `_gh`,
+    `_decode` and `_flatten` independently (each is a standalone CLI script
+    called via `subprocess`, per this module's own docstring), and this
+    keeps that same convention rather than introducing the first cross-
+    import between them. GitHub documents that reading the limit does not
+    itself count against the budget it reports, so this is safe to call on
+    every poll -- reacting only once a poll has already failed is too late:
+    the budget is shared with watchers, ticks and log reads that poll on no
+    schedule of their own, and the releaser's own gate-3 wait shares it too.
+    """
+    out, _detail = _gh(gh, ["api", "rate_limit"], run, timeout=timeout)
+    if out is None:
+        return None, None
+    try:
+        core = json.loads(out)["resources"]["core"]
+        return int(core["remaining"]), int(core["limit"])
+    except (ValueError, KeyError, TypeError):
+        return None, None
+
+
+# #1554, mirroring `pr_green.py`'s own `_RATE_LIMIT_BACKOFF_STEPS` exactly --
+# a step function, not a continuous scale, and the same two thresholds.
+_RATE_LIMIT_BACKOFF_STEPS = (
+    (0.10, 4.0),
+    (0.25, 2.0),
+)
+
+
+def _rate_limit_backoff(base_interval, remaining, limit):
+    """``base_interval``, widened in steps as ``remaining/limit`` falls. A
+    read that could not be taken (``None, None``) leaves the interval
+    unchanged -- backing off on a guess would be the same absence-as-signal
+    mistake CLAUDE.md warns against, applied to a poll interval instead of
+    a check."""
+    if remaining is None or limit is None or limit <= 0:
+        return base_interval
+    fraction = remaining / limit
+    for threshold, multiplier in _RATE_LIMIT_BACKOFF_STEPS:
+        if fraction < threshold:
+            return base_interval * multiplier
+    return base_interval
+
+
 def read_commit(sha, gh, run, repo=None, expect_event=None):
     """Read one commit's own workflow runs and classify them.
 
@@ -279,6 +326,7 @@ def wait_for_conclusion(
     sleep=time.sleep,
     clock=time.monotonic,
     expect_event=None,
+    rate_limit_reader=None,
 ):
     """Poll `read_commit` while the commit is `pending`; return the instant
     it is not. Returns ``None`` only when ``timeout`` expired with the
@@ -287,15 +335,37 @@ def wait_for_conclusion(
     keeps for pull requests.
 
     ``expect_event`` is passed straight through to `read_commit` (#1324).
+
+    ``rate_limit_reader`` (#1554), when given, is called before every sleep
+    and must return ``(remaining, limit)`` for GitHub's REST core budget (or
+    ``(None, None)`` when it could not be read) -- the identical backoff
+    `pr_green.py`'s own `wait_for_first_actionable` applies, ported here
+    because this module had none at all despite sharing the same budget: a
+    releaser's own gate-3 wait polls at a fixed cadence with no rate-limit
+    awareness, even though its docstring already claimed to keep the same
+    contract. ``None`` (the default) preserves the original fixed cadence
+    exactly. A ``timeout`` bounds the backoff's overshoot past the deadline
+    to at most one base ``interval`` rather than suppressing it outright --
+    #1554 fixed that exact collapse in `pr_green.py` in the same change.
     """
     start = clock()
     while True:
         entry = read_commit(sha, gh, run, repo=repo, expect_event=expect_event)
         if entry["state"] != STATE_PENDING:
             return entry
-        if timeout is not None and (clock() - start) >= timeout:
-            return None
-        sleep(interval)
+        elapsed = None
+        if timeout is not None:
+            elapsed = clock() - start
+            if elapsed >= timeout:
+                return None
+        wait_interval = interval
+        if rate_limit_reader is not None:
+            remaining, limit = rate_limit_reader()
+            wait_interval = _rate_limit_backoff(interval, remaining, limit)
+            if timeout is not None:
+                overshoot_ceiling = max(timeout - elapsed, 0) + interval
+                wait_interval = min(wait_interval, overshoot_ceiling)
+        sleep(wait_interval)
 
 
 def _render(entry):
@@ -348,7 +418,10 @@ def main(argv=None, run=None):
         "--interval",
         type=float,
         default=45.0,
-        help="seconds between polls (default 45)",
+        help=(
+            "base seconds between polls (default 45) -- widens automatically "
+            "when GitHub's shared REST rate limit runs low (#1554)"
+        ),
     )
     parser.add_argument(
         "--timeout",
@@ -395,6 +468,26 @@ def main(argv=None, run=None):
         return EXIT_CODES[STATE_COULD_NOT_READ]
 
     if args.wait:
+        # Self-review (#1492, mirrored here for #1554): a `(None, None)`
+        # read (could not check) and a genuinely healthy budget both leave
+        # the cadence unchanged, so an operator watching a long `--wait` run
+        # has no way to tell "healthy, no backoff needed" from "the rate-
+        # limit read is broken for this whole session" -- one stderr note
+        # the first time a read fails makes that distinguishable without
+        # spamming every poll.
+        rate_limit_warned = [False]
+
+        def _cli_rate_limit_reader():
+            remaining, limit = _read_core_rate_limit(gh, run)
+            if remaining is None and not rate_limit_warned[0]:
+                sys.stderr.write(
+                    "note: could not read GitHub's rate limit (`gh api "
+                    "rate_limit`); polling at the fixed --interval cadence, "
+                    "unable to back off\n"
+                )
+                rate_limit_warned[0] = True
+            return remaining, limit
+
         entry = wait_for_conclusion(
             args.commit,
             gh,
@@ -403,6 +496,7 @@ def main(argv=None, run=None):
             interval=args.interval,
             timeout=args.timeout,
             expect_event=args.require_event,
+            rate_limit_reader=_cli_rate_limit_reader,
         )
         if entry is None:
             sys.stdout.write(
