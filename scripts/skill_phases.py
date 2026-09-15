@@ -505,7 +505,7 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # under that is the one an external-contributor PR is held by -- cutting
         # either to pay for a read they both depend on trades the rule for the
         # measurement instead of having both.
-        16285,
+        16380,
         16400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),

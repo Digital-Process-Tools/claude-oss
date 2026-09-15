@@ -477,7 +477,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # survives the merge (the read-back, the assignee release, the Closes #N
     # verification, the default-branch recheck), and a gate that runs before the
     # write cannot be paid for by weakening the checks that run after it.
-    "agents/tick-merge.md": (7058, 7300),
+    "agents/tick-merge.md": (7233, 7300),
     "agents/tick-accounting.md": (7219, 7700),
 }
 
