@@ -178,6 +178,9 @@ def test_doctor_warns_when_waiting_queue_has_no_curate_route_configured(tmp_path
     line = _doctor_line(tmp_path, config={})
     assert line.startswith("WARN "), line
     assert "1 waiting" in line
+    assert (
+        "904.one.md" in line
+    )  # self-review finding, Explore reviewer: named as in NOTICE
     assert "curate_route_threshold" in line
     assert "#1610" in line
 

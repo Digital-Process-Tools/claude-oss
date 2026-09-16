@@ -90,7 +90,8 @@ never arbitrating one verdict:
   `curate` or `triage`. `inbound` has no dedicated spawn of its own below -- `skills/manager/phases/
   inbound.md` is read inside dispatch's own tick, so an `inbound` `candidates[0]` proceeds straight
   to **dispatch** rather than pointing anywhere new (and needs no `--take` call either).
-- **`nothing-due`** -- every source resolved cleanly and none fired. Proceed to **dispatch**.
+- **`nothing-due`** -- no source due; an unconfigured route is named, not folded into
+  "clean" (#1610). Proceed to **dispatch**.
 
 ## setup
 

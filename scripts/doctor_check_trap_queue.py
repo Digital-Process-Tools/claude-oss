@@ -28,9 +28,18 @@ def check_trap_queue(project_dir, config=None):
     check that could look, had the facts, and would otherwise say nothing more than NOTICE
     -- the exact "route unconfigured, and there is work it would have surfaced" shape
     `next_action.py`'s own `configured: false` fold was found silently discarding. Optional
-    and defaulted to `None` so a caller with no config in hand (or this module's own
-    pre-#1610 tests) still gets the ordinary NOTICE reading rather than a crash on
-    `.get`."""
+    and defaulted to `None` (self-review finding, oss:auditor spawn: an earlier draft of
+    this docstring claimed the opposite) so a caller with no config in hand -- including
+    this repository's own `.oss.json`, which genuinely sets `curate_route_threshold: 15`
+    and so keeps getting NOTICE -- never crashes on `.get`, but a repo with no config
+    reachable here now gets WARN, not the pre-#1610 NOTICE: a route this check cannot
+    confirm is configured is not the same fact as a route confirmed configured and merely
+    under threshold, and folding the two together is exactly the defect #1610 exists to
+    remove. `config=None` also covers "`.oss.json` could not be read at all", which
+    `doctor.py`'s own caller already reports as a separate FAIL line before this check
+    ever runs (self-review finding, oss:auditor spawn) -- a caller that invokes this
+    function directly, bypassing that FAIL line, cannot yet tell "could not read" from
+    "read cleanly and the key is genuinely absent" from this WARN text alone."""
     if trap_curate is None:
         doctor.report(
             "WARN",
@@ -71,10 +80,10 @@ def check_trap_queue(project_dir, config=None):
         return
     doctor.report(
         "WARN",
-        "trap queue: {} waiting for /oss:curate, and no curate_route_threshold is set in "
-        ".oss.json -- the loop's own curate trigger cannot fire on this backlog at all "
+        "trap queue: {} waiting for /oss:curate ({}), and no curate_route_threshold is set "
+        "in .oss.json -- the loop's own curate trigger cannot fire on this backlog at all "
         "(#1610). Clears with one config edit: set curate_route_threshold to the number of "
         "fragments that should accumulate before /oss:curate is due.".format(
-            result["count"]
+            result["count"], ", ".join(f["name"] for f in result["fragments"])
         ),
     )
