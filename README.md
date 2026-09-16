@@ -43,9 +43,9 @@ flowchart TD
     Q -->|a backlog crossed its threshold| CUR["curate trap.d"]
     Q -->|a release just landed| TRI["triage the board"]
     Q -->|otherwise| BOARD["read the board, decide what is worth building<br/>one tick, in a context thrown away after it"]
-    BOARD --> LANE["developer lane<br/>worktree · test first · stops at a commit"]
-    LANE --> PR["pull request"] --> AUD["audit the diff for<br/>what CI cannot fail on"]
-    AUD --> GREEN{"green?"}
+    BOARD --> LANE["developer lane<br/>worktree · test first · self-review the diff · stops at a commit"]
+    LANE --> PR["maintainer opens<br/>the pull request"]
+    PR --> GREEN{"CI green and<br/>review passed?"}
     GREEN -->|no| LANE
     GREEN -->|yes| MERGE["merge"]
     CFG & IN & CUR & TRI & REL & MERGE --> RUN
