@@ -3,7 +3,13 @@ description: Run one triage sweep over this repo's tracker — priority, lane, m
 allowed-tools: Bash, Agent
 ---
 
-Delegate one sweep to the `triager` agent.
+Delegate one sweep with the literal spawn call, not the agent's friendly name (#1551 -- a
+prose name is the form that drifts, resting only on `agents/scheduler-step.md`'s own example
+happening to name the right thing):
+
+```text
+Agent(subagent_type: "oss:triager", run_in_background: false)
+```
 
 Read `.oss.json` first for the repo slug. If it is missing, stop and say so — `/oss:run setup` writes it.
 

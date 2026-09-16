@@ -3162,7 +3162,11 @@ def test_the_developer_states_what_to_do_when_another_lane_holds_the_file():
 # a different voice from the agent's claims.
 
 PR_PAYLOAD_PRODUCER = (
-    DEVELOPER  # the whole brief: the example lives in agents/developer/report.md (#939)
+    # the whole brief: the example moved into agents/developer.md's own Report
+    # section for #1583, when agents/developer/report.md's content moved to
+    # the new top-level agents/lane-report.md (spawned, not `cat`, so it sits
+    # outside DEVELOPER's own phase-file set)
+    DEVELOPER
 )
 PR_PAYLOAD_SCHEMA = REPO_ROOT / "schemas" / "agent-report.schema.json"
 PR_PAYLOAD_CONSUMER_HEADING = "## Opening the pull request"
@@ -5541,15 +5545,24 @@ def test_developer_md_says_which_schema_version_to_write():
     their actual contract for exactly that reason. The instruction has to sit
     inside the same prose unit as the existing authority rule, not merely
     somewhere in the file, or a lane skimming past the rule never reaches it.
+
+    #1583 moved report validation itself out of the developer spine into the
+    new `agents/lane-report.md` -- the entity that now actually writes
+    `schema_version` is that file, not `agents/developer.md`, so this checks
+    the file that carries the decision rather than the one that used to.
     """
-    developer = DEVELOPER.read_text(encoding="utf-8")
+    lane_report = (REPO_ROOT / "agents" / "lane-report.md").read_text(encoding="utf-8")
     authority_rule = next(
-        (unit for unit in _prose_units(developer) if "the cache wins" in unit.lower()),
+        (
+            unit
+            for unit in _prose_units(lane_report)
+            if "the cache wins" in unit.lower()
+        ),
         None,
     )
     assert authority_rule is not None, (
         "the authority-rule sentence this fix is anchored beside ('the cache "
-        "wins') is no longer in developer.md -- update this test's anchor"
+        "wins') is no longer in agents/lane-report.md -- update this test's anchor"
     )
     assert re.search(
         r"\bwrit(?:e|ten)\b(?:\W+\w+){0,20}\Wschema_version"
@@ -5557,9 +5570,9 @@ def test_developer_md_says_which_schema_version_to_write():
         authority_rule,
         re.IGNORECASE,
     ), (
-        "developer.md's authority-rule paragraph does not say which number to "
-        "WRITE into schema_version -- only how to read a disagreement once "
-        "one is already on disk: {!r}".format(authority_rule)
+        "agents/lane-report.md's authority-rule paragraph does not say which "
+        "number to WRITE into schema_version -- only how to read a "
+        "disagreement once one is already on disk: {!r}".format(authority_rule)
     )
 
 

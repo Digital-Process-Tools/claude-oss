@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import report_schema  # noqa: E402
 from test_agent_report_schema import _payload, _report_with_payload  # noqa: E402
-from test_content_invariants import WRITE_ROUTE_DOCUMENTS, _collapse  # noqa: E402
+from test_content_invariants import DEVELOPER, WRITE_ROUTE_DOCUMENTS, _collapse  # noqa: E402
 
 BACKSLASH_N = chr(92) + "n"
 
@@ -347,10 +347,25 @@ def test_the_anchor_fires_on_the_wording_that_permitted_instance_two():
 
 
 def test_both_write_route_documents_say_the_cwd_move_is_per_write_call():
+    """#1583: `agents/developer.md`'s own per-write-call wording moved into the
+    new spawned agent `agents/lane-report.md`, functionally a phase of the same
+    brief, so the developer half of this check reads the two documents
+    together rather than `agents/developer.md` alone.
+
+    The concatenation is scoped to the `DEVELOPER` entry only -- gluing
+    `lane-report.md`'s text onto every entry, `MANAGER_SKILL` included, would
+    let its own copy of the anchor satisfy a branch it has nothing to do with,
+    silently losing this test's ability to catch a future regression in
+    `skills/manager/SKILL.md`'s own wording (caught in this lane's own second
+    self-review round).
+    """
+    lane_report = (REPO_ROOT / "agents" / "lane-report.md").read_text(encoding="utf-8")
     silent = [
         getattr(doc, "name", str(doc))
         for doc in WRITE_ROUTE_DOCUMENTS
-        if not _says_per_call(doc.read_text(encoding="utf-8"))
+        if not _says_per_call(
+            doc.read_text(encoding="utf-8") + (lane_report if doc is DEVELOPER else "")
+        )
     ]
     assert not silent, (
         "a write-route document tells an agent to `cd <worktree_root>` without "

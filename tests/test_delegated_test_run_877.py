@@ -77,6 +77,11 @@ ALREADY_COVERED_ELSEWHERE = {"developer.md"}
 #: reads CI's already-settled state (`gh-pr-merge`, `gh-branch`) rather than
 #: waiting on or reproducing it, and `tick-accounting.md` only writes the
 #: state file and drafts a handback.
+#: `lane-report.md` (#1583) joins it too: it composes the note, the JSON report
+#: and the pull request payload for a developer lane's already-finished work --
+#: it never runs or reasons about `test_command`, and it carries forward
+#: exactly what the lane told it about `tests.red`/`tests.green`/`tests.full`
+#: rather than judging any of them itself.
 NO_TEST_CONCERN = {
     "triager.md",
     "scheduler-step.md",
@@ -85,6 +90,7 @@ NO_TEST_CONCERN = {
     "tick-dispatch.md",
     "tick-merge.md",
     "tick-accounting.md",
+    "lane-report.md",
 }
 
 #: filename -> the marker that must survive in the file, verbatim.

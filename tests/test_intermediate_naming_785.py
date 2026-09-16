@@ -23,9 +23,18 @@ from developer_docs import DeveloperBrief  # noqa: E402
 
 DEVELOPER_MD = DeveloperBrief()  # spine + agents/developer/*.md (#939)
 
+#: #1583: the intermediate-naming duty moved into the new spawned agent
+#: `agents/lane-report.md`, functionally a phase of the same brief.
+LANE_REPORT_MD = REPO_ROOT / "agents" / "lane-report.md"
+
 
 def _flat():
-    return " ".join(DEVELOPER_MD.read_text(encoding="utf-8").split())
+    text = (
+        DEVELOPER_MD.read_text(encoding="utf-8")
+        + "\n"
+        + LANE_REPORT_MD.read_text(encoding="utf-8")
+    )
+    return " ".join(text.split())
 
 
 def test_intermediates_must_be_uniquely_named_too():

@@ -69,7 +69,23 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 37500 B, landing exactly at the existing ceiling. Ceiling unchanged --
     # no headroom left; the next marker rewrite that grows the section will
     # need to raise it.
-    "CLAUDE.md": (37500, 37500),
+    # Re-baselined for #1583, the third editing exception (a lane whose own
+    # diff moves a budgeted file's table row): one new agent-budget row
+    # (agents/lane-report.md), agents/developer.md's own row and ceiling
+    # raised, and the developer phase-split table's report.md row removed,
+    # all with their own weighed sentences. 37500 B became 39066 B, past the
+    # ceiling with no headroom left over from the last raise. Ceiling moves
+    # to 40200 B, ~3% headroom.
+    # Re-baselined in the same lane's own self-review round: 39066 B became
+    # 39630 B -- the lane-report.md ceiling raise and its own weighed
+    # sentence, under the same third editing exception.
+    # Re-baselined again in the same round: 39630 B became 39879 B --
+    # the lane-report.md ceiling row and its history paragraph updated a
+    # second time for the auditor-finding fix.
+    # Re-baselined a third time, the mandated #1047 second-pass round:
+    # 39879 B became 39999 B, the lane-report.md row/history updated once
+    # more. Ceiling unchanged; 201 B headroom.
+    "CLAUDE.md": (39999, 40200),
 }
 
 

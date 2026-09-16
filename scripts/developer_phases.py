@@ -16,9 +16,13 @@ So the brief is split the way `skills/manager/SKILL.md` was (#568):
   do with an adjacent finding -- plus one directive block per late phase;
 - the **phases**, `agents/developer/*.md`: the argument behind each late
   phase's rules, read at the moment the lane reaches it. Self-review is
-  reached after the commit, review returns after the spawns reply, and the
-  report last of all -- so each is held in context for the turns after that
-  point rather than for every turn from the first.
+  reached after the commit, review returns after the spawns reply -- so each
+  is held in context for the turns after that point rather than for every
+  turn from the first. The report, a third late phase, moved out of this
+  split entirely for #1583: it is a spawn, `agents/lane-report.md`, a real
+  agent definition rather than a frontmatter-less file this module governs,
+  budgeted in `scripts/agent_budgets.py` alongside every other spawnable
+  agent instead.
 
 **The split is not a licence to skim.** An unread phase file is a rule that
 did not run, and that renders exactly like a rule with nothing to say. The
@@ -118,20 +122,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         13700,
         "review returns: classifying a spawn's final message, returned-nothing, the re-spawn, a spawn that fails, when a fix-for-a-finding needs its own pass",
     ),
-    "agents/developer/report.md": (
-        # #1333: review.mechanism gained a schema minLength (empty or
-        # near-empty mechanism strings can no longer pair with a
-        # claimed-clean review), documented in the new paragraph beside
-        # "What the validator checks is shape, not truth." 18286 became
-        # 18942. Ceiling unchanged, still under it.
-        # #1499: the lane completes its own report with
-        # scripts/agent_cost.py --into <report path> -- a measured `cost`
-        # block, never a typed one. 18942 became 19676, past the 19100
-        # ceiling by 576 B; raised to 21500, ~10% headroom.
-        19676,
-        21500,
-        "the note, the JSON report and its validator, the pull request payload",
-    ),
+    # agents/developer/report.md removed for #1583: its content moved to the
+    # new top-level agents/lane-report.md, a real, frontmatter-carrying agent
+    # definition spawned by the lane rather than a phase file it `cat`s --
+    # budgeted in scripts/agent_budgets.py alongside every other spawnable
+    # agent, not here. Declaring it in both places would be two numbers to
+    # keep in sync for one file, the same reasoning this module's own
+    # docstring already states for the spine.
 }
 
 

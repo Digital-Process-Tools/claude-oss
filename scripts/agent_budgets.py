@@ -114,7 +114,28 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # headroom -- narrower than the ~10% convention because this file is
     # already the largest single turn-1 cost in the loop (#491's own
     # measurement) and a wider ceiling would only be spent again.
-    "agents/developer.md": (45460, 46000),
+    # Re-baselined for #1583: 45460 B became 47098 B, past the 46000 B
+    # ceiling by 1098 B. The Report phase table row and its trailing section
+    # are replaced by a spawn call to the new `oss:lane-report` (#1551-safe
+    # top-level file, not a phase file), the fallback instruction, and an
+    # incremental-note reminder -- net larger in this file even after the
+    # old inline report prose (the note/report/PR-payload walkthrough) was
+    # cut, because the spawn call, the handoff contract and the fallback all
+    # have to be stated where none of them were before. The net position
+    # across the pair is strongly negative: `agents/developer/report.md`'s
+    # 19,676 B leaves the lane's late context entirely, moving to a file the
+    # lane only opens on the (rare) fallback path. Ceiling moves to 48000 B,
+    # ~2% headroom -- narrower than the ~10% convention for the same reason
+    # as the #1518 raise above: this file is re-sent on every turn of every
+    # lane, so a wider ceiling would only be spent again.
+    # Re-baselined in the same lane's own self-review round: 47098 B became
+    # 47910 B -- restoring the tooling-friction duty ("signal nobody else
+    # can see"), the friction bar and third state, and the escapes-cwd
+    # refusal plus its `cd <worktree_root>` remedy, all pinned to DEVELOPER's
+    # or this file's own text by existing content checks and dropped by
+    # mistake when the report phase moved out. Ceiling unchanged; 90 B
+    # headroom.
+    "agents/developer.md": (47910, 48000),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
@@ -482,6 +503,37 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # write cannot be paid for by weakening the checks that run after it.
     "agents/tick-merge.md": (7233, 7300),
     "agents/tick-accounting.md": (7219, 7700),
+    # #1583: new file. The developer lane's report phase -- the note, the JSON
+    # report and the pull request payload -- used to be a phase file the lane
+    # read inline at the end of a long, expensive run: measured on one lane,
+    # 90 of 396 turns and 35% of total context sent, at an average context of
+    # 401,416, 3.4x the cost of the same work at orientation. This agent is
+    # spawned by `oss:developer` as its last act instead, starting that same
+    # work at the floor. `agents/developer/report.md` is removed in the same
+    # diff; its content moved here rather than being duplicated.
+    # Re-baselined in the same lane's own self-review round: 9489 B became
+    # 12940 B, past the 11600 B ceiling. A spawned reviewer ran the full test
+    # suite (not just read the diff) and found nine pre-existing tests across
+    # five files pinned specific report/PR/validator wording to `agents/
+    # developer.md`'s own text -- wording this diff's first draft compressed
+    # away when moving it here. Restored close to verbatim: the #732 schema-
+    # skew authority rule, the closing-keyword duty's three sub-rules, the
+    # report-format field mapping (including the `not-run` expected value),
+    # and the intermediate-naming duty for staged writes under a shared
+    # scratchpad. Nothing here was safe to cut without losing a real,
+    # already-tested duty, so the ceiling moves to 14300 B, ~10% headroom.
+    # Re-baselined again in the same self-review round: 12940 B became
+    # 13402 B -- clarifying the dual-reader framing (spawned agent vs. the
+    # lane reading this file directly on fallback) after an auditor found
+    # the original fallback sentence self-referential when read in the
+    # fallback mode it describes. Ceiling unchanged; comfortably under it.
+    # Re-baselined a third time in the same lane's own second self-review
+    # round: 13402 B became 13561 B, restoring two clauses ("a field list
+    # copied into two documents is the drift this repository keeps paying
+    # for", "the validator refuses the second number for exactly that
+    # reason") a second spawned reviewer found still missing from the
+    # closing-keyword restoration. Ceiling unchanged; comfortably under it.
+    "agents/lane-report.md": (13561, 14300),
 }
 
 
