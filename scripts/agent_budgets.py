@@ -348,7 +348,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # this diff had to state, not restatable-shorter prose. Ceiling moves to
     # 24700 B, ~590 B headroom -- the same tripwire posture as before, not a
     # wider budget.
-    "agents/sub-manager.md": (24111, 24700),
+    "agents/sub-manager.md": (24370, 24700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

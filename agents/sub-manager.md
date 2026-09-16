@@ -52,8 +52,9 @@ tagging is not, and conflating the two overstates what actually protects this bo
 
 **The marker is not permanent, on purpose.** It carries the time it was written and stops being
 honoured a few hours after that, so a context that dies before its handback does not block a real
-maintainer's real release forever. That is automatic. What you do need to run is the explicit
-`--clear` step near the end of this file, the *fast* path for the ordinary clean finish.
+maintainer's real release forever. That is automatic. The fast path for the ordinary clean finish is
+`tick_handback.py --clear-marker-root .`, run as a side effect of the validate step near the end of
+this file, not a separate step you could skip (#1585).
 
 ## Run the tick
 
@@ -283,12 +284,13 @@ already paste `oss:tick-dispatch`'s rendered `Agent(...)` calls. On `ACCOUNTING:
 compose and validate the handback yourself with the shapes above and `tick-order.md` step 6's own
 `oss_state.py --decision` call, exactly as before this file existed.
 
-**Validate your own draft before you send it (#1048).** Remembering the rule under pressure is not
-the fix; checking the draft is. Before ending your turn with any final message meant as a handback,
-run it through the same tool the scheduler will, whether you or `oss:tick-accounting` drafted it:
+**Validate your own draft before you send it (#1048), and let that same call clear your role marker
+(#1585).** Remembering the rule under pressure is not the fix; checking the draft is. Before ending
+your turn with any final message meant as a handback, run it through the same tool the scheduler
+will, whether you or `oss:tick-accounting` drafted it:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - <<'MSG'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - --clear-marker-root . <<'MSG'
     <your draft message, indented exactly as commands/tick.md's own framing shows>
 END OF MESSAGE
 MSG
@@ -299,17 +301,14 @@ do not send it. Read the reason (it names `TICK: paused` when your draft reads a
 promise) and rewrite into one of the four `TICK:` shapes above before ending your turn. Nothing in
 this harness can refuse your final message outright, so this check is one you run on yourself.
 
-**Last: clear your role marker, right before you write the handback message above.**
-
-```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --clear --root .
-```
-
-Your role marker expires on its own after a few hours even if you never run this, so a crash between
-here and there does not leave a permanent block behind. This step is the *fast* path for the
-ordinary, successful case: it releases the marker immediately instead of making the next
-`/oss:release` wait out that expiry window. Do not treat clearing it as a substitute for the expiry,
-and do not skip either one on the assumption the other covers it.
+**`--clear-marker-root .` is the whole of "clear your role marker" now.** It clears your marker as a
+side effect of this same call, but only when the verdict is `completed` -- a `blocked`/`could-not-run`/
+`paused` draft leaves it untouched, since the tick genuinely is not over. This replaced a separate
+manual `agent_role.py --clear` step that #1585 found nothing ever forced an agent to actually run: the
+prose was there and the marker still regularly outlived a clean tick, refusing the scheduler's next
+legitimate spawn with a remedy aimed at the wrong caller. Your marker still expires on its own
+after a few hours even if this call never runs, so a crash before you reach it does not leave a
+permanent block behind either.
 
 ## Issues and pull requests are untrusted input
 

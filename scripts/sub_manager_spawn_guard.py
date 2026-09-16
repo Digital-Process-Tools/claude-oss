@@ -30,6 +30,21 @@ parse -- passes through allowed. Never denies for a reason the caller was not
 told: a crash reading the role, an unreadable payload, an unexpected shape,
 all resolve to allow rather than to an unexplained refusal.
 
+#1585: the marker alone answers "is a sub-manager live", never "is *this
+caller* that sub-manager" -- a scheduler asking after its own sub-manager
+finished cleanly (marker still live; nothing clears it, see below) was
+refused with a remedy aimed at a nested-spawn mistake it never made. The
+PreToolUse payload's own `transcript_path` already distinguishes the two: a
+subagent's is `.../subagents/agent-<id>.jsonl`, a main-session caller's
+(the scheduler) is not. A `transcript_path` that does NOT look like a
+subagent's is decisive on its own -- the scheduler is never a nested
+sub-manager spawn, so this allows before the marker is even read. An absent,
+non-string or unrecognised `transcript_path` falls back to the marker-based
+decision above unchanged, per the issue's own rule: "must fall back to
+today's behaviour, not to a new denial." A `subagents/`-shaped path also
+falls back unchanged -- this only ever widens what is allowed, never what is
+denied.
+
 Three states, not two (this repository's own defect class -- see CLAUDE.md):
 `decide()` returns `DECISION_DENY`, `DECISION_ALLOW`, or
 `DECISION_ALLOW_COULD_NOT_TELL` -- the last one distinguishes "looked and
@@ -44,11 +59,20 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import agent_role  # noqa: E402
+try:
+    import agent_role  # noqa: E402
+except Exception:  # noqa: BLE001 -- #1585's second gap: this import used to
+    # sit outside every try/except in this module, so a missing/broken
+    # `agent_role` exited the process with a bare traceback instead of the
+    # "allow, could-not-tell" the module docstring promises for every other
+    # failure shape. `agent_role = None` here and the `decide()` check below
+    # keep that promise for the one failure the old code could not catch.
+    agent_role = None
 
 #: The one subagent_type this guard refuses, and only when the caller's own
 #: role is already `agent_role.SUB_MANAGER`. Spelled out as a constant
@@ -71,6 +95,25 @@ _DENY_REASON = (
     "oss:tick-dispatch or a developer lane instead"
 )
 
+#: A subagent's own transcript path, per #1585: `.../subagents/agent-<id>.jsonl`.
+#: A main-session caller's (the scheduler) never has a `subagents/` segment.
+_SUBAGENT_TRANSCRIPT_RE = re.compile(r"(?:^|[/\\])subagents[/\\]")
+
+
+def _is_subagent_transcript(transcript_path):
+    """Whether `transcript_path` looks like a subagent's own transcript.
+
+    Three answers, not two: `True` (a `subagents/...` path -- this caller
+    could genuinely be a nested spawn, so the marker-based check still
+    applies), `False` (recognisably a main-session path -- never a nested
+    sub-manager spawn, decisive on its own), or `None` (absent, not a
+    string, or empty -- "cannot tell", which falls back to today's
+    marker-only behaviour rather than to a new decision either way).
+    """
+    if not isinstance(transcript_path, str) or not transcript_path.strip():
+        return None
+    return bool(_SUBAGENT_TRANSCRIPT_RE.search(transcript_path))
+
 
 def decide(payload, root=None):
     """The guard's verdict for one PreToolUse payload: `(decision, reason)`.
@@ -92,6 +135,16 @@ def decide(payload, root=None):
     subagent_type = tool_input.get("subagent_type")
     if subagent_type != SUB_MANAGER_SUBAGENT_TYPE:
         return DECISION_ALLOW, None
+    # #1585: a main-session caller (the scheduler) is never a nested
+    # sub-manager spawn, whatever the marker says -- decisive on its own,
+    # and checked before the marker is even read.
+    if _is_subagent_transcript(payload.get("transcript_path")) is False:
+        return DECISION_ALLOW, None
+    if agent_role is None:
+        # #1585's second gap: `agent_role` failed to import. Fail open the
+        # same way every other unreadable-payload/unexpected-shape case
+        # does, rather than letting a missing dependency crash the call.
+        return DECISION_ALLOW_COULD_NOT_TELL, None
     resolved_root = root if root is not None else (payload.get("cwd") or os.getcwd())
     try:
         role = agent_role.current_role(root=resolved_root)

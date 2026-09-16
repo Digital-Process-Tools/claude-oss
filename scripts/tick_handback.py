@@ -106,6 +106,22 @@ filed separately) is where tag-and-publish authority lives. Nothing in this
 module accepts, or needs to accept, a "released" claim from a sub-manager --
 see `scripts/agent_role.py` for the code-level half of that withholding.
 
+## `--clear-marker-root` (#1585)
+
+`agents/sub-manager.md` already runs this module's `main()` on its own draft
+before sending it, as a mandatory self-check (#1048). `--clear-marker-root`
+piggybacks the sub-manager's role-marker cleanup onto that same, already-
+mandatory call, rather than leaving it a second, separate step that nothing
+forces an agent to actually run -- which is exactly the gap #1585 found:
+`agent_role.clear_role_marker()` had zero programmatic callers, so a
+sub-manager's own marker regularly outlived a clean tick and refused the
+scheduler's next legitimate `oss:sub-manager` spawn with a remedy aimed at
+the wrong caller. Clearing only fires when this call's own verdict is
+`completed`; every other state leaves the marker alone, since the tick is
+not actually over. A failure to import `agent_role` or to remove the marker
+never changes this command's exit code -- classification is this tool's
+job, and clearing is a courtesy performed alongside it.
+
 ## Exit codes
 
 Because a shell reads those and never reads prose:
@@ -561,6 +577,22 @@ def main(argv=None):
             "end the stream that carried it (#404)"
         ),
     )
+    parser.add_argument(
+        "--clear-marker-root",
+        metavar="ROOT",
+        default=None,
+        help=(
+            "when the verdict classifies as 'completed', clear ROOT's "
+            "sub-manager role marker (agent_role.clear_role_marker) as a "
+            "side effect of this same call -- the code-level half of the "
+            "marker's own success path (#1585). Any other verdict leaves "
+            "the marker untouched, because the tick is not actually over. "
+            "A failure to import agent_role or to clear the marker is "
+            "reported on its own line and never changes this command's "
+            "own exit code -- classification is this tool's job, clearing "
+            "is a courtesy performed alongside it."
+        ),
+    )
     args = parser.parse_args(argv)
 
     text, error = _rr._read_source(args.source)
@@ -575,6 +607,19 @@ def main(argv=None):
     else:
         verdict = classify(text)
     source_note = _rr.fold_to_one_ascii_line(args.source)
+
+    marker_note = None
+    if args.clear_marker_root is not None and verdict["state"] == "completed":
+        try:
+            import agent_role as _agent_role
+
+            cleared = _agent_role.clear_role_marker(root=args.clear_marker_root)
+        except Exception:  # noqa: BLE001 -- clearing the marker is a
+            # courtesy this command performs on the caller's behalf; it must
+            # never fail the classification itself, which already happened.
+            marker_note = "could not clear (agent_role unavailable)"
+        else:
+            marker_note = "cleared" if cleared else "nothing to clear"
 
     print("VERDICT: {0} -- {1}".format(verdict["state"], verdict["reason"]))
     print("  source: {0}".format(source_note or "-"))
@@ -592,6 +637,8 @@ def main(argv=None):
         print("  cost: {0}".format(verdict["cost"]))
     if verdict["quoted"]:
         print("  quoted: {0}".format(verdict["quoted"]))
+    if marker_note is not None:
+        print("  marker: {0}".format(marker_note))
     return EXIT_CODES[verdict["state"]]
 
 
