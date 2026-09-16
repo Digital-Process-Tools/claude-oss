@@ -68,9 +68,15 @@ Python 3.9 compatible.
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import gh_which  # noqa: E402
 
 STATE_MEASURED = "measured"
 STATE_NOTHING = "nothing-in-window"
@@ -118,6 +124,115 @@ ATTRIBUTION_MAP = {
     "oss:auditor": "audit-review",
     "oss:release-auditor": "audit-review",
 }
+
+
+# --- per-issue attribution (#1618) --------------------------------------------------
+#
+# The join `measure` does not attempt: which issue(s) a transcript's spend
+# belongs to. Three rules, tried in this order, per the issue's own
+# "Attribution" section -- a prompt naming an issue number directly wins
+# over a worktree/branch suffix (auditors) wins over a pull-request-to-issue
+# map entry (tick-review/tick-merge); nothing matching any of the three is
+# `RULE_UNATTRIBUTED`, reported as its own line rather than dropped.
+
+RULE_PROMPT = "prompt-issue-number"
+RULE_WORKTREE = "worktree-or-branch"
+RULE_PR_MAP = "pr-to-issue-map"
+RULE_UNATTRIBUTED = "unattributed"
+
+#: How far past the word "issue"/"issues" to look for the number(s) it
+#: names. Bounded the same way `classify`'s own prompt-sniff fallback is
+#: bounded (its 300/200-char heads): an unrelated number deep in a long
+#: prompt must not be swept in just because the word "issue" appeared
+#: somewhere earlier in the same text.
+_ISSUE_WORD_RE = re.compile(r"\bissues?\b\s*:?\s*", re.IGNORECASE)
+_NUMBER_RE = re.compile(r"#?(\d{3,6})\b")
+_ISSUE_WINDOW = 120
+
+_WORKTREE_RE = re.compile(r"-wt/(\d+)\b")
+_BRANCH_RE = re.compile(r"\bbranch\s+[\w./-]*?(\d+)\b", re.IGNORECASE)
+_PR_RE = re.compile(r"pull request\s*#?(\d+)", re.IGNORECASE)
+
+
+def _issue_numbers_from_prompt(text):
+    """Every issue number the text names right after the word "issue"/
+    "issues", in first-seen order -- covers all four phrasings #1618 cites
+    (`Issue: 1477.`, `Issues: 1389, 1499, 1576.`, `Recon issues 1361 and
+    1511 in the claude-oss repo`, `Issue #1566: ...`). ``[]`` when the word
+    never appears, or names nothing that parses as a number.
+    """
+    if not text:
+        return []
+    match = _ISSUE_WORD_RE.search(text)
+    if not match:
+        return []
+    window = text[match.end() : match.end() + _ISSUE_WINDOW]
+    cuts = [i for i in (window.find("\n"), window.find(". ")) if i != -1]
+    if cuts:
+        window = window[: min(cuts)]
+    numbers = []
+    for token in _NUMBER_RE.findall(window):
+        number = int(token)
+        if number not in numbers:
+            numbers.append(number)
+    return numbers
+
+
+def _issue_from_worktree_or_branch(text):
+    """A worktree path (`claude-oss-wt/1583`) or a named branch
+    (`branch fix/1583`) suffix, as one issue number -- the shape an
+    `oss:auditor` prompt names instead of an issue number directly. ``None``
+    when neither pattern matches.
+    """
+    if not text:
+        return None
+    match = _WORKTREE_RE.search(text)
+    if match:
+        return int(match.group(1))
+    match = _BRANCH_RE.search(text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _pr_number_from_prompt(text):
+    """The pull request number a `Merge pull request #N` prompt names, or
+    ``None``."""
+    if not text:
+        return None
+    match = _PR_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
+def attribute_issues(first_prompt, pr_issue_map=None):
+    """The issue number(s) one transcript's first prompt attributes to, and
+    the rule that matched -- see the module docstring section above.
+    Returns ``(issues, rule)``; ``issues`` is ``[]`` and ``rule`` is
+    ``RULE_UNATTRIBUTED`` when nothing matched -- never dropped, per
+    ``.claude/jit-context/paths/00-manual/counter-scripts-silent-gaps.md``.
+    ``pr_issue_map``, when given, maps a PR number (``int``) to one issue
+    number or a list of them; a PR number found with no map, or not present
+    in the map given, is `RULE_UNATTRIBUTED` -- a map that was not asked for
+    is not the same fact as "this PR closes no issue".
+    """
+    numbers = _issue_numbers_from_prompt(first_prompt)
+    if numbers:
+        return numbers, RULE_PROMPT
+    worktree_issue = _issue_from_worktree_or_branch(first_prompt)
+    if worktree_issue is not None:
+        return [worktree_issue], RULE_WORKTREE
+    if pr_issue_map:
+        pr = _pr_number_from_prompt(first_prompt)
+        if pr is not None:
+            mapped = pr_issue_map.get(pr)
+            if mapped is None:
+                mapped = pr_issue_map.get(str(pr))
+            if mapped:
+                issues = mapped if isinstance(mapped, list) else [mapped]
+                issues = [int(i) for i in issues]
+                if issues:
+                    return issues, RULE_PR_MAP
+    return [], RULE_UNATTRIBUTED
 
 
 def default_projects_dir():
@@ -414,6 +529,372 @@ def measure(projects_dir, since, repo_dir=None, defect_at=DEFAULT_DEFECT_AT):
     }
 
 
+# --- per-issue report: the join and the two `gh` lookups it can use (#1618) --------
+
+
+def _command_text(command):
+    return " ".join(command)
+
+
+def _decode_output(raw):
+    """Decode a subprocess's bytes for display. Never raises -- the same
+    fix as `scripts/oss_config.py`'s and `scripts/cohort_freeze.py`'s own
+    `_decode_output` (#112), a third independent copy rather than an import
+    for the same reason `cohort_freeze.py`'s docstring gives: reaching into
+    another module for four lines would be a cross-module coupling none of
+    these scripts otherwise has.
+    """
+    if raw is None:
+        return ""
+    if not isinstance(raw, bytes):
+        return raw
+    return raw.decode("utf-8", "replace")
+
+
+def resolve_pr_issue_map(repo, pr_numbers, gh, run, timeout=25):
+    """``{pr_number: [issue_number, ...]}`` via `gh pr view --json
+    closingIssuesReferences`, one call per PR (`gh` has no batch form for
+    this field). Returns ``(mapping, unresolved)`` -- ``unresolved`` is a
+    list of ``{"pr": n, "why": str}``, one per PR that could not be
+    resolved, never a silent drop: a PR that failed to resolve and one that
+    genuinely closes no issue must not both vanish from ``mapping`` with
+    nothing to tell them apart.
+    """
+    mapping = {}
+    unresolved = []
+    for pr in sorted(set(pr_numbers)):
+        command = [
+            gh,
+            "pr",
+            "view",
+            str(pr),
+            "--repo",
+            repo,
+            "--json",
+            "number,closingIssuesReferences",
+        ]
+        try:
+            done = run(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            unresolved.append(
+                {
+                    "pr": pr,
+                    "why": "{} did not run ({})".format(_command_text(command), exc),
+                }
+            )
+            continue
+        stdout = _decode_output(done.stdout)
+        stderr = _decode_output(done.stderr)
+        if done.returncode != 0:
+            message = (stderr or stdout or "").strip()
+            unresolved.append(
+                {
+                    "pr": pr,
+                    "why": "{} failed: {}".format(_command_text(command), message),
+                }
+            )
+            continue
+        try:
+            data = json.loads(stdout)
+        except (ValueError, TypeError):
+            unresolved.append(
+                {
+                    "pr": pr,
+                    "why": "{} printed text that is not JSON".format(
+                        _command_text(command)
+                    ),
+                }
+            )
+            continue
+        if not isinstance(data, dict):
+            unresolved.append(
+                {
+                    "pr": pr,
+                    "why": "{} printed something other than an object".format(
+                        _command_text(command)
+                    ),
+                }
+            )
+            continue
+        refs = data.get("closingIssuesReferences") or []
+        numbers = [
+            ref.get("number")
+            for ref in refs
+            if isinstance(ref, dict) and isinstance(ref.get("number"), int)
+        ]
+        mapping[pr] = numbers
+    return mapping, unresolved
+
+
+def resolved_issues_in_window(repo, since_dt, gh, run, timeout=60):
+    """Issue numbers closed at or after ``since_dt`` -- pull requests
+    excluded server-side is not attempted here (unlike
+    `cohort_freeze.fetch_issues`'s `--jq` filter) because `gh api ... state=
+    closed` still returns pull requests mixed in, so filtering happens in
+    Python on the same ``pull_request is None`` check `cohort_freeze.py`
+    uses. Returns ``(state, numbers, reason)`` -- ``state`` is ``"ok"`` or
+    ``"could-not-read"``, never a third thing, and never raises.
+    """
+    command = [
+        gh,
+        "api",
+        "-X",
+        "GET",
+        "repos/{}/issues".format(repo),
+        "-f",
+        "state=closed",
+        "-f",
+        "per_page=100",
+    ]
+    try:
+        done = run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return (
+            "could-not-read",
+            [],
+            "{} did not run ({})".format(_command_text(command), exc),
+        )
+    stdout = _decode_output(done.stdout)
+    stderr = _decode_output(done.stderr)
+    if done.returncode != 0:
+        message = (stderr or stdout or "").strip()
+        return (
+            "could-not-read",
+            [],
+            "{} failed: {}".format(_command_text(command), message),
+        )
+    try:
+        data = json.loads(stdout)
+    except (ValueError, TypeError):
+        return (
+            "could-not-read",
+            [],
+            "{} printed text that is not JSON".format(_command_text(command)),
+        )
+    if not isinstance(data, list):
+        data = [data]
+    numbers = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        if item.get("pull_request") is not None:
+            continue
+        closed_at = item.get("closed_at")
+        if not isinstance(closed_at, str):
+            continue
+        closed_dt = parse_since(closed_at)
+        if closed_dt is None or closed_dt < since_dt:
+            continue
+        number = item.get("number")
+        if isinstance(number, int):
+            numbers.append(number)
+    return "ok", sorted(set(numbers)), ""
+
+
+def _empty_issue_agents():
+    return {"agents": 0, "records": 0, "context_sent": 0, "rules": {}}
+
+
+def _bump(bucket, kind, rule, summary):
+    kind_bucket = bucket["kinds"].setdefault(kind, _empty_issue_agents())
+    kind_bucket["agents"] += 1
+    kind_bucket["records"] += summary["records"]
+    kind_bucket["context_sent"] += summary["context_sent"]
+    kind_bucket["rules"][rule] = kind_bucket["rules"].get(rule, 0) + 1
+    bucket["records"] += summary["records"]
+    bucket["context_sent"] += summary["context_sent"]
+
+
+def measure_per_issue(
+    projects_dir, since, repo_dir=None, pr_issue_map=None, resolved_issues=None
+):
+    """Spend joined to the issue(s) each transcript attributes to (#1618).
+
+    Same three top-level ``state`` values as `measure` -- ``could-not-read``
+    and ``nothing-in-window`` carry no per-issue breakdown, since nothing was
+    read. On ``measured``, every transcript's spend lands in exactly one
+    place: a bucket under ``issues``, keyed by its comma-joined issue
+    numbers (`"1477"`, or `"1389,1499,1576"` for a lane that carries three --
+    one composite bucket, never three separate ones, so a multi-issue lane's
+    spend is never triple-counted), or ``unattributed`` when
+    `attribute_issues` matched nothing. That is why totals reconcile:
+    ``sum(bucket["context_sent"] for bucket in issues.values()) +
+    unattributed["context_sent"]`` always equals the window total `measure`
+    itself reports for the same arguments -- never a silent drop.
+
+    ``resolved_issues``, when given, is the tracker's own denominator (see
+    `resolved_issues_in_window`) -- carried through unchanged, ``None`` when
+    it was not requested. ``None`` is not the same fact as "zero issues
+    resolved"; a caller that wants the ratio has to check for it.
+    """
+    projects_dir = Path(projects_dir)
+    since_dt = parse_since(since) if isinstance(since, str) else since
+    if since_dt is None:
+        return {
+            "state": STATE_COULD_NOT_READ,
+            "why": "--since is not an ISO-8601 timestamp: {!r}".format(since),
+        }
+    try:
+        entries = sorted(os.listdir(str(projects_dir)))
+    except FileNotFoundError:
+        return {
+            "state": STATE_COULD_NOT_READ,
+            "why": "projects directory {} does not exist".format(projects_dir),
+        }
+    except NotADirectoryError:
+        return {
+            "state": STATE_COULD_NOT_READ,
+            "why": "{} is not a directory".format(projects_dir),
+        }
+    except OSError as exc:
+        return {
+            "state": STATE_COULD_NOT_READ,
+            "why": "projects directory {} could not be listed ({})".format(
+                projects_dir, exc
+            ),
+        }
+
+    issues = {}
+    unattributed = {"agents": 0, "records": 0, "context_sent": 0, "kinds": {}}
+    malformed = []
+    unreadable = []
+    total_records = 0
+    total_context = 0
+
+    for entry in entries:
+        if repo_dir is not None and entry != repo_dir:
+            continue
+        project_dir = projects_dir / entry
+        if not project_dir.is_dir():
+            continue
+        for path, subagent in _transcripts(project_dir):
+            summary, bad = read_transcript(path, since_dt)
+            rel = str(path.relative_to(projects_dir))
+            for number, reason in bad:
+                if number == 0:
+                    unreadable.append({"transcript": rel, "why": reason})
+                else:
+                    malformed.append({"transcript": rel, "line": number, "why": reason})
+            if summary is None or summary["records"] == 0:
+                continue
+            kind = classify(
+                summary["first_prompt"], subagent, summary["attribution_agent"]
+            )
+            matched, rule = attribute_issues(summary["first_prompt"], pr_issue_map)
+            total_records += summary["records"]
+            total_context += summary["context_sent"]
+            if not matched:
+                unattributed["agents"] += 1
+                unattributed["records"] += summary["records"]
+                unattributed["context_sent"] += summary["context_sent"]
+                kind_bucket = unattributed["kinds"].setdefault(
+                    kind, _empty_issue_agents()
+                )
+                kind_bucket["agents"] += 1
+                kind_bucket["records"] += summary["records"]
+                kind_bucket["context_sent"] += summary["context_sent"]
+                kind_bucket["rules"][rule] = kind_bucket["rules"].get(rule, 0) + 1
+                continue
+            key = ",".join(str(n) for n in matched)
+            bucket = issues.setdefault(
+                key,
+                {
+                    "issue_numbers": matched,
+                    "records": 0,
+                    "context_sent": 0,
+                    "kinds": {},
+                },
+            )
+            _bump(bucket, kind, rule, summary)
+
+    return {
+        "state": STATE_MEASURED if total_records else STATE_NOTHING,
+        "projects_dir": str(projects_dir),
+        "since": since_dt.isoformat(),
+        "repo_dir": repo_dir,
+        "records": total_records,
+        "context_sent": total_context,
+        "issues": issues,
+        "unattributed": unattributed,
+        "resolved_issues": resolved_issues,
+        "malformed_lines": len(malformed),
+        "malformed": malformed,
+        "unreadable": unreadable,
+    }
+
+
+def render_per_issue(result):
+    lines = ["STATE: {}".format(result["state"])]
+    if result["state"] == STATE_COULD_NOT_READ:
+        lines.append("why: {}".format(result["why"]))
+        return "\n".join(lines)
+    if result["state"] == STATE_NOTHING:
+        return "\n".join(lines)
+    lines.append(
+        "projects dir: {}  since: {}".format(result["projects_dir"], result["since"])
+    )
+    lines.append(
+        "records: {}  context sent: {}  malformed lines: {}  unreadable: {}".format(
+            _fmt(result["records"]),
+            _fmt(result["context_sent"]),
+            result["malformed_lines"],
+            len(result["unreadable"]),
+        )
+    )
+    resolved = result.get("resolved_issues")
+    if resolved is None:
+        lines.append("resolved issues (tracker): not-requested")
+    else:
+        lines.append(
+            "resolved issues (tracker): {}  {}".format(
+                resolved.get("state"), resolved.get("reason") or ""
+            )
+        )
+    for key in sorted(
+        result["issues"],
+        key=lambda k: result["issues"][k]["context_sent"],
+        reverse=True,
+    ):
+        bucket = result["issues"][key]
+        lines.append("")
+        lines.append(
+            "== issue {}  records {}  context sent {}".format(
+                key, _fmt(bucket["records"]), _fmt(bucket["context_sent"])
+            )
+        )
+        for kind, kind_bucket in bucket["kinds"].items():
+            lines.append(
+                "  {:<15} agents {:>3} records {:>6} context {:>14} rules {}".format(
+                    kind,
+                    kind_bucket["agents"],
+                    _fmt(kind_bucket["records"]),
+                    _fmt(kind_bucket["context_sent"]),
+                    kind_bucket["rules"],
+                )
+            )
+    lines.append("")
+    lines.append(
+        "unattributed  agents {}  records {}  context sent {}".format(
+            result["unattributed"]["agents"],
+            _fmt(result["unattributed"]["records"]),
+            _fmt(result["unattributed"]["context_sent"]),
+        )
+    )
+    for item in result["malformed"]:
+        lines.append(
+            "malformed: {} line {}: {}".format(
+                item["transcript"], item["line"], item["why"]
+            )
+        )
+    for item in result["unreadable"]:
+        lines.append("unreadable: {}: {}".format(item["transcript"], item["why"]))
+    return "\n".join(lines)
+
+
 def _fmt(n):
     return "{:,}".format(n)
 
@@ -526,6 +1007,24 @@ def main(argv=None):
         help="list every transcript whose max context reached this (default 400000)",
     )
     parser.add_argument("--json", action="store_true", help="emit the report as JSON")
+    parser.add_argument(
+        "--per-issue",
+        action="store_true",
+        help="report spend joined to the issue(s) resolved, not per project (#1618)",
+    )
+    parser.add_argument(
+        "--pr-issue-map",
+        default=None,
+        help="a JSON file mapping PR number -> issue number(s), for attributing "
+        "oss:tick-review/oss:tick-merge spend (build one with resolve_pr_issue_map)",
+    )
+    parser.add_argument(
+        "--repo",
+        default=None,
+        help="owner/name slug; with --per-issue, also reports the tracker's own "
+        "count of issues closed in the window (the denominator)",
+    )
+    parser.add_argument("--gh", default=None, help="the gh executable (default: PATH)")
     args = parser.parse_args(argv)
 
     if parse_since(args.since) is None:
@@ -533,6 +1032,50 @@ def main(argv=None):
             "state": STATE_COULD_NOT_READ,
             "why": "--since is not an ISO-8601 timestamp: {!r}".format(args.since),
         }
+    elif args.per_issue:
+        pr_issue_map = None
+        if args.pr_issue_map:
+            try:
+                raw_map = json.loads(
+                    Path(args.pr_issue_map).read_text(encoding="utf-8")
+                )
+                pr_issue_map = {int(k): v for k, v in raw_map.items()}
+            except (OSError, ValueError, AttributeError) as exc:
+                result = {
+                    "state": STATE_COULD_NOT_READ,
+                    "why": "--pr-issue-map {} could not be read: {}".format(
+                        args.pr_issue_map, exc
+                    ),
+                }
+                pr_issue_map = "unreadable"
+        if pr_issue_map == "unreadable":
+            pass  # result already set above
+        else:
+            resolved_issues = None
+            if args.repo:
+                gh = args.gh or gh_which.safe_which("gh")
+                if not gh:
+                    resolved_issues = {
+                        "state": STATE_COULD_NOT_READ,
+                        "numbers": None,
+                        "reason": "gh is not on PATH",
+                    }
+                else:
+                    state, numbers, reason = resolved_issues_in_window(
+                        args.repo, parse_since(args.since), gh, subprocess.run
+                    )
+                    resolved_issues = {
+                        "state": state,
+                        "numbers": numbers,
+                        "reason": reason,
+                    }
+            result = measure_per_issue(
+                args.projects_dir,
+                since=args.since,
+                repo_dir=args.repo_dir,
+                pr_issue_map=pr_issue_map,
+                resolved_issues=resolved_issues,
+            )
     else:
         result = measure(
             args.projects_dir,
@@ -542,6 +1085,8 @@ def main(argv=None):
         )
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
+    elif args.per_issue:
+        print(render_per_issue(result))
     else:
         print(render(result))
     return 2 if result["state"] == STATE_COULD_NOT_READ else 0
