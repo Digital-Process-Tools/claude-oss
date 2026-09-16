@@ -526,7 +526,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 43,913 B | 44,300 B |
+| `CLAUDE.md` | 44,280 B | 44,300 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -563,46 +563,50 @@ maintainer's session with their credentials.
 
 ## What is not proven yet
 
-**The marker below names `v0.37.0`, and it was written inside the v0.37.0 release commit.**
+**The marker below names `v0.37.1`, and it was written inside the v0.37.1 release commit.**
 
-**Delta, taken two ways that agree.** The range is `v0.36.0..HEAD` at `b3a0a80`: `git rev-list
---count v0.36.0..HEAD` returns **10**, and `gh-prs:merged-since=v0.36.0,state=merged` returns **10**
+**Delta, taken two ways that agree.** The range is `v0.37.0..HEAD` at `0fc3f70b`: `git rev-list
+--count v0.37.0..HEAD` returns **10**, and `gh-prs:merged-since=v0.37.0,state=merged` returns **10**
 merged pull requests, its own cross-check reporting `RAN and AGREED`. Gate 3 ran two rounds over the
 range, each on the full delta as it stood at the time. Round one returned `findings`: 2 findings,
-both class B `misreports`, neither in a blocking row -- `CLAUDE.md`'s own Layout inventory still
-naming a phase file (`agents/developer/report.md`) deleted earlier in this same delta by #1583, and
-`scripts/loop_cost_report.py`'s `ATTRIBUTION_MAP` carrying no row for the `oss:lane-report` spawn
-#1583 also introduced. `gate3_disposition.py` returned `stop-tag` for round one regardless of the
-blocking answer, by design -- round one always stops to give a chance to route or fix before round
-two runs. Both findings were routed to `trap.d/` (the correct route for a non-blocking
-`misreports` row, not an issue): `trap.d/1583.claude-md-layout-lists-deleted-report-phase-file.md`
-and `trap.d/1583.loop-cost-report-missing-oss-lane-report-row.md`. Round two re-audited the full
-delta and found 3 further non-blocking `misreports` -- a stale-`HEAD` fallthrough in
-`release_trigger.py`'s second git call that the function's own docstring argues against for its
-sibling call, a `--claim` guard test whose hardcoded file list misses two of the five documented
-call sites #1579 also touched, and a jit-context README line that markdownlint reads as an
-unspaced ATX heading once #1578 shipped markdownlint as a default validator two commits later --
-also routed to `trap.d/`: `trap.d/1566.release-trigger-stale-head-second-git-call-swallows-failure.md`,
-`trap.d/1579.claim-lane-guard-scope-misses-two-documented-call-sites.md`, and
-`trap.d/1578.jit-context-readme-line-394-trips-markdownlint-atx-heading.md`. `gate3_disposition.py`
-returned `carry-forward-and-proceed` for round two. Five findings in total across both rounds; none
-sits in a blocking row.
+both class `misreports`, neither in a blocking row -- `--clear-marker-root` resolving the role
+marker path via `git rev-parse --git-dir` rather than `--git-common-dir`, which can diverge in a
+linked worktree (#1585), and a curate pull request's title reaching `tick_handback.py`'s
+`re.MULTILINE`-anchored parsing as free text (#1600), demonstrated fail-safe but with an unsettled
+escalation condition (whether a GitHub PR title can ever carry a newline). `gate3_disposition.py`
+returned `stop-tag` for round one regardless of the blocking answer, by design -- round one always
+stops to give a chance to route or fix before round two runs. Both findings were routed to
+`trap.d/`: `trap.d/1585.clear-marker-root-uses-git-dir-not-common-dir.md` and
+`trap.d/1600.curate-pr-title-verbatim-reaches-handback-parser.md`. Round two re-audited the full
+delta and found 3 further non-blocking `misreports` -- `scripts/remind_budgets.py`'s `check()`
+raising `PermissionError` instead of its documented `missing` state on an unreadable path, the
+`CURATE:` line being optional so a tick that actually merged a `^curate/` branch without emitting
+one still renders as `curate: None`, and two `oss_config.py` docstrings/comments (#383) inverting
+what `doctor.py`'s own measurement says about which errnos `Path.is_file()`/`is_dir()` swallow --
+also routed to `trap.d/`: `trap.d/1584.remind-budgets-check-raises-instead-of-missing-state.md`,
+`trap.d/1600.curate-line-is-optional-unreported-curate-merge-renders-none.md`, and
+`trap.d/383.stat-kind-docstrings-invert-doctor-py-measurement.md`. `gate3_disposition.py` returned
+`carry-forward-and-proceed` for round two. Five findings in total across both rounds; none sits in
+a blocking row.
 
-**Gate 1 held cleanly.** At `b3a0a80`, the pre-release head, both the ordinary push-triggered run
+**Gate 1 held cleanly.** At `0fc3f70b`, the pre-release head, both the ordinary push-triggered run
 (8 legs, 2 workflows, all passed) and a dispatched full-matrix `workflow_dispatch` run against the
-same commit (14 further legs) concluded GREEN -- 22 legs across 3 runs, no CodeQL infrastructure
-failure. The verdict that actually gates the tag is still this release commit's own run, waited on
-with `release_ci_wait.py --require-event workflow_dispatch`; read that run, not this sentence, for
+same commit (the full 3x4 matrix, `full_matrix: true`) concluded GREEN, no CodeQL infrastructure
+failure. One declared workflow (`changelog`) produced no run on this commit -- it is `pull_request`-
+only, so this is the uncovered-but-non-blocking middle state, not a finding. The verdict that
+actually gates the tag is still this release commit's own run, waited on with
+`release_ci_wait.py --require-event workflow_dispatch`; read that run, not this sentence, for
 whether it cleared.
 
 **Cohort freeze: cohort-34 at 22.** This marker cites a cohort that has already finished freezing,
-never this release's own, because the freeze runs after the tag. The state file records
-`cohort-34` as `measured` at 22, frozen at the `v0.36.0` tag, both routes it was taken from
-(`cutoff_scan` and `label_filter`) agreeing at 22.
-`cohort_citation_order.py --state .max/claude-oss-watch.json --at <now>` was run against this
-paragraph before committing.
+never this release's own, because the freeze runs after the tag. No cohort has finished freezing
+since `v0.36.0`, so the citation is unchanged from the prior release: `cohort-34` remains
+`measured` at 22, frozen at the `v0.36.0` tag, both routes it was taken from (`cutoff_scan` and
+`label_filter`) agreeing at 22.
+`cohort_citation_order.py --state .max/claude-oss-watch.json --at 2026-09-16T13:57:31Z` ran
+before committing and reported `ok -- cohort-34 was already frozen`.
 
-**The reach probe was NOT re-derived at `v0.37.0`.** It is still `v0.21.0`'s:
+**The reach probe was NOT re-derived at `v0.37.1`.** It is still `v0.21.0`'s:
 `gh repo list Digital-Process-Tools --limit 100`, run at `c565488`, returns eleven repositories in
 that one GitHub organisation, four carrying `.oss.json`, each confirmed by its own contents read. The count is
 scoped to the organisation the command names, never to "the field": a repository under a different

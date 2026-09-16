@@ -109,7 +109,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # reviewer found still silent about it, grew this row's own several rewrites
     # again. Ceiling moves to 44300 B, ~1% headroom, the same self-referential
     # margin as every prior raise of this row.
-    "CLAUDE.md": (43913, 44300),
+    "CLAUDE.md": (44280, 44300),
 }
 
 

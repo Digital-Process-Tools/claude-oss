@@ -7,6 +7,144 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-09-16
+
+### Fixed
+
+- `scripts/oss_config.py`'s `resolve_config_path` (three call sites) and `ensure_worktree_root`
+  no longer trust a bare `Path.is_file()`/`Path.is_dir()` to answer for a path whose parent this
+  process cannot read -- on this repo's own Python 3.13, that raised an unhandled
+  `PermissionError` straight out of `resolve_config_path`; on 3.14 it swallows to a confident
+  `False`, reporting a permission-denied `.oss.json` as `missing` with a "run /oss:setup to write
+  it" remedy that cannot fix a file that already exists. A new `_stat_kind` helper classifies
+  `dir`/`file`/`absent`/`unreadable` explicitly on every interpreter this repo supports (#383).
+
+- The plugin-liveness ask (`claude mcp get`, via `arm_target_liveness`) inside
+  `channel_consumer_census_state` is now shareable across the census's own multiple call
+  sites -- an opt-in `cache` dict, keyed on the resolved server name, threaded through
+  `_drop_dead_plugin_consumers`, `channel_consumer_census_state`, `check_channel_consumer_census`
+  and `check_channel_health_agreement`. `None` by default, so `doctor.py`'s own `main()` keeps
+  asking each check fresh -- sharing one answer between checks by default was tried once for the
+  sibling registration check and reverted, because it made a real ask run even when a caller had
+  stubbed only one of the two checks specifically to avoid it. A caller that wants the saving
+  (a future launcher relay, or a caller asking the census twice in one process) opts in explicitly
+  by passing the same dict to both calls (#1516).
+
+- `doctor_check_statusline_unknowns.py`'s `_refresh_command` remedy now escapes a
+  backslash immediately before a double-quote, or a trailing backslash, closing two
+  shapes the #1426 fix left broken: a literal backslash immediately before a literal
+  double-quote (which used to render as two backslashes ahead of an escaped quote,
+  misparsed by `shlex.split` into the wrong token boundaries), and a trailing
+  backslash (which used to escape away the remedy's own closing quote and crash
+  `shlex.split` outright). The new `_dquote_escape` helper escapes only a backslash
+  that sits next to a quote -- never every backslash, which would have rewritten an
+  ordinary Windows path's separators and broken the existing positive-control test
+  on that platform alone (#1517).
+
+- `oss_config.repo_problem` now refuses a `repo` value containing an empty, `.` or
+  `..` path segment (`'../..'`, `'a/..'`, `'./x'`), closing the one gap `REPO_RE`'s
+  character class left open -- it forbade a slash, backslash, whitespace, `?` and `#`
+  WITHIN a segment but never excluded a segment that was itself a traversal token.
+  `doctor._malformed_repo` and `statusline._malformed_repo` already closed this
+  class in their own standalone copies; `repo_problem` is the one function
+  `cohort_freeze._resolve_repo_slug` routes a tracked `.oss.json`'s `repo` through
+  ALONE before building `gh api` paths during release tagging, with no doctor/
+  statusline copy in front of it there, so the gap reached that caller unguarded
+  until this fix. Also corrects a stale `doctor.py` comment claiming
+  `oss_config.repo_problem` does not exclude `?`/`#`, no longer true since #1475
+  widened `REPO_RE` itself to do so (#1521).
+
+- `/oss:run`'s own step 2 procedure now says plainly that a pull request a curate/triage/changelog
+  step just opened is not this session's to wait on: return to step 2 immediately rather than
+  blocking on that PR's CI. The re-rank is safe because `--take <source>`'s own repeat-suppression
+  receipt, armed before the step was spawned, already keeps `next_action.py` from routing back into
+  the same open step (#1549).
+
+- A triage sweep's report has five parts, but only part 1 (labels applied) ever wrote anything --
+  parts 2-5 were handed to an `oss:scheduler-step` spawn that reads one procedure, acts and dies
+  with its context, so board findings, clusters and the cohort burn-down died with it (#1550).
+  `commands/run/triage.md` now points board findings (part 3) and clusters (part 4) at the
+  existing findings-routing rule (`skills/manager/phases/findings.md`'s "Routing a finding is the
+  same read as ranking it", #1275) that already reaches every other loop agent, and folds the
+  cohort burn-down (part 5) into the same `oss_state.py --decision --triage-recorded` call's
+  `--detail` JSON, so a series accumulates without any code change to `oss_state.py`.
+
+- `commands/run/curate.md` opens one pull request per pass, and that pull request closes nothing
+  by construction every time -- the issue numbers in a fragment's own filename are provenance, not
+  the subject of the pass -- but nothing in the file said so, so a pass would hit
+  `gh-pr-create`'s own closing-reference refusal and stop to ask a maintainer mid-pass (#1552). The
+  procedure now states the convention directly beside its existing branch-naming paragraph: set
+  `no_close = true` in the payload, and say `Part of #N` in the body if provenance is wanted
+  visible.
+
+- `next_action.record_skip()` refused `dispatch` as a `taken_source`, so a deliberate fall-through
+  to dispatch over a due-but-skipped `curate`/`triage`/`inbound`/`release` candidate could never be
+  recorded -- `dispatch` is a real, name-able outcome but is never one of `rank()`'s own ranked
+  candidates, so it was never in `known_sources` (#1553). `record_skip` now accepts `dispatch` as a
+  distinguished, always-valid `taken_source` while still refusing an unrelated typo or hallucinated
+  name, so the decision to dispatch instead of a due candidate is now a readable line in the state
+  file's decision log. This does not arm the same per-source repeat-suppression receipt
+  `curate`/`triage`/`inbound` use -- `_arm_route_source` still treats `dispatch` as a no-op, so a
+  skipped candidate still reports `due` again on the very next tick; only a human reading the log
+  can see the pattern, not `_route_already_seen`.
+
+- `skills/manager/phases/dispatch.md` and `docs/pick-the-work.md` no longer describe the
+  `lane-collision` disposition, the `measured`/`inferred` adjacency fields or the two doctor
+  checks (`doctor_check_lane_patterns.py`, `lane_pattern_coverage.py`) that #1528/#1530 already
+  retired -- a reader following either doc as written would have believed overlapping candidates
+  were still screened out automatically, or typed a `--brief <brief-file>` call shape and
+  "registers the lane" language that no longer matches what `lane_setup.py --claim` does (#1555).
+
+- Five of the largest jit-context `remind` bodies -- the mode delivered on every match, never
+  deduped, because a spawned agent inherits its parent's `session_id` -- carried incident narrative
+  alongside their directives, even though the rule this repository already applies to `agents/`,
+  `skills/manager/` and `commands/` prose ("state the rule and the call; leave the incident in its
+  own issue") had never been extended to the corpus re-sent most (#1584). Roughly 44% smaller
+  across the five, incident narrative left in the numbered issues that produced each rule, every
+  directive and citation kept. `md-is-a-manual-not-a-rationale.md`'s own `match:` now covers
+  `.claude/jit-context/**`, and a new size budget (`scripts/remind_budgets.py`) makes a body that
+  regrows past its shrunk size fail loudly instead of drifting back up unnoticed. The other half of
+  #1584 -- redefining `once` to dedupe per-agent rather than per-session, so a `remind` rule no
+  longer has to be the only mode that survives a multi-agent spawn -- stays blocked on
+  `claude-jit-context` shipping a release past 0.9.0 with the fix merged in #395.
+
+- `sub_manager_spawn_guard.py` refused the scheduler its own second tick: a repo-global role
+  marker could not tell a nested sub-manager spawn from the scheduler asking after its own
+  sub-manager's marker was left behind (#1585). The guard now reads the PreToolUse payload's own
+  `transcript_path` -- a main-session caller (the scheduler) is never a nested sub-manager spawn
+  and is allowed before the marker is even consulted; an absent or unrecognised `transcript_path`
+  falls back to today's marker-based behaviour unchanged. `agent_role.py --clear` had zero
+  programmatic callers, so an otherwise-clean tick's marker regularly outlived it; clearing is now
+  a side effect of `tick_handback.py`'s already-mandatory draft-validation call
+  (`--clear-marker-root`), fired only when the classified verdict is `completed`. Also closed: an
+  unguarded `import agent_role` used to crash the whole hook with a bare traceback instead of
+  failing open, the one other failure shape the module's own docstring already promised to handle.
+
+- `agents/developer.md` stated the recon-first ordering rule twice but pinned no call shape and
+  never said the spawn must block, so a lane could satisfy "spawn recon first" with a
+  `run_in_background`-default call and orient the tree itself while recon ran -- paying for both,
+  the exact inverse of what recon exists to save (#1586). The brief now carries the same literal,
+  blocking `Agent(...)` call `skills/manager/phases/dispatch.md:62` already pins, plus the reason
+  blocking matters.
+
+- A tick that merges a curate-authored pull request now says so in its own handback (#1600). The
+  `^curate/` never-auto-merge gate came off in #1602/#1604, so a curate pull request merges on green
+  in an ordinary tick's merge step, with nothing left in the pull-request list to catch a merge that
+  goes unreported. `oss:tick-merge` now reads the merged pull request's head branch and title
+  alongside the author-association check it already ran, and reports the title verbatim as a
+  `CURATE:` line when the branch matches `^curate/`; `oss:sub-manager` carries it into
+  `oss:tick-accounting`'s prompt, and `tick_handback.py` folds it into the tick's `TICK:` block the
+  same way it already folds `COST:` -- optional, never affecting which state is chosen, absent on an
+  ordinary tick.
+
+- The `^curate/` never-auto-merge gate comes off (#1602). A curate-authored pull request used to be
+  held for the maintainer on its head-branch marker alone, on the theory that `author_association`
+  cannot tell it apart from any other loop pull request the way it tells an external contributor's
+  apart -- true, and not the point: the gate produced a pull request that sat green and unread for
+  hours, found by the maintainer scrolling the pull request list rather than by anything in the
+  loop. A curate pull request now merges on green like everything else; the external-contributor
+  gate is untouched.
+
 ## [0.37.0] - 2026-09-16
 
 ### Added
@@ -11760,7 +11898,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.37.1...HEAD
+[0.37.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.37.1
 [0.37.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.37.0
 [0.36.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.36.0
 [0.35.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.35.0
