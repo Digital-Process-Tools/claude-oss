@@ -12,8 +12,11 @@ existing `curate/<UTC timestamp>` branch-naming paragraph: set `no_close =
 true` at the payload's top level, and say `Part of #N` in the body rather
 than a closing keyword, if provenance is wanted visible.
 
-Content-invariant checks, the same `_collapse` + substring pattern
-`tests/test_curate_pr_never_auto_merge_1467.py` already uses over this file.
+Content-invariant checks, the same `_collapse` + substring pattern this repo's
+own content-invariant test files already use over prose -- see
+`tests/test_content_invariants.py` for the general shape. (Formerly cross-
+referenced `tests/test_curate_pr_never_auto_merge_1467.py`, deleted by #1602
+since that file's whole premise was the gate this one no longer describes.)
 """
 
 import re

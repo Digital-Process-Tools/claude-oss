@@ -163,7 +163,7 @@ def test_the_ordering_check_would_catch_a_reversal():
 # --------------------------------------------------- the phase file agrees
 
 
-def test_merge_phase_states_the_same_two_reads():
+def test_merge_phase_states_the_same_read():
     """`merge.md` is where the gates live; a derivation documented only in the
     spawn leaves the phase file's own readers deriving nothing."""
     text = _text(MERGE_PHASE)
