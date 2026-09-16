@@ -301,7 +301,7 @@ when a file crosses it.
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 4,350 B | 4,400 B |
-| `agents/tick-dispatch.md` | 6,829 B | 6,900 B |
+| `agents/tick-dispatch.md` | 6,876 B | 6,900 B |
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
 | `agents/tick-merge.md` | 7,233 B | 7,300 B |
 | `agents/tick-accounting.md` | 7,219 B | 7,700 B |
@@ -413,11 +413,11 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,670 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 58,022 B | 58,500 B |
+| `skills/manager/SKILL.md` | 42,649 B | 44,800 B |
+| `skills/manager/phases/dispatch.md` | 57,948 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
-| `skills/manager/phases/tick-order.md` | 35,308 B | 36,000 B |
+| `skills/manager/phases/tick-order.md` | 35,268 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
