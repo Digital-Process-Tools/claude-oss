@@ -14,6 +14,7 @@
 (^|/)(agents/([^/]+\.md|[^/]+/[^/]+\.md)|skills/manager/([^/]+\.md|phases/[^/]+\.md)|commands/[^/]+\.md|\.claude/jit-context/.+\.md)$	md-is-a-manual-not-a-rationale.md
 (^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
+(^|/)scripts/[^/]+\.py$	regex-against-stringified-path-assumes-posix-separator.md
 (^|/)scripts/oss_rules\.py$|(^|/)\.claude/jit-context/.*/00-index\.tsv$	rules-layer-symlinks.md
 (^|/)(commands/run/.*\.md|agents/scheduler-step\.md|commands/run\.md)$	run-step-worktree-and-pr-ownership.md
 (^|/)scripts/[^/]+\.py$	script-boundaries.md
@@ -21,9 +22,10 @@
 (^|/)scripts/statusline\.py$	statusline-cache-staleness.md
 (^|/)(agents/sub-manager\.md|commands/tick\.md|skills/manager/phases/tick-order\.md)$	sub-manager-goal.md
 (^|/)(skills/manager/phases/merge\.md|agents/sub-manager\.md)$	sub-manager-probe-is-not-maintainer-consent.md
-(^|/)scripts/sub_manager_spawn_guard\.py$	sub-manager-spawn-guard-fail-open-gaps.md
+(^|/)scripts/(sub_manager_spawn_guard|agent_role)\.py$	sub-manager-spawn-guard-fail-open-gaps.md
 (^|/)(scripts|tests)/[^/]+\.py$	subprocess-decodes-with-the-locale.md
 (^|/)tests/	test-fixture-pitfalls.md
+(^|/)(scripts/tick_handback\.py|agents/tick-merge\.md)$	tick-handback-curate-parsing.md
 (^|/)trap\.d/	trap-fragments.md
 (^|/)agents/triager\.md$	triage-merged-but-still-open-needs-reopen-check.md
 (^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md

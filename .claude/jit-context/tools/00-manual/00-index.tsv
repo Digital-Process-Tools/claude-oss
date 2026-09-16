@@ -13,4 +13,5 @@ Bash	~gh-pr-merge	stacked-pr-cleanup-recovery.md	once
 Bash	~gh-pr:[0-9]+:status|gh-branch|gh-job:	sub-manager-hand-polls-ci.md	once			
 Bash	~supertool	supertool-answers-can-diverge-from-ground-truth.md	once			
 Bash	~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit	supertool-payload-forms.md	once			
+Bash	~tree_snapshot\.py	tree-snapshot-compare.md	once			
 Bash	~(until|while) |grep -q	waiting-on-a-status-line.md	once			

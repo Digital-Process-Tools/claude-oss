@@ -46,6 +46,25 @@ ran and a check that found nothing must not render identically.**
 - **Grep for the second copy once the first is confirmed.** That same `_undeclared_rows` body is
   copy-pasted verbatim into `developer_phases.py`, scanning a different directory. Same bug, fixed
   in the same commit even though nothing writes concurrently there today.
+- **`Path.exists()` does not swallow `EACCES`/`EPERM` on the interpreters this repo actually runs
+  (3.9/3.11/3.13, per `doctor.py`'s own `_safe_is_file` measurement) -- only local 3.14 does.**
+  `scripts/remind_budgets.py`'s `check()` documents a third state (`missing`) for exactly this class
+  of absence, but its own branch is a bare `if not path.exists():`; on a mode-000 parent directory it
+  raises `PermissionError` instead of returning any of `ok`/`over`/`missing` (#1584). Same shape,
+  pre-existing, at `agent_budgets.py:615` and `claude_md_budget.py:136` -- a new instance of an
+  existing class, not a regression. Wrap the probe in `try/except OSError` and report a fourth state
+  (`unreadable`), the way `doctor.py`'s own `_safe_is_file` already does, rather than letting the
+  exception through.
+- **A docstring citing this repo's own measurement can still invert it.** `scripts/oss_config.py`'s
+  `_stat_kind` docstring and `ensure_worktree_root`'s comment (#383) both assert `is_file()`/`is_dir()`
+  "swallow `OSError` internally" as the justification for a fix, citing this repo's own probe -- but
+  the cited authority (`doctor.py`'s `_safe_is_file` docstring) says the opposite: `EACCES`/`EPERM`
+  is *not* swallowed on 3.9/3.11/3.13, only on local 3.14. Observed directly on 3.11 and 3.13:
+  `exists()`, `is_file()`, `is_dir()` all raise `PermissionError` against a mode-000 parent. The code
+  itself was not wrong -- `_stat_kind` is strictly safer either way -- but a docstring a future reader
+  consults to decide whether a bare `.is_file()`/`.is_dir()` call elsewhere is safe said the wrong
+  thing. Check a "this swallows OSError" claim against `doctor.py`'s own measured ignored-errno set
+  before writing it into a comment, not just against what the code around it happens to do safely.
 - **A helper whose "nothing to report" case is a falsy check (`not x`) rather than an explicit "was
   this computed at all" check folds two different facts into one output.** `select_issues.py`'s
   draft `_overlap_info(files)` returned `None` whenever `files` was falsy -- both for a candidate
