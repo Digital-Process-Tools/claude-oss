@@ -244,8 +244,8 @@ If you think the rules above rank a particular issue wrongly, **say so and rank 
 reason.** That disagreement is worth more than the label: you are the one who read the issue, and the
 table was written before it existed.
 
+No preamble, no retrospective.
+
 ## Trap
 
 Something is not normal and you want to report it -- read `trap.d/README.md`.
-
-No preamble, no retrospective.
