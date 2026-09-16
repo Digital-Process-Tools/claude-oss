@@ -70,10 +70,12 @@ def test_curate_md_names_part_of_n_for_visible_provenance():
 
 
 # Positive control: the pre-#1552 shape states the branch-naming convention
-# but says nothing about the payload's own closing behaviour.
+# but says nothing about the payload's own closing behaviour. #1602 dropped the
+# merge-time gate this sentence used to describe, so the wording it pins moved
+# with it -- the marker itself is still named, the "gates on" claim is not.
 PRE_1552 = (
-    "A head branch matching `^curate/` is what `skills/manager/phases/merge.md` "
-    "gates on"
+    "the prefix is still what tells a reader it is curate's own rather than a "
+    "developer lane's"
 )
 
 

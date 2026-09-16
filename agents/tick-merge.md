@@ -50,23 +50,20 @@ of which process is asking. You never write or clear that marker yourself, the s
 Read `skills/manager/phases/merge.md` and follow it in full, for the one pull request your prompt
 named:
 
-0. **Derive the gate facts before you merge, because your prompt carries none of them (#1571).** You
-   are handed a bare pull request number. Two of `merge.md`'s gates turn on facts that number does
-   not tell you, so read them first:
+0. **Derive the gate fact before you merge, because your prompt carries none of it (#1571).** You
+   are handed a bare pull request number. One of `merge.md`'s gates turns on a fact that number does
+   not tell you, so read it first:
 
    ```bash
-   supertool 'gh-pr:N:status'
    gh api repos/{owner}/{repo}/pulls/N --jq .author_association
    ```
 
-   `gh-pr:N:status` names the head branch (`branch: <head> -> <base>`). A head branch matching
-   `^curate/` -- anchored, so a branch merely containing the word is not one -- is a curate-authored
-   pull request. `gh-prs` has no `external` filter or flag at all (#1573); no supertool op returns
-   one pull request's own `author_association` either, so the second line is a raw `gh api` call the
-   guard leaves untouched. Feed it to `inbound_triage.classify_pr` -- `"not-inbound"` clears the
-   gate, `"could-not-tell"` is a failed read, anything else holds it: report it, do not merge it.
+   `gh-prs` has no `external` filter or flag at all (#1573); no supertool op returns one pull
+   request's own `author_association` either, so this is a raw `gh api` call the guard leaves
+   untouched. Feed it to `inbound_triage.classify_pr` -- `"not-inbound"` clears the gate,
+   `"could-not-tell"` is a failed read, anything else holds it: report it, do not merge it.
 
-   **Three states, and the third is the one that matters here.** If either read fails, or
+   **Three states, and the third is the one that matters here.** If the read fails, or
    `classify_pr` returns `"could-not-tell"`, that is `could-not-merge` with the failure quoted --
    never a merge on the grounds that nothing objected. **A gate you did not read and a gate that
    passed produce the same merge**, which is why this step is numbered before the one that writes.
@@ -82,8 +79,8 @@ named:
    file's own "The merge is not done when the PR is green" section.
 
 **Never auto-merge past that file's own gates.** A pull request that is feature scope, a public API
-or behaviour change, external-contributor-authored, or head-branched `^curate/` is not yours to
-merge -- report it instead of routing around the gate.
+or behaviour change, or external-contributor-authored is not yours to merge -- report it instead of
+routing around the gate.
 
 ## Report back
 
