@@ -118,7 +118,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # became 46225 B, well past the old 44300 B ceiling. Ceiling moves to 46300 B,
     # ~0.2% headroom -- tighter than the usual self-referential margin because three
     # passes each added their own paragraph to this same section.
-    "CLAUDE.md": (46225, 46300),
+    # Re-baselined for #1619, the second editing exception: the token-economy
+    # paragraph's 2026-09-14 reading was rewritten with a current one, re-derived
+    # (not trusted) with `loop_cost_report.py` against both claude-oss and
+    # claude-supertool, and the old paragraph's implied before-and-after was
+    # replaced with an explicit statement that the two windows are shaped
+    # differently, plus this row's own self-referential rewrite converging on
+    # the final size. 46225 B became 47801 B, past the old 46300 B ceiling.
+    # Ceiling moves to 47900 B, ~0.2% headroom.
+    "CLAUDE.md": (47801, 47900),
 }
 
 
