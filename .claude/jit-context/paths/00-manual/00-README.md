@@ -563,7 +563,67 @@ same "which guard actually covers what you touched" problem this file already ex
 
 **Deferred, left in `trap.d/` unchanged.**
 
-- `1544.tree-snapshot-vanished-inside-worktree` -- root cause genuinely unconfirmed (candidates
-  include an environment sweep, a reviewer spawn's own cleanup, or pytest's own side effects; none
-  ruled in or out). Too thin to tell a real rule from a one-off until it recurs or the cause is
-  pinned down.
+- `1544.tree-snapshot-vanished-inside-worktree` -- deferred in the 2026-09-16 pass above; carried
+  forward unchanged (no recurrence, no new information) and reconsidered here. Root cause is still
+  unconfirmed, but the defensive mitigation the fragment itself names (snapshot immediately before
+  spawning, read back at compare time) stands on its own regardless of cause, so this pass promotes
+  it to `tools/00-manual/tree-snapshot-compare.md` rather than deferring a third time on the same
+  unchanged evidence.
+
+## 2026-09-16 — 16 fragments, 4 fed 3 new rules, 7 merged, 4 declined, 1 deferred
+
+Three new rules from four fragments: `tools/00-manual/tree-snapshot-compare.md`
+(`1544.tree-snapshot-vanished-inside-worktree`, promoted -- see the note above), and
+`paths/00-manual/tick-handback-curate-parsing.md` (both `1600` fragments together, since read
+side by side they are one composition risk between the same two commits rather than two), and
+`paths/00-manual/regex-against-stringified-path-assumes-posix-separator.md`
+(`1618.worktree-attribution-regex-assumes-forward-slash-separator`).
+
+Seven merges into five existing files: `paths/00-manual/posix-shell-portability.md`
+(`1511.pre-existing-non-ascii-glyphs-in-oss-workspace-oss-step-uncoded-for-cp1252` -- a glyph
+printed by a shell script can be unencodable on the console it reaches), `paths/00-manual/
+filesystem-probe-states.md` (two fragments -- `1584.remind-budgets-check-raises-instead-of-
+missing-state` and `383.stat-kind-docstrings-invert-doctor-py-measurement`, both misreadings of
+what `Path.exists`/`is_file`/`is_dir` swallow on this repo's own supported interpreters),
+`paths/00-manual/sub-manager-spawn-guard-fail-open-gaps.md` (two fragments -- `1585.clear-marker-
+root-uses-git-dir-not-common-dir` and `1585.spawn-guard-transcript-path-assumption-not-live-fire-
+verified`, both further gaps in the same module's fail-open contract; match widened to include
+`scripts/agent_role.py`, where the marker path this pass's finding concerns actually resolves),
+`tools/00-manual/sub-manager-hand-polls-ci.md` (`1594.tick-merge-spawn-notified-five-hours-after-
+its-merge` -- a spawn that has already gotten its answer another way needs to close its own
+backgrounded poll, not leave it resident), and `paths/00-manual/subprocess-decodes-with-the-
+locale.md` (`1595.delegation-cost-json-could-not-read-stdout-encoding` -- the same Windows
+encoding risk this file already names, running in the write direction: `print()` to stdout, not
+only `subprocess` reads).
+
+**Declined, with the reason.**
+
+- `1516.oss-workspace-replay-stub-feeds-mcp-list-text-to-mcp-get-liveness-ask` -- a real,
+  well-confirmed correctness bug in one relay stub's argv-blind dispatch, but a single incident
+  confined to one call site with a non-trivial fix (real per-argv dispatch or a second relay of an
+  already-computed answer) -- a code fix for whoever picks up `bin/oss-workspace`'s census plumbing
+  next, not a pattern that recurs elsewhere.
+- `1555.lane-coupling-check-vanished-worktrees-precedent-does-not-hold` -- a reasoned answer to one
+  issue's own design question (does `doctor_check_lane_coupling.py` share `check_vanished_
+  worktrees`'s retirement precedent -- checked directly against `oss_config.py`/`scaffold.py` and
+  found it does not, since `labels.lane_patterns` still has a live write path). The answer is
+  already recorded in the issue; nothing here is a rule for a future lane to act on.
+- `1578.markdownlint-json-missing-from-claude-md-ownership-table` and `1584.claude-md-has-no-
+  dedicated-section-for-remind-budgets-py` -- two real completeness gaps in `CLAUDE.md`'s own hand-
+  curated tables (a `defaults`-tier file missing from the ownership contracts row; a new budgeted
+  script with no dedicated `##` section), each with a concrete code-level fix named in its own
+  fragment (a comparison test in `test_claude_md_ownership_table_1348.py`'s own shape; a maintainer
+  decision on whether `remind_budgets.py` earns a full section or a folded mention). Neither is
+  actionable by a jit-context rule: the loop cannot edit `CLAUDE.md` outside its own three narrow
+  exceptions, so a future lane reading a rule here still could not act on it. Same shape as `1583.
+  claude-md-layout-lists-deleted-report-phase-file`, declined above for the identical reason.
+
+**Deferred, left in `trap.d/` unchanged.**
+
+- `1584.jit-rules-and-subagents-vocab-stale-after-once-flip` -- issue #1584's own reopening comment
+  deliberately deferred this exact rewrite as a separate change with its own argument ("bundling it
+  here would mix a mechanical flip with a rewrite"), after `claude-jit-context` 0.10.0 changed
+  `once`-mode dedup from per-session to per-reader. Attempting the rewrite inside this pass, without
+  independently re-verifying the new semantics against the 45 default-mode files the same comment
+  flags as a separate open question, risks landing a second wrong claim into a rule already caught
+  getting a harness-payload fact wrong once. Left for the dedicated rewrite the issue asked for.

@@ -131,7 +131,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # recon.md and tick-dispatch.md, each gaining the identical one-line "## Trap"
     # trigger pointing at trap.d/README.md), plus this row's own rewrites converging
     # with #1619's own change on the merged size. 47801 B became 49347 B, past the
-    # 47900 B ceiling. Ceiling moves to 49400 B, ~0.1% headroom -- the same narrow
+    # 47900 B ceiling. Ceiling moved to 49400 B, ~0.1% headroom -- the same narrow
     # self-referential margin every prior raise of this row gives.
     # Re-baselined for #1624, the third editing exception: agents/doctor.md's own
     # row and ceiling raised for the HEAD-check/commit disposition the repaired arm
@@ -144,7 +144,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # plus this row's own rewrites converging on the new size. 49750 B became
     # 50032 B, past the 49750 B ceiling. Ceiling moves to 50100 B, the same narrow
     # self-referential margin.
-    "CLAUDE.md": (50032, 50100),
+    # Re-baselined for #1629, the third editing exception: the "Command files have
+    # a size budget too" section's false claim that the harness never discovers
+    # commands recursively was corrected there, in commands/run.md's own dispatch
+    # and release prose, and in the Layout table's picker line; commands/run.md's
+    # own row and ceiling raised in scripts/command_budgets.py; this row's own
+    # rewrites converged on 50670 B in isolation, from the same 49347 B base #1624
+    # started from.
+    # Merged: #1624 and #1629 landed from that same base in parallel lanes;
+    # rebasing #1624 onto #1629's already-merged branch combines to 51783 B, past
+    # the 50100 B ceiling #1624's own self-review round had set. Ceiling moves to
+    # 51900 B, ~0.23% headroom -- the same narrow self-referential margin every
+    # prior raise of this row gives.
+    "CLAUDE.md": (51783, 51900),
 }
 
 

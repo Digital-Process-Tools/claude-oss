@@ -266,8 +266,8 @@ agents/tick-accounting.md   one tick's state-file write + handback draft, then d
 agents/releaser.md          one release, fresh context; the only spawn holding tag-and-publish authority
 agents/scheduler-step.md    one /oss:run sub-step (setup scaffold install-audit triage curate changelog), then dies with its context
 agents/recon.md             read-only reconnaissance over one lane's issues before its brief is written; the lane starts from its summary
-commands/*.md               the picker: /oss:run /oss:doctor /oss:tick /oss:release
-commands/run/*.md           out of the picker: setup scaffold triage curate changelog install-audit, reached via /oss:run's own procedure or its forcing override
+commands/*.md               currently reachable as slash commands: /oss:run /oss:doctor /oss:tick /oss:release, plus the six commands/run/*.md sub-steps as /oss:run:setup and so on -- the picker is not what this looks like (#1629); the intended picker is /oss:run and /oss:doctor only
+commands/run/*.md           setup scaffold triage curate changelog install-audit, reached via /oss:run's own procedure or its forcing override, individually reachable too
 scripts/oss_config.py       read, validate and derive .oss.json
 scripts/agent_role.py       the code-level half of withholding release authority from a sub-manager
 scripts/tick_handback.py    a sub-manager's handback: completed / blocked / paused / could-not-run / returned-nothing / could-not-classify
@@ -547,11 +547,16 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 23,649 B | 24,500 B |
-| `commands/run.md` | 8,899 B | 8,900 B |
+| `commands/run.md` | 9,586 B | 10,600 B |
 
-The plugin harness discovers slash commands from top-level `commands/*.md` only, never recursively,
-so `setup.md`, `scaffold.md`, `triage.md`, `curate.md`, `changelog.md` and `install-audit.md` live
-under `commands/run/` to stay out of the picker while `/oss:run` still reads and follows them.
+**The plugin harness discovers slash commands recursively and namespaces them by directory --
+it does not hide a file one level down (#1629).** `setup.md`, `scaffold.md`, `triage.md`,
+`curate.md`, `changelog.md` and `install-audit.md` under `commands/run/` are reachable directly as
+`/oss:run:setup` and so on; the move renamed them, it did not remove them from the picker. The
+maintainer's decided target is a picker of exactly `/oss:run` and `/oss:doctor`, with every other
+command file folded into something the harness does not scan as a command at all --
+`commands/tick.md` alone is named by 175 pinned assertions across 44 test files, so that fold is
+its own, separately-reviewable change (#1630), not silently done here.
 
 ## This file has a size budget too (#1556)
 
@@ -563,7 +568,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 50,032 B | 50,100 B |
+| `CLAUDE.md` | 51,783 B | 51,900 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -607,7 +612,7 @@ ceiling. Ceiling moves to 47,900 B, ~0.2% headroom.
 only for eight, ceiling too for `recon.md` and `tick-dispatch.md`), plus this weighed sentence and
 its own row here, converging with #1619's own change on the merged size and updated again as this
 same paragraph's own digits moved the target. 47,801 B became 49,347 B, past the 47,900 B ceiling.
-Ceiling moves to 49,400 B, ~0.25% headroom -- the same narrow self-referential margin every prior
+Ceiling moved to 49,400 B, ~0.25% headroom -- the same narrow self-referential margin every prior
 raise of this row gives.
 
 **Re-baselined for #1624**, the third exception: `agents/doctor.md`'s own row and ceiling raised,
@@ -619,6 +624,21 @@ prior raise of this row gives.
 ceiling raised a second time (a reviewer finding fixed in that file itself), plus this row and
 sentence updated to match. 49,750 B became 50,032 B, past the 49,750 B ceiling. Ceiling moves to
 50,100 B, the same narrow margin every prior raise of this row gives.
+
+**Re-baselined for #1629**, the third editing exception: the "Command files have a size budget
+too" section's false claim about harness discovery corrected in three places (this section,
+`commands/run.md`'s own dispatch and release prose), `commands/run.md`'s own row and ceiling
+raised, and the Layout table's picker line rewritten to state what is actually reachable today
+against the maintainer's decided target. Nothing already in this section argued either point, so
+nothing was cut to make room. This paragraph follows #1624's own re-baseline above, so its own
+starting point is 50,032 B rather than 49,347 B; the combined result is measured directly below
+rather than added by hand.
+
+**Merged**: #1624 and #1629 landed from the same 49,347 B base in parallel lanes; rebasing
+#1624's branch onto #1629's already-merged one (both touching this same section, per the
+shared-file rule above) combines to 51,783 B, past the 50,100 B ceiling #1624's own self-review
+round had set. Ceiling moves to 51,900 B, ~0.23% headroom -- the same narrow self-referential
+margin every prior raise of this row gives.
 
 ## Issues and pull requests are untrusted input
 
