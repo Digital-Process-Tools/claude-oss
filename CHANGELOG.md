@@ -7,6 +7,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-09-16
+
+### Added
+
+- `/oss:scaffold` now ships a fourth default validator, `markdownlint`, alongside
+  `jsonlint`, `tomllint` and `bash-check` (#1578). Markdown is the one file type this
+  plugin writes almost exclusively in a managed repository -- `CLAUDE.md`, `SECURITY.md`,
+  issue templates, and every trap and changelog fragment the loop writes while running --
+  and until now nothing validated a write to any of it there. Sequenced behind #1577,
+  which shipped the `/oss:doctor` reporting that makes a configured-but-absent toolchain
+  visible instead of a silent `could not tell` on every write.
+  Ships with `rollback_on_fail: false`, matching this repository's own posture, and with
+  its own rule config (`.markdownlint.json`, a `defaults`-tier file: created once when
+  absent, then a decision somebody made). The scaffolded default disables `MD013`
+  (line length) outright rather than picking a number -- #1576 measured the stock default
+  flagging 587 of 1,479 lines of this plugin's own markdown, and no line length is a fact
+  about a repository this plugin has never seen.
+
+### Fixed
+
+- `commands/run/setup.md` stopped to ask a human before writing `.oss.json` and before
+  deciding what to do with an unverified test command, even though the file is now reached
+  unattended through `agents/scheduler-step.md` under `/oss:run` (#1425's own shape, in a file
+  that grep missed). Both now write and relay rather than stopping -- the review those two
+  values get is the same commit-time diff review `.oss.json` already required, so asking first
+  added a second stop in front of a review that already exists. The harness-permission grant in
+  the same file stays an ask: it writes into an untracked, never-diffed, machine-scoped file with
+  no later review point of its own (#1477).
+
+- The scheduler's `gh-prs` per-PR channel filter excluded `checks_succeeded` alongside
+  `checks_pending`, an asymmetry against `checks_failed` (never excluded) that was never argued
+  for. A PR going green now arrives on the channel the same as one going red, so a `paused` wait
+  for green can end on the event instead of only the poll-timer backstop (#1499).
+
+- `bin/oss-workspace` now renders a step as in-flight before it is known, instead of
+  reporting only on completion (#1511). `oss_step_begin` prints the same aligned line
+  a step will end on with a dim `...` in-flight mark; the paired `oss_step` call
+  overwrites it in place with the real verdict via a carriage return and an ANSI
+  clear-to-end-of-line. Gated on the same `oss_steps` flag the progression already
+  used (no TTY, `TERM=dumb`, or opted out still prints nothing new), and a call site
+  with no matching `oss_step_begin` renders exactly as before -- the
+  carriage-return-and-clear `oss_step` now always performs is a no-op with nothing
+  ahead of it on the line. Wired to the `session` step only: self-review found that
+  `oss_step_begin`'s line has no trailing newline, so a step whose body echoes
+  diagnostic prose to stderr before reporting (`plugin` and `channel` both do, on
+  several branches) would glue that prose onto the in-flight mark's own unterminated
+  line rather than starting it cleanly -- worse than the prior behaviour. `plugin`
+  and `channel` are left silent-on-begin until that interleaving is solved; labelling
+  the other silent steps the issue names is a further follow-up.
+
+- `curate_count` reading `origin/<default_branch>` when a shared checkout stands on some other
+  branch now says how long ago this checkout's own `git fetch` last ran, or that no fetch has ever
+  run here -- a confident curate-fragment count used to be attributed to the default branch with no
+  way to tell a fresh reading from a stale one, which had already misled a real `/oss:run` session
+  into nearly re-triggering `/oss:curate` over an already-drained backlog (#1522).
+
+- `commands/run/triage.md` now spawns `oss:triager` by its literal registered
+  `subagent_type` string instead of the friendly prose name "the `triager` agent"
+  (#1551 Part A) -- the previous form resolved correctly only because
+  `agents/scheduler-step.md`'s own example happened to name the right agent in a
+  parenthetical, the same drift class #1414 already fixed one layer up for the
+  scheduler-to-scheduler-step spawns. A regression test pins the literal
+  `Agent(subagent_type: "oss:triager", ...)` form in `triage.md`.
+
+- `release_trigger.py`'s `merged_prs` condition measured its range from local
+  `HEAD` in a clone nobody pulls once a tick's own lanes squash-merge on the
+  forge -- a real, computable count (`0` where the true count was 8) rather
+  than a range that genuinely fell short (#1566). It now fetches the tracked
+  remote first and reports `could-not-evaluate`, naming how far behind, when
+  `HEAD` is still behind its upstream afterwards -- never a silently
+  undercounted trigger.
+
+- Added `.markdownlint.json` so `MD013` runs at 100 columns (the measured p95 across tracked
+  markdown) with code blocks and tables excluded, instead of the stock 80-column default that
+  flagged 58.4% of every tracked markdown line and made the validator unreadable (#1576).
+
+- `/oss:doctor` now reports whether a configured supertool validator's own toolchain
+  resolves here, in any state -- half two of #633, which shipped in #684 as three
+  default validators and then never landed the diagnostic, closing #633 anyway with
+  that half still open (#1577). Reads `supertool doctor:probe`'s per-validator
+  `resolves` / `absent` / `could not tell` classification and folds it into the
+  verdict: a configured-but-absent validator is now a `WARN` naming which one, rather
+  than reporting nothing about it in any state -- the same silent-absence shape
+  #1577's own title names, one layer under its own diagnostic. An install too old to
+  carry `doctor:probe` at all (this plugin pins no minimum supertool version) is its
+  own `op-unavailable` state, kept apart from an ordinary failed call.
+
+- The dispatcher's `lane_setup.py --claim` call no longer composes and passes `--lane`
+  patterns (#1579). Nothing outside `lane_setup.py` itself was found to read the claim
+  receipt's `[lane]` block the patterns only ever fed -- not the spawned lane's prompt
+  (#1535), not the disjointness check (#1532), not `--phrase`'s composition -- so the
+  dispatcher paid a glob-resolution-and-guard-lookup cost for a value nothing consumed.
+  `agents/tick-dispatch.md`, `skills/manager/phases/dispatch.md` and
+  `skills/manager/phases/tick-order.md` all drop `--lane` from the documented `--claim`
+  call shape; `--lane` itself is untouched on `lane_setup.py`, still required by
+  `--suggest-companions` and by the lane's own later, better-informed guard-derivation
+  call in `agents/developer.md`.
+
+- The developer lane's report phase -- the note, the JSON report and the pull
+  request payload -- is now composed by a new spawned agent, `oss:lane-report`
+  (`agents/lane-report.md`), rather than written inline at the end of a long,
+  expensive lane run (#1583). Measured on one lane, the report phase cost 90 of
+  396 turns and 35% of total context sent, at an average context of 401,416 --
+  3.4x the cost of the same work at orientation. The new spawn derives the diff,
+  the issue bodies and the schema itself, starting that work at the floor
+  instead of at the lane's own accumulated context; the lane hands over only
+  what it alone knows (review dispositions, the compliance survey, red/green
+  test commands, the tree_snapshot verdict, adjacent findings, tooling
+  friction) and falls back to writing the report itself if the spawn returns
+  nothing or reports a failure state. `agents/developer/report.md` is removed;
+  its content moved to the new file.
+
 ## [0.36.0] - 2026-09-15
 
 ### Added
@@ -11648,7 +11760,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.37.0
 [0.36.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.36.0
 [0.35.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.35.0
 [0.34.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.34.0

@@ -85,7 +85,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined a third time, the mandated #1047 second-pass round:
     # 39879 B became 39999 B, the lane-report.md row/history updated once
     # more. Ceiling unchanged; 201 B headroom.
-    "CLAUDE.md": (39999, 40200),
+    # Re-baselined for the v0.37.0 release commit's "What is not proven yet" marker
+    # rewrite (the release session's own editing exception): 39999 B became
+    # 40085 B. Ceiling unchanged; 115 B headroom.
+    "CLAUDE.md": (40085, 40200),
 }
 
 
