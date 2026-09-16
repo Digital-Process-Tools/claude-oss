@@ -133,7 +133,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # with #1619's own change on the merged size. 47801 B became 49347 B, past the
     # 47900 B ceiling. Ceiling moves to 49400 B, ~0.1% headroom -- the same narrow
     # self-referential margin every prior raise of this row gives.
-    "CLAUDE.md": (49347, 49400),
+    # Re-baselined for #1624, the third editing exception: agents/doctor.md's own
+    # row and ceiling raised for the HEAD-check/commit disposition the repaired arm
+    # was missing, plus this row's own rewrites converging on the new size. 49347 B
+    # became 49671 B, past the 49400 B ceiling. Ceiling moves to 49750 B, ~0.15%
+    # headroom -- the same narrow self-referential margin every prior raise gives.
+    "CLAUDE.md": (49671, 49750),
 }
 
 

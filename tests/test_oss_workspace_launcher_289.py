@@ -638,3 +638,33 @@ def test_plugin_version_still_describes_the_running_install():
     state, version = doctor._manifest_version(doctor.PLUGIN_ROOT)
     assert state == "read", (state, version)
     assert doctor.plugin_version() == version
+
+
+def test_content_skew_at_the_same_version_is_not_a_warn_1623(tmp_path):
+    """#1623: a clone ahead of its own release still declares the SAME manifest
+    version as the cache copy it resolves to on PATH -- the manifest version does
+    not move between releases. Content differing in that case is the normal state
+    between a merge and a release, not a stale pin, and must not WARN.
+
+    Paired with `test_mismatched_content_names_both_versions_when_the_shape_is_
+    recognised` above as the positive control this issue's acceptance demands:
+    same fixture shape, only the cache directory's version segment differs, and
+    that one case still WARNs."""
+    plugin_root = _plugin_root(tmp_path, content=b"new content\n", version="0.37.1")
+    cache_dir = tmp_path / "cache" / "dpt-plugins" / "oss" / "0.37.1" / "bin"
+    cache_dir.mkdir(parents=True)
+    target = cache_dir / "oss-workspace"
+    target.write_bytes(b"old content\n")
+    os.chmod(str(target), 0o755)
+
+    state, detail = doctor.oss_workspace_launcher_state(
+        plugin_root=plugin_root, path=str(cache_dir)
+    )
+    assert state == "content-skew-current-version", (state, detail)
+    resolved, version = detail
+    assert version == "0.37.1", detail
+
+    doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(cache_dir))
+    level, message = doctor.FINDINGS[-1]
+    assert level == "WAIT", (level, message)
+    assert "0.37.1" in message, message

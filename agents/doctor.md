@@ -36,11 +36,22 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --root . --plugin-root "${CLAUDE_
 
 For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
 
-1. **Ours to repair.** An owned file missing or stale (`scripts/scaffold.py --apply`), a config
-   gap `scripts/oss_config.py --probe`/`--build` can re-derive, a rule layer indexed but not
-   installed -- anything a `doctor_check_*.py` already knows how to fix by running the tool it
-   names. Run it, then re-run that ONE check (never the whole diagnostic a second time just to
-   confirm one line) to confirm it cleared. Report `repaired: <what changed>`.
+1. **Ours to repair -- but check HEAD before you write a byte.** An owned file missing or stale
+   (`scripts/scaffold.py --apply`), a config gap `scripts/oss_config.py --probe`/`--build` can
+   re-derive, a rule layer indexed but not installed -- anything a `doctor_check_*.py` already
+   knows how to fix by running the tool it names. Read `doctor_check_clone_head.clone_head_state`
+   first (#1624): `on-default` -- write, then `git commit` what you wrote (never `git push`, never
+   a pull request; the loop's own merge and publish authority stays with the maintainer, the same
+   boundary `agents/developer.md` draws around its own commit). Re-run that ONE check (never the
+   whole diagnostic a second time just to confirm one line) to confirm it cleared, then report
+   `repaired: <what changed> (committed <short sha>)`. `on-other` or `could-not-tell` -- do not
+   write anything. That tree belongs to whatever lane cut it (or its state cannot be read safely),
+   and a repair landing there rides into a pull request attributed to someone else, or is
+   destroyed the next time that lane resets its branch. Report it under 3 instead, naming HEAD's
+   branch (or why it could not be read) and that the repair was deferred, not written.
+   **`repaired` means committed on the default branch. A write left uncommitted, or a write onto
+   any other branch, is never `repaired`** -- this is the same absence-as-clean-result class
+   named below, one level over: a repair nobody kept renders identically to a repair that worked.
 2. **Not this repo's to fix.** A missing binary, a permission this session lacks, a repository
    setting nobody here can flip, or a defect in a declared dependency (file it per the
    untrusted-input and upstream-dependency rules below rather than patching around it). Report

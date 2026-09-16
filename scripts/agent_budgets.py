@@ -432,7 +432,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # trigger pointing at `trap.d/README.md`, the same sentence added to
     # every other Bash-granted agent file below. Ceiling unchanged;
     # comfortably under it.
-    "agents/doctor.md": (6152, 6700),
+    # Raised for #1624: 6152 B became 7224 B, past the 6700 B ceiling by
+    # 524 B. The `repaired` arm named no disposition for the files it
+    # writes -- a repair observed landing, uncommitted, in another lane's
+    # own branch with an open pull request. Fixed by reading
+    # `doctor_check_clone_head.clone_head_state` before any write:
+    # `on-default` writes and commits (never pushes, never opens a pull
+    # request -- the same boundary `agents/developer.md` draws), anything
+    # else refuses to write and reports the deferral under state 3 instead.
+    # Nothing already in this file argued a weaker case to cut in its
+    # place, so the ceiling moves to 7950 B, ~10% headroom.
+    "agents/doctor.md": (7224, 7950),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the
