@@ -85,7 +85,7 @@ a stronger sentence here -- it is not composing the call by hand at all. `--clai
 `Agent(...)` call from the issues it just claimed (#539, #989, #1143), so the label's multiplier is
 what was actually assigned rather than what was retyped:
 
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --claim --lane <pattern> \
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" 534 --claim \
         --claim-also 537 --claim-also 495 --phrase "auto-update path" \
         --subagent-type oss:developer --model sonnet --brief <brief-file>
     -> Agent(subagent_type: "oss:developer", model: "sonnet", run_in_background: false, description: "Lane 534 x3  auto-update path", prompt: "<brief>")
@@ -281,7 +281,7 @@ costs a rebase per merge. Do not stack more than two deep without a reason.
 **Claim before you spawn, not after** — writing the primary issue's brief with `--claim`
 (#1069, #1532) writes every issue's own GitHub assignee:
 
-    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim [--lane PATTERN ...] [--claim-also <N> ...]
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim [--claim-also <N> ...]
 
 Dispatch only what comes back `claimed`. There are exactly three states, and the other two are
 `already-claimed` (somebody else holds at least one of the issues — nothing was written) and
@@ -491,8 +491,8 @@ the same lever applied to whatever else a brief hands a lane before it starts wo
 rather than bounded, because nothing here can distinguish a genuinely wide orientation read from
 one that could have waited).
 
-**Run `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim --lane PATTERN [--lane
-PATTERN ...]` from the clone before writing each brief, rather than typing
+**Run `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim` from the clone before
+writing each brief, rather than typing
 the base commit and the live-worktree list into it by hand.** Both rot between the moment you read
 them and the moment the dispatched agent does: `main` has moved mid-tick before, and a hand-copied
 worktree list has already flattened `cannot tell` to `idle` once, which is how `fix/313` and

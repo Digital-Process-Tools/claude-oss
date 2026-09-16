@@ -324,7 +324,7 @@ Four calls stand in for judgement here, and none of them is optional:
 | Before | Call |
 | --- | --- |
 | naming a lane's own files | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --lane PATTERN [--lane PATTERN ...]` -- a read: the resolved base, branch, worktree, live board and the guard tests those files trip. #1532 retired `--derive-held`/`--against`: a collision no longer drops a candidate (#1528), git reports a real one at merge, and `git-worktrees` is the authority on which lanes are live |
-| writing each brief -- claiming the issue | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim [--lane PATTERN ...] [--claim-also N ...]` -- `--claim` writes the primary issue's (and every `--claim-also` companion's) GitHub assignee, in three states: `claimed` / `already-claimed` (somebody else holds it -- nothing written) / `could-not-claim-assignee` (the read/write itself did not complete, which is a different fact and never folded into the second). The row above is a probe and must not carry it |
+| writing each brief -- claiming the issue | `"${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <issue> --claim [--claim-also N ...]` -- `--claim` writes the primary issue's (and every `--claim-also` companion's) GitHub assignee, in three states: `claimed` / `already-claimed` (somebody else holds it -- nothing written) / `could-not-claim-assignee` (the read/write itself did not complete, which is a different fact and never folded into the second). The row above is a probe and must not carry it |
 | dispatching | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --label <issue1,issue2,...> "<phrase>"` |
 
 Launch every dispatched lane in a single message so they run concurrently.
