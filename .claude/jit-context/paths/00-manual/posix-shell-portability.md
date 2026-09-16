@@ -12,6 +12,16 @@ repeats either one.
 - **`${0%/*}` strips nothing under Git Bash**, where `$0` is `D:\a\repo\scripts\doctor.sh`. Both
   `scripts/doctor.sh` and `bin/oss-workspace` strip either separator. This failed all four Windows
   legs while every POSIX leg was green.
+- **A glyph a shell script prints can be unencodable on the console it reaches, even when the
+  bytes going out are correct UTF-8.** `bin/oss-workspace`'s `oss_step()` prints `▸` (U+25B8) and
+  `✓` (U+2713); both raise `UnicodeEncodeError` under `.encode('cp1252')`, the default Windows
+  console codepage. Neither is new -- both predate the diff that found them (#1511) -- and CI's
+  `shell` job only runs `shellcheck`/`bash -n` on `ubuntu-latest`, so nothing in the matrix would
+  ever exercise a real Windows console's TTY-gated printf here at all: whether this has actually
+  crashed a real session (git-bash/mintty and Windows Terminal are both UTF-8-capable) versus being
+  a live-but-never-triggered exposure was not established. Check a new glyph against cp1252 before
+  adding it to this launcher's output, mirroring the `ascii()`-by-construction convention its own
+  watch-name-derivation code already uses for Python-emitted text.
 - **A trailing `|| true` on a shell command can be doing two jobs, and replacing it with a captured
   status only removes one.** Under `set -eu`, `|| true` on a bare simple command inside an `if` body
   both swallows the exit status AND suppresses errexit for that command. #573 replaced

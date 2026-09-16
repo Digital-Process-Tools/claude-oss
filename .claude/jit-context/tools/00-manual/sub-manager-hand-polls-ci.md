@@ -40,6 +40,16 @@ lookup builds its own repo from cwd regardless. Not confirmed which.
 **Workaround: `cd` into the target repo's own checkout and drop `--repo`**,
 rather than trust the flag from elsewhere.
 
+**A spawn that has already superseded its own background CI poll by a direct re-check needs to
+close that poll, not leave it resident.** A `tick-merge` spawn merged its pull request, then its
+background `pr_green.py` poll finally caught up 5.3 hours later -- long after it had already
+re-checked directly (`gh-branch` returning GREEN) and reported. Two costs: the spawn stayed resident
+for hours holding a poll nothing was waiting on, and the eventual task notification arrived with the
+exact same shape as a live completion -- only the spawn's own first sentence said the report was
+stale, and that sentence exists because the agent happened to say so, not because anything required
+it. If you are about to background a CI wait and then get your answer another way first, cancel the
+backgrounded wait rather than let it report on its own schedule.
+
 **One overnight run paid ~2.5B cache-read tokens, half of it developer lanes
 past 200k context, and this rule's own subject -- hand-polling CI -- was a
 measured driver (#1349).** One sub-manager alone spent 5h18m and 109M tokens,

@@ -34,6 +34,18 @@ the old commit, which is what a depth-1 checkout normally looks like --
 so the decode path is only reached on a runner whose checkout is deep
 enough. Months later, on one platform.
 
+**The same risk runs in the write direction too: `print()` to stdout encodes with the console
+codepage, not the locale a script reasons about.** `scripts/delegation_cost.py`'s `--json` mode
+prints an `OSError` message via a bare `print(...)`, no explicit stdout encoding; on Windows,
+stdout defaults to the console codepage (typically cp1252), so an error message embedding a
+non-ASCII path component would raise `UnicodeEncodeError` at the print call -- after the whole
+measurement already ran, so the crash lands on delivery, not on computation (#1595).
+`scripts/loop_cost_report.py` (`print(json.dumps(...))` / `print(render(result))`) has the identical
+shape, unremediated. Not a one-off: a shared stdout-encoding-safety helper
+(`sys.stdout.reconfigure(errors="replace")`, guarded for older Pythons, or re-encoding before
+printing) belongs in front of every script in this class, not a fix inside one caller alone. No live
+repro attempted -- reasoned from the code and the sibling pattern, not an observed crash.
+
 **To reproduce a decode failure deliberately:** set
 `git config core.quotepath false` in the fixture repo first, or git
 quotes any non-ASCII path as backslash-octal-escaped ASCII that can
