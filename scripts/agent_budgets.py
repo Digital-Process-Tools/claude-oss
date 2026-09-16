@@ -552,6 +552,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # into the drafted `TICK:` block's paragraph when the prompt names a
     # curate-authored merge, the same optional-field fold `tick_handback.py`
     # already gives `COST:`. Ceiling unchanged; comfortably under it.
+    # Re-baselined again in the same lane's own self-review round: 7459 B
+    # became 7466 B, rewording that same sentence to relay `oss:tick-merge`'s
+    # `CURATE:` line verbatim rather than "fold its counts" -- the counts
+    # framing a reviewer found unsupported. Ceiling unchanged; comfortably
+    # under it.
     "agents/tick-accounting.md": (7466, 7700),
     # #1583: new file. The developer lane's report phase -- the note, the JSON
     # report and the pull request payload -- used to be a phase file the lane
