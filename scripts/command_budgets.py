@@ -218,13 +218,23 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # listing (#1629's own "Observed" section). Corrected in place, plus the
     # `## release` section's stale claim that commands/release.md's picker
     # placement was a deliberate, settled #1389 decision -- the maintainer's
-    # follow-up comment on #1629 retires that note. A self-review reviewer
-    # found the release-section's own reference count unreproducible (145/50
-    # did not match a direct git grep); re-measured and corrected to 146/50,
-    # excluding this diff's own new mentions of the path. Nothing already in
-    # the file argued either point, so nothing was cut to make room; the
-    # ceiling moves to 10400 B, ~10% headroom over the new size.
-    "commands/run.md": (9489, 10400),
+    # follow-up comment on #1629 retires that note.
+    # 9489 B became 9586 B (self-review, two rounds): a first-pass reviewer
+    # flagged the release section's 145/50 reference count as unreproducible
+    # against a git grep run on this diff's own tree, where the diff's own new
+    # mentions of "commands/release.md" (this file, the changelog fragment,
+    # this very comment) inflate the count to 149/51; "corrected" to 146/50 by
+    # excluding some but not all of those self-references. A second-pass
+    # reviewer caught that the fix was wrong: 145/50 was the real, exactly
+    # reproducing count all along, measured at e92b0b85 (the commit before
+    # this branch touched anything) -- the only count not contaminated by the
+    # diff's own self-reference, the same trap CLAUDE.md's own budget row
+    # documents. Restored to 145/50, sourced explicitly against that commit
+    # rather than "the tree" so a future re-measurement does not fall into the
+    # same trap. Nothing already in the file argued either point, so nothing
+    # was cut to make room; the ceiling moves to 10600 B, ~10% headroom over
+    # the new size.
+    "commands/run.md": (9586, 10600),
 }
 
 
