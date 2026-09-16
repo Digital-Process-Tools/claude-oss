@@ -12,8 +12,11 @@ existing `curate/<UTC timestamp>` branch-naming paragraph: set `no_close =
 true` at the payload's top level, and say `Part of #N` in the body rather
 than a closing keyword, if provenance is wanted visible.
 
-Content-invariant checks, the same `_collapse` + substring pattern
-`tests/test_curate_pr_never_auto_merge_1467.py` already uses over this file.
+Content-invariant checks, the same `_collapse` + substring pattern this repo's
+own content-invariant test files already use over prose -- see
+`tests/test_content_invariants.py` for the general shape. (Formerly cross-
+referenced `tests/test_curate_pr_never_auto_merge_1467.py`, deleted by #1602
+since that file's whole premise was the gate this one no longer describes.)
 """
 
 import re
@@ -70,10 +73,12 @@ def test_curate_md_names_part_of_n_for_visible_provenance():
 
 
 # Positive control: the pre-#1552 shape states the branch-naming convention
-# but says nothing about the payload's own closing behaviour.
+# but says nothing about the payload's own closing behaviour. #1602 dropped the
+# merge-time gate this sentence used to describe, so the wording it pins moved
+# with it -- the marker itself is still named, the "gates on" claim is not.
 PRE_1552 = (
-    "A head branch matching `^curate/` is what `skills/manager/phases/merge.md` "
-    "gates on"
+    "the prefix is still what tells a reader it is curate's own rather than a "
+    "developer lane's"
 )
 
 

@@ -1,10 +1,13 @@
 """#1571: the merge spawn must derive its own gate facts before it merges.
 
 `agents/tick-merge.md` stated `skills/manager/phases/merge.md`'s gates in prose --
-feature scope, public API change, external-contributor authored, head branch
-matching ``^curate/`` -- and gave the spawn no call that establishes any of them.
-It receives a bare pull request number, and its first documented action was
+feature scope, public API change, external-contributor authored -- and gave the
+spawn no call that establishes any of them. It receives a bare pull request
+number, and its first documented action was
 ``gh-pr-merge:N:squash|force|cleanup``, where ``|force`` bypasses the confirm gate.
+
+#1602 later dropped the `^curate/` head-branch gate these tests originally also
+covered: `author_association` is the one remaining fact this file pins, not two.
 
 A rule stated without a measurement is this repository's own named defect one level
 down: a spawn that never reads ``author_association`` and a spawn that read it and
@@ -20,16 +23,15 @@ Every assertion is paired with a positive control, per this repo's rule that a
 check which cannot fail proves nothing.
 """
 
-import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TICK_MERGE = REPO_ROOT / "agents" / "tick-merge.md"
 MERGE_PHASE = REPO_ROOT / "skills" / "manager" / "phases" / "merge.md"
 
-# The two reads that cannot be derived from the pull request number alone, and
-# that the gates in merge.md turn on. These are supertool op spellings, not
-# GitHub API field names: the first draft of this fix documented
+# The one read that cannot be derived from the pull request number alone, and
+# that the remaining gate in merge.md turns on. This is a supertool op spelling,
+# not a GitHub API field name: the first draft of this fix documented
 # `gh pr view --json author_association`, which is wrong twice over -- gh spells
 # that field `authorAssociation`, and this repo's own guard refuses a raw
 # `gh pr view` at command position in favour of the `gh-pr` op. A test pinned to
@@ -42,11 +44,15 @@ MERGE_PHASE = REPO_ROOT / "skills" / "manager" / "phases" / "merge.md"
 # and the live call is refused on sight. `test_tick_merge_documents_the_gate_reads`
 # below still only pins substring presence, and prose *explaining* why
 # `external` is not a real filter still contains the substring "external" --
-# so REQUIRED_READS now pins the token that actually carries the read
+# so REQUIRED_READS pins the token that actually carries the read
 # (`author_association`, fed to `inbound_triage.classify_pr`) rather than the
 # board-filter spelling that was never valid, and BROKEN_FILTER_CALL below
 # pins the exact refused string as a standing regression check.
-REQUIRED_READS = ("gh-pr:", "author_association")
+#
+# #1602 dropped the `^curate/` head-branch gate and, with it, the
+# `gh-pr:N:status` call that fed it -- REQUIRED_READS pinned both tokens before
+# this, and now pins the one fact that is still read rather than recalled.
+REQUIRED_READS = ("author_association",)
 
 # The exact call #1573 found refused. Its presence anywhere in either file,
 # even inside an explanation of why it does not work, is the shape that
@@ -157,7 +163,7 @@ def test_the_ordering_check_would_catch_a_reversal():
 # --------------------------------------------------- the phase file agrees
 
 
-def test_merge_phase_states_the_same_two_reads():
+def test_merge_phase_states_the_same_read():
     """`merge.md` is where the gates live; a derivation documented only in the
     spawn leaves the phase file's own readers deriving nothing."""
     text = _text(MERGE_PHASE)
@@ -176,18 +182,11 @@ def test_merge_phase_points_at_the_existing_classifier():
 
 
 def test_merge_phase_still_states_the_gates_themselves():
-    """Positive control: the fields are being added alongside the existing rules,
-    not in place of them."""
+    """Positive control: the field is being added alongside the existing rule,
+    not in place of it."""
     text = _text(MERGE_PHASE)
-    for rule in ("external-contributor", "curate/"):
+    for rule in ("external-contributor",):
         assert rule in text, (
             "skills/manager/phases/merge.md no longer states the {!r} gate -- the "
             "field additions must not have displaced it".format(rule)
         )
-
-
-def test_curate_branch_prefix_is_a_real_anchored_pattern():
-    """The gate is `^curate/`, anchored. A substring check would hold a pull
-    request whose branch merely contains the word somewhere."""
-    assert re.match(r"^curate/", "curate/20260915T120000Z")
-    assert not re.match(r"^curate/", "fix/not-curate/1571")

@@ -40,9 +40,10 @@ verdict — because that sentence is what gets reviewed, not the fact that a dec
 
 **Cut the branch as `curate/<UTC timestamp>`, never `fix/{issue}` — this run is not attached to one
 issue.** The marker is not cosmetic: this pull request is authored by the same account as every
-other loop PR, so nothing else lets the loop's own merge phase tell it apart from one a developer
-lane finished. A head branch matching `^curate/` is what `skills/manager/phases/merge.md` gates on
-to hold this pull request for the maintainer instead of merging it on green (#1467).
+other loop PR, so the prefix is still what tells a reader it is curate's own rather than a developer
+lane's. It no longer holds the pull request back from merging on green — `skills/manager/phases/
+merge.md` dropped that gate (#1602): held for hours, unmerged and unread, is not a stronger outcome
+than merged on green like everything else.
 
 **A curate PR closes nothing, by construction, every time — set `no_close = true` in the payload
 before the guard makes you stop and ask (#1552).** The issue numbers in a fragment's own filename

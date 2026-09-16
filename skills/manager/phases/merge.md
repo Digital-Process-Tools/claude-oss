@@ -59,31 +59,21 @@ bugfix / docs / test / chore.** Then verify the merge landed — read `state` / 
 `skills/manager/phases/ci-green.md`'s subject, not this file's**: the `pr_green.py` call and its
 #1086 substring trap, never a hand-written wait loop.
 
-**Never auto-merge:** feature scope, public API or behaviour renames, external-contributor PRs, a
-curate-authored pull request (head branch matching `^curate/`), anything irreversible. **And do not
-invent gates** — parking a real bug as "the owner's call" when it is not on this list is just a way
-of not fixing things.
+**Never auto-merge:** feature scope, public API or behaviour renames, external-contributor PRs,
+anything irreversible. **And do not invent gates** — parking a real bug as "the owner's call" when
+it is not on this list is just a way of not fixing things.
 
-**Two of those gates are facts, not judgements, so read them rather than recall them (#1571, #1573):**
-the head branch, from `gh-pr:N:status`'s own `branch:` line, against an anchored `^curate/`; and
-whether the pull request is contributor-authored, from `inbound_triage.classify_pr(pr)` -- fed by a
+**That gate is a fact, not a judgement, so read it rather than recall it (#1571, #1573):** whether
+the pull request is contributor-authored, from `inbound_triage.classify_pr(pr)` -- fed by a
 board read's `author_association` when held, or by `gh api
 repos/{owner}/{repo}/pulls/N --jq .author_association` for a bare number (`gh-prs` has no
 `external` filter or flag at all, #1573). `classify_pr` translates GitHub's own vocabulary and
 returns `could-not-tell` rather than guessing at a value it does not recognise.
 
-A caller holding those off an earlier board read does not re-read them. A spawn handed only a pull
+A caller holding that off an earlier board read does not re-read it. A spawn handed only a pull
 request number holds neither, and has to. Gate 3 caught exactly that in `agents/tick-merge.md`
-before its first run: the rules were stated in the file and the read was not, which is a rule and a
+before its first run: the rule was stated in the file and the read was not, which is a rule and a
 measurement rendering identically right up to the moment something merges.
-
-**A curate-authored pull request is never merged by a sub-manager (#1467).** The same account
-authors it as every other loop PR, so `author_association` cannot tell it apart the way `inbound.md`
-tells an external contributor's PR apart. `commands/run/curate.md` cuts its branch as
-`curate/<timestamp>` for exactly that reason: a head branch matching `^curate/` gets the same
-treatment as an external-contributor PR above -- held for the maintainer, never merged on green --
-because a promoted jit-context rule fires in every later session and the pull request has to
-actually be read, not merely exist.
 
 **An external-contributor PR is never dispatched-past silently (#1394).** `skills/manager/phases/
 inbound.md` classifies it -- `green-and-mergeable`, `needs-answer`, or `could-not-tell` -- from the

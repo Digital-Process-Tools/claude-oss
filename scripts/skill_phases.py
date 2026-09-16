@@ -519,7 +519,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # under that is the one an external-contributor PR is held by -- cutting
         # either to pay for a read they both depend on trades the rule for the
         # measurement instead of having both.
-        16380,
+        # Re-baselined for #1602: 16380 B became 15596 B. The `^curate/`
+        # never-auto-merge row and its #1467 rationale paragraph come off --
+        # a curate-authored pull request now merges on green like any other,
+        # per the maintainer decision that the gate produced a pull request
+        # neither merged nor read. Only one gate (external-contributor) is
+        # still a fact to read rather than recall, so the "two of those
+        # gates" sentence now says one. Ceiling unchanged; comfortably under
+        # it.
+        15596,
         16400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),

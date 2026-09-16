@@ -517,7 +517,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # survives the merge (the read-back, the assignee release, the Closes #N
     # verification, the default-branch recheck), and a gate that runs before the
     # write cannot be paid for by weakening the checks that run after it.
-    "agents/tick-merge.md": (7233, 7300),
+    # Re-baselined for #1602: 7233 B became 6950 B. Step 0's gate-facts read
+    # drops the `gh-pr:N:status` head-branch call along with the `^curate/`
+    # gate it fed -- a curate-authored pull request now merges on green like
+    # any other, per the maintainer decision that the gate produced a pull
+    # request neither merged nor read. Ceiling unchanged; comfortably under
+    # it.
+    "agents/tick-merge.md": (6950, 7300),
     "agents/tick-accounting.md": (7219, 7700),
     # #1583: new file. The developer lane's report phase -- the note, the JSON
     # report and the pull request payload -- used to be a phase file the lane
