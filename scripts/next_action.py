@@ -708,6 +708,25 @@ def record_skip(state_path, candidates, taken_source, reason, at=None):
     branch a tick is expected to hit -- a caller taking the top candidate
     (the common case) should simply not call `record_skip` in the first
     place.
+
+    `"dispatch"` is accepted as `taken_source` even though it is never a
+    `rank()` candidate (#1553): it is the real, name-able outcome a tick
+    falls through to when nothing ranked is taken, not a ranked source
+    itself, so `known_sources` below -- derived from `candidates` -- can
+    never contain it on its own. Treating it as a distinguished, always-
+    valid value here is option (a) from #1553's own issue text; it is
+    still refused as a `candidates[0]` match above, since a `rank()` call
+    never returns `"dispatch"` as a candidate's `source` to skip *past*.
+
+    **This does not arm the per-source repeat-suppression receipt**
+    `curate`/`triage`/`inbound` use (`_arm_route_source` below, self-review
+    finding, Explore reviewer spawn): that receipt is keyed on
+    `workspace_route_name`/`workspace_route_signature` in `oss_state`'s own
+    `detail`, and neither this call nor `_arm_route_source`'s `"dispatch"`
+    branch (a documented no-op) ever writes one. What a `dispatch` skip
+    buys is a plain, human-readable line in the state file's decision log
+    -- the skipped candidate still reports `due` again on the very next
+    tick, exactly as before this fix.
     """
     if not candidates:
         raise ValueError(
@@ -722,7 +741,7 @@ def record_skip(state_path, candidates, taken_source, reason, at=None):
             "record".format(top.get("source"))
         )
     known_sources = {entry.get("source") for entry in candidates}
-    if taken_source not in known_sources:
+    if taken_source not in known_sources and taken_source != "dispatch":
         # Self-review finding (Explore reviewer + oss:auditor, independently,
         # #1414's own follow-up review): a typo or a hallucinated source name
         # used to sail straight through -- neither check above catches it,
@@ -730,10 +749,13 @@ def record_skip(state_path, candidates, taken_source, reason, at=None):
         # about its own value -- and land in the state file's permanent
         # decision log exactly as confidently as a real deviation. There is
         # no way to tell the two apart later from the receipt alone.
+        # "dispatch" (#1553) is the one deliberate exception: it is never a
+        # ranked candidate, but it is a real, name-able outcome, not a typo.
         raise ValueError(
             "taken_source {0!r} is not one of this call's own ranked "
-            "sources ({1}) -- a typo here would otherwise be recorded as a "
-            "real, permanent decision nobody can act on".format(
+            "sources ({1}), and is not the distinguished 'dispatch' value "
+            "-- a typo here would otherwise be recorded as a real, "
+            "permanent decision nobody can act on".format(
                 taken_source, sorted(s for s in known_sources if s is not None)
             )
         )

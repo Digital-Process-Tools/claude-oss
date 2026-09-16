@@ -753,6 +753,44 @@ def test_record_skip_refuses_an_unknown_taken_source(tmp_path):
         next_action.record_skip(str(state_path), candidates, "relaese", "typo")
 
 
+def test_record_skip_accepts_dispatch_as_a_taken_source(tmp_path):
+    """#1553: `dispatch` is a real, name-able outcome -- what a tick falls
+    through to when nothing ranked is taken -- but it is never a `rank()`
+    candidate itself, so `known_sources` (derived from `candidates`) never
+    contains it. Without a carve-out, a deliberate fall-through to dispatch
+    over a due-but-skipped candidate could never be recorded at all -- not
+    even as a plain decision-log line. This does NOT arm the same
+    per-source repeat-suppression receipt `curate`/`triage`/`inbound` use
+    (self-review finding, Explore reviewer spawn): `_arm_route_source`
+    still treats `dispatch` as a no-op, so the skipped candidate reports
+    `due` again on the very next tick regardless. What this buys is a
+    human-readable record in the state file's decision log, nothing more."""
+    state_path = tmp_path / "oss-watch.json"
+    candidates = [
+        {"source": "curate", "state": next_action.CANDIDATE_DUE},
+        {"source": "triage", "state": next_action.CANDIDATE_DUE},
+    ]
+    entry = next_action.record_skip(
+        str(state_path), candidates, "dispatch", "curate backlog is not blocking"
+    )
+    assert "took dispatch over curate" in entry["decision"]
+    assert "curate backlog is not blocking" in entry["decision"]
+
+
+def test_record_skip_still_refuses_an_unknown_source_when_dispatch_is_allowed(
+    tmp_path,
+):
+    """Positive control paired with the test above: allowing `dispatch`
+    through must not widen the guard into accepting arbitrary text -- a
+    typo like `dispach` still has to raise, exactly as
+    `test_record_skip_refuses_an_unknown_taken_source` already pins for the
+    ranked-source case."""
+    state_path = tmp_path / "oss-watch.json"
+    candidates = [{"source": "curate", "state": next_action.CANDIDATE_DUE}]
+    with pytest.raises(ValueError):
+        next_action.record_skip(str(state_path), candidates, "dispach", "typo")
+
+
 def test_skipping_curate_over_triage_does_not_arm_curates_receipt(
     tmp_path, monkeypatch
 ):
