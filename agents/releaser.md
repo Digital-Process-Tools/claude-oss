@@ -134,3 +134,7 @@ fired -- that is a fact the scheduler or a sub-manager re-derives from the board
 spawns you, per `commands/tick.md` and `agents/sub-manager.md`. A release trigger firing mid-tick is
 something a sub-manager *reports*, never something it acts on; deciding whether and when to spawn
 you in response is the scheduler's call, not yours to make about yourself.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

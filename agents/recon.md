@@ -65,3 +65,7 @@ Who reads what depends on who spawned you (#1535), and you are told neither, so 
 **lane** keeps the whole summary and works from it, while a **dispatcher** reads `## Lane file set`
 and `RECON-COST:` and discards the rest. Neither pastes you into a brief -- a developer lane's spawn
 payload is its issue numbers and its worktree, nothing else.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

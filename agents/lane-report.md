@@ -213,3 +213,7 @@ fallback is its obligation, not yours; your only duty is an honest state, never 
 report dressed as `written`. **If you are the lane, reading this file directly** because that
 fallback already happened, there is no further fallback beneath you -- write the report as this
 file describes and stop.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

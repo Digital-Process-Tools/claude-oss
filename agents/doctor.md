@@ -93,3 +93,7 @@ Name that you ran `doctor.sh` in findings-only mode in your first line, so a cal
 several of you in sequence -- once per `/oss:run` step 1, or once per `/oss:doctor` call -- can
 tell which report answers which diagnostic pass.
 
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.
+

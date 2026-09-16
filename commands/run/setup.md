@@ -102,6 +102,12 @@ The rules that matter, all enforced by `scripts/oss_config.py`:
   evidence. Every repo has a `README.md`, and most of them carry no version anywhere — listing it
   tells `/oss:release` to bump a file with nothing to bump. `--probe` reads each candidate; you do
   not need to check them yourself.
+- **`curate_route_threshold` is a decision, not a measurement, and `--build` writes it anyway
+  (#1616).** Nothing about a repo's own history says what backlog size should trigger `/oss:curate`
+  — the same judgement call `release.triggers` above already is. Leaving it unwritten used to mean
+  promotion stayed off by default, everywhere, forever, in a way that reported clean rather than
+  disabled (#1610). Written and visible in the maintainer's own `.oss.json` instead, it is a
+  decision they can see and change, not a silent default nobody chose.
 
 ## Verify the test command before writing it
 
@@ -149,7 +155,7 @@ maintainer's:
 
 | File | Scope | Keys | Git |
 | --- | --- | --- | --- |
-| `.oss.json` | the project | `repo`, `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`, `docs_targets`, `labels`, `ci`, `milestones`, `release` | **tracked** — `git add` it and commit it in review |
+| `.oss.json` | the project | `repo`, `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`, `docs_targets`, `labels`, `ci`, `milestones`, `release`, `curate_route_threshold` | **tracked** — `git add` it and commit it in review |
 | `.oss.local.json` | this machine | `clone`, `worktree_root`, `state_file` | git-excluded, never shared |
 
 The release block cannot stay local (#34): `/oss:release` reads `tag_pattern`, `merge_method`,

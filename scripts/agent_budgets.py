@@ -179,7 +179,9 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # prohibition now says the freeze is the release's own script, not a
     # maintainer's hand, matching the same change in accounting.md and
     # commands/release.md. Comfortably under the 16600 B ceiling.
-    "agents/triager.md": (15522, 16600),
+    # Re-baselined for #1616: 15522 B became 15610 B -- the same "## Trap"
+    # trigger line. Ceiling unchanged; comfortably under it.
+    "agents/triager.md": (15610, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):
@@ -394,7 +396,9 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # skills/manager/phases/ci-green.md (#1162), the shared CI-green read
     # sub-manager.md also now points at. Budget unchanged; 582 B of headroom
     # remains.
-    "agents/releaser.md": (7218, 7800),
+    # Re-baselined for #1616: 7218 B became 7306 B -- the same "## Trap"
+    # trigger line. Ceiling unchanged; comfortably under it.
+    "agents/releaser.md": (7306, 7800),
     # #1414: new file. `/oss:run`'s own scheduler used to read six command
     # files directly in its own long-lived session (setup, scaffold,
     # install-audit, triage, curate, changelog) -- exactly the erosion #695
@@ -412,7 +416,9 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # shape now names a fourth outcome, `defer`, alongside promote/merge/
     # decline, matching the fourth outcome curate.md itself gained. Ceiling
     # unchanged; comfortably under it.
-    "agents/scheduler-step.md": (5162, 5700),
+    # Re-baselined for #1616: 5162 B became 5250 B -- the same "## Trap"
+    # trigger line. Ceiling unchanged; comfortably under it.
+    "agents/scheduler-step.md": (5250, 5700),
     # #1457: new file. `/oss:run`'s own step 1 used to run `doctor.sh`
     # inline and chase every WARN/FAIL in the scheduler's own long-lived
     # session -- fine for a scripted repair, but a line that needs
@@ -422,7 +428,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # via agents/scheduler-step.md. This agent is the same move for the one
     # step 1 that still ran the hunt by hand. Budgeted from the day it was
     # added, the same posture #1389 and #1414 already take for a new file.
-    "agents/doctor.md": (6064, 6700),
+    # Re-baselined for #1616: 6064 B became 6152 B -- a one-line "## Trap"
+    # trigger pointing at `trap.d/README.md`, the same sentence added to
+    # every other Bash-granted agent file below. Ceiling unchanged;
+    # comfortably under it.
+    "agents/doctor.md": (6152, 6700),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the
@@ -442,7 +452,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # drops the claim that dispatch needs the file set "while the registry
     # still needs it" -- the registry was retired by #1532. 4348 B became
     # 4350 B. Ceiling unchanged, 50 B of headroom left.
-    "agents/recon.md": (4350, 4400),
+    # Re-baselined for #1616: 4350 B became 4438 B, past the 4400 B ceiling by
+    # 38 B. Same one-line "## Trap" trigger as the other nine Bash-granted
+    # files in this table -- #1616 found this file among the ten carrying no
+    # invitation to log a trap at all, the sharpest gap named in that issue.
+    # Nothing here argued for cutting to make room; this file already had the
+    # least headroom of the ten before the edit. Ceiling moves to 4500 B,
+    # ~1.4% headroom.
+    "agents/recon.md": (4438, 4500),
     # #1544: new file. `oss:sub-manager` used to read the board, rank it and
     # reason about dispatch fill inline, in the same context that goes on to
     # review, merge and account for the whole tick -- one sub-manager was
@@ -468,7 +485,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for #1579: 6829 B became 6876 B -- the --claim call dropped
     # --lane, which only ever fed the claim receipt's own unread [lane] block,
     # plus one sentence saying so. Ceiling unchanged; 24 B headroom.
-    "agents/tick-dispatch.md": (6876, 6900),
+    # Re-baselined for #1616: 6876 B became 6964 B, past the 6900 B ceiling by
+    # 64 B. Same one-line "## Trap" trigger as every other Bash-granted file
+    # in this table. Ceiling moves to 7050 B, ~1.2% headroom -- narrower than
+    # the usual ~10%, matching this file's own prior raises.
+    "agents/tick-dispatch.md": (6964, 7050),
     # #1544 step 2: new file. `oss:sub-manager` used to call `pr_green.py
     # --wait` and then read `skills/manager/phases/review.md`'s checklist
     # (together over 24,000 B) inline, in the same long-lived context that
@@ -502,7 +523,9 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # exists" now says outright that the caller's own `Agent(...)` blocks
     # for the whole of that wait. Nothing here argued for cutting length to
     # avoid stating a real cost. Ceiling moves to 11200 B, ~5% headroom.
-    "agents/tick-review.md": (10697, 11200),
+    # Re-baselined for #1616: 10697 B became 10785 B -- the same "## Trap"
+    # trigger line. Ceiling unchanged; comfortably under it.
+    "agents/tick-review.md": (10785, 11200),
     # #1544 steps 3-4: two new files. `oss:sub-manager` used to merge on green
     # and assemble its own state-file entry and `TICK:` handback inline, in
     # the same long-lived context that dispatch and review had already been
@@ -547,7 +570,9 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # `.author_association`, and reporting `.title` verbatim rather than
     # assuming a parseable counts format. Nothing already in the file argued
     # for cutting the fix, so the ceiling moves to 8000 B, ~2.8% headroom.
-    "agents/tick-merge.md": (7782, 8000),
+    # Re-baselined for #1616: 7782 B became 7870 B -- the same "## Trap"
+    # trigger line. Ceiling unchanged; 130 B headroom.
+    "agents/tick-merge.md": (7870, 8000),
     # Re-baselined for #1600: 7219 B became 7459 B -- fold a `CURATE:` line
     # into the drafted `TICK:` block's paragraph when the prompt names a
     # curate-authored merge, the same optional-field fold `tick_handback.py`
@@ -564,7 +589,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # unconditional when oss_state.py only requires it while the tick-cost figures
     # are 'unknown' -- fixed by adding the flags and nesting brackets accordingly.
     # Ceiling moves to 8500 B, ~1.4% headroom.
-    "agents/tick-accounting.md": (8379, 8500),
+    # Re-baselined for #1616: 8379 B became 8467 B -- the same "## Trap"
+    # trigger line. Ceiling unchanged; 33 B headroom, tight -- the next edit
+    # here pays for itself or raises the ceiling.
+    "agents/tick-accounting.md": (8467, 8500),
     # #1583: new file. The developer lane's report phase -- the note, the JSON
     # report and the pull request payload -- used to be a phase file the lane
     # read inline at the end of a long, expensive run: measured on one lane,
@@ -595,7 +623,9 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # for", "the validator refuses the second number for exactly that
     # reason") a second spawned reviewer found still missing from the
     # closing-keyword restoration. Ceiling unchanged; comfortably under it.
-    "agents/lane-report.md": (13561, 14300),
+    # Re-baselined for #1616: 13561 B became 13649 B -- the same "## Trap"
+    # trigger line. Ceiling unchanged; comfortably under it.
+    "agents/lane-report.md": (13649, 14300),
 }
 
 

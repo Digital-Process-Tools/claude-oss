@@ -74,3 +74,7 @@ just as much: the final message is the only thing that reaches the caller).
 
 Name the file you actually followed in your first line, so a scheduler session that spawned several
 of you in sequence can tell which report answers which sub-step.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

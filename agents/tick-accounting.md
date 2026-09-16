@@ -134,3 +134,7 @@ shared state belonging to no repository in particular -- the same total grant ev
 this loop carries. Ask `ops:roster` for which ops are acting rather than working from a list copied
 into this file. Run the state-file call, the radar read and the handback draft, and nothing past
 that on your own authority.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

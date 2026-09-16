@@ -128,3 +128,7 @@ shared state belonging to no repository in particular -- the same total grant ev
 this loop carries. Ask `ops:roster` for which ops are acting rather than working from a list copied
 into this file. Run the merge and its own obligations, and nothing past that on your own authority
 -- reaching further is exactly the context growth this spawn exists to keep out of your caller.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

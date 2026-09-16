@@ -100,6 +100,8 @@ authority.
 This repo is maintained with the `oss` plugin. Per-repo settings live in `.oss.json`,
 which is config rather than truth: re-derive anything load-bearing from the repo before
 acting on it.
+
+Something is not normal and you want to report it? Read `trap.d/README.md`.
 """
 
 SECURITY_MD = """# Security Policy
@@ -1020,6 +1022,13 @@ What helps whoever promotes it later:
 
 Unsure whether it belongs elsewhere, or is even a real rule? Say so in the fragment and log
 it anyway -- a guess at where it belongs is useful and costs nothing.
+
+## When it is an issue instead
+
+A fragment here is not the only route. **File an issue only when the finding blocks a release** --
+the ranking table in `skills/manager/phases/findings.md` decides that, by its own `Blocks a
+release?` column, or when the finding fits none of that table's rows. Everything else belongs here,
+as a fragment, not on the tracker.
 
 ## Fragments are inert
 
