@@ -2440,9 +2440,19 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
       is not the same fact as the two versions disagreeing, and must not read as
       one** -- that would be this repository's own defect class landing on the
       check written to fix its first occurrence, so that case stays `matched`.
-    * ``mismatched`` -- the resolved target's bytes differ. `detail` is
-      ``(resolved, their_version, our_version)``; `their_version` is
-      `_oss_workspace_version_segment(resolved)` and may be `None`.
+    * ``content-skew-current-version`` (#1623) -- the resolved target's bytes
+      differ, but `their_version` and `our_version` are BOTH readable and
+      EQUAL. This is the ordinary state between a merge and a release, never
+      the #324 hazard: the manifest version does not move between releases,
+      so a clone holding unreleased commits still declares the same version
+      as the cache copy it resolves to. Checked BEFORE ``mismatched`` below,
+      which is why that state's own bullet can say "differ" without this
+      carve-out repeating there.
+    * ``mismatched`` -- the resolved target's bytes differ, and either a
+      version could not be read on one or both sides, or the two that WERE
+      read disagree -- never the case above, where both are read and equal.
+      `detail` is ``(resolved, their_version, our_version)``; `their_version`
+      is `_oss_workspace_version_segment(resolved)` and may be `None`.
       `our_version` is read from **`plugin_root`'s own manifest**, not from the
       running install (#350), and is `None` on exactly the same terms as
       `their_version`: it names a version or it says there is none, and it never
@@ -2549,6 +2559,25 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
         ):
             return "matched-elsewhere", (resolved, their_version)
         return "matched", resolved
+
+    # #1623: content differing is `mismatched`'s whole premise -- but a clone
+    # ahead of its own release differs from the cache copy for a reason that
+    # has nothing to do with a stale pin, and the manifest version alone
+    # cannot tell the two apart from `matched`'s own check above, because
+    # THIS branch is reached only when the bytes are NOT identical. A clone
+    # holding unreleased commits still declares the SAME manifest version as
+    # the cache copy it resolves to -- the version does not move between
+    # releases -- so `their_version == our_version` here is the signature of
+    # exactly that normal state, never of the #324 hazard (an older cache
+    # version pinned by a stale symlink), which the `else` arm below still
+    # WARNs on unconditionally, including when a version could not be read
+    # at all -- the safer default for an unclear case.
+    if (
+        their_version is not None
+        and our_version is not None
+        and their_version == our_version
+    ):
+        return "content-skew-current-version", (resolved, their_version)
 
     return "mismatched", (resolved, their_version, our_version)
 
@@ -2833,6 +2862,24 @@ def check_oss_workspace_launcher(
             ),
             remedy,
         )
+    elif state == "content-skew-current-version":
+        # #1623: bytes differ, but both copies declare the SAME manifest
+        # version -- the ordinary state between a merge and a release, not a
+        # stale pin (#324's hazard is a DIFFERENT, older version, handled by
+        # the `mismatched` arm above). `WAIT` (#1440), never `WARN`: nothing
+        # here is actionable, and it settles on its own -- the next release
+        # makes the two copies identical again. `remedy` is deliberately not
+        # passed: `ln -sf` would re-create the link it already is, which is
+        # this issue's own "the remedy is a no-op" complaint one arm over.
+        resolved, version = detail
+        report(
+            "WAIT",
+            "oss-workspace launcher: PATH resolves oss-workspace to {} (cache "
+            "version {}), which matches this running install's own declared "
+            "version but not its bytes -- this checkout holds commits the "
+            "cache copy does not yet have. Settles at the next release; not "
+            "actionable before then.".format(resolved, version),
+        )
     else:
         # #348: a state `oss_workspace_launcher_state` does not emit today.
         # Every real state above has a named arm; this exists so a seventh
@@ -2845,9 +2892,9 @@ def check_oss_workspace_launcher(
             "oss-workspace launcher: unrecognised state {!r} from "
             "oss_workspace_launcher_state -- not one of matched, "
             "matched-elsewhere, not-resolvable, path-unreadable, "
-            "own-copy-unreadable, unresolved-target, mismatched. Treat this as "
-            "unknown, not absent; this check's own code has fallen behind its "
-            "producer.".format(state),
+            "own-copy-unreadable, unresolved-target, mismatched, "
+            "content-skew-current-version. Treat this as unknown, not absent; "
+            "this check's own code has fallen behind its producer.".format(state),
         )
 
 
@@ -3126,6 +3173,12 @@ from doctor_check_worktree_reap_permission import (
     check_worktree_remove_permission,
     check_branch_delete_permission,
 )
+
+# #1628: sibling to the permission check above -- that one asks whether the
+# reap commands are ALLOWED; this asks whether anything is actually
+# reapable, and names scripts/worktree_reap.py --apply as the remedy. See
+# scripts/doctor_check_worktree_reap.py for the check and its docstring.
+from doctor_check_worktree_reap import check_worktree_reap
 
 # #763: a new check, written directly into its own module per the per-check
 # module convention (#497, #630) rather than added here -- see
@@ -9640,6 +9693,13 @@ def main(argv=None):
     # two checks above for the same reason they are placed beside each other.
     check_worktree_remove_permission(project_dir)
     check_branch_delete_permission(project_dir)
+    # #1628: the missing half -- the two checks above ask whether the reap
+    # commands are ALLOWED; this asks whether anything is actually reapable
+    # right now, and names scripts/worktree_reap.py --apply as the remedy.
+    if found:
+        check_worktree_reap(project_dir, config)
+    else:
+        unmeasured("worktree reap")
     # #1350: is more than one scheduler-shaped process live against this same
     # clone right now? Placed beside the worktree-reap checks above for the
     # same reason -- a second scheduler sharing the clone can move HEAD or

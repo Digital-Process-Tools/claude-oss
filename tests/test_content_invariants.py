@@ -242,6 +242,11 @@ HOME_PATH_PLACEHOLDER_USERNAMES = {
     # this name -- added when scripts/ joined SHIPPED_MID_LANE_DIRS above,
     # the same way every other name in this set was added for its own file.
     "nina",
+    # #1628: doctor_check_worktree_reap.py's and its own test's "run this by
+    # hand" remedy fixture (an unquoted-path-breaks-on-a-space regression
+    # test) uses "Jane"/"Jane Doe" as the example home-path owner -- same
+    # convention, added the same way.
+    "jane",
 }
 
 

@@ -64,3 +64,14 @@ env/
 # rewritten on every rebuild and, in an 01-oss layer, deleted by the next
 # `/oss:scaffold --apply` because that layer is replaced wholesale (#702).
 .claude/jit-context/*/*/01-paths.tsv
+
+# #1628: lane scratch output, written into every worktree by a developer lane's
+# own incremental notes and its lane-report spawn -- never part of the plugin,
+# and its own absence here made `git-worktrees`' "uncommitted work" warning a
+# false positive on 8 of 10 dirty worktrees measured on this repo. Ignoring it
+# here is what lets that warning mean something again.
+notes/
+reports/
+# The reviewer-spawn tree-snapshot receipt (scripts/tree_snapshot.py), same
+# scratch-output class, same false-positive it was contributing to.
+.oss-review-snapshot.json

@@ -36,21 +36,43 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --root . --plugin-root "${CLAUDE_
 
 For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
 
-1. **Ours to repair.** An owned file missing or stale (`scripts/scaffold.py --apply`), a config
-   gap `scripts/oss_config.py --probe`/`--build` can re-derive, a rule layer indexed but not
-   installed -- anything a `doctor_check_*.py` already knows how to fix by running the tool it
-   names. Run it, then re-run that ONE check (never the whole diagnostic a second time just to
-   confirm one line) to confirm it cleared. Report `repaired: <what changed>`.
+1. **Ours to repair -- but check HEAD before you write a byte.** An owned file missing or stale
+   (`scripts/scaffold.py --apply`), a config gap `scripts/oss_config.py --probe`/`--build` can
+   re-derive, a rule layer indexed but not installed -- anything a `doctor_check_*.py` already
+   knows how to fix by running the tool it names. Read `doctor_check_clone_head.clone_head_state`
+   first (#1624), and its own three answers decide three DIFFERENT outcomes, not one:
+   - `on-default` -- write, then `git commit` what you wrote (never `git push`, never a pull
+     request; the loop's own merge and publish authority stays with the maintainer, the same
+     boundary `agents/developer.md` draws around its own commit). Re-run that ONE check (never
+     the whole diagnostic a second time just to confirm one line) to confirm it cleared, then
+     report `repaired: <what changed> (committed <short sha>)`.
+   - `on-other` -- a KNOWN fact, not an unclear one: HEAD is on a named branch that is not the
+     default. Do not write anything -- that tree belongs to whatever lane cut it, and a repair
+     landing there rides into a pull request attributed to someone else, or is destroyed the next
+     time that lane resets its branch. This is still disposition 1's own outcome, reported in
+     disposition 1's own vocabulary: `deferred: HEAD is <branch> -- not written, not this tree's
+     to touch`. Never route a known branch name through disposition 3's `could-not-tell:` -- that
+     bucket exists specifically to keep "unclear" separate from everything else, including this.
+   - `could-not-tell` (HEAD state itself unreadable -- a detached HEAD, a corrupted `.git`, `git`
+     itself failing to answer) -- genuinely unclear, so THIS is disposition 3's case. Report
+     `could-not-tell: HEAD state unreadable -- <what clone_head_state said>`.
+   **`repaired` means committed on the default branch. A write left uncommitted, a write onto any
+   other branch, or a write attempted without checking HEAD first, is never `repaired`** -- this
+   is the same absence-as-clean-result class named below, one level over: a repair nobody kept
+   renders identically to a repair that worked.
 2. **Not this repo's to fix.** A missing binary, a permission this session lacks, a repository
    setting nobody here can flip, or a defect in a declared dependency (file it per the
    untrusted-input and upstream-dependency rules below rather than patching around it). Report
    `not-ours: <who> -- <one line of evidence>`, naming the upstream issue number when one already
    exists.
 3. **Genuinely unclear, after you tried.** Investigation that ran and did not resolve -- a
-   rate-limit mystery, a clone whose branch state you cannot safely act on under someone else's
-   live session. Report `could-not-tell: <what you tried>`. Never fold this into either of the
-   other two: this repo is named after the defect of an absence read as a clean result, and
-   folding "I could not tell" into "not ours" or "repaired" is exactly that class, one level down.
+   rate-limit mystery, a clone whose HEAD state itself could not be read (disposition 1's own
+   `could-not-tell` case above), something else you tried and could not settle. Report
+   `could-not-tell: <what you tried>`. Never fold this into either of the other two: this repo is
+   named after the defect of an absence read as a clean result, and folding "I could not tell"
+   into "not ours" or "repaired" is exactly that class, one level down -- and folding a KNOWN
+   `on-other` into "unclear" is the same class from the other direction: a known fact reported as
+   an absence of one.
 
 These three map onto this repo's own `ok` / finding / `skipped`-`unknown` convention --
 `repaired` is the `ok` arm actually taken, `not-ours` is the finding, `could-not-tell` is the

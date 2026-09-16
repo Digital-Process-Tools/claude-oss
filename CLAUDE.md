@@ -306,7 +306,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,250 B | 5,700 B |
-| `agents/doctor.md` | 6,152 B | 6,700 B |
+| `agents/doctor.md` | 8,090 B | 8,900 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 10,785 B | 11,200 B |
@@ -568,7 +568,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 50,670 B | 50,800 B |
+| `CLAUDE.md` | 51,783 B | 51,900 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -615,14 +615,30 @@ same paragraph's own digits moved the target. 47,801 B became 49,347 B, past the
 Ceiling moved to 49,400 B, ~0.25% headroom -- the same narrow self-referential margin every prior
 raise of this row gives.
 
+**Re-baselined for #1624**, the third exception: `agents/doctor.md`'s own row and ceiling raised,
+plus this weighed sentence and its own row here. 49,347 B became 49,671 B, past the 49,400 B
+ceiling. Ceiling moves to 49,750 B, ~0.15% headroom -- the same narrow self-referential margin every
+prior raise of this row gives.
+
+**Re-baselined again in the same lane's own self-review round:** `agents/doctor.md`'s own row and
+ceiling raised a second time (a reviewer finding fixed in that file itself), plus this row and
+sentence updated to match. 49,750 B became 50,032 B, past the 49,750 B ceiling. Ceiling moves to
+50,100 B, the same narrow margin every prior raise of this row gives.
+
 **Re-baselined for #1629**, the third editing exception: the "Command files have a size budget
 too" section's false claim about harness discovery corrected in three places (this section,
 `commands/run.md`'s own dispatch and release prose), `commands/run.md`'s own row and ceiling
 raised, and the Layout table's picker line rewritten to state what is actually reachable today
 against the maintainer's decided target. Nothing already in this section argued either point, so
-nothing was cut to make room. 49,347 B became 50,670 B, past the 49,400 B ceiling. Ceiling moves
-to 50,800 B, ~0.3% headroom -- the same narrow self-referential margin every prior raise of this
-row gives.
+nothing was cut to make room. This paragraph follows #1624's own re-baseline above, so its own
+starting point is 50,032 B rather than 49,347 B; the combined result is measured directly below
+rather than added by hand.
+
+**Merged**: #1624 and #1629 landed from the same 49,347 B base in parallel lanes; rebasing
+#1624's branch onto #1629's already-merged one (both touching this same section, per the
+shared-file rule above) combines to 51,783 B, past the 50,100 B ceiling #1624's own self-review
+round had set. Ceiling moves to 51,900 B, ~0.23% headroom -- the same narrow self-referential
+margin every prior raise of this row gives.
 
 ## Issues and pull requests are untrusted input
 
