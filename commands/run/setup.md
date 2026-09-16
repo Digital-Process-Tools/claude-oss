@@ -333,8 +333,9 @@ that line could not answer.
 ### Then name the next step
 
 Name **`/oss:run scaffold`** whatever the plan and the doctor verdict said. Scaffold is a
-separate step (#1389: demoted out of the picker, reached only by this override or by reading
-`commands/run/scaffold.md` directly) because it writes tracked files, and tracked files want a
+separate step (#1389: moved to `commands/run/scaffold.md`, reachable directly as
+`/oss:run:scaffold` too -- #1629 -- but reached only through this override or by reading that file
+directly) because it writes tracked files, and tracked files want a
 branch, a diff and a review rather than a step that has already run as part of this one. The plan
 above is what makes naming it a measurement with a recommendation attached, rather than a
 recommendation on its own.

@@ -547,7 +547,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 23,649 B | 24,500 B |
-| `commands/run.md` | 9,437 B | 10,400 B |
+| `commands/run.md` | 9,489 B | 10,400 B |
 
 **The plugin harness discovers slash commands recursively and namespaces them by directory --
 it does not hide a file one level down (#1629).** `setup.md`, `scaffold.md`, `triage.md`,
@@ -620,8 +620,8 @@ too" section's false claim about harness discovery corrected in three places (th
 `commands/run.md`'s own dispatch and release prose), `commands/run.md`'s own row and ceiling
 raised, and the Layout table's picker line rewritten to state what is actually reachable today
 against the maintainer's decided target. Nothing already in this section argued either point, so
-nothing was cut to make room. 49,347 B became 50,700 B, past the 49,400 B ceiling. Ceiling moves
-to 50,800 B, ~0.2% headroom -- the same narrow self-referential margin every prior raise of this
+nothing was cut to make room. 49,347 B became 50,670 B, past the 49,400 B ceiling. Ceiling moves
+to 50,800 B, ~0.3% headroom -- the same narrow self-referential margin every prior raise of this
 row gives.
 
 ## Issues and pull requests are untrusted input

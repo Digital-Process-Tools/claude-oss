@@ -210,7 +210,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # stale since #1433 added inbound to the same mechanism -- now says
     # release only, directly beside the paragraph this commit just wrote
     # naming inbound as one of the three armed sources.
-    # Re-baselined for #1629: 8899 B became 9437 B. The scaffold/install-audit/
+    # Re-baselined for #1629: 8899 B became 9489 B. The scaffold/install-audit/
     # triage/curate/changelog section's claim that the harness "discovers slash
     # commands from top-level commands/*.md only, never recursively" was false
     # -- the six commands/run/*.md files are reachable directly as
@@ -218,10 +218,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # listing (#1629's own "Observed" section). Corrected in place, plus the
     # `## release` section's stale claim that commands/release.md's picker
     # placement was a deliberate, settled #1389 decision -- the maintainer's
-    # follow-up comment on #1629 retires that note. Nothing already in the
-    # file argued either point, so nothing was cut to make room; the ceiling
-    # moves to 10400 B, ~10% headroom over the new size.
-    "commands/run.md": (9437, 10400),
+    # follow-up comment on #1629 retires that note. A self-review reviewer
+    # found the release-section's own reference count unreproducible (145/50
+    # did not match a direct git grep); re-measured and corrected to 146/50,
+    # excluding this diff's own new mentions of the path. Nothing already in
+    # the file argued either point, so nothing was cut to make room; the
+    # ceiling moves to 10400 B, ~10% headroom over the new size.
+    "commands/run.md": (9489, 10400),
 }
 
 

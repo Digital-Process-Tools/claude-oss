@@ -140,8 +140,9 @@ count.
 `commands/release.md` still sits in the picker as `/oss:release` -- #1389's old note that this was
 a deliberate, settled choice is retired (#1629): the maintainer's decided target has no top-level
 command but `/oss:run` and `/oss:doctor`, and `commands/release.md` is left exposed only because
-folding it is deep, unreviewed work (145 references across 50 files by literal path, per #1629's
-own count), not because the picker containment is intentional. Spawn the dedicated release agent
+folding it is deep, unreviewed work (146 references across 50 files by literal path outside this
+diff's own new mentions, `git grep -c 'commands/release\.md'`), not because the picker containment
+is intentional. Spawn the dedicated release agent
 directly rather than reading that file yourself -- it already reads its own procedure inside its
 own discarded context:
 

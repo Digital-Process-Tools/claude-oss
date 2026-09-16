@@ -47,8 +47,9 @@ The consequence follows from the ownership contract rather than from anything ab
 The executable artifacts an install puts in a managed repository are the changelog gate — a
 `pull_request`-triggered workflow and the assembler it calls — and that dependabot config.
 Everything else the loop does is a slash command someone types into a session: `/oss:run`,
-`/oss:doctor`, `/oss:tick`, `/oss:release` -- or, for a step #1389 demoted out of the picker,
-`/oss:run scaffold` and its siblings.
+`/oss:doctor`, `/oss:tick`, `/oss:release` -- or, for a step #1389 moved to `commands/run/`
+(reachable directly as `/oss:run:scaffold` too, not hidden -- #1629), `/oss:run scaffold` and its
+siblings.
 
 The dependabot config is worth more than a footnote, because it is the shape of the whole problem
 in miniature. It is a **default**: written once when absent, theirs forever after, deletable and

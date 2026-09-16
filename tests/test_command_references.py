@@ -19,11 +19,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 COMMANDS = sorted((REPO_ROOT / "commands").glob("*.md")) + sorted(
     (REPO_ROOT / "commands" / "run").glob("*.md")
 )
-#: Non-recursive by construction (#1389): the plugin harness discovers slash
-#: commands from top-level commands/*.md only, so a file moved into
-#: commands/run/ is demoted out of the picker while staying prose the loop
-#: still executes -- COMMANDS folds both in so the checks below keep covering
-#: it rather than silently narrowing the moment a file moved.
+#: The harness actually discovers slash commands recursively and namespaces
+#: them by directory (#1629) -- a file moved into commands/run/ is renamed to
+#: /oss:run:<name>, not hidden. COMMANDS folds both top-level and
+#: commands/run/*.md in so the checks below keep covering a file the loop
+#: still executes rather than silently narrowing the moment a file moved.
 
 # ${CLAUDE_PLUGIN_ROOT}/... in a fenced command line.
 PLUGIN_PATH_RE = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9_./-]+)")
