@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover - the module sits beside this file
     trap_curate = None
 
 
-def check_trap_queue(project_dir):
+def check_trap_queue(project_dir, config=None):
     """#905: how many traps are waiting for `/oss:curate`, in the three states.
 
     Reported, never blocking. A gate on this queue would refuse a security fix over a typo
@@ -23,7 +23,14 @@ def check_trap_queue(project_dir):
     `none` is an OK and not a silence: a cycle that curated everything and a cycle nobody
     logged in look the same from outside, and saying `none waiting` is what separates them
     from `could-not-read`, which is the state this whole repository exists to keep nameable.
-    """
+
+    `config` (#1610): a non-empty queue with no `curate_route_threshold` configured is a
+    check that could look, had the facts, and would otherwise say nothing more than NOTICE
+    -- the exact "route unconfigured, and there is work it would have surfaced" shape
+    `next_action.py`'s own `configured: false` fold was found silently discarding. Optional
+    and defaulted to `None` so a caller with no config in hand (or this module's own
+    pre-#1610 tests) still gets the ordinary NOTICE reading rather than a crash on
+    `.get`."""
     if trap_curate is None:
         doctor.report(
             "WARN",
@@ -46,13 +53,28 @@ def check_trap_queue(project_dir):
             "lane's.".format(result["why"]),
         )
         return
+    threshold_configured = (
+        isinstance(config, dict) and config.get("curate_route_threshold") is not None
+    )
+    if threshold_configured:
+        doctor.report(
+            "NOTICE",
+            "trap queue: {} waiting for /oss:curate ({}). Not a fault and nothing is "
+            "blocked -- fragments are inert until a pass promotes, merges, declines or "
+            "defers them (#1425). A pass takes the whole backlog in one go, uncapped, and "
+            "never skips a batch for being too big -- a fragment that survives a pass was "
+            "left there on purpose, named and reasoned in the pass's own pull request, not "
+            "silently dropped.".format(
+                result["count"], ", ".join(f["name"] for f in result["fragments"])
+            ),
+        )
+        return
     doctor.report(
-        "NOTICE",
-        "trap queue: {} waiting for /oss:curate ({}). Not a fault and nothing is blocked -- "
-        "fragments are inert until a pass promotes, merges, declines or defers them (#1425). "
-        "A pass takes the whole backlog in one go, uncapped, and never skips a batch for being "
-        "too big -- a fragment that survives a pass was left there on purpose, named and "
-        "reasoned in the pass's own pull request, not silently dropped.".format(
-            result["count"], ", ".join(f["name"] for f in result["fragments"])
+        "WARN",
+        "trap queue: {} waiting for /oss:curate, and no curate_route_threshold is set in "
+        ".oss.json -- the loop's own curate trigger cannot fire on this backlog at all "
+        "(#1610). Clears with one config edit: set curate_route_threshold to the number of "
+        "fragments that should accumulate before /oss:curate is due.".format(
+            result["count"]
         ),
     )

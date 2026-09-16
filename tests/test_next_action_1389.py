@@ -315,6 +315,27 @@ def test_curate_under_threshold_is_not_due(tmp_path, monkeypatch):
     assert result["next"] == "dispatch"
 
 
+def test_curate_not_configured_is_ranked_not_configured(tmp_path, monkeypatch):
+    """#1610: no `curate_route_threshold` key at all, with a non-empty
+    `trap.d/` -- curate could not look, and that must render as
+    `CANDIDATE_NOT_CONFIGURED`, never folded into `CANDIDATE_NOT_DUE` (which
+    means "looked, and is genuinely under threshold")."""
+    root = _git_repo(tmp_path)
+    _write_config(root)  # no curate_route_threshold key at all
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    assert result["state"] == next_action.NOTHING_DUE
+    curate = next(e for e in result["not_due"] if e["source"] == "curate")
+    assert curate["state"] == next_action.CANDIDATE_NOT_CONFIGURED
+    assert curate["state"] != next_action.CANDIDATE_NOT_DUE
+    assert curate["evidence"].get("configured") is False
+    assert "curate" in result["reason"]
+    assert "not configured" in result["reason"]
+
+
 def test_curate_could_not_count_is_ranked_could_not_tell(tmp_path, monkeypatch):
     root = _git_repo(tmp_path)
     _write_config(root, {"curate_route_threshold": 0})
@@ -341,6 +362,58 @@ def test_curate_could_not_count_is_ranked_could_not_tell(tmp_path, monkeypatch):
     result = next_action.rank(root)
     curate = _candidate(result, "curate")
     assert curate["state"] == next_action.CANDIDATE_COULD_NOT_TELL
+
+
+def test_triage_not_configured_is_ranked_not_configured(tmp_path, monkeypatch):
+    """#1610: the identical shape as curate's own -- no label-coverage
+    triage route configured must render as `CANDIDATE_NOT_CONFIGURED`, never
+    folded into `CANDIDATE_NOT_DUE`."""
+    root = _git_repo(tmp_path)
+    _write_config(root)  # no triage_route_threshold key at all
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    assert result["state"] == next_action.NOTHING_DUE
+    triage = next(e for e in result["not_due"] if e["source"] == "triage")
+    assert triage["state"] == next_action.CANDIDATE_NOT_CONFIGURED
+    assert triage["state"] != next_action.CANDIDATE_NOT_DUE
+    assert triage["evidence"]["triage_route"].get("configured") is False
+    assert "triage" in result["reason"]
+    assert "not configured" in result["reason"]
+
+
+def test_triage_under_threshold_is_not_due(tmp_path, monkeypatch):
+    """Positive control: `triage_route_threshold` configured and the count
+    genuinely under it must still resolve to `CANDIDATE_NOT_DUE`, the same
+    as before this fix -- the fold this issue removes is on the
+    `configured: false` path only, never on a real, under-threshold
+    reading."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"triage_route_threshold": 100})
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        lambda *a, **k: (
+            None,
+            {
+                "release": {"configured": False},
+                "curate": {"configured": False},
+                "triage": {
+                    "configured": True,
+                    "state": workspace_routes.UNDER,
+                    "count": 1,
+                    "threshold": 100,
+                    "why": "1 of 5 open issue(s) missing lane-* or priority-*",
+                },
+            },
+        ),
+    )
+    result = next_action.rank(root)
+    assert result["state"] == next_action.NOTHING_DUE
+    triage = next(e for e in result["not_due"] if e["source"] == "triage")
+    assert triage["state"] == next_action.CANDIDATE_NOT_DUE
 
 
 def test_triage_over_threshold_is_ranked_due(tmp_path, monkeypatch):
@@ -381,6 +454,14 @@ def test_nothing_configured_and_nothing_fired_is_nothing_due(tmp_path, monkeypat
     assert result["next"] == "dispatch"
     sources = {entry["source"] for entry in result["not_due"]}
     assert sources == {"inbound", "release", "curate", "triage"}
+    # #1610: curate and triage have no threshold configured in this fixture
+    # -- they could not look, so the top-level reason must not claim they
+    # "resolved cleanly" the way inbound and release genuinely did.
+    states = {entry["source"]: entry["state"] for entry in result["not_due"]}
+    assert states["curate"] == next_action.CANDIDATE_NOT_CONFIGURED
+    assert states["triage"] == next_action.CANDIDATE_NOT_CONFIGURED
+    assert "resolved cleanly (inbound, release, curate, triage)" not in result["reason"]
+    assert "curate" in result["reason"] and "triage" in result["reason"]
 
 
 # --- the #1386 triage trigger, landed after this module's own first cut ----

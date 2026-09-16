@@ -147,21 +147,51 @@ import contextlib  # noqa: E402
 import doctor  # noqa: E402
 
 
-def _doctor_line(root):
+def _doctor_line(root, config=None):
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
-        doctor.check_trap_queue(str(root))
+        doctor.check_trap_queue(str(root), config=config)
     return buf.getvalue().strip()
 
 
 def test_doctor_reports_a_waiting_queue_as_notice_naming_the_fragments(tmp_path):
+    """`curate_route_threshold` configured -- the ordinary case #905 exists
+    to cover. #1610's own not-configured WARN is a distinct case, tested
+    separately below."""
     d = tmp_path / "trap.d"
     d.mkdir()
     _write(d, "904.one.md")
-    line = _doctor_line(tmp_path)
+    line = _doctor_line(tmp_path, config={"curate_route_threshold": 15})
     assert line.startswith("NOTICE "), line
     assert "1 waiting" in line and "904.one.md" in line
     assert "/oss:curate" in line
+
+
+def test_doctor_warns_when_waiting_queue_has_no_curate_route_configured(tmp_path):
+    """#1610: a non-empty trap.d/ with no `curate_route_threshold` set is a
+    check that could look, had the facts (the count), and must not render
+    identically to the ordinary NOTICE reading -- the loop's own curate
+    trigger cannot fire on this backlog at all."""
+    d = tmp_path / "trap.d"
+    d.mkdir()
+    _write(d, "904.one.md")
+    line = _doctor_line(tmp_path, config={})
+    assert line.startswith("WARN "), line
+    assert "1 waiting" in line
+    assert "curate_route_threshold" in line
+    assert "#1610" in line
+
+
+def test_doctor_warns_when_waiting_queue_has_no_config_at_all(tmp_path):
+    """Same as above, `config=None` (no .oss.json read at all) rather than an
+    empty dict -- both are "could not tell this is configured", never
+    "configured"."""
+    d = tmp_path / "trap.d"
+    d.mkdir()
+    _write(d, "904.one.md")
+    line = _doctor_line(tmp_path, config=None)
+    assert line.startswith("WARN "), line
+    assert "curate_route_threshold" in line
 
 
 def test_doctor_reports_an_empty_queue_as_ok_and_says_none(tmp_path):
