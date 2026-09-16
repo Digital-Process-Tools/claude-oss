@@ -3178,10 +3178,7 @@ from doctor_check_worktree_reap_permission import (
 # reap commands are ALLOWED; this asks whether anything is actually
 # reapable, and names scripts/worktree_reap.py --apply as the remedy. See
 # scripts/doctor_check_worktree_reap.py for the check and its docstring.
-from doctor_check_worktree_reap import (
-    worktree_reap_summary,
-    check_worktree_reap,
-)
+from doctor_check_worktree_reap import check_worktree_reap
 
 # #763: a new check, written directly into its own module per the per-check
 # module convention (#497, #630) rather than added here -- see
