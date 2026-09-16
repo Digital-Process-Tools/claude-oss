@@ -373,3 +373,55 @@ def test_plugin_could_not_check_detail_survives_empty_from_and_to(fake_python_bi
         "the could-not-check detail was lost by the tab-field parse: %r" % out
     )
     assert "(no reason was reported" not in out
+
+
+def test_plugin_line_with_no_delimiter_at_all_does_not_leak_into_detail(
+    fake_python_bin,
+):
+    """Regression pin for a review finding: `cut -fN` (no `-s`) on a line with
+    NO delimiter at all prints the WHOLE line back for every requested field,
+    so a malformed/truncated `auto_update_line` -- a crash, a stray stderr
+    line merged in by this call's own `2>&1` -- would leak the raw text into
+    `auto_update_detail` as though it were the real reason, entirely bypassing
+    the empty-reason fallback. `cut -s` must suppress a delimiter-less line
+    instead, landing in the `""` (state unparseable) branch rather than
+    `*)` (unrecognised state) with the garbage duplicated across every field.
+    """
+    _require_shell()
+    out = _run_plugin_block(fake_python_bin, 0, "not a tab-delimited line at all")
+    assert "not a tab-delimited line at all" not in out, (
+        "the malformed line leaked into a field instead of being suppressed: %r" % out
+    )
+    assert "check printed nothing" in out
+
+
+# The two remaining `plugin` branches also echo after their own `oss_step`
+# call -- a review finding: the four tests above cover the four hazard
+# branches this issue's own fix reorders, but the `""` (unparseable) and
+# `*)` (unrecognised state) branches, which had the safe order ALREADY and
+# were never hazards, were not pinned by name. A future edit that re-glues
+# either one's echo onto the in-flight mark -- the exact hazard #1511 exists
+# to prevent -- would have passed this suite green with neither covered.
+
+
+def test_plugin_empty_state_field_step_precedes_echo(fake_python_bin):
+    _require_shell()
+    tab = "\t"
+    # Three tabs, no content: cut -s gives four empty fields, landing in the
+    # `""` (state unparseable) case rather than `could-not-check`'s "" field
+    # arrangement above.
+    line = tab.join(["", "", "", ""])
+    out = _run_plugin_block(fake_python_bin, 0, line)
+    _assert_step_precedes_echo(
+        out, "the plugin update check printed nothing this launcher could parse"
+    )
+
+
+def test_plugin_unrecognised_state_step_precedes_echo(fake_python_bin):
+    _require_shell()
+    tab = "\t"
+    line = tab.join(["mystery-state", "0.1", "0.2", "unused"])
+    out = _run_plugin_block(fake_python_bin, 0, line)
+    _assert_step_precedes_echo(
+        out, "reported a state this launcher does not recognise (mystery-state)"
+    )

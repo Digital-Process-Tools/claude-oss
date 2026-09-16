@@ -308,10 +308,17 @@ if [ -n "$python_bin" ]; then
         # under `IFS=<tab> read` as state=could-not-check,
         # from="network unreachable", to="", detail="" -- under both bash
         # and dash. `cut` on the same delimiter does not collapse.
-        auto_update_state=$(printf '%s' "$auto_update_line" | cut -d "$auto_update_tab" -f1)
-        auto_update_from=$(printf '%s' "$auto_update_line" | cut -d "$auto_update_tab" -f2)
-        auto_update_to=$(printf '%s' "$auto_update_line" | cut -d "$auto_update_tab" -f3)
-        auto_update_detail=$(printf '%s' "$auto_update_line" | cut -d "$auto_update_tab" -f4)
+        # `-s`: without it, `cut -fN` on a line with NO delimiter at all
+        # prints the WHOLE line back for every requested field instead of
+        # "" -- so a malformed or truncated `auto_update_line` (a crash, a
+        # stray stderr line merged in by this call's own `2>&1`) would leak
+        # the state word into `auto_update_detail` as though it were the
+        # reason, past the empty-reason fallback below entirely (found in
+        # self-review, #1609). `-s` suppresses a delimiter-less line instead.
+        auto_update_state=$(printf '%s' "$auto_update_line" | cut -s -d "$auto_update_tab" -f1)
+        auto_update_from=$(printf '%s' "$auto_update_line" | cut -s -d "$auto_update_tab" -f2)
+        auto_update_to=$(printf '%s' "$auto_update_line" | cut -s -d "$auto_update_tab" -f3)
+        auto_update_detail=$(printf '%s' "$auto_update_line" | cut -s -d "$auto_update_tab" -f4)
         case $auto_update_state in
             updated)
                 # #1392: no longer switches $prompt. /oss:run diagnoses on
