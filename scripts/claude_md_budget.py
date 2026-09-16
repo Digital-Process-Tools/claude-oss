@@ -118,14 +118,22 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # became 46225 B, well past the old 44300 B ceiling. Ceiling moves to 46300 B,
     # ~0.2% headroom -- tighter than the usual self-referential margin because three
     # passes each added their own paragraph to this same section.
+    # Re-baselined for #1619, the second editing exception: the token-economy
+    # paragraph's 2026-09-14 reading was rewritten with a current one, re-derived
+    # (not trusted) with `loop_cost_report.py` against both claude-oss and
+    # claude-supertool, and the old paragraph's implied before-and-after was
+    # replaced with an explicit statement that the two windows are shaped
+    # differently, plus this row's own self-referential rewrite converging on
+    # the final size. 46225 B became 47801 B, past the old 46300 B ceiling.
+    # Ceiling moves to 47900 B, ~0.2% headroom.
     # Re-baselined for #1616, the third editing exception: ten agents/*.md rows in
     # the Agent definitions table updated (baseline only for eight, ceiling too for
     # recon.md and tick-dispatch.md, each gaining the identical one-line "## Trap"
     # trigger pointing at trap.d/README.md), plus this row's own rewrites converging
-    # on the new size. 46225 B became 47775 B, well past the old 46300 B ceiling.
-    # Ceiling moves to 48000 B, ~0.5% headroom -- the same narrow self-referential
-    # margin every prior raise of this row gives.
-    "CLAUDE.md": (47775, 48000),
+    # with #1619's own change on the merged size. 47801 B became 49347 B, past the
+    # 47900 B ceiling. Ceiling moves to 49400 B, ~0.1% headroom -- the same narrow
+    # self-referential margin every prior raise of this row gives.
+    "CLAUDE.md": (49347, 49400),
 }
 
 
