@@ -76,7 +76,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # all with their own weighed sentences. 37500 B became 39066 B, past the
     # ceiling with no headroom left over from the last raise. Ceiling moves
     # to 40200 B, ~3% headroom.
-    "CLAUDE.md": (39066, 40200),
+    # Re-baselined in the same lane's own self-review round: 39066 B became
+    # 39630 B -- the lane-report.md ceiling raise and its own weighed
+    # sentence, under the same third editing exception.
+    # Re-baselined again in the same round: 39630 B became 39879 B --
+    # the lane-report.md ceiling row and its history paragraph updated a
+    # second time for the auditor-finding fix. Ceiling unchanged; 321 B
+    # headroom.
+    "CLAUDE.md": (39879, 40200),
 }
 
 

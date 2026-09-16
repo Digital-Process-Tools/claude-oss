@@ -56,6 +56,27 @@ import developer_docs  # noqa: E402
 #: The whole brief -- spine plus `agents/developer/*.md` (#939) -- so an anchor
 #: that moved into a phase file is still found, and one that vanished is not.
 DEVELOPER = developer_docs.DeveloperBrief()
+
+#: #1583: the report phase moved out of `agents/developer/*.md` entirely, into
+#: the new top-level spawned agent `agents/lane-report.md` -- functionally a
+#: fourth phase of the same brief, even though it carries frontmatter and sits
+#: outside `developer_phases.DOCUMENTS` for budgeting reasons unrelated to this
+#: file's own subject. An anchor about report/validation/PR-body duty that
+#: moved there is still found by folding its text in at the handful of call
+#: sites below whose duty now lives there, rather than by widening
+#: `developer_docs.DeveloperBrief()` itself, which other tests hold to an
+#: exact file-set contract this file has no business loosening.
+LANE_REPORT_MD = REPO_ROOT / "agents" / "lane-report.md"
+
+
+def _full_brief_text():
+    return (
+        DEVELOPER.read_text(encoding="utf-8")
+        + "\n"
+        + LANE_REPORT_MD.read_text(encoding="utf-8")
+    )
+
+
 PROSE = sorted((REPO_ROOT / "skills").rglob("SKILL.md")) + sorted(
     (REPO_ROOT / "agents").glob("*.md")
 )
@@ -436,7 +457,7 @@ def test_the_negative_control_is_readable():
     run`, not as passed.
     """
     assert _unmet(_prior(), LIVE_BEFORE) == [], "PRIOR is not the pre-change document"
-    assert _unmet(DEVELOPER.read_text(encoding="utf-8"), LIVE_BEFORE) == [], (
+    assert _unmet(_full_brief_text(), LIVE_BEFORE) == [], (
         "the live document lost wording the control depends on"
     )
 
@@ -642,7 +663,7 @@ DUTIES = [
 
 @pytest.mark.parametrize("anchors", DUTIES)
 def test_the_duty_is_stated_in_the_brief(anchors):
-    assert _unmet(DEVELOPER.read_text(encoding="utf-8"), anchors) == []
+    assert _unmet(_full_brief_text(), anchors) == []
 
 
 @pytest.mark.parametrize("anchors", DUTIES)
@@ -708,7 +729,7 @@ def test_the_validation_step_still_names_the_plugin_rooted_command():
     one because it is the only one a managed repo has, the local one because without
     it there is no second answer and no skew to observe.
     """
-    text = DEVELOPER.read_text(encoding="utf-8")
+    text = _full_brief_text()
     assert '"${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py"' in text, (
         "the brief no longer names the plugin-rooted validator, which is the only "
         "one a managed repository has"

@@ -16,9 +16,13 @@ So the brief is split the way `skills/manager/SKILL.md` was (#568):
   do with an adjacent finding -- plus one directive block per late phase;
 - the **phases**, `agents/developer/*.md`: the argument behind each late
   phase's rules, read at the moment the lane reaches it. Self-review is
-  reached after the commit, review returns after the spawns reply, and the
-  report last of all -- so each is held in context for the turns after that
-  point rather than for every turn from the first.
+  reached after the commit, review returns after the spawns reply -- so each
+  is held in context for the turns after that point rather than for every
+  turn from the first. The report, a third late phase, moved out of this
+  split entirely for #1583: it is a spawn, `agents/lane-report.md`, a real
+  agent definition rather than a frontmatter-less file this module governs,
+  budgeted in `scripts/agent_budgets.py` alongside every other spawnable
+  agent instead.
 
 **The split is not a licence to skim.** An unread phase file is a rule that
 did not run, and that renders exactly like a rule with nothing to say. The

@@ -347,10 +347,16 @@ def test_the_anchor_fires_on_the_wording_that_permitted_instance_two():
 
 
 def test_both_write_route_documents_say_the_cwd_move_is_per_write_call():
+    """#1583: `agents/developer.md`'s own per-write-call wording moved into the
+    new spawned agent `agents/lane-report.md`, functionally a phase of the same
+    brief, so the developer half of this check reads the two documents
+    together rather than `agents/developer.md` alone.
+    """
+    lane_report = (REPO_ROOT / "agents" / "lane-report.md").read_text(encoding="utf-8")
     silent = [
         getattr(doc, "name", str(doc))
         for doc in WRITE_ROUTE_DOCUMENTS
-        if not _says_per_call(doc.read_text(encoding="utf-8"))
+        if not _says_per_call(doc.read_text(encoding="utf-8") + "\n" + lane_report)
     ]
     assert not silent, (
         "a write-route document tells an agent to `cd <worktree_root>` without "

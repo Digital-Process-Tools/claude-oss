@@ -114,8 +114,18 @@ def test_tests_full_keeps_its_three_states():
 
 def test_the_expected_value_is_named():
     """A field whose meaning changed and whose expected value is unstated
-    leaves the manager crediting a `ran` exactly as before."""
-    text = _developer().lower()
+    leaves the manager crediting a `ran` exactly as before.
+
+    #1583: the report-format field mapping this duty is stated beside moved
+    into the new spawned agent `agents/lane-report.md`, functionally a phase
+    of the same brief -- folded in here rather than by widening
+    `developer_docs.text()` itself, which several other tests in this file
+    hold to just the spine plus `agents/developer/*.md`.
+    """
+    lane_report = (
+        Path(__file__).resolve().parents[1] / "agents" / "lane-report.md"
+    ).read_text(encoding="utf-8")
+    text = (_developer() + "\n" + lane_report).lower()
     assert "not-run" in text and "finding" in text, text[:0]
     assert "expected value is `not-run`" in text, (
         "the brief does not say which value a lane should now report"

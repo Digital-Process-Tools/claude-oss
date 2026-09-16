@@ -15,6 +15,11 @@ exactly the work this file now does, at an average context of 401,416. Moving it
 starts the same work at the floor instead of at that position. Nothing you write differs from what
 the lane would have written; only when, and at what price.
 
+**If instead the lane is reading this file directly** (the spawn returned nothing, errored, or
+reported a failure state), read every "you" below as addressed to the lane itself, doing this work
+inline rather than as a fresh spawn -- there is no separate "prompt" to check for missing fields in
+that mode, only the lane's own context.
+
 ## What you derive yourself, at the floor
 
 - the committed diff: `git-diff:<branch>`
@@ -66,6 +71,13 @@ cwd, never the guard, and never take the env var or `.supertool.json` escape hat
 Not every run needs a note. Fill `split_cost` with one line on the split's cost regardless -- roughly
 how much went to the note versus the report, and whether anything had to be left out of both.
 
+**Anything you stage before any of this file's destination writes -- this note, the report, the
+pull request payload, all named by branch and timestamp above -- needs the same discriminators.**
+The scratchpad this session works from is shared across every concurrently running lane in a fleet,
+so a fixed filename there is a real collision, not a hypothetical one. Name an intermediate with the
+same branch-or-timestamp discriminators every destination path above uses, never a bare fixed name
+under the shared scratchpad.
+
 ## Report format
 
 **One JSON file, plus a path and at most two lines back.**
@@ -73,7 +85,10 @@ how much went to the note versus the report, and whether anything had to be left
 1. Write it at `<worktree_root>/reports/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.json`, `cd
    <worktree_root>` first. **Flatten the branch name first** -- most `branch_pattern`s contain a
    slash, and a filename built from one silently becomes a directory.
-2. Validate it before you hand it over -- **run both copies when both exist**:
+2. Validate it before you hand it over. **A report that does not validate is not a report** --
+   but **which validator is a question with two answers**, and answering it silently is how a
+   correct report gets edited until an obsolete schema accepts it. So do not choose between them.
+   **Run both when both exist**:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report_schema.py" <path>   # the installed cache
@@ -82,17 +97,19 @@ how much went to the note versus the report, and whether anything had to be left
 
    `UNVALIDATABLE` is not `INVALID` -- a schema-version mismatch, not a finding about your report;
    record it as a `tooling:` item and never edit the report to make it go away. **When both copies
-   run and disagree, that is schema skew, a fact about the tooling, never a reason to strip the
-   newer fields to satisfy the copy that refuses.** The local copy is the authority **only when this
-   repository is the plugin itself**: read `name` out of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/
-   plugin.json` and out of this repository's own `.claude-plugin/plugin.json`, and they must be the
-   same plugin -- a coincidence of filename is not a claim of authorship. Where the manifest does
-   not name this plugin, the cache wins. **Write the same number you would read as authoritative.**
+   run and disagree, that is schema skew**, a fact about the tooling and not a finding about your
+   report. **Do not edit the report to satisfy the copy that refuses it**: that deletes precisely
+   the fields the newer schema added. The local copy is the authority **only when this repository is
+   the plugin itself**: read `name` out of `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` and out
+   of this repository's own `.claude-plugin/plugin.json`, and they must be the same plugin -- **a
+   coincidence of filename is not a claim of authorship**. Where the manifest does not name this
+   plugin, the cache wins. **Write the same number you would read as authoritative.**
    `schema_version` is a value you write, not one you read back: put in it `x-schema-version` of
    whichever copy this paragraph just named as authoritative, never the number belonging to
-   whichever file you happened to open first when the two disagree (#732). When neither copy runs,
-   the report is `could not validate`, not `valid` -- record it as loudly as a skew. Put the literal
-   `${CLAUDE_PLUGIN_ROOT}` you validated against into `plugin_root` (#1103).
+   whichever file you happened to open first when the two disagree (#732). **Neither copy ran** is a
+   third case -- a missing interpreter, a permission block, a cache path that resolved to nothing --
+   and the report is then `could not validate`, not `valid`; record it as loudly as a skew. Put the
+   literal `${CLAUDE_PLUGIN_ROOT}` you validated against into `plugin_root` (#1103).
 
    **Complete the report with what this run cost (#1499)** before you validate it:
 
@@ -106,10 +123,18 @@ how much went to the note versus the report, and whether anything had to be left
    anything that cannot wait a turn.
 
 The fields, their enumerations and a worked example are in
-`${CLAUDE_PLUGIN_ROOT}/schemas/agent-report.schema.json`. Read it once. `compliance` is a required
-top-level survey and a different axis from every other one here: not what you looked at, but
-whether the lane did what its own brief said -- fold in what a spawned reviewer declined too, rather
-than leaving it inside `review.findings`.
+`${CLAUDE_PLUGIN_ROOT}/schemas/agent-report.schema.json`. Read it once; it carries the descriptions
+this section would otherwise duplicate and drift from. **What the old prose report asked for has
+not changed, only where it goes**: files -> `files`, red and green -> `tests.red` / `tests.green`,
+whether the full suite ran -> `tests.full` (the expected value is `not-run`; a `ran` is a finding
+for the manager to ask about rather than a receipt to credit), review -> `review`, platform claims
+-> `claims`, every
+`docs_targets` path with what happened to it -- updated, read and still true, or not opened -- ->
+`docs`, unfiled findings -> `adjacent`, the note path -> `note_path`.
+
+**`compliance` is a required top-level survey and a different axis from every other one here: not
+what you looked at, but whether the lane did what its own brief said** -- fold in what a spawned
+reviewer declined too, rather than leaving it inside `review.findings`.
 
 ### Report the tooling friction the lane hit, not only in the code
 
@@ -130,10 +155,22 @@ Markdown is refused downstream, and the refusal lands on somebody else after thi
 If you did not write one, say so in the field with a reason -- `not-written` is a state; an absent
 file discovered later is not.
 
-**Bind `Closes`/`Fixes`/`Resolves` to every issue number in the body itself, outside code spans and
-HTML comments** -- a backticked keyword renders as though it worked and creates no reference at all.
-One keyword per issue: `Closes #A #B` links both and closes only `#A`. `pr_body.closes` is required
-whenever `pr_body.state` is `written`.
+**Say what merging it closes, and bind the keyword in the body itself.** `pr_body.closes` is
+**required whenever `pr_body.state` is `written`** -- in three states, of which only the third is a
+defect: it closes something, **it deliberately closes nothing** (a `Part of #N` pull request is a
+real decision, not an omission), or nobody said. **The schema carries the spellings** and what each
+state requires; do not learn them from here.
+
+- **The keyword has to survive rendering.** The validator looks for a closing keyword --
+  `Closes`/`Fixes`/`Resolves` -- bound to each number you declared, **outside code spans and HTML
+  comments**, because that is what a forge honours. `` `Closes #275, closes #296` `` renders as
+  though it worked and creates no reference at all: **backticked is not bound**, and neither is
+  fenced.
+- **One `Closes` line per issue.** `Closes #A #B` links both numbers and **closes only `#A`**, so
+  `#B` needs a keyword of its own.
+- **Write the line while you write the body.** The refusal names the remedy, but it arrives after
+  the payload exists, and the repair is then an edit to the body *and* the report rather than one
+  line composed once.
 
 ### Structure makes a report easier to accept unread
 
@@ -169,7 +206,9 @@ told you about `tests.red`/`tests.green`/`tests.full`, unchanged.
   knows" above; name which one. Do not guess at a missing disposition or a missing tree_snapshot
   verdict -- an invented value here is worse than reporting the gap.
 
-Whichever state, reply with it plus the two lines above. **A caller that gets nothing back, an
-error, or either failure state above falls back to writing the report itself the way
-`agents/developer.md`'s own report phase describes** -- that fallback is the caller's obligation, not
-yours; your only duty is an honest state, never a best-effort report dressed as `written`.
+Whichever state, reply with it plus the two lines above. **If you are the spawn**, the lane that
+called you falls back to doing this work itself on a failure state or an empty return -- that
+fallback is its obligation, not yours; your only duty is an honest state, never a best-effort
+report dressed as `written`. **If you are the lane, reading this file directly** because that
+fallback already happened, there is no further fallback beneath you -- write the report as this
+file describes and stop.

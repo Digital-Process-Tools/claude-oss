@@ -509,13 +509,22 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # work at the floor. `agents/developer/report.md` is removed in the same
     # diff; its content moved here rather than being duplicated.
     # Re-baselined in the same lane's own self-review round: 9489 B became
-    # 10526 B -- restoring the full #732 schema_version authority rule
-    # ("the cache wins" / "write the same number you would read as
-    # authoritative") and adding an untrusted-input section for the issue
-    # bodies it fetches, both caught by existing content checks and both
-    # over-compressed or missing in the first draft. Ceiling moves to
-    # 11600 B, ~10% headroom.
-    "agents/lane-report.md": (10526, 11600),
+    # 12940 B, past the 11600 B ceiling. A spawned reviewer ran the full test
+    # suite (not just read the diff) and found nine pre-existing tests across
+    # five files pinned specific report/PR/validator wording to `agents/
+    # developer.md`'s own text -- wording this diff's first draft compressed
+    # away when moving it here. Restored close to verbatim: the #732 schema-
+    # skew authority rule, the closing-keyword duty's three sub-rules, the
+    # report-format field mapping (including the `not-run` expected value),
+    # and the intermediate-naming duty for staged writes under a shared
+    # scratchpad. Nothing here was safe to cut without losing a real,
+    # already-tested duty, so the ceiling moves to 14300 B, ~10% headroom.
+    # Re-baselined again in the same self-review round: 12940 B became
+    # 13402 B -- clarifying the dual-reader framing (spawned agent vs. the
+    # lane reading this file directly on fallback) after an auditor found
+    # the original fallback sentence self-referential when read in the
+    # fallback mode it describes. Ceiling unchanged; comfortably under it.
+    "agents/lane-report.md": (13402, 14300),
 }
 
 

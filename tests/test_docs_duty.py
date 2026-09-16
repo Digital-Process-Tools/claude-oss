@@ -52,6 +52,20 @@ import report_schema  # noqa: E402
 SCHEMA_PATH = REPO_ROOT / "schemas" / "agent-report.schema.json"
 DEVELOPER = developer_docs.DeveloperBrief()  # spine + agents/developer/*.md (#939)
 
+#: #1583: the report-format field mapping moved into the new spawned agent
+#: `agents/lane-report.md`, functionally a phase of the same brief. Folded in
+#: at the one call site below whose duty now lives there, rather than by
+#: widening `developer_docs.DeveloperBrief()` itself.
+LANE_REPORT_MD = REPO_ROOT / "agents" / "lane-report.md"
+
+
+def _full_brief_text():
+    return (
+        DEVELOPER.read_text(encoding="utf-8")
+        + "\n"
+        + LANE_REPORT_MD.read_text(encoding="utf-8")
+    )
+
 
 def _schema():
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
@@ -321,7 +335,7 @@ def test_the_brief_routes_the_duty_to_the_report_field():
     5 and missing from that list is a duty the writer meets twice and records
     once.
     """
-    brief = _flatten(DEVELOPER.read_text(encoding="utf-8"))
+    brief = _flatten(_full_brief_text())
     marker = "what the old prose report asked for has not changed, only where it goes"
     assert marker in brief, (
         "the report-format mapping sentence was not found -- this assertion is about "

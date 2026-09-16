@@ -305,7 +305,7 @@ when a file crosses it.
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
 | `agents/tick-merge.md` | 7,233 B | 7,300 B |
 | `agents/tick-accounting.md` | 7,219 B | 7,700 B |
-| `agents/lane-report.md` | 10,526 B | 11,600 B |
+| `agents/lane-report.md` | 13,402 B | 14,300 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
@@ -333,6 +333,16 @@ Weighed against cutting further: this is already the largest single turn-1 cost 
 raise is ~2% rather than the usual ~10% -- but the net position across the pair is strongly
 negative, since `agents/developer/report.md`'s 19,676 B leaves the lane's late context entirely
 rather than moving to a file the lane opens only on the fallback path.
+
+**`agents/lane-report.md`'s ceiling went from 11,600 B to 14,300 B in the same lane's own
+self-review round.** A spawned reviewer ran the full test suite rather than only reading the diff
+and found nine pre-existing tests across five files pinning specific report/PR/validator wording to
+`agents/developer.md`'s own text that this diff's first draft had compressed away when moving it
+into the new file. 9,489 B became 12,940 B restoring it close to verbatim, then 13,402 B clarifying
+the dual-reader framing (spawned agent vs. the lane reading this file directly on fallback) after an
+auditor found the original fallback sentence self-referential. Nothing in the restored prose was
+safe to cut without losing a duty an existing test already enforces; ceiling unchanged at the second
+step, comfortably under it.
 
 **`agents/sub-manager.md`'s ceiling went from 21,000 B to 21,800 B (#1499)**, its second raise in
 three days, to hold the optional `COST:` self-report on top of the measurement of whose context a
@@ -486,7 +496,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 39,066 B | 40,200 B |
+| `CLAUDE.md` | 39,879 B | 40,200 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
