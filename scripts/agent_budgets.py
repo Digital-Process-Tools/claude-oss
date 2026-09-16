@@ -368,8 +368,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # `oss:tick-merge`'s optional `CURATE:` line into `oss:tick-accounting`'s
     # prompt as a merge fact, so a curate-authored pull request merging on
     # green (the `^curate/` gate came off in #1602/#1604) does not merge
-    # silently. Ceiling unchanged; 209 B headroom remains.
-    "agents/sub-manager.md": (24491, 24700),
+    # silently.
+    # Re-baselined again in the same lane's own self-review round: 24491 B
+    # became 24555 B, naming the same `CURATE:` fact in the itemized prompt
+    # checklist `oss:tick-accounting` is spawned with, which a reviewer found
+    # still silent about it. Ceiling unchanged; 145 B headroom remains.
+    "agents/sub-manager.md": (24555, 24700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -533,12 +537,22 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # counts (already in its title) as a `CURATE:` line, the one thing that
     # used to sit unread in the pull-request list once #1602 dropped the
     # gate. Ceiling unchanged; comfortably under it.
-    "agents/tick-merge.md": (7184, 7300),
+    # Re-baselined again in the same lane's own self-review round: 7184 B
+    # became 7782 B, past the 7300 B ceiling. A spawned reviewer found the
+    # first draft's own citation false -- `commands/run/curate.md` names no
+    # PR-title schema, and #1602's own merge commit removed the head-branch
+    # derivation this step's `^curate/` check depends on, so the instruction
+    # referenced data with no read path. Fixed by folding `.branch` and
+    # `.title` into the same step-0 `gh api` call that already fetches
+    # `.author_association`, and reporting `.title` verbatim rather than
+    # assuming a parseable counts format. Nothing already in the file argued
+    # for cutting the fix, so the ceiling moves to 8000 B, ~2.8% headroom.
+    "agents/tick-merge.md": (7782, 8000),
     # Re-baselined for #1600: 7219 B became 7459 B -- fold a `CURATE:` line
     # into the drafted `TICK:` block's paragraph when the prompt names a
     # curate-authored merge, the same optional-field fold `tick_handback.py`
     # already gives `COST:`. Ceiling unchanged; comfortably under it.
-    "agents/tick-accounting.md": (7459, 7700),
+    "agents/tick-accounting.md": (7466, 7700),
     # #1583: new file. The developer lane's report phase -- the note, the JSON
     # report and the pull request payload -- used to be a phase file the lane
     # read inline at the end of a long, expensive run: measured on one lane,

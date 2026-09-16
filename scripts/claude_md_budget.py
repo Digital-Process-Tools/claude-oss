@@ -102,7 +102,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # converging on the new size. 41489 B became 42787 B, past the old 42000 B
     # ceiling. Ceiling moves to 43300 B, ~1.2% headroom, the same self-referential
     # margin the #1586 note above explains.
-    "CLAUDE.md": (42787, 43300),
+    # Re-baselined again in the same lane's own self-review round: 42787 B became
+    # 43913 B, past the 43300 B ceiling. A spawned reviewer found the tick-merge.md
+    # mechanism's own citation unsupported and its read path missing; fixing it,
+    # plus naming the same CURATE: fact in a second checklist in sub-manager.md a
+    # reviewer found still silent about it, grew this row's own several rewrites
+    # again. Ceiling moves to 44300 B, ~1% headroom, the same self-referential
+    # margin as every prior raise of this row.
+    "CLAUDE.md": (43913, 44300),
 }
 
 
