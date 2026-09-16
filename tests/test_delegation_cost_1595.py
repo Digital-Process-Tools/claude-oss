@@ -87,10 +87,25 @@ def test_break_even_context_matches_issue_table(work, brief, expected):
     assert got == pytest.approx(expected, rel=0.01)
 
 
-def test_break_even_context_cached_matches_comment_worked_example():
+def test_break_even_context_cached_is_the_ballpark_of_the_comments_worked_example():
     # #1595 comment: "150K uncached becomes 173K cached" for work=100K, brief=100K.
+    # The exact algebraic dual used here (see the function's own docstring)
+    # is not the same model as the comment's more granular one, so this is
+    # a ballpark check, not an exact-number check.
     got = dc.break_even_context(100_000, 100_000, cached=True)
-    assert got == pytest.approx(173_000, rel=0.02)
+    assert got == pytest.approx(173_000, rel=0.1)
+
+
+@pytest.mark.parametrize(
+    "work,brief", [(100_000, 20_000), (100_000, 100_000), (50_000, 10_000)]
+)
+def test_break_even_context_cached_is_self_consistent_with_delegation_cost(work, brief):
+    # The bug this pins: an earlier version scaled the *uncached* threshold
+    # by the premium directly, which is not delegation_cost's own dual and
+    # disagreed with it by a wide margin near the threshold (#1595 review).
+    threshold = dc.break_even_context(work, brief, cached=True)
+    result = dc.delegation_cost(threshold, brief, work, cached=True)
+    assert result["saved"] == pytest.approx(0, abs=1)
 
 
 def test_break_even_context_rejects_non_positive_work():
@@ -197,6 +212,28 @@ def test_per_turn_records_unreadable_path_reports_could_not_open(tmp_path):
     assert "could not open" in malformed[0][1]
 
 
+def test_per_turn_records_reports_an_assistant_record_missing_usage(tmp_path):
+    # #1595 review: an assistant record with no message/usage object used
+    # to vanish silently -- neither counted as a turn nor as malformed, so
+    # a transcript where every assistant record lacked usage rendered as
+    # "nothing-in-window" indistinguishable from a window nothing ran in.
+    path = tmp_path / "sess.jsonl"
+    _write_jsonl(
+        path,
+        [
+            {
+                "type": "assistant",
+                "timestamp": IN_WINDOW,
+                "message": {"role": "assistant"},
+            },
+            _assistant(1_000, cache_create=100),
+        ],
+    )
+    records, malformed = dc.per_turn_records(path)
+    assert len(records) == 1
+    assert malformed == [(1, "assistant record has no usage object")]
+
+
 # ----------------------------------------------------------- cache misses
 
 
@@ -222,6 +259,19 @@ def test_detect_cache_misses_does_not_flag_a_healthy_turn():
 
 def test_detect_cache_misses_never_flags_turn_zero():
     records = [{"turn": 0, "cache_read": 0, "cache_creation": 50_000}]
+    assert dc.detect_cache_misses(records) == []
+
+
+def test_detect_cache_misses_does_not_flag_a_legitimately_large_early_write():
+    # #1595 review: comparing a turn's own write against its own read
+    # false-positives here -- turn 1 writes a lot (a big tool result) but
+    # still reads back everything the previous turn had cached, so nothing
+    # was invalidated. The ratio-against-the-prior-turn's-total rule must
+    # not flag it.
+    records = [
+        {"turn": 0, "cache_read": 0, "cache_creation": 5_000},
+        {"turn": 1, "cache_read": 5_000, "cache_creation": 40_000},
+    ]
     assert dc.detect_cache_misses(records) == []
 
 

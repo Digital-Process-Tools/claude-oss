@@ -46,21 +46,36 @@ The cache misses on TTL expiry, on any edit to the prefix, and on a model
 switch. A healthy turn past the first reads a large, already-cached prefix
 and writes only what is new; a miss reads little or nothing and writes
 something comparable to the whole prefix instead. ``detect_cache_misses``
-uses the simplest test that observation supports without a growth-rate
-constant: on any turn after the first, more got written than was read.
+uses the ratio the observation actually describes: on any turn after the
+first, how much of the *previous* turn's total got read back from cache.
+Comparing a turn's own write against its own read (an earlier version of
+this rule) false-positives on an ordinary turn that legitimately reads a
+large new tool result while the cache is still small -- a large write is
+not itself a miss; a small read of what should already be cached is
+(#1595 review).
 
 ## Open scope (#1595's own open question)
 
 The issue asks whether this measurement belongs here or as a generic
-supertool op beside ``claude-log-cost``, since the per-turn read is
-generic while the delegation accounting (``delegation_cost``,
-``break_even_context``) is specific to this loop. This module answers only
-the loop-specific half; joining ``per_turn_records`` across a whole
-session's worth of spawned-agent transcripts (matching a subagent's start
-to the parent's context at spawn time, the full automatic version of
-question 2) is not attempted here -- ``delegation_cost`` is the calculator
-for one delegation whose brief and work sizes are already known, not an
-automatic walk of a session's transcript tree.
+supertool op beside ``claude-log-cost``, since the per-turn read
+(``per_turn_records``, ``session_actual_cost``) is generic while the
+delegation accounting (``delegation_cost``, ``break_even_context``) is
+specific to this loop. Both the generic per-turn reader and the
+loop-specific calculator are built here; what is **not** attempted is
+joining ``per_turn_records`` automatically across a whole session's worth
+of spawned-agent transcripts -- matching a subagent's start to the
+parent's context at spawn time, the fully automatic form of question 2.
+``delegation_cost`` is a calculator for one delegation whose brief and
+work sizes are already known, not an automatic walk of a session's
+transcript tree.
+
+``per_turn_records``'s ``since`` filter is a raw string comparison against
+each record's own ISO-8601 timestamp, not a parsed datetime comparison
+like ``loop_cost_report.parse_since`` uses. This is correct as long as
+every transcript timestamp is `Z`-suffixed UTC, where lexicographic order
+matches chronological order (true of every transcript observed in this
+repo) -- it is not correct against a non-`Z` offset or mixed precision,
+which nothing in this ecosystem currently produces.
 """
 
 import argparse
@@ -84,19 +99,33 @@ def break_even_context(
     Delegating wins when ``(brief+work)**2 < (A+work)**2 - A**2`` (#1595),
     which solves to ``A > [(brief+work)**2 - work**2] / (2*work)``.
 
-    ``cached`` applies the empirical bump prompt caching adds: the brief is
-    paid as a cache write in the fresh agent where it would have been a
-    cache read in the orchestrator -- the issue's own comment measured one
-    worked example moving from 150K to ~173K.
+    ``cached`` is the **exact algebraic dual of ``delegation_cost``'s own
+    cached branch** -- solving ``inline_cost(A) == delegated_cost`` for
+    ``A`` when ``delegated_cost = cached_premium * (brief+work)**2`` gives
+    ``A = [cached_premium*(brief+work)**2 - work**2] / (2*work)``. This
+    keeps the two functions self-consistent: ``delegation_cost(threshold,
+    brief, work, cached=True)["saved"]`` is 0 at the returned threshold, the
+    same guarantee the uncached path already gives. An earlier version of
+    this function instead scaled the *uncached* threshold by
+    ``cached_premium`` directly, which is not this dual and disagreed with
+    ``delegation_cost`` by a wide margin near the threshold (#1595 review).
+
+    ``cached_premium`` is coarse by construction: it applies one flat
+    multiplier to the whole delegated cost, where the issue's own comment
+    derives a more granular model (the write premium applies only to the
+    brief's own tokens, and amortises further across fan-out). For
+    work=100K, brief=100K the comment's own worked number is ~173K; this
+    exact dual lands at 180K for the same inputs -- both are real numbers
+    for their own model, not the same model, and neither should be read as
+    more than an order-of-magnitude adjustment.
     """
     if work <= 0:
         raise ValueError("work must be > 0")
     if brief < 0:
         raise ValueError("brief must be >= 0")
-    threshold = ((brief + work) ** 2 - work**2) / (2 * work)
     if cached:
-        threshold *= cached_premium
-    return threshold
+        return (cached_premium * (brief + work) ** 2 - work**2) / (2 * work)
+    return ((brief + work) ** 2 - work**2) / (2 * work)
 
 
 def should_delegate(
@@ -246,9 +275,11 @@ def per_turn_records(path, since=None):
                 continue
             message = record.get("message")
             if not isinstance(message, dict):
+                malformed.append((number, "assistant record has no message object"))
                 continue
             usage = message.get("usage")
             if not isinstance(usage, dict):
+                malformed.append((number, "assistant record has no usage object"))
                 continue
             when = _record_time(record)
             if since is not None and (when is None or when < since):
@@ -271,18 +302,28 @@ def per_turn_records(path, since=None):
     return records, malformed
 
 
-def detect_cache_misses(records):
+def detect_cache_misses(records, miss_ratio=0.5):
     """Turn indices past the first where the prefix was rewritten, not reused.
 
-    See the module docstring's "Cache-miss detection" section for the rule
-    and why it needs no growth-rate constant.
+    See the module docstring's "Cache-miss detection" section for the rule.
+    A turn is flagged when its own ``cache_read`` is less than
+    ``miss_ratio`` of the *previous* turn's total context -- i.e. the
+    previous turn's content should mostly have come back as a cache read,
+    and did not. Comparing a turn's own write against its own read instead
+    (an earlier version of this rule) flags an ordinary turn that reads a
+    large new tool result while the cache is still small, even though
+    nothing was invalidated; this ratio does not, since a legitimately
+    large write does not by itself lower how much of the *prior* content
+    got read back.
     """
     misses = []
+    prior_total = None
     for record in records:
-        if record["turn"] == 0:
-            continue
-        if record["cache_creation"] > record["cache_read"]:
-            misses.append(record["turn"])
+        total = record["cache_read"] + record["cache_creation"] + record.get("input", 0)
+        if record["turn"] > 0 and prior_total:
+            if record["cache_read"] < miss_ratio * prior_total:
+                misses.append(record["turn"])
+        prior_total = total
     return misses
 
 
