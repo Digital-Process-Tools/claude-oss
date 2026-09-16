@@ -65,12 +65,21 @@ OP_INVENTORY = {
     "gh-issue": "github",
     "gh-issues": "github",
     "gh-labels": "github",
-    # #1331: named by two new tools rules and confirmed to resolve here --
-    # `help:gh-pr` and `help:gh-run` both answer with a signature
-    # (`gh-pr:NUMBER_OR_BRANCH[:status|:full|:diff[:PATH]|:threads]`,
-    # `gh-run:NUMBER[:attempt=K]`). Both were reachable from shipped prose before
-    # this and simply undeclared, which is what this inventory exists to catch.
-    "gh-pr": "github",
+    # #1331: named by a new tools rule and confirmed to resolve here --
+    # `help:gh-run` answers with a signature (`gh-run:NUMBER[:attempt=K]`). It
+    # was reachable from shipped prose before this and simply undeclared,
+    # which is what this inventory exists to catch.
+    #
+    # `gh-pr` (the bare spelling, as opposed to `gh-pr-create`/`-edit`/`-merge`
+    # below) was declared here for the same reason in #1331, then removed by
+    # #1602: `agents/tick-merge.md`'s `supertool 'gh-pr:N:status'` call was the
+    # only literal shipped invocation of it, and #1602 dropped that call along
+    # with the `^curate/` head-branch derivation it fed. Every other shipped
+    # mention of `gh-pr:N:status` (agents/sub-manager.md, skills/manager/SKILL.md
+    # and its phase files) is prose in backticks, never a literal
+    # `supertool '...'` call this extractor counts -- so nothing else keeps the
+    # bare spelling live, and this inventory's own rule says to delete the
+    # entry rather than leave it blessing a spelling nobody ships.
     "gh-pr-create": "github",
     "gh-pr-edit": "github",
     "gh-pr-merge": "github",
