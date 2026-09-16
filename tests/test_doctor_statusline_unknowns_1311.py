@@ -71,6 +71,26 @@ def test_refresh_command_escapes_a_trailing_backslash():
     assert tokens[-2] == "--root", tokens
 
 
+def test_dquote_escape_leaves_an_ordinary_backslash_untouched():
+    """#1599 CI: the first cut of `_dquote_escape` escaped EVERY backslash
+    unconditionally, which broke `test_refresh_command_is_unchanged_with_
+    no_special_characters` on the windows-latest/3.12 CI leg -- there,
+    `Path(project_dir) / ".oss" / "statusline.py"` renders with backslash
+    path separators, and doubling every one of them changed the remedy's
+    output for an input that carries no quote character at all. Invisible
+    on every other CI leg, where `Path` renders with `/` instead, which is
+    exactly why this test asserts against a literal, hardcoded backslash
+    string rather than relying on a real `Path` object to produce one --
+    the failure mode was platform-dependent by construction and this
+    assertion must not be.
+
+    A bare backslash with no adjacent quote and not at the string's end must
+    pass through `_dquote_escape` completely unchanged.
+    """
+    value = "\\\\tmp\\\\plain\\\\dir\\\\.oss\\\\statusline.py"
+    assert mod._dquote_escape(value) == value, mod._dquote_escape(value)
+
+
 def test_refresh_command_is_unchanged_with_no_special_characters():
     """Positive control: an ordinary path with no quote character renders
     exactly as it did before -- this is not a switch to a different quoting

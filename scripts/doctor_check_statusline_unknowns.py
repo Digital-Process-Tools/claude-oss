@@ -188,14 +188,38 @@ def _refresh_command(project_dir):
 
 def _dquote_escape(value):
     """Escape ``value`` for interpolation inside a POSIX double-quoted shell
-    string, the convention ``_refresh_command`` uses throughout. Order
-    matters: backslash must be escaped before the quote, or a backslash the
-    quote-escaping step introduces would itself be doubled by a backslash
-    pass that ran after it. Handles both shapes #1517 found reachable and
-    the original #1426 fix did not: a literal backslash immediately before a
-    literal double quote, and a trailing backslash that would otherwise
-    escape away the remedy's own closing quote."""
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    string, the convention ``_refresh_command`` uses throughout.
+
+    #1599 CI self-review, round 2: the first cut of this fix (landed, then
+    caught red on the windows-latest/3.12 leg before merge) escaped EVERY
+    backslash unconditionally. #1517's own text warned against exactly this
+    -- "naive doubling changes which characters the printed remedy contains"
+    -- and the windows leg proved it: ``Path(project_dir) / ".oss" /
+    "statusline.py"`` renders with backslash path separators on Windows, and
+    doubling every one of them broke `test_refresh_command_is_unchanged_
+    with_no_special_characters`'s positive control there, invisibly on
+    every other CI leg where ``Path`` renders with `/` instead.
+
+    A backslash only threatens the double-quoted wrapping when it sits
+    immediately before a quote character (existing, or the one
+    `_refresh_command`'s own closing `"` supplies at the string's end) --
+    POSIX double-quote parsing (and `shlex.split`, which emulates it) treats
+    a backslash before any OTHER character as a plain literal backslash,
+    kept as-is, never consumed as an escape. So only those two positions are
+    escaped; every other backslash -- an ordinary Windows path separator
+    among them -- passes through completely unchanged, exactly as it did
+    before #1517 touched this function at all.
+    """
+    out = []
+    length = len(value)
+    for index, char in enumerate(value):
+        if char == '"':
+            out.append('\\"')
+        elif char == "\\" and (index + 1 == length or value[index + 1] == '"'):
+            out.append("\\\\")
+        else:
+            out.append(char)
+    return "".join(out)
 
 
 def channel_cause(config, cache, now, repo_missing=False):
