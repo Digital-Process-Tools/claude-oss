@@ -135,7 +135,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # or this file's own text by existing content checks and dropped by
     # mistake when the report phase moved out. Ceiling unchanged; 90 B
     # headroom.
-    "agents/developer.md": (47910, 48000),
+    # Re-baselined for #1586: the recon paragraph carried the ordering rule
+    # with no pinned call shape, so a lane could satisfy "spawn recon first"
+    # by issuing a backgrounded call and orienting the tree in parallel --
+    # observed doing exactly that. 47910 B became 48352 B adding the literal
+    # `Agent(...)` call (the same shape skills/manager/phases/dispatch.md:62
+    # already pins) plus the one-sentence reason blocking matters. Weighed
+    # against trimming elsewhere in an already-tight file: the 90 B headroom
+    # left no room to fit this without cutting a duty an existing content
+    # check or test pins to this file's own text, so the ceiling moves
+    # instead, to 48500 B -- ~3% headroom, narrower than the ~10% convention
+    # for the same reason as every prior raise here: this file is re-sent on
+    # every turn of every lane.
+    "agents/developer.md": (48352, 48500),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each

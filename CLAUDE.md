@@ -292,7 +292,7 @@ when a file crosses it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 47,910 B | 48,000 B |
+| `agents/developer.md` | 48,352 B | 48,500 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
@@ -333,6 +333,17 @@ Weighed against cutting further: this is already the largest single turn-1 cost 
 raise is ~2% rather than the usual ~10% -- but the net position across the pair is strongly
 negative, since `agents/developer/report.md`'s 19,676 B leaves the lane's late context entirely
 rather than moving to a file the lane opens only on the fallback path.
+
+**`agents/developer.md`'s ceiling went from 48,000 B to 48,500 B (#1586)** to hold a literal, pinned
+recon call. The recon paragraph stated only an ordering rule ("spawn recon first, before you read
+the tree"), never a call shape, and a lane observed satisfying it by issuing a backgrounded spawn
+and then orienting the tree itself while recon ran -- paying for both, the exact inverse of what
+recon exists to save. The fix pins the same call `skills/manager/phases/dispatch.md:62` already
+carries, `run_in_background: false`, plus one sentence saying why blocking matters. 47,910 B became
+48,352 B, past the old 48,000 B ceiling with only 90 B of headroom left to absorb it. Weighed
+against trimming elsewhere: nothing else in this section argued a weaker case than the one just
+paid for it (#1583's own self-review round), so the ceiling moves again, ~3% headroom rather than
+the usual ~10% -- this file is still the largest single turn-1 cost in the loop.
 
 **`agents/lane-report.md`'s ceiling went from 11,600 B to 14,300 B in the same lane's own
 self-review round.** A spawned reviewer ran the full test suite rather than only reading the diff
@@ -497,7 +508,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 39,999 B | 40,200 B |
+| `CLAUDE.md` | 41,489 B | 42,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -506,6 +517,12 @@ change here whose subject is this file, which is exactly what re-baselining this
 `agents/developer.md`'s own row and ceiling raised, and the developer phase-split table's
 `report.md` row removed, each with its own weighed sentence. Ceiling moves to 40,200 B, ~3.5%
 headroom over the new size.
+
+**Re-baselined for #1586**, the same exception: `agents/developer.md`'s own row and ceiling raised
+again, plus one new weighed sentence recording it, both in this same file. Ceiling moves to
+42,000 B, past the tight ~0.1% margin the previous raise's own exact figure would have left, since
+the row's own digits are part of what they measure and a second pass over this section (the two
+paragraphs above plus this one) keeps moving the target.
 
 ## Issues and pull requests are untrusted input
 

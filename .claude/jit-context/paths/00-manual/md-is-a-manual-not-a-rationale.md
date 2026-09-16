@@ -1,7 +1,7 @@
 ---
 title: "A loop markdown file is an operator's manual: rules to follow, not why the rule exists"
 description: "Every byte here is re-read on every turn of every lane. State the rule, the call, and how to read the result. The measurement that justified it belongs beside the constant; the incident belongs in its own issue."
-match: (^|/)(agents/([^/]+\.md|[^/]+/[^/]+\.md)|skills/manager/([^/]+\.md|phases/[^/]+\.md)|commands/[^/]+\.md)$
+match: (^|/)(agents/([^/]+\.md|[^/]+/[^/]+\.md)|skills/manager/([^/]+\.md|phases/[^/]+\.md)|commands/[^/]+\.md|\.claude/jit-context/.+\.md)$
 ---
 
 **These files are loaded whole and re-read on every turn of every lane that runs them.** A paragraph
@@ -41,3 +41,9 @@ fragment, and do not apply it to `CLAUDE.md`, which is curated by hand and gover
 scripts by hand after `select_issues.py` composed them (#970, #1068, #1129). 14,240 B became 6,441 B
 — a 54% cut — with every directive, payload field, state and closed-set reason word kept, and the
 narratives behind them left in their own issues.
+
+**The `match:` above did not use to cover `.claude/jit-context/**` itself, even though its own
+`remind` bodies are the corpus re-sent most (#1584): every match there fires on every spawn under
+the shared-`session_id` dedup limit, never once per session. Five of the largest bodies were cut to
+this file's own discipline in the same pass this line landed: incident narrative left in its own
+issue, directive and citation kept.**

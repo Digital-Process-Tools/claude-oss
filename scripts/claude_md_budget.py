@@ -88,7 +88,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for the v0.37.0 release commit's "What is not proven yet" marker
     # rewrite (the release session's own editing exception): 39999 B became
     # 40085 B. Ceiling unchanged; 115 B headroom.
-    "CLAUDE.md": (40085, 40200),
+    # Re-baselined for #1586, the third editing exception: agents/developer.md's
+    # own row and ceiling raised (a literal, pinned oss:recon call, #1586's own
+    # subject), plus this row's own several rewrites converging on the new
+    # size. 40085 B became 41489 B, past the old 40200 B ceiling. Ceiling
+    # moves to 42000 B, ~1.2% headroom -- wider than the usual re-baseline
+    # margin because this row is self-referential (its own digits are part
+    # of what it measures) and a tight margin here means a second pull
+    # request just to fix the row.
+    "CLAUDE.md": (41489, 42000),
 }
 
 
