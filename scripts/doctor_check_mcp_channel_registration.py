@@ -827,9 +827,27 @@ def _mcp_list_consumer_names(run=None, which=None, env=None):
     return channel_consumer_names(text), None
 
 
-def _drop_dead_plugin_consumers(names, liveness=None, run=None, which=None, env=None):
+def _drop_dead_plugin_consumers(
+    names, liveness=None, run=None, which=None, env=None, cache=None
+):
     """Drop any `plugin:`-declared consumer the harness positively reports as
     a FAILED transport (#1372, gate 3 round one for v0.31.0).
+
+    `cache` -- (#1516) an optional dict a caller supplies to avoid asking the
+    SAME resolved name's liveness more than once across several calls into
+    this module that share the dict -- `channel_consumer_census_state` is
+    called from three places (`doctor.py`'s own `/oss:doctor` run,
+    `doctor_check_channel_health_agreement.py`, and `bin/oss-workspace`'s own
+    embedded census heredoc), and one `/oss:doctor` run alone pays for the
+    real `claude mcp get` ask twice in the same process with no cache. Opt-in
+    and `None` by default, on the SAME terms `check_channel_consumer_pin`'s
+    own `precomputed` parameter documents for the sibling registration check:
+    `doctor.py`'s `main()` deliberately does NOT share one answer between
+    checks by default, because that was tried once for the registration
+    check and reverted -- it made the real ask run even when a caller had
+    stubbed only ONE of the two checks specifically to avoid it. A caller
+    that wants the saving opts in explicitly by passing a shared dict; `main()`
+    keeps asking each check fresh.
 
     The plugin half of this census reads `.mcp.json` declarations and nothing
     else, so a consumer a plugin declares and the harness never starts is
@@ -897,7 +915,13 @@ def _drop_dead_plugin_consumers(names, liveness=None, run=None, which=None, env=
         if not name.startswith("plugin:"):
             kept.append(name)
             continue
-        state, _detail = liveness(resolvable_plugin_server_name(name))
+        resolved = resolvable_plugin_server_name(name)
+        if cache is not None and resolved in cache:
+            state, _detail = cache[resolved]
+        else:
+            state, _detail = liveness(resolved)
+            if cache is not None:
+                cache[resolved] = (state, _detail)
         if state != "failed":
             kept.append(name)
     return kept
@@ -910,6 +934,7 @@ def channel_consumer_census_state(
     plugin_registry_path=None,
     project_dir=None,
     liveness=None,
+    cache=None,
 ):
     """How many MCP servers resolve to the claude-channel consumer script,
     across the TWO populations that can carry one -- never assumed from
@@ -983,6 +1008,11 @@ def channel_consumer_census_state(
     `which` above for `claude mcp list` is not left with a SECOND, real
     subprocess call it has no way to stub -- the same reason `run`/`which`/
     `env` are injected everywhere else in this module.
+
+    `cache` (#1516) threads through to `_drop_dead_plugin_consumers` too --
+    see its own docstring for the opt-in contract. `None` by default, so a
+    caller that does not pass one gets exactly today's behaviour: a fresh
+    liveness ask every call.
     """
     mcp_names, mcp_reason = _mcp_list_consumer_names(run=run, which=which, env=env)
     if mcp_names is None:
@@ -1006,7 +1036,12 @@ def channel_consumer_census_state(
     # above also govern this ask, rather than the default falling through to
     # a real, unstubbable `claude mcp get`.
     plugin_names = _drop_dead_plugin_consumers(
-        list(plugin_names), liveness=liveness, run=run, which=which, env=env
+        list(plugin_names),
+        liveness=liveness,
+        run=run,
+        which=which,
+        env=env,
+        cache=cache,
     )
     names = list(mcp_names) + list(plugin_names)
     # #1364: widening `_MCP_LIST_LINE_RE` means `claude mcp list`'s own
@@ -1045,6 +1080,7 @@ def check_channel_consumer_census(
     plugin_registry_path=None,
     project_dir=None,
     liveness=None,
+    cache=None,
 ):
     """One line: is any OTHER server racing `oss-channel` for the same socket?
 
@@ -1060,6 +1096,13 @@ def check_channel_consumer_census(
     plugin-population half, and `project_dir` for that half's own project-scope
     filtering (`_entry_in_scope`) -- `doctor.py`'s own call site passes its
     `project_dir` here for exactly that reason.
+
+    `cache` (#1516) is `None` by default -- `doctor.py`'s own `main()` does
+    NOT pass one, so this check keeps asking fresh on its own, the same
+    deliberate non-sharing `_drop_dead_plugin_consumers`'s own docstring
+    argues for. A caller that wants to share a liveness cache with another
+    call into this module (`channel_health_agreement`, or a future launcher
+    relay) opts in explicitly by passing the same dict to both.
     """
     import doctor
 
@@ -1070,6 +1113,7 @@ def check_channel_consumer_census(
         plugin_registry_path=plugin_registry_path,
         project_dir=project_dir,
         liveness=liveness,
+        cache=cache,
     )
     if state == "could-not-ask":
         doctor.report(

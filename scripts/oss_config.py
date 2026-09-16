@@ -1749,6 +1749,34 @@ def _anchored_elsewhere(given):
     return bool(given.drive or given.root) and not given.is_absolute()
 
 
+def _stat_kind(path):
+    """``("file"/"dir"/"other", None)`` for a path this process can positively
+    confirm, ``(None, "absent")`` for one confirmed absent, or ``(None,
+    "unreadable")`` when the `stat` call itself could not be trusted to answer
+    either way (#383).
+
+    `Path.is_file()`/`Path.is_dir()` swallow `OSError` internally -- measured
+    directly against `EACCES`/`EPERM` on this repo's own 3.9, 3.11 and 3.13
+    (see `doctor.py`'s `_safe_is_file`, the identical measurement) -- so a bare
+    `.is_file()`/`.is_dir()` in `resolve_config_path` below would report a
+    permission-denied parent directory as a confident ``missing``, with a "run
+    /oss:setup to write it" remedy attached that cannot fix a file that
+    already exists and is simply unreadable right now. This module was
+    excluded from the #383 census twice (2026-08-22, 2026-08-25) because an
+    open lane held it both times; this is that pass, taken first, while
+    nothing holds it.
+    """
+    try:
+        st = path.stat()
+    except (FileNotFoundError, NotADirectoryError):
+        return None, "absent"
+    except OSError:
+        return None, "unreadable"
+    if stat.S_ISDIR(st.st_mode):
+        return "dir", None
+    return "file", None
+
+
 def resolve_config_path(path, start=None):
     """Where the project config really is, as ``(resolved, origin, detail)``.
 
@@ -1803,22 +1831,38 @@ def resolve_config_path(path, start=None):
             "separator.".format(given, base, base),
         )
     here = given if (base is None or given.is_absolute()) else base / given
-    if here.is_file():
+    here_kind, here_reason = _stat_kind(here)
+    if here_kind == "file":
         return here, "here", ""
-    if given.is_absolute():
-        return None, "missing", "Run /oss:setup to write it."
-    if base is not None and not base.is_dir():
-        # An explicit `start` that is not there must never fall back to the process's
-        # directory the way the cwd form does below. That fallback is how a --root at a
-        # path that does not exist came back describing the caller's own repository
-        # (#62), and with `start` the fallback would be silent as well as wrong.
+    if here_reason == "unreadable":
         return (
             None,
             "unsearchable",
-            "{} is not a directory, so it is in no clone that could be searched.".format(
-                base
-            ),
+            "{} could not be checked -- its own stat raised, so this is not "
+            "the same as confirming it is absent.".format(here),
         )
+    if given.is_absolute():
+        return None, "missing", "Run /oss:setup to write it."
+    if base is not None:
+        base_kind, base_reason = _stat_kind(base)
+        if base_reason == "unreadable":
+            return (
+                None,
+                "unsearchable",
+                "{} could not be checked -- its own stat raised, so whether "
+                "it is a directory that could be searched is unknown.".format(base),
+            )
+        if base_kind != "dir":
+            # An explicit `start` that is not there must never fall back to the process's
+            # directory the way the cwd form does below. That fallback is how a --root at a
+            # path that does not exist came back describing the caller's own repository
+            # (#62), and with `start` the fallback would be silent as well as wrong.
+            return (
+                None,
+                "unsearchable",
+                "{} is not a directory, so it is in no clone that could be "
+                "searched.".format(base),
+            )
 
     # git is asked from the directory the path points into, but that directory need not
     # exist here -- an excluded `configs/.oss.json` has no `configs/` in the worktree.
@@ -1846,8 +1890,16 @@ def resolve_config_path(path, start=None):
             "This directory is the clone. Run /oss:setup to write it.",
         )
     candidate = clone / given
-    if candidate.is_file():
+    candidate_kind, candidate_reason = _stat_kind(candidate)
+    if candidate_kind == "file":
         return candidate, "clone", str(clone)
+    if candidate_reason == "unreadable":
+        return (
+            None,
+            "unsearchable",
+            "{} could not be checked -- its own stat raised, so this is not "
+            "the same as confirming it is absent.".format(candidate),
+        )
     return (
         None,
         "missing",
@@ -1869,7 +1921,22 @@ def load_from(path, start=None):
     """
     resolved, origin, detail = resolve_config_path(path, start=start)
     if resolved is None:
-        return None, ["{}: not found. {}".format(path, detail)], origin, None
+        # #383 self-review (auditor round): `detail` already states its own
+        # cause in full for `unsearchable` -- including, verbatim, "this is
+        # not the same as confirming it is absent" for the unreadable-path
+        # case `_stat_kind` exists to distinguish. Prefixing THAT with a
+        # hardcoded "not found." composed a sentence that contradicted
+        # itself in the same breath, exactly the #383 shape this diff is
+        # about, reintroduced one layer up by the caller that renders it.
+        # `missing` keeps the prefix: `detail` there is only ever a remedy
+        # ("Run /oss:setup to write it."), which "not found." is true context
+        # for, not a contradiction of.
+        prefix = (
+            "{}: ".format(path)
+            if origin == "unsearchable"
+            else "{}: not found. ".format(path)
+        )
+        return None, ["{}{}".format(prefix, detail)], origin, None
     config, problems = load(resolved)
     return config, problems, origin, resolved
 
@@ -2848,9 +2915,17 @@ def ensure_worktree_root(config):
     if not value:
         return "unset"
     path = Path(os.path.expanduser(str(value)))
-    if path.is_dir():
+    # #383: `path.is_dir()`/`path.exists()` swallow `OSError` internally, so a
+    # permission-denied parent used to render identically to a genuinely
+    # absent path -- both fell through to `mkdir`, which then failed for the
+    # SAME unreadable-parent reason and reported "blocked" anyway, but only
+    # by accident: nothing here classified it. `_stat_kind` makes the third
+    # state explicit instead of relying on `mkdir` to happen to land on the
+    # right answer.
+    kind, reason = _stat_kind(path)
+    if kind == "dir":
         return "present"
-    if path.exists():
+    if kind == "file" or reason == "unreadable":
         return "blocked"
     try:
         path.mkdir(parents=True)

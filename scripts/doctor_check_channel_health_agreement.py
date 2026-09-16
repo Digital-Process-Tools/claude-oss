@@ -262,6 +262,7 @@ def check_channel_health_agreement(
     now=None,
     probe=None,
     plugin_registry_path=None,
+    cache=None,
 ):
     """One line: does doctor's own channel census agree with `channel:health`?
 
@@ -280,6 +281,12 @@ def check_channel_health_agreement(
     (`claude mcp list` failing, a stale or absent cache) stays WARN: each is
     an environment or timing fact that can clear on its own without a config
     edit.
+
+    `cache` (#1516) threads to `channel_consumer_census_state`'s own
+    `cache` param, `None` by default -- see `check_channel_consumer_census`'s
+    docstring for the opt-in contract. `doctor.py`'s `main()` does not pass
+    one, so this check keeps asking fresh, matching every sibling check in
+    this file family.
     """
     import doctor
 
@@ -292,6 +299,7 @@ def check_channel_health_agreement(
         env=env,
         plugin_registry_path=plugin_registry_path,
         project_dir=project_dir,
+        cache=cache,
     )
     health_raw_state, health_source, health_age = resolve_channel_health_reading(
         project_dir, allow_probe=allow_probe, probe=probe, now=now
