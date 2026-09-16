@@ -106,10 +106,13 @@ return to step 2 -- `setup` changes what every other check reads.
 
 ## scaffold / install-audit / triage / curate / changelog
 
-Each keeps its own procedure, unchanged, at its own file -- moved out of `commands/` by #1389 (the
-plugin harness discovers slash commands from top-level `commands/*.md` only, never recursively),
-reachable here or by the forcing override above, never by typing `/oss:scaffold` and so on
-directly. Spawn the one step 2 named (or the one `$ARGUMENTS` forced) -- one literal call per file,
+Each keeps its own procedure, unchanged, at its own file -- moved out of `commands/` by #1389.
+**The harness actually namespaces these by directory rather than hiding them (#1629)**: each is
+directly reachable as `/oss:run:setup` and so on. This session reaches them only here or by the
+forcing override above -- never by typing `/oss:scaffold` directly -- because that is the ordered,
+stateful cadence they are written for, not because the picker cannot see them.
+
+Spawn the one step 2 named (or the one `$ARGUMENTS` forced) -- one literal call per file,
 never a `<name>` filled in by hand, so a session cannot follow the wrong one:
 
 ```
@@ -134,9 +137,13 @@ count.
 
 ## release
 
-`commands/release.md` stays where it is in the picker (see #1389's own note on why). Spawn the
-dedicated release agent directly rather than reading that file yourself -- it already reads its own
-procedure inside its own discarded context:
+`commands/release.md` still sits in the picker as `/oss:release` -- #1389's old note that this was
+a deliberate, settled choice is retired (#1629): the maintainer's decided target has no top-level
+command but `/oss:run` and `/oss:doctor`, and `commands/release.md` is left exposed only because
+folding it is deep, unreviewed work (145 references across 50 files by literal path, per #1629's
+own count), not because the picker containment is intentional. Spawn the dedicated release agent
+directly rather than reading that file yourself -- it already reads its own procedure inside its
+own discarded context:
 
 ```
 Agent(subagent_type: "oss:releaser")

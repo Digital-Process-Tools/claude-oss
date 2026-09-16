@@ -1,11 +1,12 @@
 """#1389: the slash picker collapses toward two verbs, /oss:run and /oss:doctor.
 
-The plugin harness discovers slash commands from top-level `commands/*.md`
-only -- confirmed against the harness's own plugin-directory-structure
-documentation, since there is no `user-invocable`-style frontmatter key for a
-command file (that key exists only for skills, #1391). Subdirectories are
-never scanned, so a file moved one directory down is out of the picker
-entirely while staying prose a session can still read and follow.
+The plugin harness actually discovers slash commands recursively and
+namespaces them by directory (#1629) -- there is no `user-invocable`-style
+frontmatter key for a command file (that key exists only for skills, #1391),
+and no confirmed exclusion mechanism. A file moved one directory down is
+renamed, not hidden: `commands/run/setup.md` is reachable directly as
+`/oss:run:setup`. The assertions below still pin today's real file layout --
+which files live where on disk, not what the picker shows for them.
 
 This lane demotes six of the eight commands `/oss:run` absorbs: `setup`,
 `scaffold`, `triage`, `curate`, `changelog`, `install-audit` move to
@@ -14,9 +15,10 @@ deliberately left in place -- each is named by dozens of test files and
 several scripts by literal path, coupling deep enough that migrating either
 is its own, separately-reviewable change (see CLAUDE.md and docs/overview.md
 for the full argument). This is the regression test for that exact,
-partial state: the picker must be {run, doctor, tick, release}, no more and
-no less, and the six demoted files must exist at their new home and nowhere
-else.
+partial state: today's actual top-level set is {run, doctor, tick, release},
+no more and no less, and the six demoted files exist at their new home and
+nowhere else. The maintainer's decided target is narrower still -- run and
+doctor alone (#1629) -- so this pins where things stand, not where they end.
 
 The must-fire half of the negative assertion: a control fixture proves the
 top-level glob is genuinely scanning `commands/` (finds a file placed there)
