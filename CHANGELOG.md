@@ -7,6 +7,147 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-09-17
+
+### Added
+
+- Added `scripts/delegation_cost.py`: position-weighted delegation cost accounting. A break-even
+  calculator for whether to delegate a job right now, a real per-turn read of what a transcript
+  actually paid (`cache_read_input_tokens`/`cache_creation_input_tokens`/`input_tokens`, not a
+  modelled average), and cache-miss detection for the turn a prefix got silently rewritten (#1595).
+
+- Three new `vocabulary` entries ship into every scaffolded repo's `01-oss` jit-context layer: `oss`
+  (what the loop is, its four commands, the decision boundary), `dev`/`devs`/`developer`/`lane`
+  (how many lanes run, what a lane carries) and `sub-manager` (one tick, dies with its context, holds
+  every authority but tag and publish). `/claude-jit-context:stats` over this repo's own hooks.log
+  (211,553 lines, 4,704 prompts with no vocabulary match at all) found these the three most-missed
+  content words on the tracker: `oss` (75), `dev`/`devs` (94 combined) and `sub-manager` (34) -- 203
+  unmatched prompts across the three words this entry adds. Shipped at `mode: once`, affordable now
+  that `claude-jit-context` 0.10.0 dedupes `once` per reader rather than per session (#1584) (#1607).
+
+- `loop_cost_report.py --per-issue` divides window spend by the issue(s) resolved, joining every
+  agent kind that worked on it -- not just the developer lane -- rather than only reporting spend by
+  project, kind and context band. Attribution is layered: an issue number stated directly in a
+  transcript's own first prompt (`Issue: 1477.`, `Issues: 1389, 1499, 1576.`, `Recon issues 1361 and
+  1511 in the claude-oss repo`, `Issue #1566: ...`) wins over a worktree path or branch suffix
+  (`oss:auditor`, which never names an issue number directly) wins over a pull-request-to-issue map
+  entry (`oss:tick-review`/`oss:tick-merge`, via the new `resolve_pr_issue_map` and `--pr-issue-map`).
+  A lane carrying several issues lands in one composite bucket rather than being triple-counted across
+  three. Everything nothing matches is its own `unattributed` line, never dropped -- attributed plus
+  unattributed always reconciles against the window total `--projects-dir`/`--since` already report.
+  `--repo` additionally reports the tracker's own count of issues closed in the window
+  (`resolved_issues_in_window`), the denominator CLAUDE.md's token-economy section names but that
+  nothing computed until now (#1618).
+
+- Worktree reaping had a permission check (#787) but nothing that found reapable trees or reaped
+  them, and the one signal that would have stopped a bad reap -- `git-worktrees`' own "uncommitted
+  work" warning -- was a false positive on 8 of 10 dirty worktrees measured on this repo, because
+  `notes/` and `reports/` (lane scratch output) were not gitignored (#1628). `.gitignore` now
+  covers both, plus the reviewer-spawn snapshot file. A new `scripts/worktree_reap.py` finds and
+  reaps merged, unoccupied, clean-or-artifacts-only worktrees -- occupancy read from a process-cwd
+  scan (never git state alone), merge state read from the tracker by branch name (never local
+  ancestry, which a squash merge leaves with no trace), and any `trap.d/` fragment in a tree about
+  to be removed harvested into the clone's own `trap.d/` first, so a real finding sitting in an
+  about-to-vanish worktree -- #1628's own headline incident, twice -- is never silently lost again.
+  `scripts/doctor_check_worktree_reap.py` reports the reapable count and names the runnable,
+  space-safe `--apply` command as its remedy, paired with the existing permission check. Merge
+  status is checked by branch NAME rather than by tree, so a self-review round added one more
+  guard before anything is reaped: a branch this looks merged has its own worktree checked against
+  its remote tracking ref, and any commit still ahead of it -- or no tracking ref at all -- keeps
+  the tree rather than losing real, unpushed work under `git branch -D`.
+
+### Fixed
+
+- The 19 jit-context `tools` rules still `mode: remind` after #1584's first half now read
+  `mode: once`: `claude-jit-context` 0.10.0 redefines `once` to dedupe per reader (keyed on
+  `transcript_path`) rather than per session, removing the only reason `remind` ever survived a
+  spawn boundary. 16 standalone `tools/00-manual/` rules and the 3 generated `tools/01-oss/`
+  rules (`merge-gate.md`, `pr-create-gate.md`, `tree-snapshot-compare.md`, sourced from
+  `scripts/oss_rules.py`) all flip; the 3 `mode: block` rules are unchanged, since refusal was
+  never the argument for `remind`. Both `00-index.tsv` layers were rebuilt so the new mode is
+  what the hook actually reads, not just what the body says.
+
+- README's flowchart no longer says the developer lane opens the pull request or that the
+  self-review audit runs between the pull request and green. The lane hands back a commit; the
+  maintainer opens the pull request; the audit runs inside the lane, before the handback (#1608).
+
+- `oss-workspace` no longer shows ~40 seconds of blank screen after the splash while it checks
+  whether the plugin is current (#1609): the synchronous plugin-currency check now renders an in-flight
+  `plugin ... checking...` line via `oss_step_begin`, overwritten in place by whichever of the
+  eight outcome branches runs. All eight branches were reordered so `oss_step plugin ...` always
+  fires before any diagnostic `echo`, closing the hazard that shipped `oss_step_begin` wired only
+  to `session` in #1511/#1590 (an echoed line landing glued onto the still-open in-flight mark).
+  While pinning this with a test, a second, independent bug surfaced in the same block: a
+  tab-delimited shell `read` silently collapsed an empty `from`/`to` field -- the ordinary shape of
+  a `could-not-check` document -- and dropped the real failure reason, always falling back to "no
+  reason was reported" instead. Fixed alongside it by switching the parse to `cut`, which does not
+  collapse consecutive delimiters the way `IFS=<tab> read` does.
+
+- `next_action.py` no longer folds a route's `configured: false` into `not-due`: curate and
+  the triage label-coverage route now report `not-configured` when no threshold is set, and the
+  top-level "nothing due" reason no longer claims an unconfigured source "resolved cleanly"
+  (#1610). `/oss:doctor` also now WARNs when `trap.d/` holds waiting fragments and no
+  `curate_route_threshold` is configured, instead of staying silent.
+
+- `agents/tick-accounting.md`'s `oss_state.py --decision` step now carries a literal, runnable
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" ...` call in place of a bare script name
+  plus a prose list of flags, so a spawn no longer burns a turn discovering the call shape via
+  `--help` (#1614). `tests/test_tick_accounting_call_shape_1544.py` now asserts the file documents
+  a literal `oss_state.py` call line, not only that the named flags are real.
+
+- `trap.d/` was write-only in a scaffolded repo (#1616): a freshly written `.oss.json` never
+  carried `curate_route_threshold`, so `/oss:curate`'s promotion route was off by default,
+  everywhere, forever, and reported clean while it was (an unconfigured threshold and one nobody
+  has fired both render as `not-due`). `oss_config.build()` now writes the key as a visible,
+  editable judgement-call default -- 15, the same value this repository already carries by hand
+  (#1303) -- the same "state it, do not silently default it" precedent `release.triggers` already
+  sets. The scaffolded `CLAUDE.md` never mentioned `trap.d/` at all, so a plain contributor session
+  had nowhere to learn it exists; it now names the directory in one sentence, and the routing rule
+  for filing an issue instead of a fragment moved into `trap.d/README.md` itself, which is
+  re-rendered on every `/oss:scaffold` run and so reaches every already-onboarded repository too.
+  And ten of fourteen Bash-granted agent briefs (`doctor.md`, `recon.md`, `triager.md`,
+  `releaser.md`, `scheduler-step.md`, `tick-dispatch.md`, `tick-review.md`, `tick-merge.md`,
+  `tick-accounting.md`, `lane-report.md`) carried no invitation to log a trap at all -- each now
+  carries a one-line trigger pointing at `trap.d/README.md`.
+
+- `CLAUDE.md`'s token-economy section carried a 2026-09-14 measurement that every dispatch/review/
+  merge/accounting split, `respawned-for-cost`, the report-phase move to `oss:lane-report` and the
+  pinned recon call had already invalidated. Replaced with a current reading, re-derived rather
+  than trusted, against both `claude-oss` and `claude-supertool`, stating its own window shape
+  explicitly instead of presenting it as a matched before-and-after against the reading it
+  replaces (#1619).
+
+- `doctor.py`'s `oss-workspace launcher` check WARNed permanently in the plugin's own checkout
+  (#1623): a clone ahead of its own release still declares the SAME manifest version as the
+  cache copy it resolves to on PATH, so the ordinary state between a merge and a release --
+  content differing while the version agrees -- rendered as `mismatched` and its `ln -sf` remedy
+  re-created a symlink already pointing where it belonged, a no-op. A new state,
+  `content-skew-current-version`, reports that case as `WAIT` instead (it settles at the next
+  release, with no manual op), while a symlink genuinely pinned at an OLDER cache version --
+  #324's own hazard -- still WARNs with a remedy that actually clears it.
+
+- `agents/doctor.md`'s `repaired` arm named no disposition for the files it writes (#1624): a
+  repair landed straight into whatever tree doctor happened to be standing in, including another
+  lane's own branch with an open pull request, and stayed there uncommitted. The arm now reads
+  `doctor_check_clone_head.clone_head_state` before writing anything -- on the default branch it
+  writes and commits (never pushes, never opens a pull request, the same boundary
+  `agents/developer.md` draws around its own commit); on any other branch, or when HEAD cannot be
+  read, it writes nothing and reports the deferral under `could-not-tell` instead. `repaired` now
+  means committed on the default branch, never "written and left".
+
+- `CLAUDE.md` claimed the plugin harness discovers slash commands from top-level `commands/*.md`
+  only, never recursively -- it actually discovers them recursively and namespaces by directory, so
+  the six `commands/run/*.md` sub-steps are reachable directly as `/oss:run:setup` and so on rather
+  than hidden. Corrected in `CLAUDE.md` (the Layout table and the "Command files have a size budget
+  too" section), in `commands/run.md`'s own dispatch prose, and in `tests/test_picker_demotion_1389.py`'s
+  docstring, which stated the same false claim independently. `commands/run.md` also retires its
+  stale note that `commands/release.md`'s picker placement was a deliberate, settled #1389 decision
+  -- the maintainer's own follow-up comment on #1629 overrides it: the intended picker is `/oss:run`
+  and `/oss:doctor` only. Reaching that for `commands/tick.md` and `commands/release.md` is deferred
+  as its own, separately-reviewable change (#1630) -- folding `commands/tick.md` alone touches 175
+  pinned assertions across 44 test files, measured directly rather than assumed from the prior
+  reader inventory (#1629).
+
 ## [0.37.1] - 2026-09-16
 
 ### Fixed
@@ -11898,7 +12039,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.37.1...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.38.0
 [0.37.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.37.1
 [0.37.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.37.0
 [0.36.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.36.0

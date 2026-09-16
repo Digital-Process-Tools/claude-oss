@@ -156,7 +156,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # the 50100 B ceiling #1624's own self-review round had set. Ceiling moves to
     # 51900 B, ~0.23% headroom -- the same narrow self-referential margin every
     # prior raise of this row gives.
-    "CLAUDE.md": (51783, 51900),
+    # Re-baselined at the v0.38.0 release, the release session's own first exception:
+    # the "What is not proven yet" marker rewritten inside this release commit, its
+    # own growth tracking the gate-3 finding count (seven distinct across two rounds
+    # this time, versus five last release) rather than settling. 51783 B became
+    # 54831 B across two chased-then-widened ceiling drafts; final ceiling set at
+    # 55200 B, ~0.7% headroom, wide enough to absorb this comment's own bytes
+    # without a third chase.
+    "CLAUDE.md": (54906, 55200),
 }
 
 
