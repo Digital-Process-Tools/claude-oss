@@ -224,7 +224,9 @@ moment the only thing left this tick looks like "wait on CI, then review":
    (merge is not withheld from `sub-manager` by `scripts/agent_role.py`, only publish is, so no
    narrower reading applies), follows `skills/manager/phases/merge.md` in full, and reports
    `MERGE: merged` / `MERGE: not-merged` / `MERGE: could-not-run` -- read that report rather than
-   re-running any of it yourself. For `needs-fix`, resume the lane per "One dispatch per tick"
+   re-running any of it yourself. Carry any `CURATE:` line it reports into `oss:tick-accounting`'s
+   prompt as one of this tick's merge facts (#1600). For `needs-fix`, resume the lane per "One
+   dispatch per tick"
    above. `REVIEW: pending` falls through to step 3 with its observable line, verbatim;
    `REVIEW: could-not-run` folds into step 3 the same way any other unreadable input would, and so
    does a `MERGE: could-not-run`.
@@ -272,8 +274,9 @@ to include, and omitting the line entirely is fine too.
 **Compose the draft via `oss:tick-accounting` instead of assembling it yourself (#1544 step 4).**
 Spawn it once this tick's dispatch, review and merge steps are done, naming in its prompt every fact
 it needs and does not re-derive: the lane fills and short-reasons, each lane's dispatch state, each
-pull request's review decision and merge outcome, any cleanup overrides, any pending wait, and your
-spawn token if you have one for a `COST:` line. It runs this tick's own `oss_state.py --decision`
+pull request's review decision and merge outcome (including any `CURATE:` line `oss:tick-merge`
+reported, #1600), any cleanup overrides, any pending wait, and your spawn token if you have one for
+a `COST:` line. It runs this tick's own `oss_state.py --decision`
 call and the cohort/intake/plugin-identity derivations that feed it, then hands back
 `ACCOUNTING: drafted` with an already-validated `TICK:` block, or `ACCOUNTING: could-not-run` naming
 what it could not read. **It cannot send that block for you** -- `tick_handback.py` classifies only

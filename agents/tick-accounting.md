@@ -67,7 +67,9 @@ is something you note in your draft, never something you act on.
    every row covered.
 4. Draft the `TICK:` block in one of `agents/sub-manager.md`'s own four shapes
    (`completed`/`blocked`/`could-not-run`/`paused`), from the facts your prompt gave you, and
-   validate it before reporting:
+   validate it before reporting. If your prompt carries a `CURATE:` line `oss:tick-merge` reported
+   for a curate-authored merge, fold it verbatim into the draft as its own `CURATE:` line (#1600),
+   the same `_find_optional_field` fold `tick_handback.py` already gives `COST:`.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - <<'MSG'

@@ -55,13 +55,15 @@ named:
    not tell you, so read it first:
 
    ```bash
-   gh api repos/{owner}/{repo}/pulls/N --jq .author_association
+   gh api repos/{owner}/{repo}/pulls/N --jq '{association: .author_association, branch: .head.ref, title: .title}'
    ```
 
    `gh-prs` has no `external` filter or flag at all (#1573); no supertool op returns one pull
    request's own `author_association` either, so this is a raw `gh api` call the guard leaves
-   untouched. Feed it to `inbound_triage.classify_pr` -- `"not-inbound"` clears the gate,
-   `"could-not-tell"` is a failed read, anything else holds it: report it, do not merge it.
+   untouched. Feed `.association` to `inbound_triage.classify_pr` -- `"not-inbound"` clears the
+   gate, `"could-not-tell"` is a failed read, anything else holds it: report it, do not merge it.
+   `.branch` and `.title` ride along in the same call (#1600) -- `gh-pr:N:status` carries the
+   branch but not the title, so this one raw call is cheaper than two reads.
 
    **Three states, and the third is the one that matters here.** If the read fails, or
    `classify_pr` returns `"could-not-tell"`, that is `could-not-merge` with the failure quoted --
@@ -74,7 +76,13 @@ named:
 2. The post-merge obligations, gated on that read-back: release the issue's own GitHub assignee
    (`lane_setup.py <issue> --release`), verify every `Closes #N` actually closed, and reap the
    worktree (`|cleanup` handles it when the board holds exactly one idle tree; otherwise read
-   `git-worktrees` and reap by hand, recording any forced override with the reason).
+   `git-worktrees` and reap by hand, recording any forced override with the reason). If `.branch`
+   from step 0 matched `^curate/`, report `.title` from that same call verbatim as a `CURATE:` line
+   below (#1600) -- do not parse or reformat it. `commands/run/curate.md` names no title schema, and
+   a title is free text the same way every pull request's title is
+   (`skills/manager/phases/handback.md`: "`title` is the agent's... it belongs to whoever did the
+   work"); the observed shape ("curate: promote N rules, merge N, decline N, defer N (N fragments)")
+   is what one curate pass happened to write, not a contract to assume.
 3. The default-branch recheck (`gh-branch`) -- the merge is not done when the PR is green, per that
    file's own "The merge is not done when the PR is green" section.
 
@@ -90,8 +98,8 @@ above."
 ```
 MERGE: merged
 <the pull request number, the read-back state/mergedAt/mergeCommit, the cleanup outcome
-(cleaned / skipped: reason / forced with reason), the assignee-release outcome, and the
-gh-branch verdict on the default branch>
+(cleaned / skipped: reason / forced with reason), the assignee-release outcome, the
+gh-branch verdict on the default branch, and a `CURATE:` line for a curate-authored merge>
 ```
 
 ```

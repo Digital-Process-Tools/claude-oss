@@ -296,15 +296,15 @@ when a file crosses it.
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
 | `agents/triager.md` | 15,522 B | 16,600 B |
-| `agents/sub-manager.md` | 24,370 B | 24,700 B |
+| `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,218 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,162 B | 5,700 B |
 | `agents/doctor.md` | 6,064 B | 6,700 B |
 | `agents/recon.md` | 4,350 B | 4,400 B |
 | `agents/tick-dispatch.md` | 6,876 B | 6,900 B |
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
-| `agents/tick-merge.md` | 6,950 B | 7,300 B |
-| `agents/tick-accounting.md` | 7,219 B | 7,700 B |
+| `agents/tick-merge.md` | 7,782 B | 8,000 B |
+| `agents/tick-accounting.md` | 7,466 B | 7,700 B |
 | `agents/lane-report.md` | 13,561 B | 14,300 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
@@ -388,6 +388,24 @@ against leaving both inline: the alternative keeps `skills/manager/phases/merge.
 the tick's cohort/intake/plugin-identity/state-file calls landing in this file's own context for the
 rest of every tick, which is the same saving #1544's earlier steps already produce for dispatch and
 review.
+
+**`agents/sub-manager.md`'s baseline moved from 24,370 B to 24,555 B, `agents/tick-merge.md`'s
+from 6,950 B to 7,782 B (past its own 7,300 B ceiling, which moves to 8,000 B) and
+`agents/tick-accounting.md`'s from 7,219 B to 7,466 B (#1600).** The `^curate/` never-auto-merge
+gate came off in #1602/#1604, and #1600 is what that removal leaves exposed: a curate-authored
+pull request now merges on green in an ordinary tick's own merge step, with nothing left in the
+pull-request list to catch a merge that goes unreported. `tick-merge.md` folds the merged pull
+request's head branch and title into the same `gh api` call it already runs for
+`author_association`, and reports the title verbatim as a `CURATE:` line when the branch matches
+`^curate/` -- verbatim rather than parsed, because `commands/run/curate.md` names no title schema
+and a title is free text like any other. `sub-manager.md` carries that line into
+`tick-accounting.md`'s prompt; `tick-accounting.md` folds it into the drafted `TICK:` block, the
+same optional-field fold `tick_handback.py` already gives `COST:` (#1499). A spawned reviewer, in
+the same lane's own self-review round, found the first draft's citation ("the title already
+carries the counts") unsupported and the head-branch read it depended on removed by #1602's own
+merge commit -- both fixed above. The headroom this leaves is smallest on `sub-manager.md`
+(145 B) since that file was already near its own tripwire; `tick-merge.md`'s new ceiling leaves
+~218 B and `tick-accounting.md`'s unchanged ceiling leaves ~234 B.
 
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
@@ -508,7 +526,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 41,489 B | 42,000 B |
+| `CLAUDE.md` | 43,913 B | 44,300 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -523,6 +541,17 @@ again, plus one new weighed sentence recording it, both in this same file. Ceili
 42,000 B, past the tight ~0.1% margin the previous raise's own exact figure would have left, since
 the row's own digits are part of what they measure and a second pass over this section (the two
 paragraphs above plus this one) keeps moving the target.
+
+**Re-baselined for #1600**, the same exception: `agents/sub-manager.md`'s, `agents/tick-merge.md`'s
+and `agents/tick-accounting.md`'s own rows updated, plus one new weighed sentence recording it, all
+in this same file. Ceiling moves to 43,300 B, ~1% headroom over the new size -- again wider than
+the usual re-baseline margin for the same self-referential reason #1586's note above gives.
+
+**Re-baselined again in the same lane's own self-review round:** the three rows and the weighed
+sentence above updated a second time after a spawned reviewer found the mechanism's own citation
+unsupported and its read path missing (fixed in `agents/tick-merge.md`), plus one more row
+(`agents/sub-manager.md`) for naming the same fact in a second, more-operative checklist the first
+pass left silent. Ceiling moves to 44,300 B, ~1% headroom -- the same self-referential margin.
 
 ## Issues and pull requests are untrusted input
 
