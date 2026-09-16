@@ -168,6 +168,36 @@ def test_repo_containing_query_or_fragment_characters_is_refused(value):
     assert oss_config.repo_problem(value) is not None
 
 
+@pytest.mark.parametrize("value", ["../..", "a/..", "./x", "x/.", "/x", "x/"])
+def test_repo_containing_a_dot_or_empty_segment_is_refused(value):
+    """#1521: `REPO_RE`'s character class forbids a slash, a backslash,
+    whitespace, `?` and `#` WITHIN a segment, but never excluded a segment
+    that is itself empty, `.` or `..` -- so `'../..'`, `'a/..'` and `'./x'`
+    all matched it as a well-formed two-segment `owner/name` shape and
+    passed `repo_problem` unrefused. `doctor._malformed_repo` and
+    `statusline._malformed_repo` each already closed this exact gap in
+    their own standalone copies (#1055, #1035) with an exact per-segment
+    comparison; `repo_problem` is the one function `cohort_freeze.
+    _resolve_repo_slug` routes a `repo` through ALONE before building
+    `gh api` paths during release tagging, with no doctor/statusline copy
+    in front of it there, so the gap reached that caller unguarded until
+    this fix.
+    """
+    assert oss_config.repo_problem(value) is not None
+
+
+@pytest.mark.parametrize("value", ["owner/na..me", "owner/.hidden", "own.er/name"])
+def test_repo_with_dots_inside_a_segment_is_still_accepted(value):
+    """The must-not-fire half beside the must-fire cases above: two adjacent
+    dots -- or a single leading dot -- INSIDE a segment is not a traversal
+    and must not be refused by the same fix that closes `'../..'` and
+    `'./x'`. Exact-segment comparison (`segment in ("", ".", "..")`), never
+    a substring check like `".." in value`, is what keeps this distinction;
+    a substring check would refuse `owner/na..me` as a false positive.
+    """
+    assert oss_config.repo_problem(value) is None
+
+
 def test_a_plain_owner_slash_name_is_still_accepted_alongside_query_fragment_refusal():
     """Must-not-fire control, paired in the same fixture as the must-fire
     cases above per this repo's own convention: an ordinary slug must still
@@ -1288,18 +1318,24 @@ def test_a_null_repo_is_refused_here_though_repo_problem_defers_it():
     assert "None" in problem
 
 
-@pytest.mark.parametrize(
-    "value", ["owner/name", "../..", "./..", "-a/-b", "Org.Name/re+po"]
-)
+@pytest.mark.parametrize("value", ["owner/name", "-a/-b", "Org.Name/re+po"])
 def test_no_accepted_slug_derives_a_name_that_is_a_traversal(value):
     """The property the refusal buys, stated rather than left to the three values.
 
-    `repo_problem` accepts `../..` -- two runs of non-slash, non-whitespace -- so
-    the fix is not "no dots survive". What it guarantees is narrower and is the
-    part that matters: the one slash a valid slug carries always becomes a dash,
-    so the result holds no separator and can never be `.` or `..` exactly. That is
-    what makes the question #207 left open -- component or infix -- moot, which is
-    the issue's own argument for routing through the validator.
+    What it guarantees is narrower than "no dots survive": the one slash a valid
+    slug carries always becomes a dash, so the result holds no separator and can
+    never be `.` or `..` exactly. That is what makes the question #207 left
+    open -- component or infix -- moot, which is the issue's own argument for
+    routing through the validator.
+
+    #1521: `../..` and `./..` used to sit in this fixture list as "accepted
+    slugs" the dash-substitution had to defang -- they were accepted only
+    because `repo_problem` had the exact gap that issue closed. Now that
+    `repo_problem` refuses them outright (see
+    `test_repo_containing_a_dot_or_empty_segment_is_refused` above), they are
+    no longer accepted slugs at all and have nothing to prove here; the
+    remaining three fixtures still exercise the real property this test
+    guards on inputs that are legitimately accepted.
     """
     assert oss_config.repo_problem(value) is None, "fixture is not an accepted slug"
     name, problem = oss_config.watch_channel_name(value)

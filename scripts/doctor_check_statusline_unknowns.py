@@ -159,20 +159,43 @@ def _refresh_command(project_dir):
     # convention than the double-quoted form every other remedy in this
     # module already uses (and single quotes are not stripped by Windows'
     # `cmd.exe`, where they would be passed into argv literally). Escaping
-    # only the one character that could break the existing double quotes
-    # keeps the remedy's shape identical for every path that does not
-    # contain one. Scope, stated rather than implied (self-review finding):
+    # only the characters that could break the existing double quotes
+    # keeps the remedy's shape identical for every path that contains
+    # neither. Scope, stated rather than implied (self-review finding):
     # this closes the quote-breaking case named in the issue, not general
     # shell-metacharacter injection (`$`, a backtick) -- `project_dir` is a
     # local filesystem path under the control of whoever set up the
     # checkout, not attacker-supplied issue/PR text, so that residual gap
     # requires an adversary who can already create arbitrarily-named
     # directories on the machine running doctor.
-    quoted_script = str(script).replace('"', '\\"')
-    quoted_project_dir = str(project_dir).replace('"', '\\"')
+    #
+    # #1517: the first cut of this fix escaped only the double-quote,
+    # leaving two adjacent shapes broken -- a literal backslash immediately
+    # before a literal double-quote doubled into two backslashes ahead of an
+    # escaped quote, which `shlex.split` then reads as an escaped backslash
+    # followed by an unterminated quote; a trailing backslash escaped away
+    # the remedy's own closing quote. POSIX double-quote escaping requires
+    # backslash to be escaped *first*, then the quote -- doing it in the
+    # other order would double a backslash that a preceding quote-escape
+    # replacement just introduced. `_dquote_escape` below is that two-step
+    # pass, not the single-character `.replace()` this used to be.
+    quoted_script = _dquote_escape(str(script))
+    quoted_project_dir = _dquote_escape(str(project_dir))
     return 'python3 "{}" --refresh --root "{}"'.format(
         quoted_script, quoted_project_dir
     )
+
+
+def _dquote_escape(value):
+    """Escape ``value`` for interpolation inside a POSIX double-quoted shell
+    string, the convention ``_refresh_command`` uses throughout. Order
+    matters: backslash must be escaped before the quote, or a backslash the
+    quote-escaping step introduces would itself be doubled by a backslash
+    pass that ran after it. Handles both shapes #1517 found reachable and
+    the original #1426 fix did not: a literal backslash immediately before a
+    literal double quote, and a trailing backslash that would otherwise
+    escape away the remedy's own closing quote."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def channel_cause(config, cache, now, repo_missing=False):

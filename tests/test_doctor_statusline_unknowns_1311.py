@@ -40,6 +40,37 @@ def test_refresh_command_escapes_a_double_quote_in_project_dir():
     assert '\\"quoted\\"' in remedy, remedy
 
 
+def test_refresh_command_escapes_a_backslash_adjacent_to_a_quote():
+    """#1517: the #1426 fix escaped only the double-quote itself, so a path
+    containing a literal backslash immediately before a literal double-quote
+    (`/tmp/foo\\"bar`) rendered with two consecutive backslashes ahead of an
+    escaped quote in the remedy -- `shlex.split` reads that as an escaped
+    backslash followed by an unterminated quote and silently misparses the
+    remedy into the wrong token boundaries rather than raising. Round-trip
+    through `shlex.split` and recover the original path exactly."""
+    import shlex
+
+    project_dir = '/tmp/foo\\"bar'
+    remedy = mod._refresh_command(project_dir)
+    tokens = shlex.split(remedy)
+    assert tokens[-1] == project_dir, tokens
+    assert tokens[-2] == "--root", tokens
+
+
+def test_refresh_command_escapes_a_trailing_backslash():
+    """#1517: a path ending in a literal backslash (`/tmp/foo\\`) escaped
+    away the remedy's own closing double-quote in the #1426 fix, which
+    `shlex.split` raised "No closing quotation" on -- not a misparse but an
+    outright crash for anyone who tried to run the printed remedy."""
+    import shlex
+
+    project_dir = "/tmp/foo\\"
+    remedy = mod._refresh_command(project_dir)
+    tokens = shlex.split(remedy)
+    assert tokens[-1] == project_dir, tokens
+    assert tokens[-2] == "--root", tokens
+
+
 def test_refresh_command_is_unchanged_with_no_special_characters():
     """Positive control: an ordinary path with no quote character renders
     exactly as it did before -- this is not a switch to a different quoting

@@ -283,10 +283,24 @@ def repo_problem(value):
     in NULLABLE_KEYS, so `validate()` already reports a null with the sentence that
     explains why a null is a hole rather than an answer. Repeating it here would put
     two different sentences on one fact.
+
+    #1521: `REPO_RE` alone is not enough. Its character class forbids a slash, a
+    backslash, whitespace, `?` and `#` WITHIN a segment, but never excludes a
+    segment that is empty, `.` or `..` -- so `'../..'`, `'a/..'` and `'./x'` all
+    match it as a well-formed two-segment shape. `doctor._malformed_repo` and
+    `statusline._malformed_repo` each already close this same gap in their own
+    standalone copies with an exact per-segment comparison (never `".." in value`,
+    which would also refuse a legitimate `owner/na..me`), but `repo_problem` is
+    the one function `cohort_freeze._resolve_repo_slug` routes a `repo` through
+    ALONE before building `gh api` paths during release tagging -- no doctor/
+    statusline copy sits in front of it there, so the gap reached that caller
+    unguarded until now.
     """
     if value is None:
         return None
     if not (isinstance(value, str) and REPO_RE.match(value)):
+        return "repo: expected 'owner/name', got {!r}".format(value)
+    if any(segment in ("", ".", "..") for segment in value.split("/")):
         return "repo: expected 'owner/name', got {!r}".format(value)
     return None
 

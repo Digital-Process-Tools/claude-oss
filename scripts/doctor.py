@@ -8866,8 +8866,17 @@ def _malformed_repo(repo):
         # #1401 (statusline._malformed_repo's own sibling finding, ported
         # here): `?` starts a query string and `#` starts a fragment the
         # instant either appears inside a path segment `gh api` builds by
-        # plain string substitution -- neither `oss_config.repo_problem`
-        # nor the inline fallback above excludes them.
+        # plain string substitution. #1521 self-review: this claimed neither
+        # `oss_config.repo_problem` nor the inline fallback above excludes
+        # them, which stopped being true for the `oss_config is not None`
+        # path once #1475 widened `oss_config.REPO_RE` itself to refuse `?`
+        # and `#` -- a `repo` carrying either is already refused at the
+        # `repo_problem(repo)` call above, before this loop is ever reached.
+        # Correct only for the `elif` fallback a few lines up, which is not
+        # widened the same way. Kept, not deleted, as an explicit second
+        # line of defense on the primary path too -- the same choice
+        # `statusline._malformed_repo`'s own docstring already states for
+        # its sibling copy of this exact check.
         if "?" in segment or "#" in segment:
             return True
     if segments[0].startswith("-"):
