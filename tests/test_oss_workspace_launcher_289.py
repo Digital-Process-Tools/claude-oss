@@ -650,8 +650,12 @@ def test_content_skew_at_the_same_version_is_not_a_warn_1623(tmp_path):
     recognised` above as the positive control this issue's acceptance demands:
     same fixture shape, only the cache directory's version segment differs, and
     that one case still WARNs."""
-    plugin_root = _plugin_root(tmp_path, content=b"new content\n", version="0.37.1")
-    cache_dir = tmp_path / "cache" / "dpt-plugins" / "oss" / "0.37.1" / "bin"
+    # #350/#399: a version literal here would pin this repo's actual current
+    # release and redden this test on the very next version bump -- "9.9.9" is
+    # this repo's own convention for "a version it will never actually reach".
+    version = "9.9.9"
+    plugin_root = _plugin_root(tmp_path, content=b"new content\n", version=version)
+    cache_dir = tmp_path / "cache" / "dpt-plugins" / "oss" / version / "bin"
     cache_dir.mkdir(parents=True)
     target = cache_dir / "oss-workspace"
     target.write_bytes(b"old content\n")
@@ -661,10 +665,10 @@ def test_content_skew_at_the_same_version_is_not_a_warn_1623(tmp_path):
         plugin_root=plugin_root, path=str(cache_dir)
     )
     assert state == "content-skew-current-version", (state, detail)
-    resolved, version = detail
-    assert version == "0.37.1", detail
+    resolved, resolved_version = detail
+    assert resolved_version == version, detail
 
     doctor.check_oss_workspace_launcher(plugin_root=plugin_root, path=str(cache_dir))
     level, message = doctor.FINDINGS[-1]
     assert level == "WAIT", (level, message)
-    assert "0.37.1" in message, message
+    assert version in message, message
