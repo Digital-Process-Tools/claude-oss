@@ -159,7 +159,8 @@ file discovered later is not.
 **required whenever `pr_body.state` is `written`** -- in three states, of which only the third is a
 defect: it closes something, **it deliberately closes nothing** (a `Part of #N` pull request is a
 real decision, not an omission), or nobody said. **The schema carries the spellings** and what each
-state requires; do not learn them from here.
+state requires; do not learn them from here, because a field list copied into two documents is the
+drift this repository keeps paying for.
 
 - **The keyword has to survive rendering.** The validator looks for a closing keyword --
   `Closes`/`Fixes`/`Resolves` -- bound to each number you declared, **outside code spans and HTML
@@ -167,7 +168,7 @@ state requires; do not learn them from here.
   though it worked and creates no reference at all: **backticked is not bound**, and neither is
   fenced.
 - **One `Closes` line per issue.** `Closes #A #B` links both numbers and **closes only `#A`**, so
-  `#B` needs a keyword of its own.
+  `#B` needs a keyword of its own. The validator refuses the second number for exactly that reason.
 - **Write the line while you write the body.** The refusal names the remedy, but it arrives after
   the payload exists, and the repair is then an edit to the body *and* the report rather than one
   line composed once.

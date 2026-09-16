@@ -524,7 +524,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # lane reading this file directly on fallback) after an auditor found
     # the original fallback sentence self-referential when read in the
     # fallback mode it describes. Ceiling unchanged; comfortably under it.
-    "agents/lane-report.md": (13402, 14300),
+    # Re-baselined a third time in the same lane's own second self-review
+    # round: 13402 B became 13561 B, restoring two clauses ("a field list
+    # copied into two documents is the drift this repository keeps paying
+    # for", "the validator refuses the second number for exactly that
+    # reason") a second spawned reviewer found still missing from the
+    # closing-keyword restoration. Ceiling unchanged; comfortably under it.
+    "agents/lane-report.md": (13561, 14300),
 }
 
 

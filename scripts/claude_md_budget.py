@@ -81,9 +81,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # sentence, under the same third editing exception.
     # Re-baselined again in the same round: 39630 B became 39879 B --
     # the lane-report.md ceiling row and its history paragraph updated a
-    # second time for the auditor-finding fix. Ceiling unchanged; 321 B
-    # headroom.
-    "CLAUDE.md": (39879, 40200),
+    # second time for the auditor-finding fix.
+    # Re-baselined a third time, the mandated #1047 second-pass round:
+    # 39879 B became 39999 B, the lane-report.md row/history updated once
+    # more. Ceiling unchanged; 201 B headroom.
+    "CLAUDE.md": (39999, 40200),
 }
 
 
