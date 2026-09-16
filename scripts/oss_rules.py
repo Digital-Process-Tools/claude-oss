@@ -528,9 +528,11 @@ into that tick. "Start more devs" and "run as much dev as possible" are the same
 the same way: let the ranked claim produce as many lanes as the board supports this tick, never a
 target chosen ahead of reading it.
 
-**What a lane needs to start**: an issue number (or up to three) and a worktree path already
-claimed by `lane_setup.py --claim`, and nothing else -- `agents/developer.md` re-derives everything
-else (config, guards, live worktrees) rather than trusting what its own spawn payload restates.
+**What a lane needs to start**: an issue number (or up to three, via `--claim-also`) and a
+worktree path -- `lane_setup.py --claim` writes the GitHub assignee for the issue(s), which is the
+claim, not a local record of the worktree; `git worktree` state is the only authority on which
+worktrees are live. Beyond those, `agents/developer.md` re-derives everything else (config, guards)
+rather than trusting what its own spawn payload restates.
 """
 
 #: #1607, same measurement as DEV_LANES above.
@@ -550,9 +552,12 @@ was *believed* when it was written; the first call of a tick is the repo itself 
 the open pull requests, the open issues.
 
 **It holds every authority the loop needs except tag and publish.** It dispatches lanes, reviews
-pull requests, merges on green -- all of it. Only `agents/releaser.md` may tag and publish, gated by
-`release.authority` in `.oss.json` and enforced in code by `scripts/agent_role.py`, never by the
-sub-manager choosing to abstain.
+pull requests, merges on green -- all of it. Only `agents/releaser.md` runs the release phase. Of
+the two, only publishing is code-enforced: `scripts/release_publish.py` reads a marker
+(`scripts/agent_role.py`) and refuses to publish a GitHub Release the instant it sees
+`sub-manager`. Tagging carries no such check -- `git tag` and `git push origin <tag>` are plain
+shell commands, so withholding tagging from a sub-manager rests on this file's own prose, not on
+anything a script enforces.
 
 **It never runs a whole tick inline.** Since #1544 it spawns one throwaway agent per step --
 `oss:tick-dispatch` (select, claim, render the lane call), `oss:tick-review` (wait for CI, review,
