@@ -574,7 +574,7 @@ pass left silent. Ceiling moves to 44,300 B, ~1% headroom -- the same self-refer
 **Re-baselined for #1614**, the same exception: `agents/tick-accounting.md`'s own row and ceiling
 raised three times in the same lane (once for the fix itself, twice more across two self-review
 rounds fixing an incomplete call), plus this weighed sentence and its own row here, updated each
-time. Ceiling moves to 46,300 B, ~0.3% headroom -- tighter than the usual self-referential margin
+time. Ceiling moves to 46,300 B, ~0.2% headroom -- tighter than the usual self-referential margin
 because each of the three passes above added its own paragraph to this same section.
 
 ## Issues and pull requests are untrusted input
