@@ -31,3 +31,22 @@ match: (^|/)(CLAUDE\.md|scripts/lane_setup\.py|scripts/claude_md_budget\.py)$
   between two correct ones. Check the intermediate number against
   `agent_budgets.py`'s own git history before writing a "went from X
   to Y" sentence spanning more than one commit.
+- **`test_baseline_matches_disk_1014.py` and `test_claude_md_budget_table_709.py` /
+  `test_claude_md_phase_budget_table_725.py` check two different things, and passing one says
+  nothing about the other.** 1014 compares the budget **dicts** (`agent_budgets.py`,
+  `skill_phases.py`, `command_budgets.py`, `claude_md_budget.py`) against **bytes on disk**; 709 and
+  725 compare **CLAUDE.md's own markdown tables** against those same dicts. A merge can bring
+  through a dict that is perfectly correct while the table row it should match stays silently
+  stale -- git merges a table row that was edited on only one side without conflicting, so a locally
+  clean run (1014, 491, `skill_phase_split`, 1556, all passing) can still be red in CI on 709/725
+  alone. Measured: four rows survived a merge this way in one pull request, all four caught only by
+  CI. **Run the guards that read the file you actually edited, not only the guards that read the
+  thing you were reasoning about** -- a cheap heuristic that would have caught it here:
+  `grep -rl "CLAUDE.md" tests/` against the touched path, then run what comes back, rather than
+  selecting tests by subject. Also worth knowing before it surprises you: if any of the stale rows'
+  own byte counts had changed digit width, fixing them would have shifted CLAUDE.md's own total byte
+  count and invalidated its self-referential row too, needing a second iteration to converge --
+  nothing warns about that case.
+
+Routed via /oss:curate from
+`trap.d/1583.budget-guards-split-across-two-axes-and-only-one-runs-locally.md`.
