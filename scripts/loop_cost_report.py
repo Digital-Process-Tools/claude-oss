@@ -151,7 +151,9 @@ _ISSUE_WINDOW = 120
 
 _WORKTREE_RE = re.compile(r"-wt/(\d+)\b")
 _BRANCH_RE = re.compile(r"\bbranch\s+[\w./-]*?(\d+)\b", re.IGNORECASE)
-_PR_RE = re.compile(r"pull request\s*#?(\d+)", re.IGNORECASE)
+_PR_PHRASE_RE = re.compile(r"pull request\s*#?(\d+)", re.IGNORECASE)
+_BARE_PR_LIST_RE = re.compile(r"^(?:#?\d{1,6}(?:\s*,\s*)?)+$")
+_BARE_PR_TOKEN_RE = re.compile(r"#?(\d{1,6})")
 
 
 def _issue_numbers_from_prompt(text):
@@ -195,13 +197,29 @@ def _issue_from_worktree_or_branch(text):
     return None
 
 
-def _pr_number_from_prompt(text):
-    """The pull request number a `Merge pull request #N` prompt names, or
-    ``None``."""
+def _pr_numbers_from_prompt(text):
+    """The pull request number(s) an `oss:tick-review`/`oss:tick-merge`
+    prompt names -- ``[]`` when none found. Two shapes, tried in order: the
+    phrase "pull request #N" (a caller that narrates), and -- the shape
+    these two spawns' own prompts actually take, per `agents/tick-merge.md`
+    ("Your prompt names exactly that pull request number and nothing else
+    -- no board, no brief, no state file") and `agents/tick-review.md`
+    ("Your prompt names exactly the pull request number(s) open this tick,
+    and nothing else") -- **a bare number, or a comma-separated list of
+    them, and nothing else in the whole prompt**. That second shape is
+    deliberately narrow (`fullmatch`, not `search`): it must never read a
+    number embedded in unrelated prose as a PR number, only a prompt that
+    IS a number (list) and nothing more.
+    """
     if not text:
-        return None
-    match = _PR_RE.search(text)
-    return int(match.group(1)) if match else None
+        return []
+    phrase_matches = _PR_PHRASE_RE.findall(text)
+    if phrase_matches:
+        return [int(n) for n in phrase_matches]
+    stripped = text.strip()
+    if stripped and _BARE_PR_LIST_RE.match(stripped):
+        return [int(tok) for tok in _BARE_PR_TOKEN_RE.findall(stripped)]
+    return []
 
 
 def attribute_issues(first_prompt, pr_issue_map=None):
@@ -222,16 +240,21 @@ def attribute_issues(first_prompt, pr_issue_map=None):
     if worktree_issue is not None:
         return [worktree_issue], RULE_WORKTREE
     if pr_issue_map:
-        pr = _pr_number_from_prompt(first_prompt)
-        if pr is not None:
-            mapped = pr_issue_map.get(pr)
-            if mapped is None:
-                mapped = pr_issue_map.get(str(pr))
-            if mapped:
-                issues = mapped if isinstance(mapped, list) else [mapped]
-                issues = [int(i) for i in issues]
-                if issues:
-                    return issues, RULE_PR_MAP
+        prs = _pr_numbers_from_prompt(first_prompt)
+        if prs:
+            issues = []
+            for pr in prs:
+                mapped = pr_issue_map.get(pr)
+                if mapped is None:
+                    mapped = pr_issue_map.get(str(pr))
+                if not mapped:
+                    continue
+                for one in mapped if isinstance(mapped, list) else [mapped]:
+                    number = int(one)
+                    if number not in issues:
+                        issues.append(number)
+            if issues:
+                return issues, RULE_PR_MAP
     return [], RULE_UNATTRIBUTED
 
 
@@ -628,18 +651,26 @@ def resolve_pr_issue_map(repo, pr_numbers, gh, run, timeout=25):
     return mapping, unresolved
 
 
+RESOLVED_ISSUES_JQ = ".[] | select(.pull_request == null) | {number, closed_at}"
+
+
 def resolved_issues_in_window(repo, since_dt, gh, run, timeout=60):
     """Issue numbers closed at or after ``since_dt`` -- pull requests
-    excluded server-side is not attempted here (unlike
-    `cohort_freeze.fetch_issues`'s `--jq` filter) because `gh api ... state=
-    closed` still returns pull requests mixed in, so filtering happens in
-    Python on the same ``pull_request is None`` check `cohort_freeze.py`
-    uses. Returns ``(state, numbers, reason)`` -- ``state`` is ``"ok"`` or
-    ``"could-not-read"``, never a third thing, and never raises.
+    excluded server-side via `--jq`. `--paginate`, one compact JSON object
+    per line, the same shape `cohort_freeze.fetch_issues` uses against this
+    identical endpoint and for the identical reason: a raw `--paginate`
+    array response cannot be concatenated safely across pages, while
+    `--jq`-filtered lines can (#1618 self-review -- the first version of
+    this function fetched one unpaginated page, so any tracker holding more
+    than 100 closed issues silently truncated the window's own count, with
+    `state` still reporting ``"ok"``). Returns ``(state, numbers, reason)``
+    -- ``state`` is ``"ok"`` or ``"could-not-read"``, never a third thing,
+    and never raises.
     """
     command = [
         gh,
         "api",
+        "--paginate",
         "-X",
         "GET",
         "repos/{}/issues".format(repo),
@@ -647,6 +678,8 @@ def resolved_issues_in_window(repo, since_dt, gh, run, timeout=60):
         "state=closed",
         "-f",
         "per_page=100",
+        "--jq",
+        RESOLVED_ISSUES_JQ,
     ]
     try:
         done = run(
@@ -667,29 +700,34 @@ def resolved_issues_in_window(repo, since_dt, gh, run, timeout=60):
             [],
             "{} failed: {}".format(_command_text(command), message),
         )
-    try:
-        data = json.loads(stdout)
-    except (ValueError, TypeError):
-        return (
-            "could-not-read",
-            [],
-            "{} printed text that is not JSON".format(_command_text(command)),
-        )
-    if not isinstance(data, list):
-        data = [data]
     numbers = []
-    for item in data:
-        if not isinstance(item, dict):
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line:
             continue
-        if item.get("pull_request") is not None:
-            continue
-        closed_at = item.get("closed_at")
+        try:
+            row = json.loads(line)
+        except ValueError:
+            return (
+                "could-not-read",
+                [],
+                "a line of {} was not valid JSON: {!r}".format(
+                    _command_text(command), line[:120]
+                ),
+            )
+        if not isinstance(row, dict) or "number" not in row:
+            return (
+                "could-not-read",
+                [],
+                "a row from {} was missing number".format(_command_text(command)),
+            )
+        closed_at = row.get("closed_at")
         if not isinstance(closed_at, str):
             continue
         closed_dt = parse_since(closed_at)
         if closed_dt is None or closed_dt < since_dt:
             continue
-        number = item.get("number")
+        number = row.get("number")
         if isinstance(number, int):
             numbers.append(number)
     return "ok", sorted(set(numbers)), ""
@@ -849,9 +887,15 @@ def render_per_issue(result):
     if resolved is None:
         lines.append("resolved issues (tracker): not-requested")
     else:
+        numbers = resolved.get("numbers")
+        count = (
+            "{} issue(s)".format(len(numbers))
+            if isinstance(numbers, list)
+            else "no count"
+        )
         lines.append(
-            "resolved issues (tracker): {}  {}".format(
-                resolved.get("state"), resolved.get("reason") or ""
+            "resolved issues (tracker): {}  {}  {}".format(
+                resolved.get("state"), count, resolved.get("reason") or ""
             )
         )
     for key in sorted(

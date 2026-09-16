@@ -143,6 +143,39 @@ def test_pr_number_not_present_in_the_given_map_is_unattributed():
     )
 
 
+def test_bare_pr_number_prompt_resolves_through_the_map():
+    # #1618 self-review: this is the REAL shape oss:tick-merge/oss:tick-review
+    # prompts take -- agents/tick-merge.md: "Your prompt names exactly that
+    # pull request number and nothing else -- no board, no brief, no state
+    # file." No "pull request" phrase anywhere; the "pull request" phrasing
+    # above is a caller that narrates, not what the spine actually spawns with.
+    assert lcr.attribute_issues("1587", pr_issue_map={1587: [1580]}) == (
+        [1580],
+        "pr-to-issue-map",
+    )
+    assert lcr.attribute_issues("#1587", pr_issue_map={1587: [1580]}) == (
+        [1580],
+        "pr-to-issue-map",
+    )
+
+
+def test_bare_pr_number_list_prompt_resolves_multiple_prs():
+    # oss:tick-review's own prompt shape: "the pull request number(s)".
+    assert lcr.attribute_issues(
+        "1587, 1590", pr_issue_map={1587: [1580], 1590: [1581]}
+    ) == ([1580, 1581], "pr-to-issue-map")
+
+
+def test_a_bare_number_inside_unrelated_prose_is_not_read_as_a_pr():
+    # The bare-number rule is deliberately narrow (fullmatch): a number that
+    # is not the WHOLE prompt must not be swept in as a PR number -- that
+    # would be a much wider false-positive surface than the "pull request"
+    # phrase it augments.
+    assert lcr.attribute_issues(
+        "Audit commit 1587 for correctness.", pr_issue_map={1587: [1580]}
+    ) == ([], "unattributed")
+
+
 # --- the third state: unattributed is a line, never a drop -------------------------
 
 
@@ -317,14 +350,19 @@ def test_resolve_pr_issue_map_records_a_failed_lookup_not_a_silent_skip():
 
 
 def test_resolved_issues_in_window_filters_by_closed_at_and_excludes_prs():
+    # --jq already excludes pull requests server-side (the `select(.pull_request
+    # == null)` in RESOLVED_ISSUES_JQ) -- one compact JSON object per line, the
+    # same shape `cohort_freeze.fetch_issues` emits, safe to concatenate across
+    # `--paginate` pages unlike a raw JSON array would be.
     def fake_run(command, **kwargs):
+        assert "--paginate" in command
         rows = [
-            {"number": 10, "pull_request": None, "closed_at": "2026-09-12T00:00:00Z"},
-            {"number": 11, "pull_request": None, "closed_at": "2026-09-01T00:00:00Z"},
-            {"number": 12, "pull_request": {}, "closed_at": "2026-09-12T00:00:00Z"},
-            {"number": 13, "pull_request": None, "closed_at": None},
+            {"number": 10, "closed_at": "2026-09-12T00:00:00Z"},
+            {"number": 11, "closed_at": "2026-09-01T00:00:00Z"},
+            {"number": 13, "closed_at": None},
         ]
-        return _FakeDone(stdout=json.dumps(rows).encode("utf-8"))
+        stdout = "\n".join(json.dumps(r) for r in rows).encode("utf-8")
+        return _FakeDone(stdout=stdout)
 
     since_dt = lcr.parse_since(SINCE)
     state, numbers, reason = lcr.resolved_issues_in_window(
@@ -333,6 +371,28 @@ def test_resolved_issues_in_window_filters_by_closed_at_and_excludes_prs():
     assert state == "ok"
     assert numbers == [10]
     assert reason == ""
+
+
+def test_resolved_issues_in_window_paginates_past_100(tmp_path):
+    # #1618 self-review: the first version fetched one page (per_page=100, no
+    # --paginate) and silently truncated a tracker with more than 100 closed
+    # issues in the window. This pins that more than one page's worth of rows
+    # -- simulated here as a single multi-line stdout, since --paginate's own
+    # per-page HTTP fetching is gh's concern, not this function's -- sums.
+    def fake_run(command, **kwargs):
+        assert "--paginate" in command
+        rows = [
+            {"number": n, "closed_at": "2026-09-12T00:00:00Z"} for n in range(1, 151)
+        ]
+        stdout = "\n".join(json.dumps(r) for r in rows).encode("utf-8")
+        return _FakeDone(stdout=stdout)
+
+    since_dt = lcr.parse_since(SINCE)
+    state, numbers, reason = lcr.resolved_issues_in_window(
+        "owner/repo", since_dt, "gh", fake_run
+    )
+    assert state == "ok"
+    assert len(numbers) == 150
 
 
 def test_resolved_issues_in_window_could_not_read_on_gh_failure():
@@ -377,6 +437,23 @@ def test_cli_per_issue_text_prints_unattributed_line(per_issue_projects):
     assert proc.returncode == 0, proc.stderr
     assert "unattributed" in proc.stdout.lower()
     assert "1477" in proc.stdout
+
+
+def test_render_per_issue_text_mode_prints_the_resolved_issues_count(
+    per_issue_projects,
+):
+    # #1618 self-review: the first version read only state/reason and dropped
+    # the actual count/list from text-mode output, even though --repo's own
+    # help text promises it -- only --json carried it. render_per_issue is
+    # exercised directly here (rather than through --repo, which would need a
+    # live `gh`) since the count only has to reach the renderer correctly.
+    result = lcr.measure_per_issue(
+        per_issue_projects,
+        since=SINCE,
+        resolved_issues={"state": "ok", "numbers": [10, 11, 12], "reason": ""},
+    )
+    text = lcr.render_per_issue(result)
+    assert "3 issue(s)" in text
 
 
 def test_cli_per_issue_pr_issue_map_file(tmp_path, per_issue_projects):
