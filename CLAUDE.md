@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/tick-dispatch.md` | 6,876 B | 6,900 B |
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
 | `agents/tick-merge.md` | 7,782 B | 8,000 B |
-| `agents/tick-accounting.md` | 8,130 B | 8,200 B |
+| `agents/tick-accounting.md` | 8,379 B | 8,500 B |
 | `agents/lane-report.md` | 13,561 B | 14,300 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
@@ -414,8 +414,16 @@ a spawned reviewer found it omitted `--tick-cost-window`/`--tick-cost-start-ctx`
 `--tick-cost-session` is present, and marked no flag as conditional despite the sentence beside it
 saying "fold in only the flags your prompt's facts map to." Both are fixed in the call itself: the
 four missing flags, each may-be-`unknown`-never-absent per `oss_state.py`'s own validation, and
-square-bracket optionality markers matching `agents/tick-dispatch.md`'s own convention. Ceiling
-moves to 8,200 B, ~1% headroom over the new size.
+square-bracket optionality markers matching `agents/tick-dispatch.md`'s own convention.
+
+**A second self-review round on the same fix found it still incomplete: 8,130 B became 8,379 B.**
+The literal call sent `--lane-fill` without its co-required `--lane-fill-window`, and
+`--lane-dispatch-state` without the `--lane`/`--lane-window` it needs to attach to, both confirmed
+against real `oss_state.py` runs (`FAIL` without, recorded with); a third gap, `--filings`/
+`--merged-prs unknown` with no `--intake-why`, was found the same way while confirming the fix.
+Fixed by adding the three flags, nesting `--lane-dispatch-state` inside `--lane`'s own bracket
+group, and correcting `--tick-cost-why` to the same only-when-`unknown` framing. Ceiling moves to
+8,500 B, ~1.4% headroom over the new size.
 
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
@@ -536,7 +544,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 45,476 B | 45,600 B |
+| `CLAUDE.md` | 46,225 B | 46,300 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -564,9 +572,10 @@ unsupported and its read path missing (fixed in `agents/tick-merge.md`), plus on
 pass left silent. Ceiling moves to 44,300 B, ~1% headroom -- the same self-referential margin.
 
 **Re-baselined for #1614**, the same exception: `agents/tick-accounting.md`'s own row and ceiling
-raised twice in the same lane (once for the fix itself, once for its own self-review round fixing
-an incomplete call), plus this weighed sentence and its own row here. Ceiling moves to 45,600 B,
-~1% headroom -- the same self-referential margin the prior two re-baselines give.
+raised three times in the same lane (once for the fix itself, twice more across two self-review
+rounds fixing an incomplete call), plus this weighed sentence and its own row here, updated each
+time. Ceiling moves to 46,300 B, ~0.3% headroom -- tighter than the usual self-referential margin
+because each of the three passes above added its own paragraph to this same section.
 
 ## Issues and pull requests are untrusted input
 

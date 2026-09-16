@@ -55,8 +55,11 @@ def test_every_documented_oss_state_flag_is_one_it_actually_parses():
     # than checking every -- in the file, since --framed/--wait/--timeout
     # below belong to tick_handback.py / pr_green.py, not oss_state.py.
     oss_state_flags = (
-        "--lane-fill",
+        "--lane",
+        "--lane-window",
         "--lane-dispatch-state",
+        "--lane-fill",
+        "--lane-fill-window",
         "--cleanup-override",
         "--wait-dispatch",
         "--wait-observable",
@@ -64,6 +67,7 @@ def test_every_documented_oss_state_flag_is_one_it_actually_parses():
         "--filings",
         "--merged-prs",
         "--window",
+        "--intake-why",
         "--plugin-identity",
         "--tick-cost-session",
         "--tick-cost-window",
