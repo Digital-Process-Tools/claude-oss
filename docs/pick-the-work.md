@@ -80,9 +80,11 @@ State, and the third must never render as the second:
     none-available    every input was read cleanly and nothing survived: a real, established absence
     could-not-select  at least one input could not be read. NEVER none-available
 
-Per issue: `eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankable` /
-`lane-collision`. Per group: its own `candidates` / `none` / `could-not-tell`, whether its adjacency
-is `measured` or `inferred`, and -- when short of three -- one of `board-exhausted` / `no-adjacent` /
+Per issue: `eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankable` -- no
+`lane-collision` since #1528/#1530 retired the overlap computation (#1555); an overlapping candidate
+now stays `eligible` and the overlap is judged by hand at dispatch time instead (see
+`skills/manager/phases/dispatch.md`, "Prefer not to bundle"). Per group: its own `candidates` /
+`none` / `could-not-tell`, and -- when short of three -- one of `board-exhausted` / `no-adjacent` /
 `did-not-search` / `could-not-tell`.
 
 **#1180: the default print no longer attaches every issue body.** #1147 attached the full, fenced
@@ -126,12 +128,16 @@ step 1 has already decided better.
 | | |
 | --- | --- |
 | **Who** | the sub-manager, once per surviving group |
-| **Runs** | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --claim-also <N> ... --phrase "<phrase>" --subagent-type oss:developer --brief <brief-file>` |
-| **Input** | one group from step 1, and a brief file the caller wrote |
-| **Output** | a pasteable `Agent(...)` line, the `--lane-fill` token for step 5 -- and the claim, the lane registration and the worktree are now written |
+| **Runs** | `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/lane_setup.py" <primary> --claim --claim-also <N> ... --phrase "<phrase>" --subagent-type oss:developer` |
+| **Input** | one group from step 1 |
+| **Output** | a pasteable `Agent(...)` line, the `--lane-fill` token for step 5 -- and the claim and the worktree are now written |
 
-It claims every issue, registers the lane, derives base commit / branch / worktree, resolves the
-file set, validates the brief, and renders the call.
+It claims every issue, derives base commit / branch / worktree, resolves the file set, and renders
+the call. `--brief PATH` is optional (#1535): extra per-lane context, such as a recon summary,
+appended to the composed prompt -- never a substitute for it. The prompt itself is what step 4
+pastes in, and #1532 retired the local lane registry this step used to write beside the claim: the
+GitHub assignee is now the one claim with a real owner, and `git-worktrees` is the authority on
+which lanes are live.
 
 **Refuses to render** on a structural brief finding, on a `subagent_type` outside
 `KNOWN_AGENT_TYPES`, on a missing one, and when the primary issue is not held. **Renders, findings
@@ -210,17 +216,19 @@ justify it.
 
 **And the lanes are declared disjoint, not disjoint by construction.** The labels partition the
 codebase by subsystem as a matter of triage judgement, not as a property anything verifies at
-dispatch time -- and nothing did, until `scripts/doctor_check_lane_patterns.py` /
-`scripts/lane_pattern_coverage.py` (#1229) started reporting when two lanes' `lane_patterns`
-overlap. **A file resolving into two lanes is a finding about the codebase, not a violated
-guarantee**: it means one file is doing two subsystems' jobs, and the fix is to split the file, not
-to route lanes around it. Two issues in different lanes are *expected* not to collide, and the
-doctor check is what catches it when they do -- git's own conflict detection catches the same
-failure independently and cheaply besides.
+dispatch time. `scripts/doctor_check_lane_patterns.py` / `scripts/lane_pattern_coverage.py` (#1229)
+used to report when two lanes' `lane_patterns` overlapped; #1530 deleted both along with the rest of
+the `lane_patterns` derivation machinery (#1555), so today nothing checks it mechanically. **A file
+resolving into two lanes is a finding about the codebase, not a violated guarantee**: it means one
+file is doing two subsystems' jobs, and the fix is to split the file, not to route lanes around it.
+Two issues in different lanes are *expected* not to collide; git's own conflict detection catches the
+failure when it happens, and `scripts/doctor_check_lane_coupling.py` (#1244) separately reports on a
+test file whose static references span two lanes, when `labels.lane_patterns` is declared for it to
+read.
 
 `lane-other` (#1130) is the exception that proves the rule. It means *triaged, and no lane owns
-these files* -- so it has no subsystem to be declared against, no `lane_patterns` for the doctor
-check to compare, and is dispatched **solo**: never given a companion, never offered as one.
+these files* -- so it has no subsystem to be declared against and is dispatched **solo**: never given
+a companion, never offered as one.
 
 ## The rule the steps converge on
 
@@ -246,10 +254,11 @@ nothing and carries no lane label resolves to **unknown** -- never to an empty f
 read as disjoint with everything and bundle an unexamined issue into any lane on the board.
 
 **It does not claim precision it lacks.** A file set derived from a lane label is a whole subsystem,
-not one issue's files, so `lane_patterns_source` records `declared` / `derived-from-body` /
-`derived-from-label` / `None`, and a group records whether its adjacency was `measured` or
-`inferred`. A one-file overlap and a twenty-seven-file same-label overlap are different claims and
-must not render alike.
+not one issue's files, and #1530 retired the `lane_patterns_source` / `measured`-vs-`inferred`
+adjacency fields that used to record how precisely a group's overlap was known (#1555):
+`scripts/select_issues.py` computes no overlap for a group at all any more, so there is nothing left
+to grade for precision here. A one-file overlap and a twenty-seven-file same-label overlap are now
+judged by eye at dispatch time -- see `skills/manager/phases/dispatch.md`, "Prefer not to bundle".
 
 ## Still open
 

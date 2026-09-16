@@ -370,7 +370,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1579: 58022 B became 57948 B -- three --claim call
         # shapes dropped --lane, which only ever fed the claim receipt's own
         # unread [lane] block. Ceiling unchanged.
-        57948,
+        # Re-baselined for #1555: 57948 B became 58094 B -- the `lane-collision`
+        # disposition dropped from #970/#1036's own directive paragraph (retired
+        # by #1528/#1530, never recomputed since), replaced with a one-sentence
+        # pointer to how an overlap is judged instead. Ceiling unchanged.
+        58094,
         58500,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),

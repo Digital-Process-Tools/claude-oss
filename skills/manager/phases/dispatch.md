@@ -294,11 +294,12 @@ record, and there is no second write left to fail.
 
 **Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself — this is the
 directive, not a description.** Board in, ranked claimable candidates out. It composes ranking,
-staleness, lane-collision and the claim read into one call, and returns three states —
+staleness and the claim read into one call, and returns three states —
 `candidates` / `none-available` / `could-not-select`, the last never rendering as the second — plus a
-per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankable` /
-`lane-collision`). It does not replace `--claim` above: reading who is claimable and writing a claim
-stay separate calls.
+per-issue disposition (`eligible` / `assigned` / `assignee-unreadable` / `stale` / `unrankable`).
+**No `lane-collision` disposition since #1528/#1530 (#1555)** — an overlapping candidate stays
+`eligible`; see "Prefer not to bundle" below for how the overlap is judged instead. It does not
+replace `--claim` above: reading who is claimable and writing a claim stay separate calls.
 
 **It takes no input (#1145).** No stdin payload, no `--fetch` mode. It fetches the board and reads
 `.oss.json` itself, so `board_read_ok` / `board_read_why` / `board_capped` / `board_cap_detail` are

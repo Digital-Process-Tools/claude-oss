@@ -179,7 +179,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # commands/run/*.md sub-steps -- a line that needs investigation no
     # longer sits permanently in this session's own context. Replacing
     # rather than appending shrank the file; ceiling unchanged.
-    "commands/run.md": (8246, 8900),
+    # Re-baselined for #1549: 8246 B became 8854 B. One paragraph added to
+    # the scaffold/install-audit/triage/curate/changelog section, stating
+    # plainly that a pull request one of those steps just opened is not this
+    # session's to wait on -- return to step 2 immediately rather than
+    # blocking on that PR's own CI, since step 2's own --take already armed
+    # the repeat-suppression receipt that keeps rank() from re-selecting the
+    # same route. Ceiling unchanged, comfortably under it.
+    "commands/run.md": (8854, 8900),
 }
 
 
