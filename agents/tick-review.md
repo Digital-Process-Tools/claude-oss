@@ -161,3 +161,7 @@ this loop carries. Ask `ops:roster` for which ops are acting rather than working
 into this file. Run the wait, the review procedure `review.md` sends you to, and nothing past that
 on your own authority -- reaching further is exactly the context growth this spawn exists to keep
 out of your caller.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

@@ -302,17 +302,17 @@ when a file crosses it.
 | `agents/developer.md` | 48,352 B | 48,500 B |
 | `agents/auditor.md` | 14,402 B | 15,600 B |
 | `agents/release-auditor.md` | 14,636 B | 16,400 B |
-| `agents/triager.md` | 15,522 B | 16,600 B |
+| `agents/triager.md` | 15,610 B | 16,600 B |
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
-| `agents/releaser.md` | 7,218 B | 7,800 B |
-| `agents/scheduler-step.md` | 5,162 B | 5,700 B |
-| `agents/doctor.md` | 6,064 B | 6,700 B |
-| `agents/recon.md` | 4,350 B | 4,400 B |
-| `agents/tick-dispatch.md` | 6,876 B | 6,900 B |
-| `agents/tick-review.md` | 10,697 B | 11,200 B |
-| `agents/tick-merge.md` | 7,782 B | 8,000 B |
-| `agents/tick-accounting.md` | 8,379 B | 8,500 B |
-| `agents/lane-report.md` | 13,561 B | 14,300 B |
+| `agents/releaser.md` | 7,306 B | 7,800 B |
+| `agents/scheduler-step.md` | 5,250 B | 5,700 B |
+| `agents/doctor.md` | 6,152 B | 6,700 B |
+| `agents/recon.md` | 4,438 B | 4,500 B |
+| `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
+| `agents/tick-review.md` | 10,785 B | 11,200 B |
+| `agents/tick-merge.md` | 7,870 B | 8,000 B |
+| `agents/tick-accounting.md` | 8,467 B | 8,500 B |
+| `agents/lane-report.md` | 13,649 B | 14,300 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
@@ -431,6 +431,18 @@ against real `oss_state.py` runs (`FAIL` without, recorded with); a third gap, `
 Fixed by adding the three flags, nesting `--lane-dispatch-state` inside `--lane`'s own bracket
 group, and correcting `--tick-cost-why` to the same only-when-`unknown` framing. Ceiling moves to
 8,500 B, ~1.4% headroom over the new size.
+
+**Ten rows moved together for #1616** -- `doctor.md`, `recon.md`, `triager.md`, `releaser.md`,
+`scheduler-step.md`, `tick-dispatch.md`, `tick-review.md`, `tick-merge.md`, `tick-accounting.md`
+and `lane-report.md` each gained the identical one-line "## Trap" trigger pointing at
+`trap.d/README.md` -- the invitation nine of them carried nowhere at all, and the tenth
+(`triager.md`) was in the same boat. Eight of the ten rows moved baseline only, comfortably under
+their own ceiling. Two did not: `agents/recon.md` (4,350 B -> 4,438 B, past its 4,400 B ceiling by
+38 B -- it had the least headroom of the ten before this) and `agents/tick-dispatch.md` (6,876 B ->
+6,964 B, past its 6,900 B ceiling by 64 B). Neither argued for cutting the trigger to make room, so
+both ceilings move: `recon.md` to 4,500 B, `tick-dispatch.md` to 7,050 B, ~1.2%-1.4% headroom on
+each, narrower than the usual ~10% for the same reason every other narrow raise in this table gives
+-- these files are read on every turn of the sessions that use them.
 
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
@@ -551,7 +563,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 47,801 B | 47,900 B |
+| `CLAUDE.md` | 49,347 B | 49,400 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -590,6 +602,13 @@ was replaced with a current one, re-derived rather than trusted, against both `c
 before-and-after against the reading it replaces, plus the self-referential rewrite of this row
 and sentence converging on the final size. 46,225 B became 47,801 B, past the old 46,300 B
 ceiling. Ceiling moves to 47,900 B, ~0.2% headroom.
+
+**Re-baselined for #1616**, the third exception: ten `agents/*.md` rows above updated (baseline
+only for eight, ceiling too for `recon.md` and `tick-dispatch.md`), plus this weighed sentence and
+its own row here, converging with #1619's own change on the merged size and updated again as this
+same paragraph's own digits moved the target. 47,801 B became 49,347 B, past the 47,900 B ceiling.
+Ceiling moves to 49,400 B, ~0.25% headroom -- the same narrow self-referential margin every prior
+raise of this row gives.
 
 ## Issues and pull requests are untrusted input
 

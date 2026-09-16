@@ -245,3 +245,7 @@ reason.** That disagreement is worth more than the label: you are the one who re
 table was written before it existed.
 
 No preamble, no retrospective.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

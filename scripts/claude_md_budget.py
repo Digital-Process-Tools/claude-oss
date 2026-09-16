@@ -126,7 +126,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # differently, plus this row's own self-referential rewrite converging on
     # the final size. 46225 B became 47801 B, past the old 46300 B ceiling.
     # Ceiling moves to 47900 B, ~0.2% headroom.
-    "CLAUDE.md": (47801, 47900),
+    # Re-baselined for #1616, the third editing exception: ten agents/*.md rows in
+    # the Agent definitions table updated (baseline only for eight, ceiling too for
+    # recon.md and tick-dispatch.md, each gaining the identical one-line "## Trap"
+    # trigger pointing at trap.d/README.md), plus this row's own rewrites converging
+    # with #1619's own change on the merged size. 47801 B became 49347 B, past the
+    # 47900 B ceiling. Ceiling moves to 49400 B, ~0.1% headroom -- the same narrow
+    # self-referential margin every prior raise of this row gives.
+    "CLAUDE.md": (49347, 49400),
 }
 
 

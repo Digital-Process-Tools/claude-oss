@@ -114,3 +114,7 @@ carries. Ask `ops:roster` for which ops are acting rather than working from a li
 file. Run only the two calls above and whatever reading `dispatch.md`'s fill-to-three section sends
 you to; reaching past that on your own authority is exactly the context growth this spawn exists to
 keep out of your caller.
+
+## Trap
+
+Something is not normal and you want to report it -- read `trap.d/README.md`.

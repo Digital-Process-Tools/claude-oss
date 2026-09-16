@@ -2680,6 +2680,19 @@ def build(probe):
             # where they can be seen and argued with.
             "triggers": {"merged_prs": 10, "soak_hours": 48},
         },
+        # #1616: a default rather than a measurement, on the same "triggers" precedent
+        # two lines above. `OPTIONAL_KEYS` has recognised this key since #1155, but
+        # nothing wrote it into a freshly scaffolded `.oss.json` -- promotion was off
+        # by default, everywhere, forever, and off in a way that reported clean: an
+        # unconfigured threshold and a threshold nobody has fired both render as
+        # `not-due` (#1610). Writing a number here, visible in the maintainer's own
+        # file and editable in the same review pass that commits it, is the opposite
+        # of a silent read-time default -- it is a decision the maintainer can see and
+        # change. 15 is `claude-oss`'s own value (#1303): deliberately low against the
+        # 49-fragment backlog that prompted it, large enough that a handful of fresh
+        # traps from one tick does not fire the route on every launch, small enough
+        # that a backlog cannot silently regrow to 49+ before something notices.
+        "curate_route_threshold": 15,
     }
 
 
