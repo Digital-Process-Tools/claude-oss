@@ -154,9 +154,13 @@ oss_fireworks
 # stream is buffered by line here, so an echo ... >&2 in between lands
 # glued onto the begin line's own unterminated "..." instead of on a line of
 # its own -- caught in self-review against the plugin and channel steps,
-# both of which have branches that echo diagnostic prose before reporting,
-# and removed from both for that reason. session has no such branch, which
-# is why it is the one call site this lands on.
+# both of which had branches that echo diagnostic prose before reporting.
+# session has no such branch, which is why it was the first call site this
+# landed on (#1511). plugin is wired too now (#1609): every branch under
+# `plugin` calls oss_step FIRST and echoes its diagnostic prose only after,
+# so the in-flight line is always overwritten before anything else reaches
+# the terminal. channel still has the hazard and is NOT wired to
+# oss_step_begin.
 oss_step_begin() {
     [ "${oss_steps:-0}" -eq 1 ] || return 0
     printf '  %s▸%s %-9s %-40s %s...%s' "$d" "$r" "$1" "$2" "$d" "$r"
@@ -278,35 +282,55 @@ fi
 # this exactly as it governs the hook: `update()` reads it first and returns
 # immediately without touching the network, so an opted-out machine pays nothing
 # extra by this running here instead of in the background.
+oss_step_begin plugin "checking"
 if [ -n "$python_bin" ]; then
     auto_update_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
         --root "$repo_root" --caller launcher --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
     if [ "$auto_update_status" -ne 0 ]; then
+        oss_step plugin "could not check (exit $auto_update_status)" ask
         echo "oss-workspace: could not check whether the oss plugin is current" \
              "(exit status $auto_update_status). Opening the session anyway;" \
              "hooks/session-start-update.sh will try again in the background." >&2
         if [ -n "$auto_update_line" ]; then
             printf '%s\n' "$auto_update_line" >&2
         fi
-        oss_step plugin "could not check (exit $auto_update_status)" ask
     else
         auto_update_tab=$(printf '\t')
-        IFS="$auto_update_tab" read -r auto_update_state auto_update_from \
-            auto_update_to auto_update_detail <<AUTO_UPDATE_LINE
-$auto_update_line
-AUTO_UPDATE_LINE
+        # NOT `IFS=<tab> read`: tab is one of the IFS WHITESPACE characters
+        # (space, tab, newline) even when it is the only character IFS is
+        # set to, so `read` collapses RUNS of consecutive tabs into one
+        # delimiter and strips a leading or trailing one. plugin_update.py's
+        # own `_flat()` renders an absent `from`/`to` as "", which is the
+        # ordinary shape of a `could-not-check` line -- so the real one it
+        # matters most for shifts every field after it left, and the
+        # `detail` this whole block exists to report is silently dropped.
+        # Measured (#1609): "could-not-check\t\t\tnetwork unreachable" read
+        # under `IFS=<tab> read` as state=could-not-check,
+        # from="network unreachable", to="", detail="" -- under both bash
+        # and dash. `cut` on the same delimiter does not collapse.
+        # `-s`: without it, `cut -fN` on a line with NO delimiter at all
+        # prints the WHOLE line back for every requested field instead of
+        # "" -- so a malformed or truncated `auto_update_line` (a crash, a
+        # stray stderr line merged in by this call's own `2>&1`) would leak
+        # the state word into `auto_update_detail` as though it were the
+        # reason, past the empty-reason fallback below entirely (found in
+        # self-review, #1609). `-s` suppresses a delimiter-less line instead.
+        auto_update_state=$(printf '%s' "$auto_update_line" | cut -s -d "$auto_update_tab" -f1)
+        auto_update_from=$(printf '%s' "$auto_update_line" | cut -s -d "$auto_update_tab" -f2)
+        auto_update_to=$(printf '%s' "$auto_update_line" | cut -s -d "$auto_update_tab" -f3)
+        auto_update_detail=$(printf '%s' "$auto_update_line" | cut -s -d "$auto_update_tab" -f4)
         case $auto_update_state in
             updated)
                 # #1392: no longer switches $prompt. /oss:run diagnoses on
                 # every start (#1390) regardless of whether the plugin just
                 # moved, so a launcher-side divert here would be a second,
                 # redundant decision about the same fact.
+                oss_step plugin "$auto_update_from → $auto_update_to" ok
                 echo "oss-workspace: the oss plugin was updated from" \
                      "$auto_update_from to $auto_update_to before this session" \
                      "started, so there is no stale-copy window to reload or" \
                      "restart out of. $prompt diagnoses the tree it just moved" \
                      "to on its own first turn." >&2
-                oss_step plugin "$auto_update_from → $auto_update_to" ok
                 ;;
             current) oss_step plugin "${auto_update_to:-current}" ok ;;
             off)     oss_step plugin "auto-update off" skip ;;
@@ -319,10 +343,10 @@ AUTO_UPDATE_LINE
                 # shell `read` is exactly where one could be lost.
                 auto_update_reason=$auto_update_detail
                 [ -n "$auto_update_reason" ] || auto_update_reason="(no reason was reported -- the plugin-update check printed a could-not-check state with an empty detail field)"
+                oss_step plugin "could not check" ask
                 echo "oss-workspace: could not check whether the oss plugin is" \
                      "current: $auto_update_reason. This is not a statement that" \
                      "it is. Opening $prompt anyway." >&2
-                oss_step plugin "could not check" ask
                 ;;
             "")
                 oss_step plugin "check printed nothing" ask
@@ -340,10 +364,10 @@ AUTO_UPDATE_LINE
         esac
     fi
 else
+    oss_step plugin "no python, not checked" ask
     echo "oss-workspace: no working python was found, so the oss plugin could" \
          "not be checked for an update here. hooks/session-start-update.sh" \
          "still covers it once the session is running." >&2
-    oss_step plugin "no python, not checked" ask
 fi
 
 # --- repoint this launcher's own symlink at the currently installed copy (#753) ---
