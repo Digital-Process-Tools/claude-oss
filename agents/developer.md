@@ -49,7 +49,15 @@ orientation is yours, and it is cheap:
   ground is unfamiliar is the one thing you cannot know until you have paid the reads a recon
   replaces. Three outcomes and the third is the one that gets lost: it answered; it ran and returned
   nothing; or the `Agent` tool was refused outright at this depth (observed 2026-09-09). Say which
-  under `compliance` — a refusal must never read as a lane that had nothing to orient on.
+  under `compliance` — a refusal must never read as a lane that had nothing to orient on. Spawn it
+  with the same shape dispatch uses (#1586):
+
+  `Agent(subagent_type: "oss:recon", model: "sonnet", run_in_background: false, prompt: "<your
+  issue numbers, your worktree path, and: locate, do not design>")`
+
+  **`run_in_background: false`, and do not touch the tree until it returns.** A lane that
+  backgrounds the spawn and fills the wait with its own tree reads pays for both: recon's reads and
+  the ones it exists to replace.
 - **Read each issue in full yourself** — `supertool 'gh-issue:N:full'`. A default read truncates a
   long body, and the withheld half is where a *not established* section lives.
 - **Derive the live worktrees** — `supertool 'git-worktrees'`. That is the authority a brief was

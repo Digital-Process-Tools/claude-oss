@@ -6,33 +6,19 @@ match: ~/tmp/
 mode: remind
 ---
 
-A single Bash call chaining `python3 - <<'PYEOF' ... open("/tmp/e5.toml", "w") ... PYEOF` with
-`supertool 'edit:@-' < /tmp/e5.toml | tail -30` was refused whole by this repo's own
-no-`|`-tail-on-a-supertool-op guard. The refusal names the offending command, but the call is
-all-or-nothing from the caller's point of view: nothing signals which earlier command in the chain
-actually ran. On retry (same call, `| tail` removed), the heredoc write to `/tmp/e5.toml` ran, but
-`edit:@-` read stale content left at that exact path by something else on the machine, from before
-this session -- and it happened to match an `old` anchor in the WRONG file, editing it successfully
-with no error (validators all passed, because the resulting file was syntactically fine).
+A refusal (this repo's own no-`|`-tail guard, among others) refuses the **whole** chained Bash
+call, but is all-or-nothing only from the caller's point of view: an earlier command in the same
+chain can still have run. A retry then re-ran a heredoc write to a stale `/tmp/*.toml` path, whose
+leftover content from before this session matched an `old` anchor in the WRONG file and edited it
+silently -- validators passed because the result was syntactically fine. Caught only by a habitual
+`git status --short` (#1345).
 
-Caught only by a habitual `git status --short` right after the "successful" edit; the tool's own
-success output gave no indication anything was wrong.
-
-- **Never assume a refused multi-command Bash call refused only the part the error message
-  named.** Re-run the whole chain, or verify each earlier command's effect before trusting its
-  output.
-- **`/tmp/*` scratch paths are not reliably private to one session or one call.** Use this
-  session's own scratchpad directory instead, which the developer brief already directs writes
-  toward.
-- **The session scratchpad directory itself is not immune (#1466).** A lane
-  staged a commit message there, verified it with a read, then called
-  `git-commit` referencing that path -- and the commit that landed carried a
-  different issue's message verbatim. Reasoned cause: a concurrent lane in
-  the same tick overwrote the path between the verify and the commit. Caught
-  only by a routine `git log -1` after committing, nothing mechanical caught
-  it. **Read the file again, right before the call that consumes it, when a
-  concurrent lane could have touched the same path** -- the scratchpad is
-  per-session, not per-lane, and this repo runs several lanes concurrently.
-
-Routed via /oss:curate from `trap.d/1345.tmp-toml-collision-blocked-heredoc.md`
-and `trap.d/1466.scratchpad-overwritten-mid-lane.md`.
+- **Never assume a refused multi-command call refused only the part the error named.** Re-run the
+  whole chain, or verify each earlier command's effect before trusting the retry's output.
+- **`/tmp/*` is not reliably private to one session or one call.** Use this session's own
+  scratchpad directory instead.
+- **The scratchpad is per-session, not per-lane, and is not immune either (#1466).** A staged,
+  verified commit-message file was overwritten by a concurrent lane between the verify and the
+  `git-commit` call that consumed it; the commit that landed carried a different issue's message
+  verbatim, caught only by a routine `git log -1` afterwards. Re-read a file right before the call
+  that consumes it whenever a concurrent lane could have touched the same path.
