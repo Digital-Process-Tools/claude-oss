@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/tick-dispatch.md` | 6,876 B | 6,900 B |
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
 | `agents/tick-merge.md` | 7,782 B | 8,000 B |
-| `agents/tick-accounting.md` | 7,466 B | 7,700 B |
+| `agents/tick-accounting.md` | 7,680 B | 7,700 B |
 | `agents/lane-report.md` | 13,561 B | 14,300 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read

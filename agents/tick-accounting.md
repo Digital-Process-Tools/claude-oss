@@ -51,14 +51,21 @@ is something you note in your draft, never something you act on.
 
 ## What you do
 
-1. Compose and run the tick's one `oss_state.py --decision` call, folding in every flag your
-   prompt's facts map to: `--lane-fill`, `--lane-dispatch-state`, `--cleanup-override`,
-   `--wait-dispatch`/`--wait-observable` (or `--check-wait`, if a prior wait resolved this tick),
-   `--filings`/`--merged-prs`/`--window`, `--plugin-identity`, `--tick-cost-session` (and
-   `--tick-cost-first` only when your prompt states this is genuinely this session's first tick),
-   and `--tick-cost-why "no live token-usage read available to this tick"` when no real figures
-   were given. `skills/manager/phases/accounting.md` and `tick-order.md` step 6 carry each flag's
-   own contract; read the one your prompt's facts touch rather than all of them by rote.
+1. Compose and run the tick's one `oss_state.py --decision` call, folding in only the flags your
+   prompt's facts map to -- `skills/manager/phases/accounting.md` and `tick-order.md` step 6 carry
+   each flag's own contract:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <path> --decision "<value>" --at "<ISO>" \
+       --lane-fill "<PRIMARY:COUNT[:REASON]>" --lane-dispatch-state "<ISSUE=STATE[:WHY]>" \
+       --cleanup-override "<WORKTREE=REASON>" --wait-dispatch "<...>" --wait-observable "<...>" \
+       --check-wait <holds|cleared|could-not-evaluate> --filings <N|unknown> --merged-prs <N|unknown> \
+       --window "<...>" --plugin-identity "<IDENTITY>" --tick-cost-session "<...>" --tick-cost-first \
+       --tick-cost-why "no live figures given"
+   ```
+
+   `<path>` is `.oss.json`'s `state_file`; `--wait-dispatch`/`--wait-observable` and `--check-wait`
+   are alternatives, `--tick-cost-first` only on this session's first tick.
 2. If your prompt names a spawn token, compute the optional `COST:` line the same way
    `agents/sub-manager.md`'s own "report your own token spend" section does (`agent_cost.py
    --match`).

@@ -557,7 +557,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # `CURATE:` line verbatim rather than "fold its counts" -- the counts
     # framing a reviewer found unsupported. Ceiling unchanged; comfortably
     # under it.
-    "agents/tick-accounting.md": (7466, 7700),
+    "agents/tick-accounting.md": (7680, 7700),
     # #1583: new file. The developer lane's report phase -- the note, the JSON
     # report and the pull request payload -- used to be a phase file the lane
     # read inline at the end of a long, expensive run: measured on one lane,

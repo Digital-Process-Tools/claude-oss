@@ -144,6 +144,43 @@ def test_the_marker_check_would_have_caught_a_real_violation():
     )
 
 
+def _oss_state_call_lines():
+    """#1614: a `python3 ...` line that actually names oss_state.py, as
+    opposed to the tick_handback.py call line this same file also carries."""
+    return [line for line in _python3_lines() if "oss_state.py" in line]
+
+
+def test_it_documents_a_literal_runnable_oss_state_decision_call():
+    """#1614: a bare script name plus a prose list of flags is not enough --
+    a spawn told only that costs itself a turn discovering the call shape via
+    --help (measured: 73s on this exact file, 2026-09-16). The file must
+    carry a literal, copy-pasteable `python3 ... oss_state.py ... --decision
+    ...` line, not just the flags named in prose."""
+    offenders = _oss_state_call_lines()
+    assert offenders, (
+        "agents/tick-accounting.md names oss_state.py's --decision flags in "
+        "prose but documents no literal, runnable call line for it (#1614)"
+    )
+    assert any("--decision" in line for line in offenders), (
+        "the documented oss_state.py call line(s) do not carry --decision"
+    )
+
+
+def test_a_file_with_no_runnable_call_line_would_fail_the_check_above():
+    """Positive control for the check above: prose-only text (the shape this
+    file had before #1614) must fail it."""
+    prose_only = (
+        "Compose and run the tick's one `oss_state.py --decision` call, "
+        "folding in every flag your prompt's facts map to: `--lane-fill`, "
+        "`--wait-dispatch`."
+    )
+    offenders = [line for line in _python3_lines(prose_only) if "oss_state.py" in line]
+    assert not offenders, (
+        "fixture construction failed: prose-only text should document no "
+        "literal call line, so the control proves nothing"
+    )
+
+
 def test_tick_handback_classifies_only_the_message_it_is_given():
     """The file's own central claim: `tick_handback.py` has no notion of
     "whose spawn this message came from" -- it classifies text, period, which
