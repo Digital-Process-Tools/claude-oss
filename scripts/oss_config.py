@@ -1921,7 +1921,22 @@ def load_from(path, start=None):
     """
     resolved, origin, detail = resolve_config_path(path, start=start)
     if resolved is None:
-        return None, ["{}: not found. {}".format(path, detail)], origin, None
+        # #383 self-review (auditor round): `detail` already states its own
+        # cause in full for `unsearchable` -- including, verbatim, "this is
+        # not the same as confirming it is absent" for the unreadable-path
+        # case `_stat_kind` exists to distinguish. Prefixing THAT with a
+        # hardcoded "not found." composed a sentence that contradicted
+        # itself in the same breath, exactly the #383 shape this diff is
+        # about, reintroduced one layer up by the caller that renders it.
+        # `missing` keeps the prefix: `detail` there is only ever a remedy
+        # ("Run /oss:setup to write it."), which "not found." is true context
+        # for, not a contradiction of.
+        prefix = (
+            "{}: ".format(path)
+            if origin == "unsearchable"
+            else "{}: not found. ".format(path)
+        )
+        return None, ["{}{}".format(prefix, detail)], origin, None
     config, problems = load(resolved)
     return config, problems, origin, resolved
 

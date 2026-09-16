@@ -158,6 +158,62 @@ def test_resolve_config_path_still_reports_missing_for_a_genuinely_absent_here(
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# load_from -- self-review finding on this same change (auditor round): it
+# unconditionally prefixed EVERY `resolve_config_path` failure detail with a
+# hardcoded "not found.", which for the new `unsearchable` origin composed a
+# sentence contradicting itself in the same breath -- exactly the #383 shape
+# this diff exists to close, reintroduced one layer up.
+# --------------------------------------------------------------------------
+
+
+def test_load_from_does_not_contradict_itself_for_an_unreadable_config(tmp_path):
+    """Must-fire: the problem text for an `unsearchable` origin must not
+    claim "not found" in the same sentence its own detail explains is not
+    the same thing as confirming absence."""
+    denied = tmp_path / "denied"
+    denied.mkdir()
+    (denied / oss_config.CONFIG_NAME).write_text("{}", encoding="utf-8")
+    try:
+        os.chmod(str(denied), 0o000)
+    except OSError as exc:
+        pytest.skip(
+            "os.chmod would not set mode 000 ({}); what went untested is "
+            "whether load_from's own message composes correctly on this "
+            "platform".format(exc)
+        )
+    try:
+        if os.access(str(denied / oss_config.CONFIG_NAME), os.R_OK):
+            pytest.skip(
+                "this process can still read inside a 0o000 directory "
+                "(root, or a filesystem without POSIX modes); what went "
+                "untested is whether load_from's own message composes "
+                "correctly on this platform"
+            )
+        _config, problems, origin, _resolved = oss_config.load_from(
+            oss_config.CONFIG_NAME, start=str(denied)
+        )
+    finally:
+        os.chmod(str(denied), 0o755)
+
+    assert origin == "unsearchable", (origin, problems)
+    assert len(problems) == 1, problems
+    assert "not found" not in problems[0], problems[0]
+    assert "could not be checked" in problems[0], problems[0]
+
+
+def test_load_from_still_says_not_found_for_a_genuinely_missing_config(tmp_path):
+    """Positive control: a genuinely `missing` config must still say "not
+    found" -- proving the fix above narrows to `unsearchable` rather than
+    dropping the prefix everywhere."""
+    _config, problems, origin, _resolved = oss_config.load_from(
+        oss_config.CONFIG_NAME, start=str(tmp_path)
+    )
+    assert origin in ("missing", "unsearchable"), (origin, problems)
+    if origin == "missing":
+        assert "not found" in problems[0], problems[0]
+
+
 def test_ensure_worktree_root_unset_present_blocked_created(tmp_path):
     assert oss_config.ensure_worktree_root({}) == "unset"
 
