@@ -210,7 +210,31 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # stale since #1433 added inbound to the same mechanism -- now says
     # release only, directly beside the paragraph this commit just wrote
     # naming inbound as one of the three armed sources.
-    "commands/run.md": (8899, 8900),
+    # Re-baselined for #1629: 8899 B became 9489 B. The scaffold/install-audit/
+    # triage/curate/changelog section's claim that the harness "discovers slash
+    # commands from top-level commands/*.md only, never recursively" was false
+    # -- the six commands/run/*.md files are reachable directly as
+    # /oss:run:setup and so on, confirmed against a live session's own skill
+    # listing (#1629's own "Observed" section). Corrected in place, plus the
+    # `## release` section's stale claim that commands/release.md's picker
+    # placement was a deliberate, settled #1389 decision -- the maintainer's
+    # follow-up comment on #1629 retires that note.
+    # 9489 B became 9586 B (self-review, two rounds): a first-pass reviewer
+    # flagged the release section's 145/50 reference count as unreproducible
+    # against a git grep run on this diff's own tree, where the diff's own new
+    # mentions of "commands/release.md" (this file, the changelog fragment,
+    # this very comment) inflate the count to 149/51; "corrected" to 146/50 by
+    # excluding some but not all of those self-references. A second-pass
+    # reviewer caught that the fix was wrong: 145/50 was the real, exactly
+    # reproducing count all along, measured at e92b0b85 (the commit before
+    # this branch touched anything) -- the only count not contaminated by the
+    # diff's own self-reference, the same trap CLAUDE.md's own budget row
+    # documents. Restored to 145/50, sourced explicitly against that commit
+    # rather than "the tree" so a future re-measurement does not fall into the
+    # same trap. Nothing already in the file argued either point, so nothing
+    # was cut to make room; the ceiling moves to 10600 B, ~10% headroom over
+    # the new size.
+    "commands/run.md": (9586, 10600),
 }
 
 

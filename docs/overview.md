@@ -62,23 +62,30 @@ actually reads).
 
 **Six of the eight commands `/oss:run` absorbs are demoted** (#1389):
 `setup`, `scaffold`, `triage`, `curate`, `changelog`, `install-audit` moved
-from `commands/*.md` to `commands/run/*.md`. The plugin harness discovers
-slash commands from top-level `commands/*.md` only, never recursively, so a
-file one directory down is not a picker entry at all -- reachable from
-`/oss:run`'s own procedure and from the forcing override (`/oss:run setup`,
-and so on), never by typing the old bare name again. There is no frontmatter
-equivalent of a skill's `user-invocable: false` for a command file; removing
-it from the top-level directory is the only mechanism the harness offers.
+from `commands/*.md` to `commands/run/*.md`. **The plugin harness actually
+discovers slash commands recursively and namespaces them by directory
+(#1629)** -- a file one directory down is reachable directly as
+`/oss:run:setup` and so on, not hidden. This session reaches them from
+`/oss:run`'s own procedure or the forcing override (`/oss:run setup`, and so
+on) because that is the sequenced, stateful cadence they are written for, not
+because the picker cannot see them. There is no frontmatter equivalent of a
+skill's `user-invocable: false` for a command file, and no confirmed
+exclusion mechanism at all -- the real containment, where it exists, is that
+nothing in the loop invokes these six by name.
 
-**Not demoted, deliberately: `/oss:tick` and `/oss:release`.** Both stay
-their own top-level commands. Grep for either path by name and the count of
+**Not demoted yet: `/oss:tick` and `/oss:release`.** Both stay their own
+top-level commands today. Grep for either path by name and the count of
 tests and scripts that name it directly is large -- spawn wiring, board-read
 caps, release-gate plugin-root checks, radar steps -- coupling deep enough
 that migrating either one is its own, separately-reviewable change rather
-than a rider on this one. `/oss:tick` in particular is the command a
-maintainer's fingers already know; leaving it live and unchanged during the
-transition is a deliberate choice, not an oversight. Reaching the full
-two-verb picker is the scope of a follow-up.
+than a rider on this one; `commands/tick.md` alone is named by 175 pinned
+assertions across 44 test files, measured directly rather than assumed
+(#1629). `/oss:tick` in particular is the command a maintainer's fingers
+already know; leaving it live and unchanged during the transition costs
+nothing the loop itself uses, since neither is reached as a slash command by
+any automated path. The maintainer has since decided the target picker is
+exactly `/oss:run` and `/oss:doctor` (#1629) -- reaching it for these two is
+the scope of a follow-up (#1630 for `/oss:tick`), not yet executed.
 
 | type | what it does |
 | --- | --- |

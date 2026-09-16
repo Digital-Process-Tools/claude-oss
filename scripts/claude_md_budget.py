@@ -131,9 +131,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # recon.md and tick-dispatch.md, each gaining the identical one-line "## Trap"
     # trigger pointing at trap.d/README.md), plus this row's own rewrites converging
     # with #1619's own change on the merged size. 47801 B became 49347 B, past the
-    # 47900 B ceiling. Ceiling moves to 49400 B, ~0.1% headroom -- the same narrow
+    # 47900 B ceiling. Ceiling moved to 49400 B, ~0.1% headroom -- the same narrow
     # self-referential margin every prior raise of this row gives.
-    "CLAUDE.md": (49347, 49400),
+    # Re-baselined for #1629, the third editing exception: the "Command files have
+    # a size budget too" section's false claim that the harness never discovers
+    # commands recursively was corrected there, in commands/run.md's own dispatch
+    # and release prose, and in the Layout table's picker line; commands/run.md's
+    # own row and ceiling raised in scripts/command_budgets.py; this row's own
+    # rewrites converged on the final size. 49347 B became 50670 B, past the
+    # 49400 B ceiling. Ceiling moves to 50800 B, ~0.2% headroom -- the same narrow
+    # self-referential margin every prior raise of this row gives.
+    "CLAUDE.md": (50670, 50800),
 }
 
 

@@ -103,9 +103,10 @@ Setup alone is not the whole onboarding: it writes nothing tracked, which leaves
 configured and still without a `CLAUDE.md`, a security policy, issue templates or a changelog
 gate. **Scaffold is the second step**, because it writes tracked files that want a branch, a diff
 and a review -- and setup ends by relaying scaffold's own read-only plan, so the gap is a measured
-list rather than something you have to remember to check. Scaffold moved out of the picker in
-#1389 (the plugin harness only discovers top-level `commands/*.md` as slash commands, never a
-subdirectory), so it is reached by `/oss:run scaffold` rather than a bare `/oss:scaffold`.
+list rather than something you have to remember to check. Scaffold moved to `commands/run/`
+in #1389, and the harness actually discovers it recursively and would offer it as
+`/oss:run:scaffold` directly (#1629), so it is reached by `/oss:run scaffold` because that
+is the sequenced cadence it is written for, not because the picker cannot see it.
 
 Before the session opens, the launcher also checks whether the `oss` plugin itself is current --
 synchronously, the same trade the old pre-launch diagnostic used to make, because an update that
