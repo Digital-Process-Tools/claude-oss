@@ -360,7 +360,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # this diff had to state, not restatable-shorter prose. Ceiling moves to
     # 24700 B, ~590 B headroom -- the same tripwire posture as before, not a
     # wider budget.
-    "agents/sub-manager.md": (24111, 24700),
+    # Re-baselined for #1585: 24111 B became 24370 B -- the validate-then-clear
+    # step folds `agent_role.py --clear` (a separate, skippable step) into the
+    # already-mandatory `tick_handback.py` draft-validation call via a new
+    # `--clear-marker-root` flag. Ceiling unchanged; 330 B headroom remains.
+    "agents/sub-manager.md": (24370, 24700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

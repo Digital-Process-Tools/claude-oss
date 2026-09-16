@@ -182,6 +182,92 @@ def test_main_never_crashes_on_empty_stdin():
     assert json.loads(buf.getvalue()) == {}
 
 
+def test_main_session_transcript_is_allowed_even_with_live_marker(tmp_path):
+    """#1585's positive control: a scheduler (main-session transcript_path)
+    spawning oss:sub-manager must be allowed even when a live sub-manager
+    marker sits on disk -- the marker cannot tell who is asking, and the
+    scheduler is never a nested sub-manager spawn."""
+    import subprocess
+    import time
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    agent_role.write_role_marker(
+        "sub-manager", root=str(tmp_path), written_at=time.time()
+    )
+    payload = _payload()
+    payload["transcript_path"] = (
+        "/home/exampleuser/.claude/projects/x/session-abc.jsonl"
+    )
+    decision, _reason = guard.decide(payload, root=str(tmp_path))
+    assert decision == guard.DECISION_ALLOW
+
+
+def test_subagent_transcript_with_live_marker_is_still_denied(tmp_path):
+    """Proves #1585's fix narrows rather than disables the guard: a
+    subagents/ transcript with a live marker still denies."""
+    import subprocess
+    import time
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    agent_role.write_role_marker(
+        "sub-manager", root=str(tmp_path), written_at=time.time()
+    )
+    payload = _payload()
+    payload["transcript_path"] = "/home/exampleuser/.claude/subagents/agent-42.jsonl"
+    decision, reason = guard.decide(payload, root=str(tmp_path))
+    assert decision == guard.DECISION_DENY
+    assert reason is not None
+
+
+def test_absent_transcript_path_falls_back_to_marker_behaviour(tmp_path):
+    """An absent transcript_path must fall back to today's behaviour, not
+    to a new denial or a new allow -- #1585's own stated rule."""
+    import subprocess
+    import time
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    agent_role.write_role_marker(
+        "sub-manager", root=str(tmp_path), written_at=time.time()
+    )
+    decision, _reason = guard.decide(_payload(), root=str(tmp_path))
+    assert decision == guard.DECISION_DENY
+
+
+def test_malformed_transcript_path_falls_back_to_marker_behaviour(tmp_path):
+    import subprocess
+    import time
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    agent_role.write_role_marker(
+        "sub-manager", root=str(tmp_path), written_at=time.time()
+    )
+    payload = _payload()
+    payload["transcript_path"] = 12345  # not a string
+    decision, _reason = guard.decide(payload, root=str(tmp_path))
+    assert decision == guard.DECISION_DENY
+
+
+def test_unimportable_agent_role_resolves_to_allow_could_not_tell(monkeypatch):
+    """#1585's second gap: agent_role failing to import must resolve to
+    allow-could-not-tell, never an uncaught crash."""
+    monkeypatch.setattr(guard, "agent_role", None)
+    decision, reason = guard.decide(_payload())
+    assert decision == guard.DECISION_ALLOW_COULD_NOT_TELL
+    assert reason is None
+
+
+def test_unimportable_agent_role_main_never_crashes(monkeypatch):
+    monkeypatch.setattr(guard, "agent_role", None)
+    import contextlib
+    import io
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = guard.main(stdin_text=json.dumps(_payload()))
+    assert rc == 0
+    assert json.loads(buf.getvalue()) == {}
+
+
 def test_main_reports_allow_could_not_tell_on_stderr_distinctly_from_allow():
     """An auditor spawn found ALLOW and ALLOW_COULD_NOT_TELL printed the
     identical `{}` on stdout -- this repository's own named defect class
