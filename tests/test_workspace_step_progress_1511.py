@@ -242,6 +242,29 @@ def fake_python_bin(tmp_path):
     return str(script)
 
 
+def _posix_shell_literal(path):
+    """Embed a filesystem path INTO constructed shell script text, safely.
+
+    Every other path in this file reaches a subprocess via subprocess.run's
+    own argv, which passes it through literally regardless of separator.
+    `fake_python_bin` is different: its path is spliced into the SOURCE TEXT
+    of a script later run as `bash -c script`, and on Windows `tmp_path`
+    renders with backslashes (`C:\\Users\\...`). Unquoted in shell text, each
+    backslash is the shell's own escape character and is stripped before the
+    next character -- `C:\\Users\\runneradmin\\...` becomes
+    `C:UsersrunneradminAppDataLocalTemp...`, the exact mangled path observed
+    on the windows-latest CI leg (#1609): the fake python shim then does not
+    exist at the (wrong) path bash tries to exec, and every plugin-block test
+    driven through it fails with "command not found" before it ever reaches
+    the diagnostic text being asserted on. Forward slashes are what MSYS
+    bash's own path translation expects, and single-quoting keeps them (and
+    any literal backslash in a UNC path) from being reinterpreted a second
+    time.
+    """
+    text = str(path).replace("\\", "/")
+    return "'" + text.replace("'", "'\\''") + "'"
+
+
 def _run_plugin_block(python_bin, status, line, extra_env=None):
     """Run the real plugin block with python_bin/status/line fixed, merging
     stdout and stderr in write order the way a shared terminal fd would.
@@ -252,7 +275,7 @@ def _run_plugin_block(python_bin, status, line, extra_env=None):
             "r=''; y=''; g=''; w=''; d=''",
             "oss_steps=1",
             _extract_step_functions(),
-            "python_bin=%s" % python_bin,
+            "python_bin=%s" % _posix_shell_literal(python_bin),
             "plugin_root=/nonexistent",
             "repo_root=/nonexistent",
             "prompt=/oss:run",
