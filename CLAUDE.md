@@ -510,7 +510,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 23,649 B | 24,500 B |
-| `commands/run.md` | 8,863 B | 8,900 B |
+| `commands/run.md` | 8,899 B | 8,900 B |
 
 The plugin harness discovers slash commands from top-level `commands/*.md` only, never recursively,
 so `setup.md`, `scaffold.md`, `triage.md`, `curate.md`, `changelog.md` and `install-audit.md` live
