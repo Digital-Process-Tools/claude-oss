@@ -57,15 +57,20 @@ is something you note in your draft, never something you act on.
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <path> --decision "<value>" --at "<ISO>" \
-       --lane-fill "<PRIMARY:COUNT[:REASON]>" --lane-dispatch-state "<ISSUE=STATE[:WHY]>" \
-       --cleanup-override "<WORKTREE=REASON>" --wait-dispatch "<...>" --wait-observable "<...>" \
-       --check-wait <holds|cleared|could-not-evaluate> --filings <N|unknown> --merged-prs <N|unknown> \
-       --window "<...>" --plugin-identity "<IDENTITY>" --tick-cost-session "<...>" --tick-cost-first \
-       --tick-cost-why "no live figures given"
+       [--lane-fill "<PRIMARY:COUNT[:REASON]>" ...] [--lane-dispatch-state "<ISSUE=STATE[:WHY]>" ...] \
+       [--cleanup-override "<WORKTREE=REASON>" ...] \
+       [--wait-dispatch "<...>" --wait-observable "<...>" | --check-wait <holds|cleared|could-not-evaluate>] \
+       [--filings <N|unknown> --merged-prs <N|unknown> --window "<...>"] [--plugin-identity "<ID>"] \
+       [--tick-cost-session "<...>" --tick-cost-window "<...>" --tick-cost-start-ctx <N|unknown> \
+        --tick-cost-calls <N|unknown> --tick-cost-context-carried <N|unknown> [--tick-cost-first] \
+        --tick-cost-why "no live figures given"]
    ```
 
-   `<path>` is `.oss.json`'s `state_file`; `--wait-dispatch`/`--wait-observable` and `--check-wait`
-   are alternatives, `--tick-cost-first` only on this session's first tick.
+   `<path>` is `.oss.json`'s `state_file`. Brackets mark flags to include only when your prompt's
+   facts touch them; `--wait-dispatch`/`--wait-observable` and `--check-wait` are alternatives, and
+   sending any `--tick-cost-*` flag requires the whole group together (`--tick-cost-window`,
+   `--tick-cost-start-ctx`, `--tick-cost-calls`, `--tick-cost-context-carried` -- each may be
+   `unknown`, never absent, per `oss_state.py`'s own validation).
 2. If your prompt names a spawn token, compute the optional `COST:` line the same way
    `agents/sub-manager.md`'s own "report your own token spend" section does (`agent_cost.py
    --match`).

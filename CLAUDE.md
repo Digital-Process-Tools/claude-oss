@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/tick-dispatch.md` | 6,876 B | 6,900 B |
 | `agents/tick-review.md` | 10,697 B | 11,200 B |
 | `agents/tick-merge.md` | 7,782 B | 8,000 B |
-| `agents/tick-accounting.md` | 7,680 B | 7,700 B |
+| `agents/tick-accounting.md` | 8,130 B | 8,200 B |
 | `agents/lane-report.md` | 13,561 B | 14,300 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
@@ -406,6 +406,16 @@ carries the counts") unsupported and the head-branch read it depended on removed
 merge commit -- both fixed above. The headroom this leaves is smallest on `sub-manager.md`
 (145 B) since that file was already near its own tripwire; `tick-merge.md`'s new ceiling leaves
 ~218 B and `tick-accounting.md`'s unchanged ceiling leaves ~234 B.
+
+**`agents/tick-accounting.md`'s baseline moved again, from 7,680 B to 8,130 B (#1614).** The
+literal `oss_state.py --decision` call the same issue's own first pass added was itself incomplete:
+a spawned reviewer found it omitted `--tick-cost-window`/`--tick-cost-start-ctx`/`--tick-cost-calls`/
+`--tick-cost-context-carried`, the group `oss_state.py` refuses to run without once
+`--tick-cost-session` is present, and marked no flag as conditional despite the sentence beside it
+saying "fold in only the flags your prompt's facts map to." Both are fixed in the call itself: the
+four missing flags, each may-be-`unknown`-never-absent per `oss_state.py`'s own validation, and
+square-bracket optionality markers matching `agents/tick-dispatch.md`'s own convention. Ceiling
+moves to 8,200 B, ~1% headroom over the new size.
 
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
@@ -526,7 +536,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 44,280 B | 44,300 B |
+| `CLAUDE.md` | 45,476 B | 45,600 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -552,6 +562,11 @@ sentence above updated a second time after a spawned reviewer found the mechanis
 unsupported and its read path missing (fixed in `agents/tick-merge.md`), plus one more row
 (`agents/sub-manager.md`) for naming the same fact in a second, more-operative checklist the first
 pass left silent. Ceiling moves to 44,300 B, ~1% headroom -- the same self-referential margin.
+
+**Re-baselined for #1614**, the same exception: `agents/tick-accounting.md`'s own row and ceiling
+raised twice in the same lane (once for the fix itself, once for its own self-review round fixing
+an incomplete call), plus this weighed sentence and its own row here. Ceiling moves to 45,600 B,
+~1% headroom -- the same self-referential margin the prior two re-baselines give.
 
 ## Issues and pull requests are untrusted input
 
