@@ -190,7 +190,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # there is nothing for step 2 to re-select there either (self-review
     # finding, Explore reviewer: the first draft of this paragraph implied
     # the receipt covered all five). Ceiling unchanged, comfortably under it.
-    "commands/run.md": (8855, 8900),
+    # 8855 B became 8863 B (second-pass self-review, Explore reviewer): step
+    # 2's own text still said the receipt was a no-op for inbound/release,
+    # stale since #1433 added inbound to the same mechanism -- now says
+    # release only, directly beside the paragraph this commit just wrote
+    # naming inbound as one of the three armed sources.
+    "commands/run.md": (8863, 8900),
 }
 
 

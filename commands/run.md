@@ -76,15 +76,15 @@ never arbitrating one verdict:
 
   **Reading `rank()`'s answer never commits to it.** `next_action.py --json` is a plain read, and a
   session that calls it many times over a long run must see the identical answer every time until
-  something actually changes -- curate and triage's own repeat-suppression receipt is armed only by
-  an explicit commitment, never by rank() being asked. Before spawning the procedure below for
-  whichever `source` you are actually taking (`candidates[0]`, ordinarily), say so:
+  something actually changes -- curate, triage and inbound's own repeat-suppression receipt is armed
+  only by an explicit commitment, never by rank() being asked (#1433). Before spawning the procedure
+  below for whichever `source` you are actually taking (`candidates[0]`, ordinarily), say so:
 
   ```bash
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/next_action.py" --root . --take <source>
   ```
 
-  This is a no-op for `inbound`/`release` (neither carries a receipt of this kind) and refuses if
+  This is a no-op for `release` only (it carries no receipt of this kind) and refuses if
   `<source>` is not `candidates[0]` -- use `--record-skip` instead for a deliberate deviation, which
   arms `<source>`'s own receipt itself once the skip is recorded. `source` is `inbound`, `release`,
   `curate` or `triage`. `inbound` has no dedicated spawn of its own below -- `skills/manager/phases/
