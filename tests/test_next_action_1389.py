@@ -758,9 +758,13 @@ def test_record_skip_accepts_dispatch_as_a_taken_source(tmp_path):
     through to when nothing ranked is taken -- but it is never a `rank()`
     candidate itself, so `known_sources` (derived from `candidates`) never
     contains it. Without a carve-out, a deliberate fall-through to dispatch
-    over a due-but-skipped candidate could never be recorded, leaving
-    `_route_already_seen` unable to distinguish a backlog skipped six ticks
-    running from one that was never skipped at all."""
+    over a due-but-skipped candidate could never be recorded at all -- not
+    even as a plain decision-log line. This does NOT arm the same
+    per-source repeat-suppression receipt `curate`/`triage`/`inbound` use
+    (self-review finding, Explore reviewer spawn): `_arm_route_source`
+    still treats `dispatch` as a no-op, so the skipped candidate reports
+    `due` again on the very next tick regardless. What this buys is a
+    human-readable record in the state file's decision log, nothing more."""
     state_path = tmp_path / "oss-watch.json"
     candidates = [
         {"source": "curate", "state": next_action.CANDIDATE_DUE},

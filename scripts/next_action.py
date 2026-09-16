@@ -717,6 +717,16 @@ def record_skip(state_path, candidates, taken_source, reason, at=None):
     valid value here is option (a) from #1553's own issue text; it is
     still refused as a `candidates[0]` match above, since a `rank()` call
     never returns `"dispatch"` as a candidate's `source` to skip *past*.
+
+    **This does not arm the per-source repeat-suppression receipt**
+    `curate`/`triage`/`inbound` use (`_arm_route_source` below, self-review
+    finding, Explore reviewer spawn): that receipt is keyed on
+    `workspace_route_name`/`workspace_route_signature` in `oss_state`'s own
+    `detail`, and neither this call nor `_arm_route_source`'s `"dispatch"`
+    branch (a documented no-op) ever writes one. What a `dispatch` skip
+    buys is a plain, human-readable line in the state file's decision log
+    -- the skipped candidate still reports `due` again on the very next
+    tick, exactly as before this fix.
     """
     if not candidates:
         raise ValueError(
