@@ -78,8 +78,8 @@ def test_the_merge_gate_rule_is_a_reminder_not_a_block():
     just remind of the gates -- that is not what #245 asks for."""
     body = _rule_body()
     mode = oss_rules._field(body, "mode") or "remind"
-    assert mode == "remind", (
-        "the merge-gate rule is mode: {!r}, expected remind".format(mode)
+    assert mode == "once", "the merge-gate rule is mode: {!r}, expected once".format(
+        mode
     )
 
 

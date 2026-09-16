@@ -776,7 +776,7 @@ title: "Before gh-pr-merge: gates, cleanup, and the check that comes after"
 description: "Never-failing checks are not green -- count the legs. gh-pr-merge writes nothing without |force. Cleanup and branch deletion are the op's own |cleanup token, not a second call."
 tool: Bash
 match: ~gh-pr-merge
-mode: remind
+mode: once
 ---
 
 Merge only when: CI fully green **at leg level** (the state counts must sum to the number of
@@ -825,7 +825,7 @@ title: "Before gh-pr-create: don't retype what already arrived right"
 description: "title, head and base arrive filled in from the report -- retyping any of them is the one move that makes things worse. Publish gh-pr-create:@FILE, never a hand-built body."
 tool: Bash
 match: ~gh-pr-create
-mode: remind
+mode: once
 ---
 
 Pushing and opening is one read plus one call, not a document you write:
@@ -878,7 +878,7 @@ title: "tree_snapshot compare: the recorded root, the snapshot's home, and the t
 description: "compare already defaults to the before-snapshot's own recorded root, not the live cwd -- but only once it says that root actually resolved. A before-snapshot in the shared scratchpad can vanish mid-run. could-not-compare is never clean."
 tool: Bash
 match: ~tree_snapshot
-mode: remind
+mode: once
 ---
 
 **`compare` defaults to the before-snapshot's own recorded root, not the live cwd -- no

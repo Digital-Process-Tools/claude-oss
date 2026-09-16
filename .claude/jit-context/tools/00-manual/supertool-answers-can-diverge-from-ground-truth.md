@@ -3,7 +3,7 @@ title: "A supertool read/grep/validate answer can diverge from the file it names
 description: "read and grep both returned a file's pristine pre-edit content several edit:@- calls after those edits had already applied and the file's real byte count had changed; validate: reported markdownlint findings at the pre-.markdownlint.json line length after the config raised it. Neither failure was signalled -- the op returned a normal-looking, wrong answer."
 tool: Bash
 match: ~supertool
-mode: remind
+mode: once
 ---
 
 Two separate divergences between a supertool op's answer and the file's real, on-disk state,

@@ -3,7 +3,7 @@ title: "|cleanup closes any pull request stacked on the branch it deletes"
 description: "GitHub does not retarget a stacked PR when its base branch is deleted -- it closes it, into a state where reopen and retarget each refuse because of the other. Recovery order below."
 tool: Bash
 match: ~gh-pr-merge
-mode: remind
+mode: once
 ---
 
 **Observed merging #959 (`fix/958` -> `main`) with `squash|force|cleanup` while #961

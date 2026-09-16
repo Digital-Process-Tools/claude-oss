@@ -3,7 +3,7 @@ title: "git stash pop silently un-stages a git rm deletion"
 description: "A stash push/pop round-trip is not transparent to a staged deletion: a file removed with git rm comes back D-in-worktree, still-tracked in the index. git ls-files reports the index, not the filesystem, so a guard built on it fails far from the cause."
 tool: Bash
 match: ~git[[:space:]]+stash
-mode: remind
+mode: once
 ---
 
 Observed 2026-09-15 (#1532): `git stash push -q -u` then `git stash pop -q`, used to compare two

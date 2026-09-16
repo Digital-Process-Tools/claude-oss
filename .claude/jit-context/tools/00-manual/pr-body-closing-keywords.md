@@ -3,7 +3,7 @@ title: "A closing keyword next to an issue number closes it, denial included"
 description: "GitHub matches a closing keyword followed by a reference anywhere in the body, with no notion of the surrounding sentence, so 'does not close #N' closes #N. no_close: true does not stop it."
 tool: Bash
 match: ~gh-pr-create|gh-pr-edit|gh-pr-merge
-mode: remind
+mode: once
 ---
 
 **Never write a closing keyword next to an issue number you do not want

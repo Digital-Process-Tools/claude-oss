@@ -3,7 +3,7 @@ title: "Waiting on a status line: the negation contains the assertion"
 description: "NOT ALL GREEN contains ALL GREEN. Wait on a transient state disappearing, never on a terminal state appearing, and match the line rather than the receipt."
 tool: Bash
 match: ~(until|while) |grep -q
-mode: remind
+mode: once
 ---
 
 **A substring match cannot see the word in front of it.** Good status output prints the negated

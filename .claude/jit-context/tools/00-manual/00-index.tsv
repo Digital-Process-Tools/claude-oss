@@ -1,16 +1,16 @@
-Monitor	~.*	a-watcher-is-a-checker.md	remind			
-Bash	~open.*['\"][wa]['\"]|[.]write[(]|[.]write_text[(]	a-write-outside-supertool-meets-no-validator.md	remind			
-Bash	~gh-run|gh-branch|gh-pr:[0-9]+:status	ci-evidence-is-about-one-commit.md	remind			
-Bash	~\|[[:space:]]*(head|tail)([[:space:];&|><)]|$)	exit-sensitive-pipe-to-head-tail.md	remind			
-Bash	~gh api rate_limit|rate limit exceeded	gh-rate-limit-reset-and-pollers.md	remind			
-Bash	~git-commit	git-commit-no-paths-refusal.md	remind			
-Bash	~git[[:space:]]+stash	git-stash-unstages-git-rm-deletions.md	remind			
-Bash	~git-push	lane-branch-upstream.md	remind			
-Bash	~gh-pr-create|gh-pr-edit|gh-pr-merge	pr-body-closing-keywords.md	remind			
-Bash	~/tmp/	refused-bash-call-is-all-or-nothing.md	remind			
-Bash	~release_publish	release-publish-execute-denied.md	remind			
-Bash	~gh-pr-merge	stacked-pr-cleanup-recovery.md	remind			
-Bash	~gh-pr:[0-9]+:status|gh-branch|gh-job:	sub-manager-hand-polls-ci.md	remind			
-Bash	~supertool	supertool-answers-can-diverge-from-ground-truth.md	remind			
-Bash	~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit	supertool-payload-forms.md	remind			
-Bash	~(until|while) |grep -q	waiting-on-a-status-line.md	remind			
+Monitor	~.*	a-watcher-is-a-checker.md	once			
+Bash	~open.*['\"][wa]['\"]|[.]write[(]|[.]write_text[(]	a-write-outside-supertool-meets-no-validator.md	once			
+Bash	~gh-run|gh-branch|gh-pr:[0-9]+:status	ci-evidence-is-about-one-commit.md	once			
+Bash	~\|[[:space:]]*(head|tail)([[:space:];&|><)]|$)	exit-sensitive-pipe-to-head-tail.md	once			
+Bash	~gh api rate_limit|rate limit exceeded	gh-rate-limit-reset-and-pollers.md	once			
+Bash	~git-commit	git-commit-no-paths-refusal.md	once			
+Bash	~git[[:space:]]+stash	git-stash-unstages-git-rm-deletions.md	once			
+Bash	~git-push	lane-branch-upstream.md	once			
+Bash	~gh-pr-create|gh-pr-edit|gh-pr-merge	pr-body-closing-keywords.md	once			
+Bash	~/tmp/	refused-bash-call-is-all-or-nothing.md	once			
+Bash	~release_publish	release-publish-execute-denied.md	once			
+Bash	~gh-pr-merge	stacked-pr-cleanup-recovery.md	once			
+Bash	~gh-pr:[0-9]+:status|gh-branch|gh-job:	sub-manager-hand-polls-ci.md	once			
+Bash	~supertool	supertool-answers-can-diverge-from-ground-truth.md	once			
+Bash	~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit	supertool-payload-forms.md	once			
+Bash	~(until|while) |grep -q	waiting-on-a-status-line.md	once			

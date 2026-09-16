@@ -3,7 +3,7 @@ title: "A refused Bash call may have partially run, and /tmp is not private acro
 description: "The no-|-tail guard (and similar refusals) refuse the WHOLE call, but an earlier command in the same chain can still have executed against stale state. Never reuse /tmp/*.toml as a payload path across a refused-and-retried call -- use the session scratchpad."
 tool: Bash
 match: ~/tmp/
-mode: remind
+mode: once
 ---
 
 A refusal (this repo's own no-`|`-tail guard, among others) refuses the **whole** chained Bash

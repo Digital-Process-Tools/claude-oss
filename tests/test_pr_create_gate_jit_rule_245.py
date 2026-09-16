@@ -81,8 +81,8 @@ def test_the_pr_create_gate_rule_is_a_reminder_not_a_block():
     what #245 asks for."""
     body = _rule_body()
     mode = oss_rules._field(body, "mode") or "remind"
-    assert mode == "remind", (
-        "the pr-create-gate rule is mode: {!r}, expected remind".format(mode)
+    assert mode == "once", (
+        "the pr-create-gate rule is mode: {!r}, expected once".format(mode)
     )
 
 
