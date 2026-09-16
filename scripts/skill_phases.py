@@ -162,7 +162,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1579: 42670 B became 42649 B -- the `--claim`
         # call's own row dropped `--lane`, same fix as the phase files.
         # Budget unchanged.
-        42649,
+        # Re-baselined for #1555 (self-review, Explore reviewer): 42649 B
+        # became 42749 B -- the "AND registers the lane" claim in *Run a
+        # fleet, not a queue* was stale since #1532; `--claim` writes only
+        # the GitHub assignee now. Budget unchanged.
+        42749,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -747,7 +751,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # Re-baselined for #1579: 35308 B became 35268 B -- the --claim call
         # dropped --lane, which only ever fed the claim receipt's own unread
         # [lane] block. Ceiling unchanged.
-        35268,
+        # Re-baselined for #1555 (self-review, Explore reviewer): 35268 B
+        # became 35480 B -- the step 2 paragraph still described a
+        # `lane-collision` check `select_issues_overlap.py`/
+        # `select_issues_companions.py` no longer perform, retired by
+        # #1528/#1530. Ceiling unchanged.
+        35480,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

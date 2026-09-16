@@ -122,13 +122,14 @@ Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLU
 `curate` decides on its own -- promote, merge, decline or defer -- and its pull request is the
 review; the spawn is never waiting on a human's word before it writes.
 
-**A pull request one of these steps just opened is not this session's to wait on (#1549).** The
-spawn dies the moment its procedure ends; nothing here blocks on that pull request's CI, and this
-session must not invent the wait either -- read the report, then return to step 2 immediately.
-Re-ranking is safe: step 2's `--take <source>` already armed that source's repeat-suppression
-receipt, so the next `next_action.py` call reports the same backlog `not-due`, never re-entering the
-still-open step (`tests/test_next_action_1389.py` guards it). `release` self-resolves from the
-merged-PR count instead, so a release still in flight is `oss:releaser`'s to track, not this loop's.
+**A pull request a step just opened is not this session's to wait on (#1549).** The spawn dies
+the moment its procedure ends; nothing here blocks on that PR's CI -- return to step 2 immediately,
+for any of the five. `curate`/`triage`/`inbound` are doubly safe: step 2's `--take <source>` already
+armed the repeat-suppression receipt, so the next `next_action.py` call reports the backlog
+`not-due` rather than re-entering the open step (`tests/test_next_action_1389.py` guards it).
+`scaffold`/`install-audit`/`changelog` are never `next_action.py` sources at all -- forced by
+`$ARGUMENTS` only -- so there is nothing to re-select. `release` self-resolves from the merged-PR
+count.
 
 ## release
 

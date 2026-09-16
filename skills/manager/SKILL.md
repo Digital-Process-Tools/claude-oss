@@ -316,8 +316,9 @@ lane's brief carrying every further open issue whose files land inside its alrea
 Three states, computed rather than felt: **`filled`** on both axes; **`under-filled`**, naming the
 count, the shared file that blocked a further issue, and the issues queued behind it; and
 **`could-not-tell`**, which must never render as `filled`. **Claim before you spawn** -- the
-`--claim` row of the table below writes every issue's own GitHub assignee AND registers the lane in
-one call (#1069); skip every candidate whose claim result names anything but `claimed`.
+`--claim` row of the table below writes every issue's own GitHub assignee (#1069); it no longer
+registers a local lane record beside it (#1532 retired that) -- `git-worktrees` is the authority on
+which lanes are live. Skip every candidate whose claim result names anything but `claimed`.
 
 Four calls stand in for judgement here, and none of them is optional:
 

@@ -424,11 +424,11 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,649 B | 44,800 B |
+| `skills/manager/SKILL.md` | 42,749 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 58,094 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
 | `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
-| `skills/manager/phases/tick-order.md` | 35,268 B | 36,000 B |
+| `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
 | `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
@@ -492,7 +492,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 22,424 B | 24,500 B |
-| `commands/run.md` | 8,854 B | 8,900 B |
+| `commands/run.md` | 8,855 B | 8,900 B |
 
 The plugin harness discovers slash commands from top-level `commands/*.md` only, never recursively,
 so `setup.md`, `scaffold.md`, `triage.md`, `curate.md`, `changelog.md` and `install-audit.md` live

@@ -329,11 +329,15 @@ tool, and you are gone by the time step 7 would run.
    documenting it.
 
    **Run `scripts/select_issues.py` (#970, #1036) as the dispatch-selection call itself, not
-   the ranking/staleness/collision/claim reads joined by hand.** It composes ranking
+   the ranking/staleness/claim reads joined by hand.** It composes ranking
    (`select_issues_rank.py`, the same module the `--board` receipt above renders from) with the
-   staleness (`select_issues_preflight.py`) and lane-collision (`select_issues_overlap.py`,
+   staleness (`select_issues_preflight.py`) and companion-grouping (`select_issues_overlap.py`,
    `select_issues_companions.py`) checks and the assignee read (`select_issues_claim_read.py`) into
-   one call. **It takes no input** (#1145): it fetches the board and reads `.oss.json` itself.
+   one call. No `lane-collision` disposition since #1528/#1530 (#1555) -- an overlapping candidate
+   stays `eligible`; `select_issues_overlap.py`/`select_issues_companions.py` group companions now,
+   they no longer drop one.
+
+   **It takes no input** (#1145): it fetches the board and reads `.oss.json` itself.
    Those five are submodules now (#1069), none
    with a `__main__` of their own; `select_issues.py` is the one entry point. Three states,
    and the third must never render as the second: `candidates` (at least one issue survived, with
