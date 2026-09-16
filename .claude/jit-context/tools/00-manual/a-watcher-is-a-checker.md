@@ -3,7 +3,7 @@ title: "A background watcher meets no guard, and every checker rule applies to i
 description: "raw_command_guard hooks Bash only, so a call handed to Monitor runs unchallenged. Four defects in one four-minute watcher; the three quiet ones each produced a confident wrong answer."
 tool: Monitor
 match: ~.*
-mode: remind
+mode: once
 ---
 
 **A watcher is a checker. It just does not look like one -- it looks

@@ -3,7 +3,7 @@ title: "git-commit:@- refuses \"no PATHS were given\" even when the payload list
 description: "The op wants an explicit paths array, not just message -- and its own refusal already prints every dirty path. Copy them into the payload rather than treating it as a dead end."
 tool: Bash
 match: ~git-commit
-mode: remind
+mode: once
 ---
 
 `git-commit:@-` with only `message` in the payload refuses: "no PATHS

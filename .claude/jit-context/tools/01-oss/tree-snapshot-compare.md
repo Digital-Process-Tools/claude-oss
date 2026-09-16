@@ -3,7 +3,7 @@ title: "tree_snapshot compare: the recorded root, the snapshot's home, and the t
 description: "compare already defaults to the before-snapshot's own recorded root, not the live cwd -- but only once it says that root actually resolved. A before-snapshot in the shared scratchpad can vanish mid-run. could-not-compare is never clean."
 tool: Bash
 match: ~tree_snapshot
-mode: remind
+mode: once
 ---
 
 **`compare` defaults to the before-snapshot's own recorded root, not the live cwd -- no

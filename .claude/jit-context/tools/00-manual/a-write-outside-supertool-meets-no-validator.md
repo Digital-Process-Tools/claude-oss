@@ -3,7 +3,7 @@ title: "A validator protects a route, not a file"
 description: "jsonlint, ruff, gitleaks and rollback_on_fail are hooked to supertool write ops. A python heredoc that opens a path and writes it matches no op, so it passes unmapped, unvalidated and unrollbackable -- and the raw-command guard never sees it."
 tool: Bash
 match: ~open.*['\"][wa]['\"]|[.]write[(]|[.]write_text[(]
-mode: remind
+mode: once
 ---
 
 **`.supertool.json` configures validators over write *ops*, not over

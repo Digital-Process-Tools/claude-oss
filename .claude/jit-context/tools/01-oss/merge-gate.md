@@ -3,7 +3,7 @@ title: "Before gh-pr-merge: gates, cleanup, and the check that comes after"
 description: "Never-failing checks are not green -- count the legs. gh-pr-merge writes nothing without |force. Cleanup and branch deletion are the op's own |cleanup token, not a second call."
 tool: Bash
 match: ~gh-pr-merge
-mode: remind
+mode: once
 ---
 
 Merge only when: CI fully green **at leg level** (the state counts must sum to the number of

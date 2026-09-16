@@ -3,7 +3,7 @@ title: "A command whose exit path matters, piped into head/tail, can silently dr
 description: "SIGPIPE from an early-closed pipe, or a wrapper reporting the pipeline's last command's exit code, both hide a real failure behind a clean-looking success. Redirect to a file and read the file, or let the command print in full."
 tool: Bash
 match: ~\|[[:space:]]*(head|tail)([[:space:];&|><)]|$)
-mode: remind
+mode: once
 ---
 
 Never pipe a command whose exit code matters -- a rebase/push/merge/cherry-pick

@@ -93,8 +93,8 @@ def test_the_rule_is_a_reminder_not_a_block():
     of its three failure modes -- not what #1105 asks for."""
     body = _rule_body()
     mode = oss_rules._field(body, "mode") or "remind"
-    assert mode == "remind", (
-        "the tree-snapshot rule is mode: {!r}, expected remind".format(mode)
+    assert mode == "once", "the tree-snapshot rule is mode: {!r}, expected once".format(
+        mode
     )
 
 

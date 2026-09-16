@@ -445,9 +445,9 @@ def test_tools_rule_names_the_replacement_op():
 #: `tool:` nor `match:`, so index_rows never emits a row for it at all).
 TOOLS_INDEX_EXPECTED = {
     "supertool-required.md": ("Read|Edit|Write|Glob|Grep", "block", "supertool"),
-    "merge-gate.md": ("Bash", "remind", ""),
-    "pr-create-gate.md": ("Bash", "remind", ""),
-    "tree-snapshot-compare.md": ("Bash", "remind", ""),
+    "merge-gate.md": ("Bash", "once", ""),
+    "pr-create-gate.md": ("Bash", "once", ""),
+    "tree-snapshot-compare.md": ("Bash", "once", ""),
     # #1499/#1502, promoted from this repo's own 00-manual layer once measured: two
     # claude-remember lanes on 2026-09-12 spent 66% and 58% of their tool output on
     # raw sed/cat/grep reads, because a rule that lives only here reaches no other repo.

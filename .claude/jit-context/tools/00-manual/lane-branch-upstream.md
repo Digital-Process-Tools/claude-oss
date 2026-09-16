@@ -3,7 +3,7 @@ title: "A freshly cut lane branch tracks origin/main, so the first git-push refu
 description: "git worktree add -b <branch> <path> origin/main inherits tracking from the remote-tracking start-point. Use git-push:set-upstream on a lane's first push."
 tool: Bash
 match: ~git-push
-mode: remind
+mode: once
 ---
 
 **Observed 3 of 3 lanes in one tick** (`fix/1014`, `fix/1015`, `fix/1017`): a plain

@@ -3,7 +3,7 @@ title: "A second status read on the same PR inside a tick is hand-polling"
 description: "One sub-manager spent a 5h18m tick and 109M context tokens re-reading gh-pr status by hand. The two sanctioned shapes are one pr_green.py --wait call or a TICK: paused handback with WAIT-DISPATCH/WAIT-OBSERVABLE."
 tool: Bash
 match: ~gh-pr:[0-9]+:status|gh-branch|gh-job:
-mode: remind
+mode: once
 ---
 
 **Inside a tick, the first `gh-pr:N:status` is a reading. The second one on the same PR is

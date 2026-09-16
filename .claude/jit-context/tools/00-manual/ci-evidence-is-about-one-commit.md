@@ -3,7 +3,7 @@ title: "A CI reading is about the commit it ran on, and nothing else"
 description: "A check that passed on a tree without your change renders identically to one that passed because of it. Name the sha beside any 'CI confirms X' claim, and remember a rerun re-runs the merge-ref it already had."
 tool: Bash
 match: ~gh-run|gh-branch|gh-pr:[0-9]+:status
-mode: remind
+mode: once
 ---
 
 **Name the sha beside any "CI confirms X" claim.** A claim that names its commit is falsifiable

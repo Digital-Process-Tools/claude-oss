@@ -3,7 +3,7 @@ title: "gh-issue-create / gh-pr-create / gh-issue-comment take a JSON or TOML pa
 description: "Passing a markdown file to an @FILE op fails with 'Expected = after a key in a key/value pair'. Convert to JSON, or TOML literal strings -- basic strings eat backslash escapes."
 tool: Bash
 match: ~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit
-mode: remind
+mode: once
 ---
 
 The `@FILE` in these ops is a **payload**, not the body text. A plain markdown file fails:

@@ -3,7 +3,7 @@ title: "gh rate limit: read against the reset clock, and count pollers before bl
 description: "A full core bucket right after reset says nothing about the hour before it. A 403 'rate limit exceeded for user ID' next to a full core bucket is the secondary limit, which rate_limit does not track and names no clearing time."
 tool: Bash
 match: ~gh api rate_limit|rate limit exceeded
-mode: remind
+mode: once
 ---
 
 **A full `core` bucket right after an hourly reset is expected, not evidence the poller is

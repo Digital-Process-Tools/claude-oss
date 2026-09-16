@@ -3,7 +3,7 @@ title: "release_publish --execute denied: a per-context refusal, not a blocked r
 description: "The classifier can deny the publish call inside oss:releaser and allow the identical call from the scheduler. Retry from the other context before handing the human a command."
 tool: Bash
 match: ~release_publish
-mode: remind
+mode: once
 ---
 
 `scripts/release_publish.py --execute` is denied by Claude Code's auto-mode permission classifier
