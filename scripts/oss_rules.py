@@ -766,8 +766,11 @@ belongs here, never in the per-refusal body.
 
 #: #245 step 1: the "Merge gates" section skills/manager/SKILL.md carried in full on every
 #: tick, keyed instead on the one tool call it actually governs -- a `command` matching
-#: `gh-pr-merge`. `mode: remind` rather than `block`: refusing the merge call outright is
-#: not what this asks for, only surfacing the gates at the moment they apply. The full
+#: `gh-pr-merge`. `mode: once` rather than `block`: refusing the merge call outright is
+#: not what this asks for, only surfacing the gates at the moment they apply. Flipped from
+#: `remind` for #1584 -- `claude-jit-context` 0.10.0 redefines `once` to dedupe per reader
+#: rather than per session, removing the reason `remind` was the only mode that survived a
+#: spawned-agent boundary. The full
 #: argument -- the `|force` opt-outs and their blast radii, the rerun-vs-moved-base trap,
 #: the branch-deletion rules -- stays in `skills/manager/phases/merge.md`, which this rule
 #: points at rather than restates.
@@ -813,8 +816,8 @@ the branch-deletion rules: `skills/manager/phases/merge.md`.
 
 #: #245 step 3: the "What comes back, and opening the pull request" section
 #: skills/manager/SKILL.md carried in full on every tick, keyed instead on the one tool
-#: call it actually governs -- a `command` matching `gh-pr-create`. `mode: remind` for the
-#: same reason `TOOLS_MERGE_GATE` is a reminder rather than a block: this surfaces the
+#: call it actually governs -- a `command` matching `gh-pr-create`. `mode: once`, flipped
+#: from `remind` for #1584 for the same reason `TOOLS_MERGE_GATE` was: this surfaces the
 #: don't-retype and Closes-#N argument at the moment the call is about to run, it does not
 #: refuse the call. The full argument -- the fragment-rename procedure, the three states
 #: of `pr_body`, how far the validator gets on each field, and the two ways a body
@@ -871,8 +874,8 @@ less than it appears to: `skills/manager/phases/handback.md`.
 #: managed repository because the flow it is about (`agents/developer/review.md`) is this
 #: plugin's own, not any one managed repo's fact -- a local append under a managed repo's own
 #: `00-manual/` would be destroyed by the next `/oss:scaffold --apply` regardless. `mode:
-#: remind`, matching the other two `tools` entries: this names a real hazard at the moment the
-#: call is about to run, it does not refuse it.
+#: once`, flipped from `remind` for #1584, matching the other two `tools` entries: this names
+#: a real hazard at the moment the call is about to run, it does not refuse it.
 TOOLS_TREE_SNAPSHOT = """---
 title: "tree_snapshot compare: the recorded root, the snapshot's home, and the third verdict"
 description: "compare already defaults to the before-snapshot's own recorded root, not the live cwd -- but only once it says that root actually resolved. A before-snapshot in the shared scratchpad can vanish mid-run. could-not-compare is never clean."

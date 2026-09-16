@@ -39,33 +39,39 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # round: 771 B became 912 B restoring the grep-for-a-symbol check a spawned reviewer
     # found dropped during the first shrink -- counting commits alone cannot catch one that
     # applied as an empty patch, only grepping for content the later commit introduced can.
+    # Re-baselined for #1584 part one: mode: remind -> mode: once, -2 B.
     ".claude/jit-context/tools/00-manual/exit-sensitive-pipe-to-head-tail.md": (
-        912,
+        910,
         1000,
     ),
     # Shrunk for #1584: 7652 B became 3248 B -- nine distinct sub-rules, each compressed
     # to a directive-plus-citation bullet, incident narrative left in its own issue number.
     # This was the single largest remind body in the corpus (36% of all jit injection per
     # #1584's own measurement) and the one worth the most per byte cut.
+    # Re-baselined for #1584 part one: mode: remind -> mode: once, -2 B.
     ".claude/jit-context/tools/00-manual/ci-evidence-is-about-one-commit.md": (
-        3248,
+        3246,
         3600,
     ),
     # Shrunk for #1584: 4167 B became 2586 B -- six sub-rules compressed the same way.
-    ".claude/jit-context/tools/00-manual/waiting-on-a-status-line.md": (2586, 2850),
+    # Re-baselined for #1584 part one: mode: remind -> mode: once, -2 B.
+    ".claude/jit-context/tools/00-manual/waiting-on-a-status-line.md": (2584, 2850),
     # Shrunk for #1584: 2528 B became 1705 B.
+    # Re-baselined for #1584 part one: mode: remind -> mode: once, -2 B.
     ".claude/jit-context/tools/00-manual/refused-bash-call-is-all-or-nothing.md": (
-        1705,
+        1703,
         1900,
     ),
     # Shrunk for #1584: 3009 B became 2128 B.
-    ".claude/jit-context/tools/00-manual/supertool-payload-forms.md": (2128, 2350),
+    # Re-baselined for #1584 part one: mode: remind -> mode: once, -2 B.
+    ".claude/jit-context/tools/00-manual/supertool-payload-forms.md": (2126, 2350),
     # Shrunk for #1584: 2815 B became 2079 B. Re-baselined in the same lane's own
     # self-review round: 2079 B became 2156 B restoring a dropped conditional (the
     # `compare` default only holds once the before-snapshot says its root resolved) a
     # spawned reviewer found the description frontmatter still promising after the body
     # dropped it.
-    ".claude/jit-context/tools/01-oss/tree-snapshot-compare.md": (2156, 2350),
+    # Re-baselined for #1584 part one: mode: remind -> mode: once, -2 B.
+    ".claude/jit-context/tools/01-oss/tree-snapshot-compare.md": (2154, 2350),
 }
 
 
