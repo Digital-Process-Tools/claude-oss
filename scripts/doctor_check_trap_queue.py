@@ -13,7 +13,7 @@ except ImportError:  # pragma: no cover - the module sits beside this file
     trap_curate = None
 
 
-def check_trap_queue(project_dir):
+def check_trap_queue(project_dir, config=None):
     """#905: how many traps are waiting for `/oss:curate`, in the three states.
 
     Reported, never blocking. A gate on this queue would refuse a security fix over a typo
@@ -23,7 +23,23 @@ def check_trap_queue(project_dir):
     `none` is an OK and not a silence: a cycle that curated everything and a cycle nobody
     logged in look the same from outside, and saying `none waiting` is what separates them
     from `could-not-read`, which is the state this whole repository exists to keep nameable.
-    """
+
+    `config` (#1610): a non-empty queue with no `curate_route_threshold` configured is a
+    check that could look, had the facts, and would otherwise say nothing more than NOTICE
+    -- the exact "route unconfigured, and there is work it would have surfaced" shape
+    `next_action.py`'s own `configured: false` fold was found silently discarding. Optional
+    and defaulted to `None` (self-review finding, oss:auditor spawn: an earlier draft of
+    this docstring claimed the opposite) so a caller with no config in hand -- including
+    this repository's own `.oss.json`, which genuinely sets `curate_route_threshold: 15`
+    and so keeps getting NOTICE -- never crashes on `.get`, but a repo with no config
+    reachable here now gets WARN, not the pre-#1610 NOTICE: a route this check cannot
+    confirm is configured is not the same fact as a route confirmed configured and merely
+    under threshold, and folding the two together is exactly the defect #1610 exists to
+    remove. `config=None` also covers "`.oss.json` could not be read at all", which
+    `doctor.py`'s own caller already reports as a separate FAIL line before this check
+    ever runs (self-review finding, oss:auditor spawn) -- a caller that invokes this
+    function directly, bypassing that FAIL line, cannot yet tell "could not read" from
+    "read cleanly and the key is genuinely absent" from this WARN text alone."""
     if trap_curate is None:
         doctor.report(
             "WARN",
@@ -46,13 +62,28 @@ def check_trap_queue(project_dir):
             "lane's.".format(result["why"]),
         )
         return
+    threshold_configured = (
+        isinstance(config, dict) and config.get("curate_route_threshold") is not None
+    )
+    if threshold_configured:
+        doctor.report(
+            "NOTICE",
+            "trap queue: {} waiting for /oss:curate ({}). Not a fault and nothing is "
+            "blocked -- fragments are inert until a pass promotes, merges, declines or "
+            "defers them (#1425). A pass takes the whole backlog in one go, uncapped, and "
+            "never skips a batch for being too big -- a fragment that survives a pass was "
+            "left there on purpose, named and reasoned in the pass's own pull request, not "
+            "silently dropped.".format(
+                result["count"], ", ".join(f["name"] for f in result["fragments"])
+            ),
+        )
+        return
     doctor.report(
-        "NOTICE",
-        "trap queue: {} waiting for /oss:curate ({}). Not a fault and nothing is blocked -- "
-        "fragments are inert until a pass promotes, merges, declines or defers them (#1425). "
-        "A pass takes the whole backlog in one go, uncapped, and never skips a batch for being "
-        "too big -- a fragment that survives a pass was left there on purpose, named and "
-        "reasoned in the pass's own pull request, not silently dropped.".format(
+        "WARN",
+        "trap queue: {} waiting for /oss:curate ({}), and no curate_route_threshold is set "
+        "in .oss.json -- the loop's own curate trigger cannot fire on this backlog at all "
+        "(#1610). Clears with one config edit: set curate_route_threshold to the number of "
+        "fragments that should accumulate before /oss:curate is due.".format(
             result["count"], ", ".join(f["name"] for f in result["fragments"])
         ),
     )

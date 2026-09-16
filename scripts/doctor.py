@@ -9601,7 +9601,7 @@ def main(argv=None):
     # (#551).
     check_latest_skew(project_dir, config)
     check_ci_enforcement(project_dir, config)
-    check_trap_queue(project_dir)
+    check_trap_queue(project_dir, config=config)
     # A fact about the plugin, not about the project, so it needs no config and runs
     # even when everything else was unmeasurable.
     check_agent_dispatch()

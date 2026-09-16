@@ -132,6 +132,14 @@ UNSAFE = "unsafe"
 CANDIDATE_DUE = "due"
 CANDIDATE_COULD_NOT_TELL = "could-not-tell"
 CANDIDATE_NOT_DUE = "not-due"
+#: #1610: a route with a `configured` flag (curate, triage's label-coverage
+#: half) that is `False` could not look at all -- it is not the same fact as
+#: "looked, and is genuinely under threshold". `rank()`'s bucketing still
+#: treats this as not-due for the purpose of deciding what to act on (an
+#: unconfigured route is not automatically due either -- refusing to decide
+#: is the honest answer), but the top-level `reason` must not describe an
+#: unconfigured source as having "resolved cleanly".
+CANDIDATE_NOT_CONFIGURED = "not-configured"
 
 #: The order sources are placed in when more than one is `due` or
 #: `could-not-tell` -- a default the ranking itself does not enforce as a
@@ -473,43 +481,51 @@ def _curate_candidate(repo_root, config, routes, arm=False):
     or `_record_skip_cli` at the moment a caller commits to this source,
     ever does."""
     curate = routes.get("curate", {"configured": False})
-    if curate.get("configured"):
-        if curate.get("state") == workspace_routes.OVER:
-            signature = "{0}:{1}".format(curate.get("state"), curate.get("count"))
-            seen, seen_detail = _route_already_seen(
-                repo_root, config, "curate", signature, arm=arm
-            )
-            if not seen:
-                return {
-                    "source": "curate",
-                    "state": CANDIDATE_DUE,
-                    "reason": (
-                        "trap.d/ has {0} fragment(s), over curate_route_threshold "
-                        "({1})".format(curate.get("count"), curate.get("threshold"))
-                    ),
-                    "evidence": dict(curate, receipt=seen_detail),
-                }
+    if not curate.get("configured"):
+        return {
+            "source": "curate",
+            "state": CANDIDATE_NOT_CONFIGURED,
+            "reason": "curate_route_threshold is not set, so trap.d/ could not be checked against it",
+            "evidence": curate,
+        }
+    if curate.get("state") == workspace_routes.OVER:
+        signature = "{0}:{1}".format(curate.get("state"), curate.get("count"))
+        seen, seen_detail = _route_already_seen(
+            repo_root, config, "curate", signature, arm=arm
+        )
+        if not seen:
             return {
                 "source": "curate",
-                "state": CANDIDATE_NOT_DUE,
-                "reason": "unchanged since the last time this reading was routed ({0})".format(
-                    seen_detail
+                "state": CANDIDATE_DUE,
+                "reason": (
+                    "trap.d/ has {0} fragment(s), over curate_route_threshold "
+                    "({1})".format(curate.get("count"), curate.get("threshold"))
                 ),
                 "evidence": dict(curate, receipt=seen_detail),
             }
-        if curate.get("state") == workspace_routes.COULD_NOT_COUNT:
-            return {
-                "source": "curate",
-                "state": CANDIDATE_COULD_NOT_TELL,
-                "reason": "the trap.d/ backlog could not be counted ({0})".format(
-                    curate.get("why")
-                ),
-                "evidence": curate,
-            }
+        return {
+            "source": "curate",
+            "state": CANDIDATE_NOT_DUE,
+            "reason": "unchanged since the last time this reading was routed ({0})".format(
+                seen_detail
+            ),
+            "evidence": dict(curate, receipt=seen_detail),
+        }
+    if curate.get("state") == workspace_routes.COULD_NOT_COUNT:
+        return {
+            "source": "curate",
+            "state": CANDIDATE_COULD_NOT_TELL,
+            "reason": "the trap.d/ backlog could not be counted ({0})".format(
+                curate.get("why")
+            ),
+            "evidence": curate,
+        }
     return {
         "source": "curate",
         "state": CANDIDATE_NOT_DUE,
-        "reason": "trap.d/ is not over curate_route_threshold (or curate is not configured)",
+        "reason": "trap.d/ is not over curate_route_threshold ({0})".format(
+            curate.get("threshold")
+        ),
         "evidence": curate,
     }
 
@@ -551,42 +567,52 @@ def _triage_candidate(repo_root, config, routes, arm=False):
         }
 
     triage = routes.get("triage", {"configured": False})
-    if triage.get("configured"):
-        if triage.get("state") == workspace_routes.OVER:
-            signature = "{0}:{1}".format(triage.get("state"), triage.get("count"))
-            seen, seen_detail = _route_already_seen(
-                repo_root, config, "triage", signature, arm=arm
-            )
-            if not seen:
-                return {
-                    "source": "triage",
-                    "state": CANDIDATE_DUE,
-                    "reason": "{0}".format(triage.get("why")),
-                    "evidence": dict(triage, receipt=seen_detail),
-                }
+    if not triage.get("configured"):
+        return {
+            "source": "triage",
+            "state": CANDIDATE_NOT_CONFIGURED,
+            "reason": (
+                "post-release triage trigger not due, and no label-coverage "
+                "triage route is configured, so unlabelled issues could not "
+                "be checked against a threshold"
+            ),
+            "evidence": {"triage_trigger": tt, "triage_route": triage},
+        }
+    if triage.get("state") == workspace_routes.OVER:
+        signature = "{0}:{1}".format(triage.get("state"), triage.get("count"))
+        seen, seen_detail = _route_already_seen(
+            repo_root, config, "triage", signature, arm=arm
+        )
+        if not seen:
             return {
                 "source": "triage",
-                "state": CANDIDATE_NOT_DUE,
-                "reason": "unchanged since the last time this reading was routed ({0})".format(
-                    seen_detail
-                ),
+                "state": CANDIDATE_DUE,
+                "reason": "{0}".format(triage.get("why")),
                 "evidence": dict(triage, receipt=seen_detail),
             }
-        if triage.get("state") == workspace_routes.COULD_NOT_COUNT:
-            return {
-                "source": "triage",
-                "state": CANDIDATE_COULD_NOT_TELL,
-                "reason": "the triage backlog could not be counted ({0})".format(
-                    triage.get("why")
-                ),
-                "evidence": triage,
-            }
+        return {
+            "source": "triage",
+            "state": CANDIDATE_NOT_DUE,
+            "reason": "unchanged since the last time this reading was routed ({0})".format(
+                seen_detail
+            ),
+            "evidence": dict(triage, receipt=seen_detail),
+        }
+    if triage.get("state") == workspace_routes.COULD_NOT_COUNT:
+        return {
+            "source": "triage",
+            "state": CANDIDATE_COULD_NOT_TELL,
+            "reason": "the triage backlog could not be counted ({0})".format(
+                triage.get("why")
+            ),
+            "evidence": triage,
+        }
     return {
         "source": "triage",
         "state": CANDIDATE_NOT_DUE,
         "reason": (
             "post-release triage trigger not due and the label-coverage "
-            "triage route is not over its threshold (or not configured)"
+            "triage route is not over its threshold"
         ),
         "evidence": {"triage_trigger": tt, "triage_route": triage},
     }
@@ -660,13 +686,32 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
     # and `_record_skip_cli`, at the moment a caller actually commits to a
     # source, via `_arm_route_source` below -- never inside this function.
     if not candidates:
+        # #1610: a source that reported CANDIDATE_NOT_CONFIGURED could not
+        # look at all -- it must never be counted among the sources that
+        # "resolved cleanly", or an unconfigured route renders identically
+        # to one that looked and found nothing due, forever.
+        unconfigured = [
+            entry["source"]
+            for entry in not_due
+            if entry["state"] == CANDIDATE_NOT_CONFIGURED
+        ]
+        if unconfigured:
+            reason = (
+                "{0} not configured, so {1} could not be checked; the rest "
+                "resolved cleanly and none of them is due".format(
+                    ", ".join(unconfigured),
+                    "it" if len(unconfigured) == 1 else "they",
+                )
+            )
+        else:
+            reason = (
+                "every source resolved cleanly (inbound, release, curate, "
+                "triage) and none of them is due"
+            )
         return {
             "state": NOTHING_DUE,
             "next": "dispatch",
-            "reason": (
-                "every source resolved cleanly (inbound, release, curate, "
-                "triage) and none of them is due"
-            ),
+            "reason": reason,
             "not_due": not_due,
             "config": config,
         }

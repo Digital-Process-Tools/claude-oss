@@ -36,14 +36,33 @@ def _trap_d(tmp_path, names):
 def test_the_scaffolded_readme_does_not_inflate_the_reported_queue(tmp_path):
     """Must-fire, end to end: a directory holding the scaffolded README plus
     one real fragment must report exactly 1 waiting, at the actual `/oss:doctor`
-    entry point -- not 2."""
+    entry point -- not 2. `curate_route_threshold` is configured here so this
+    stays a test about the README-inflation defect (#1359); #1610's own
+    not-configured WARN is exercised separately below."""
     doctor.FINDINGS.clear()
-    mod.check_trap_queue(str(_trap_d(tmp_path, ["README.md", "904.a-slug.md"])))
+    mod.check_trap_queue(
+        str(_trap_d(tmp_path, ["README.md", "904.a-slug.md"])),
+        config={"curate_route_threshold": 15},
+    )
     assert len(doctor.FINDINGS) == 1
     state, message = doctor.FINDINGS[0]
     assert state == "NOTICE", (state, message)
     assert "1 waiting" in message, message
     assert "README" not in message, message
+
+
+def test_a_waiting_queue_with_no_curate_route_warns_not_notices(tmp_path):
+    """#1610: the identical fixture as the test above, minus the configured
+    threshold -- must WARN, never the NOTICE a genuinely-configured, under-
+    threshold-irrelevant reading gets. `config=None` is the plain
+    `check_trap_queue(project_dir)` call every pre-#1610 caller made."""
+    doctor.FINDINGS.clear()
+    mod.check_trap_queue(str(_trap_d(tmp_path, ["README.md", "904.a-slug.md"])))
+    assert len(doctor.FINDINGS) == 1
+    state, message = doctor.FINDINGS[0]
+    assert state == "WARN", (state, message)
+    assert "1 waiting" in message, message
+    assert "curate_route_threshold" in message, message
 
 
 def test_a_directory_holding_only_the_readme_reports_none_waiting(tmp_path):

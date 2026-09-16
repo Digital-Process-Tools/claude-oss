@@ -210,7 +210,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # stale since #1433 added inbound to the same mechanism -- now says
     # release only, directly beside the paragraph this commit just wrote
     # naming inbound as one of the three armed sources.
-    "commands/run.md": (8863, 8900),
+    "commands/run.md": (8899, 8900),
 }
 
 
