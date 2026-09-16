@@ -32,6 +32,7 @@ from pathlib import Path
 
 import doctor
 import worktree_reap
+from doctor_check_statusline_unknowns import _dquote_escape
 
 
 def worktree_reap_summary(
@@ -58,8 +59,18 @@ def worktree_reap_summary(
     reapable = sum(1 for item in plan if item["decision"] == "reapable")
     could_not_tell = sum(1 for item in plan if item["decision"] == "could-not-tell")
     kept = sum(1 for item in plan if item["decision"] == "kept")
+    # #1628 self-review finding: an unquoted path in a "run this by hand"
+    # remedy breaks on the first space -- a Windows user directory
+    # ("C:\\Users\\Jane Doe\\...") or a macOS one ("/Users/Jane Doe/...")
+    # both qualify. Same double-quote convention as the sibling remedy
+    # builder this borrows its escaper from (`doctor_check_statusline_
+    # unknowns._dquote_escape`, #1426/#1517), for the same reason: a
+    # maintainer who pastes this line runs a worktree reap, not a shell
+    # error.
     script = str(Path(doctor.PLUGIN_ROOT) / "scripts" / "worktree_reap.py")
-    remedy = "python3 {} --clone {} --apply".format(script, clone)
+    remedy = 'python3 "{}" --clone "{}" --apply'.format(
+        _dquote_escape(script), _dquote_escape(str(clone))
+    )
     if reapable:
         return "finding", {
             "reapable": reapable,

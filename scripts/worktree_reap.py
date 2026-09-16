@@ -270,6 +270,73 @@ def branch_merge_state(slug, branch, run=None, gh_bin=None):
     return "not-merged", "the recorded pull request state is {}".format(state)
 
 
+def unpushed_commit_state(tree_path, run=None, git_bin=None):
+    """``("clean", 0)`` / ``("ahead", n)`` / ``("no-upstream", None)`` /
+    ``("could-not-tell", reason)``.
+
+    #1628 self-review finding: `branch_merge_state` asks whether ANY pull
+    request headed at this branch NAME ever reached ``MERGED`` and, once
+    true, stays true for that name forever -- and `dirt_state` alone only
+    sees UNCOMMITTED changes. Neither catches a commit made in the worktree
+    AFTER its own pull request merged: the working tree is clean, the branch
+    name is merged, and there is still real, unpushed work that `git branch
+    -D` would destroy. This asks the one question that closes the gap: does
+    this branch have commits its own remote tracking ref does not?
+
+    ``"no-upstream"`` (no ``@{u}`` configured at all) is deliberately as
+    conservative as ``"ahead"`` -- a branch pushed once, whose upstream
+    tracking was never re-established, cannot be told apart from one that
+    was never pushed at all, and treating the former as safe on the strength
+    of the latter never having existed is exactly the absence-read-as-clean
+    class this repository is named after. Callers keep the tree on both.
+    """
+    run = subprocess.run if run is None else run
+    git_bin = git_bin or gh_which.safe_which("git")
+    if git_bin is None:
+        return "could-not-tell", "git is not on PATH"
+    rc_u, out_u, _err_u, exc_u = _run(
+        run,
+        [
+            git_bin,
+            "-C",
+            str(tree_path),
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{u}",
+        ],
+    )
+    if exc_u is not None:
+        return "could-not-tell", "git rev-parse @{{u}} did not run ({})".format(exc_u)
+    if rc_u != 0 or not out_u.strip():
+        return "no-upstream", None
+    upstream = out_u.strip()
+    rc, out, err, exc = _run(
+        run,
+        [
+            git_bin,
+            "-C",
+            str(tree_path),
+            "rev-list",
+            "--count",
+            "{}..HEAD".format(upstream),
+        ],
+    )
+    if exc is not None:
+        return "could-not-tell", "git rev-list --count did not run ({})".format(exc)
+    if rc != 0:
+        return "could-not-tell", "git rev-list --count failed -- {}".format(
+            (err or out).strip()[:200]
+        )
+    count = out.strip()
+    if not count.isdigit():
+        return "could-not-tell", "git rev-list --count returned {!r}".format(count)
+    ahead = int(count)
+    if ahead:
+        return "ahead", ahead
+    return "clean", 0
+
+
 def dirt_state(tree_path, run=None, git_bin=None):
     """``("clean", [], [])`` / ``("artifacts-only", [], [fragments])`` /
     ``("real-dirt", [offending paths], [fragments])`` /
@@ -462,6 +529,49 @@ def plan_reap(
                 }
             )
             continue
+        # #1628 self-review finding: a MERGED verdict for this branch NAME is
+        # not a guarantee this WORKTREE's own tip has nothing beyond it --
+        # see `unpushed_commit_state`'s own docstring for the exact gap.
+        unpushed, unpushed_detail = unpushed_commit_state(
+            path, run=run, git_bin=git_bin
+        )
+        if unpushed == "could-not-tell":
+            plan.append(
+                {
+                    "path": path,
+                    "branch": branch,
+                    "decision": "could-not-tell",
+                    "reason": "whether this branch is ahead of its own remote "
+                    "could not be read -- {}".format(unpushed_detail),
+                    "fragments": [],
+                }
+            )
+            continue
+        if unpushed == "no-upstream":
+            plan.append(
+                {
+                    "path": path,
+                    "branch": branch,
+                    "decision": "kept",
+                    "reason": "no remote tracking ref configured, so whether this "
+                    "branch's tip was ever pushed cannot be confirmed",
+                    "fragments": [],
+                }
+            )
+            continue
+        if unpushed == "ahead":
+            plan.append(
+                {
+                    "path": path,
+                    "branch": branch,
+                    "decision": "kept",
+                    "reason": "{} commit(s) ahead of its own remote tracking ref -- "
+                    "merged under this branch name does not mean this worktree's "
+                    "own tip was ever pushed".format(unpushed_detail),
+                    "fragments": [],
+                }
+            )
+            continue
         dirt, offenders, fragments = dirt_state(path, run=run, git_bin=git_bin)
         if dirt == "could-not-tell":
             plan.append(
@@ -592,17 +702,29 @@ def reap(
                 }
             )
             continue
+        branch_note = ""
         if item["branch"]:
-            _run(
+            # #1628 self-review finding: the worktree is already gone by this
+            # point -- its own removal is the destructive, unrecoverable half
+            # of this operation, already confirmed above. A failed branch
+            # delete leaves a stray ref, not a lost tree, so it does not
+            # invent a fourth top-level state; it is folded into `reason`
+            # instead, rather than silently discarded, which would have
+            # reported "reaped" with no trace that the branch survived.
+            rc_b, out_b, err_b, exc_b = _run(
                 run,
                 [git_bin, "-C", str(clone_dir), "branch", "-D", item["branch"]],
             )
+            if exc_b is not None or rc_b != 0:
+                branch_note = " (branch {} was NOT deleted -- {})".format(
+                    item["branch"], exc_b or (err_b or out_b).strip()[:200]
+                )
         results.append(
             {
                 "path": item["path"],
                 "branch": item["branch"],
                 "state": "reaped",
-                "reason": item["reason"],
+                "reason": item["reason"] + branch_note,
                 "harvested": harvested,
             }
         )

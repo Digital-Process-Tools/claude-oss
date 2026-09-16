@@ -442,7 +442,18 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # else refuses to write and reports the deferral under state 3 instead.
     # Nothing already in this file argued a weaker case to cut in its
     # place, so the ceiling moves to 7950 B, ~10% headroom.
-    "agents/doctor.md": (7224, 7950),
+    # Re-baselined in the same lane's own self-review round: 7224 B became
+    # 8090 B, past the 7950 B ceiling by 140 B. A spawned reviewer found the
+    # first draft routed a KNOWN `on-other` HEAD state through disposition
+    # 3's `could-not-tell:` vocabulary -- exactly the absence-read-as-clean
+    # defect this file is named after, one level down in its own taxonomy.
+    # Fixed by splitting disposition 1's own three HEAD outcomes explicitly
+    # (`on-default` writes+commits, `on-other` reports `deferred:` under
+    # disposition 1's own vocabulary, only a genuinely unreadable HEAD state
+    # reaches disposition 3's `could-not-tell:`). Nothing already in this
+    # file argued a weaker case to cut in its place, so the ceiling moves to
+    # 8900 B, ~10% headroom.
+    "agents/doctor.md": (8090, 8900),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the

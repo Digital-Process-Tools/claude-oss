@@ -59,8 +59,22 @@ def _init_repo(root):
     _git(root, "commit", "-q", "-m", "initial")
 
 
-def _add_worktree(clone, path, branch):
+def _add_worktree(clone, path, branch, push_upstream=True):
+    """A real `git worktree add`, and -- by default -- a real, pushed
+    upstream, matching a real lane's own branch (opening a pull request
+    needs a push). `push_upstream=False` models a branch that was never
+    pushed at all, the `unpushed_commit_state`-`"no-upstream"` fixture case.
+    A throwaway bare remote, not `clone` itself: pushing a branch that is
+    checked out in a LINKED WORKTREE of the receiving repo is refused by
+    git's own `denyCurrentBranch` protection, which is aware of every
+    worktree sharing that repository, not just its primary checkout.
+    """
     _git(clone, "worktree", "add", "-q", str(path), "-b", branch)
+    if push_upstream:
+        remote_dir = path.parent / (path.name + "-remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", str(remote_dir)], check=True)
+        _git(path, "remote", "add", "origin", str(remote_dir))
+        _git(path, "push", "-q", "--set-upstream", "origin", branch)
 
 
 class _FakeGhRun:
@@ -352,6 +366,59 @@ def test_main_worktree_is_never_in_the_plan(tmp_path):
 # ------------------------------------------------------------------------ reap
 
 
+def test_unpushed_local_commits_after_a_merged_pr_are_kept_not_reaped(tmp_path):
+    """Explore review finding on this diff's own commit: `branch_merge_state`
+    reads whether ANY pull request headed at this branch NAME ever reached
+    MERGED, and stays true for that name forever; `dirt_state` only sees
+    uncommitted changes. Neither alone notices a commit made in the worktree
+    AFTER the branch's own PR merged -- clean working tree, merged branch
+    name, and still real, unpushed work that `git branch -D` would destroy.
+    Must be kept, never reaped, until it is confirmed not ahead of its own
+    remote tracking ref."""
+    clone = tmp_path / "clone"
+    _init_repo(clone)
+    wt = tmp_path / "wt1"
+    _add_worktree(clone, wt, "fix/1")  # pushes an upstream, per its own default
+    # A commit that exists ONLY in the worktree, never reaching that remote.
+    (wt / "unpushed.txt").write_text("real work", encoding="utf-8")
+    _git(wt, "add", "unpushed.txt")
+    _git(wt, "commit", "-q", "-m", "unpushed follow-up")
+    fake = _FakeGhRun({"fix/1": "MERGED"})
+    state, plan = worktree_reap.plan_reap(
+        clone,
+        _config(clone),
+        gh_bin=fake.GH_BIN,
+        run=fake,
+        list_processes=_unoccupied,
+    )
+    assert state == "planned"
+    assert plan[0]["decision"] == "kept", plan[0]
+    assert "ahead" in plan[0]["reason"]
+    assert wt.exists()
+
+
+def test_no_upstream_at_all_is_kept_not_reaped(tmp_path):
+    """Must-not-fire control paired with the ahead case above: a branch with
+    NO remote tracking ref configured at all is exactly as unverifiable as
+    one with unpushed commits, and must be kept for the same reason -- never
+    treated as safe on the strength of an absent upstream."""
+    clone = tmp_path / "clone"
+    _init_repo(clone)
+    wt = tmp_path / "wt1"
+    _add_worktree(clone, wt, "fix/1", push_upstream=False)
+    fake = _FakeGhRun({"fix/1": "MERGED"})
+    state, plan = worktree_reap.plan_reap(
+        clone,
+        _config(clone),
+        gh_bin=fake.GH_BIN,
+        run=fake,
+        list_processes=_unoccupied,
+    )
+    assert state == "planned"
+    assert plan[0]["decision"] == "kept", plan[0]
+    assert "remote tracking ref" in plan[0]["reason"]
+
+
 def test_apply_reaps_a_reapable_tree(tmp_path):
     clone = tmp_path / "clone"
     _init_repo(clone)
@@ -371,6 +438,44 @@ def test_apply_reaps_a_reapable_tree(tmp_path):
     assert not wt.exists()
     branches = _git(clone, "branch", "--list", "fix/1").stdout
     assert "fix/1" not in branches
+
+
+def test_a_failed_branch_delete_is_named_not_silently_dropped(tmp_path):
+    """Explore review finding: the worktree's own removal is the destructive,
+    unrecoverable half of a reap -- a failed FOLLOW-ON `git branch -D` must
+    not render as a plain, unqualified "reaped" with no trace that the
+    branch survived."""
+    clone = tmp_path / "clone"
+    _init_repo(clone)
+    wt = tmp_path / "wt1"
+    _add_worktree(clone, wt, "fix/1")
+    fake = _FakeGhRun({"fix/1": "MERGED"})
+
+    real_run = fake.__call__
+
+    def _run_and_fail_branch_delete(args, **kwargs):
+        if len(args) >= 2 and args[-3:-1] == ["branch", "-D"]:
+
+            class _Failed:
+                returncode = 1
+                stdout = b""
+                stderr = b"branch is checked out elsewhere"
+
+            return _Failed()
+        return real_run(args, **kwargs)
+
+    state, results = worktree_reap.reap(
+        clone,
+        _config(clone),
+        apply=True,
+        gh_bin=fake.GH_BIN,
+        run=_run_and_fail_branch_delete,
+        list_processes=_unoccupied,
+    )
+    assert state == "planned"
+    assert results[0]["state"] == "reaped", results[0]
+    assert not wt.exists()
+    assert "NOT deleted" in results[0]["reason"], results[0]
 
 
 def test_dry_run_does_not_touch_the_tree(tmp_path):
@@ -484,6 +589,29 @@ def test_check_reports_a_finding_naming_the_runnable_remedy(tmp_path):
     assert level == "WARN"
     assert "worktree_reap.py" in message
     assert "--apply" in message
+
+
+def test_remedy_quotes_a_clone_path_containing_a_space(tmp_path, monkeypatch):
+    """Auditor review finding on this diff's own commit: an unquoted path in
+    a "run this by hand" remedy breaks on the first space -- common on both
+    Windows (`C:\\Users\\Jane Doe\\...`) and macOS (`/Users/Jane Doe/...`)."""
+    clone = tmp_path / "clone with space"
+    _init_repo(clone)
+    wt = tmp_path / "wt1"
+    _add_worktree(clone, wt, "fix/1")
+    fake = _FakeGhRun({"fix/1": "MERGED"})
+    monkeypatch.setattr(doctor, "PLUGIN_ROOT", tmp_path / "plugin root")
+    config = _config(clone)
+    state, detail = doctor_check_worktree_reap.worktree_reap_summary(
+        clone, config, run=fake, gh_bin=fake.GH_BIN, list_processes=_unoccupied
+    )
+    assert state == "finding", (state, detail)
+    remedy = detail["remedy"]
+    assert '"{}"'.format(str(clone)) in remedy, remedy
+    assert (
+        '"{}"'.format(str(tmp_path / "plugin root" / "scripts" / "worktree_reap.py"))
+        in remedy
+    ), remedy
 
 
 def test_check_could_not_tell_when_no_clone_configured(tmp_path):

@@ -138,7 +138,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # was missing, plus this row's own rewrites converging on the new size. 49347 B
     # became 49671 B, past the 49400 B ceiling. Ceiling moves to 49750 B, ~0.15%
     # headroom -- the same narrow self-referential margin every prior raise gives.
-    "CLAUDE.md": (49671, 49750),
+    # Re-baselined again in the same lane's own self-review round: agents/doctor.md's
+    # own row and ceiling raised a second time (a reviewer found a known `on-other`
+    # HEAD state routed through the "could-not-tell" bucket, fixed in that file),
+    # plus this row's own rewrites converging on the new size. 49750 B became
+    # 50032 B, past the 49750 B ceiling. Ceiling moves to 50100 B, the same narrow
+    # self-referential margin.
+    "CLAUDE.md": (50032, 50100),
 }
 
 

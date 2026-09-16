@@ -2440,9 +2440,19 @@ def oss_workspace_launcher_state(plugin_root=None, path=None):
       is not the same fact as the two versions disagreeing, and must not read as
       one** -- that would be this repository's own defect class landing on the
       check written to fix its first occurrence, so that case stays `matched`.
-    * ``mismatched`` -- the resolved target's bytes differ. `detail` is
-      ``(resolved, their_version, our_version)``; `their_version` is
-      `_oss_workspace_version_segment(resolved)` and may be `None`.
+    * ``content-skew-current-version`` (#1623) -- the resolved target's bytes
+      differ, but `their_version` and `our_version` are BOTH readable and
+      EQUAL. This is the ordinary state between a merge and a release, never
+      the #324 hazard: the manifest version does not move between releases,
+      so a clone holding unreleased commits still declares the same version
+      as the cache copy it resolves to. Checked BEFORE ``mismatched`` below,
+      which is why that state's own bullet can say "differ" without this
+      carve-out repeating there.
+    * ``mismatched`` -- the resolved target's bytes differ, and either a
+      version could not be read on one or both sides, or the two that WERE
+      read disagree -- never the case above, where both are read and equal.
+      `detail` is ``(resolved, their_version, our_version)``; `their_version`
+      is `_oss_workspace_version_segment(resolved)` and may be `None`.
       `our_version` is read from **`plugin_root`'s own manifest**, not from the
       running install (#350), and is `None` on exactly the same terms as
       `their_version`: it names a version or it says there is none, and it never

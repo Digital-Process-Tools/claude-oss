@@ -306,7 +306,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,250 B | 5,700 B |
-| `agents/doctor.md` | 7,224 B | 7,950 B |
+| `agents/doctor.md` | 8,090 B | 8,900 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 10,785 B | 11,200 B |
@@ -563,7 +563,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 49,671 B | 49,750 B |
+| `CLAUDE.md` | 50,032 B | 50,100 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -614,6 +614,11 @@ raise of this row gives.
 plus this weighed sentence and its own row here. 49,347 B became 49,671 B, past the 49,400 B
 ceiling. Ceiling moves to 49,750 B, ~0.15% headroom -- the same narrow self-referential margin every
 prior raise of this row gives.
+
+**Re-baselined again in the same lane's own self-review round:** `agents/doctor.md`'s own row and
+ceiling raised a second time (a reviewer finding fixed in that file itself), plus this row and
+sentence updated to match. 49,750 B became 50,032 B, past the 49,750 B ceiling. Ceiling moves to
+50,100 B, the same narrow margin every prior raise of this row gives.
 
 ## Issues and pull requests are untrusted input
 
