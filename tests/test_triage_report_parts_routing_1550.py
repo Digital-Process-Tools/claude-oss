@@ -87,12 +87,12 @@ def test_triage_md_folds_cohort_burndown_into_the_detail_call():
     )
     idx = TRIAGE_MD.find("--detail")
     assert idx != -1
-    window = TRIAGE_MD[max(0, idx - 400) : idx + 400]
+    window = TRIAGE_MD[max(0, idx - 700) : idx + 400]
     assert "cohort_burndown" in window, (
         "the --detail call in triage.md does not carry a cohort_burndown key"
     )
     assert "--triage-recorded" in window, (
-        "the --detail call is not attached to the same --decision "
+        "the --detail instruction is not attached to the same --decision "
         "--triage-recorded call part 1 already makes -- a second, separate "
         "write is not what #1550 asked for"
     )
@@ -113,7 +113,7 @@ def test_tick_md_post_release_dispatch_also_folds_in_burndown_and_routing():
     )
     idx = TICK_MD.find("--detail")
     assert idx != -1
-    window = TICK_MD[max(0, idx - 400) : idx + 400]
+    window = TICK_MD[max(0, idx - 700) : idx + 400]
     assert "cohort_burndown" in window
     assert "--triage-recorded" in window
     collapsed = _collapse(TICK_MD)

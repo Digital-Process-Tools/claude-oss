@@ -118,7 +118,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # findings-routing gap and needed the identical fix (found by review,
     # not the issue's own stated scope). Ceiling unchanged, comfortably
     # under.
-    "commands/tick.md": (23328, 24500),
+    # Re-baselined for #1550 (CI fix): 23328 B became 23649 B -- the
+    # --detail JSON added to the executed ```bash block used unresolved
+    # <N>/<M> placeholders, which #1436's own gate-3 test extracts and
+    # runs verbatim (tests/test_gate3_r1_1436.py's
+    # test_tick_mds_own_call_shape_actually_runs), breaking CI on 4 of 10
+    # legs with "--detail is not valid JSON". Moved the --detail example
+    # out of the executed fence into prose describing how to attach it
+    # with real values. Ceiling unchanged, comfortably under.
+    "commands/tick.md": (23649, 24500),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at

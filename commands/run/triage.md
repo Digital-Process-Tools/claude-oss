@@ -87,8 +87,7 @@ holds, run this from `<state_file>` in `.oss.local.json`:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --decision "triage sweep recorded" \
-  --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --triage-recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --detail '{"cohort_burndown": {"open": <N>, "limit": <M>}}'
+  --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --triage-recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
 `--triage-recorded` is an attachment to `--decision`, not its own mode flag — `oss_state.py`'s
@@ -97,15 +96,19 @@ argparse requires one of the mutually exclusive mode flags (`--decision`, `--rea
 post-release triage step already makes (#855, #1386); this procedure is the other place a sweep
 completes and was making no such call at all.
 
-**`--detail` is where the cohort burn-down (part 5) is persisted**, so it stops being read once
-and discarded with the rest of the report (#1550). `--detail` takes any JSON object and only
-refuses a key that collides with one `oss_state.py` itself writes (`triage`, `tick_cost`) --
-`cohort_burndown` collides with neither, so no code change was needed to carry it. Fill it with
-whichever of the report's own three answers part 5 gave: `{"open": N, "limit": M}`, the string
-`"no cohort label"`, or `"could not count"` with the reason appended. There is no separate write
-and nothing reads the series back yet -- that is a real gap, but a smaller one than a burn-down
-with no persistence path at all, and a later reader can walk the state file's own entry history to
-build the series once one is wanted.
+**Attach `--detail` to that same call to persist the cohort burn-down (part 5)**, so it stops
+being read once and discarded with the rest of the report (#1550). Append `--detail
+'{"cohort_burndown": {"open": N, "limit": M}}'` to the call above, filling `N` and `M` in with
+whichever of the report's own three answers part 5 gave -- a real count against its limit, the
+string `"no cohort label"`, or `"could not count"` with the reason appended (`N`/`M` are
+placeholders for real numbers, not literal syntax to run as shown -- kept out of the fenced call
+above so a reader running it verbatim, or a test extracting it verbatim, gets valid JSON either
+way). `--detail` takes any JSON object and only refuses a key that collides with one
+`oss_state.py` itself writes (`triage`, `tick_cost`) -- `cohort_burndown` collides with neither, so
+no code change was needed to carry it. There is no separate write and nothing reads the series
+back yet -- that is a real gap, but a smaller one than a burn-down with no persistence path at
+all, and a later reader can walk the state file's own entry history to build the series once one
+is wanted.
 
 A completed sweep can relabel issues, which is exactly the kind of event that falsifies the
 board half of the status line's cache — the same reasoning `/oss:release` already applies to the
