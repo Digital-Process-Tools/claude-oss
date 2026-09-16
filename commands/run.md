@@ -76,15 +76,15 @@ never arbitrating one verdict:
 
   **Reading `rank()`'s answer never commits to it.** `next_action.py --json` is a plain read, and a
   session that calls it many times over a long run must see the identical answer every time until
-  something actually changes -- curate and triage's own repeat-suppression receipt is armed only by
-  an explicit commitment, never by rank() being asked. Before spawning the procedure below for
-  whichever `source` you are actually taking (`candidates[0]`, ordinarily), say so:
+  something actually changes -- curate, triage and inbound's own repeat-suppression receipt is armed
+  only by an explicit commitment, never by rank() being asked (#1433). Before spawning the procedure
+  below for whichever `source` you are actually taking (`candidates[0]`, ordinarily), say so:
 
   ```bash
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/next_action.py" --root . --take <source>
   ```
 
-  This is a no-op for `inbound`/`release` (neither carries a receipt of this kind) and refuses if
+  This is a no-op for `release` only (it carries no receipt of this kind) and refuses if
   `<source>` is not `candidates[0]` -- use `--record-skip` instead for a deliberate deviation, which
   arms `<source>`'s own receipt itself once the skip is recorded. `source` is `inbound`, `release`,
   `curate` or `triage`. `inbound` has no dedicated spawn of its own below -- `skills/manager/phases/
@@ -122,7 +122,14 @@ Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLU
 `curate` decides on its own -- promote, merge, decline or defer -- and its pull request is the
 review; the spawn is never waiting on a human's word before it writes.
 
-Read its report, then return to step 2 to ask again what is needed now.
+**A pull request a step just opened is not this session's to wait on (#1549).** The spawn dies
+the moment its procedure ends; nothing here blocks on that PR's CI -- return to step 2 immediately,
+for any of the five. `curate`/`triage`/`inbound` are doubly safe: step 2's `--take <source>` already
+armed the repeat-suppression receipt, so the next `next_action.py` call reports the backlog
+`not-due` rather than re-entering the open step (`tests/test_next_action_1389.py` guards it).
+`scaffold`/`install-audit`/`changelog` are never `next_action.py` sources at all -- forced by
+`$ARGUMENTS` only -- so there is nothing to re-select. `release` self-resolves from the merged-PR
+count.
 
 ## release
 
