@@ -109,7 +109,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # reviewer found still silent about it, grew this row's own several rewrites
     # again. Ceiling moves to 44300 B, ~1% headroom, the same self-referential
     # margin as every prior raise of this row.
-    "CLAUDE.md": (44280, 44300),
+    # Re-baselined for #1614, the third editing exception: agents/tick-accounting.md's
+    # own row and ceiling raised three times in the same lane -- once for the literal
+    # oss_state.py --decision call the issue itself asked for, twice more across two
+    # self-review rounds after reviewers found that call still incomplete (first the
+    # --tick-cost-* group, then --lane-fill-window/--lane/--lane-window/--intake-why)
+    # -- plus this row's own rewrites converging on the new size each time. 44280 B
+    # became 46225 B, well past the old 44300 B ceiling. Ceiling moves to 46300 B,
+    # ~0.2% headroom -- tighter than the usual self-referential margin because three
+    # passes each added their own paragraph to this same section.
+    "CLAUDE.md": (46225, 46300),
 }
 
 

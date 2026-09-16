@@ -55,8 +55,11 @@ def test_every_documented_oss_state_flag_is_one_it_actually_parses():
     # than checking every -- in the file, since --framed/--wait/--timeout
     # below belong to tick_handback.py / pr_green.py, not oss_state.py.
     oss_state_flags = (
-        "--lane-fill",
+        "--lane",
+        "--lane-window",
         "--lane-dispatch-state",
+        "--lane-fill",
+        "--lane-fill-window",
         "--cleanup-override",
         "--wait-dispatch",
         "--wait-observable",
@@ -64,8 +67,13 @@ def test_every_documented_oss_state_flag_is_one_it_actually_parses():
         "--filings",
         "--merged-prs",
         "--window",
+        "--intake-why",
         "--plugin-identity",
         "--tick-cost-session",
+        "--tick-cost-window",
+        "--tick-cost-start-ctx",
+        "--tick-cost-calls",
+        "--tick-cost-context-carried",
         "--tick-cost-first",
         "--tick-cost-why",
         "--decision",
@@ -141,6 +149,43 @@ def test_the_marker_check_would_have_caught_a_real_violation():
     assert offenders == [bad_line], (
         "fixture construction failed: the offending line was not caught, so "
         "the control proves nothing"
+    )
+
+
+def _oss_state_call_lines():
+    """#1614: a `python3 ...` line that actually names oss_state.py, as
+    opposed to the tick_handback.py call line this same file also carries."""
+    return [line for line in _python3_lines() if "oss_state.py" in line]
+
+
+def test_it_documents_a_literal_runnable_oss_state_decision_call():
+    """#1614: a bare script name plus a prose list of flags is not enough --
+    a spawn told only that costs itself a turn discovering the call shape via
+    --help (measured: 73s on this exact file, 2026-09-16). The file must
+    carry a literal, copy-pasteable `python3 ... oss_state.py ... --decision
+    ...` line, not just the flags named in prose."""
+    offenders = _oss_state_call_lines()
+    assert offenders, (
+        "agents/tick-accounting.md names oss_state.py's --decision flags in "
+        "prose but documents no literal, runnable call line for it (#1614)"
+    )
+    assert any("--decision" in line for line in offenders), (
+        "the documented oss_state.py call line(s) do not carry --decision"
+    )
+
+
+def test_a_file_with_no_runnable_call_line_would_fail_the_check_above():
+    """Positive control for the check above: prose-only text (the shape this
+    file had before #1614) must fail it."""
+    prose_only = (
+        "Compose and run the tick's one `oss_state.py --decision` call, "
+        "folding in every flag your prompt's facts map to: `--lane-fill`, "
+        "`--wait-dispatch`."
+    )
+    offenders = [line for line in _python3_lines(prose_only) if "oss_state.py" in line]
+    assert not offenders, (
+        "fixture construction failed: prose-only text should document no "
+        "literal call line, so the control proves nothing"
     )
 
 

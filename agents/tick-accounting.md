@@ -51,14 +51,30 @@ is something you note in your draft, never something you act on.
 
 ## What you do
 
-1. Compose and run the tick's one `oss_state.py --decision` call, folding in every flag your
-   prompt's facts map to: `--lane-fill`, `--lane-dispatch-state`, `--cleanup-override`,
-   `--wait-dispatch`/`--wait-observable` (or `--check-wait`, if a prior wait resolved this tick),
-   `--filings`/`--merged-prs`/`--window`, `--plugin-identity`, `--tick-cost-session` (and
-   `--tick-cost-first` only when your prompt states this is genuinely this session's first tick),
-   and `--tick-cost-why "no live token-usage read available to this tick"` when no real figures
-   were given. `skills/manager/phases/accounting.md` and `tick-order.md` step 6 carry each flag's
-   own contract; read the one your prompt's facts touch rather than all of them by rote.
+1. Compose and run the tick's one `oss_state.py --decision` call, folding in only the flags your
+   prompt's facts map to -- `skills/manager/phases/accounting.md` and `tick-order.md` step 6 carry
+   each flag's own contract:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <path> --decision "<value>" --at "<ISO>" \
+       [--lane "<ISSUE=MODEL:CHOICE[:WHY]>" ... --lane-window "<...>" \
+        [--lane-dispatch-state "<ISSUE=STATE[:WHY]>" ...]] \
+       [--lane-fill "<PRIMARY:COUNT:REASON>" ... --lane-fill-window "<...>"] \
+       [--cleanup-override "<WORKTREE=REASON>" ...] \
+       [--wait-dispatch "<...>" --wait-observable "<...>" | --check-wait <holds|cleared|could-not-evaluate>] \
+       [--filings <N|unknown> --merged-prs <N|unknown> --window "<...>" [--intake-why "<...>"]] \
+       [--plugin-identity "<ID>"] \
+       [--tick-cost-session "<...>" --tick-cost-window "<...>" --tick-cost-start-ctx <N|unknown> \
+        --tick-cost-calls <N|unknown> --tick-cost-context-carried <N|unknown> [--tick-cost-first] \
+        [--tick-cost-why "no live figures given"]]
+   ```
+
+   `<path>` is `.oss.json`'s `state_file`. Brackets mark flags to include only when your prompt's
+   facts touch them, nested where one flag needs another present (`--lane-dispatch-state` needs
+   `--lane`/`--lane-window`; `--intake-why` and `--tick-cost-why` are each needed only when the
+   figures beside them are `unknown` rather than real numbers). `--wait-dispatch`/
+   `--wait-observable` and `--check-wait` are alternatives; every other `--tick-cost-*` flag shown
+   is required together once you send any of them (`unknown` is fine, absent is not).
 2. If your prompt names a spawn token, compute the optional `COST:` line the same way
    `agents/sub-manager.md`'s own "report your own token spend" section does (`agent_cost.py
    --match`).

@@ -557,7 +557,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # `CURATE:` line verbatim rather than "fold its counts" -- the counts
     # framing a reviewer found unsupported. Ceiling unchanged; comfortably
     # under it.
-    "agents/tick-accounting.md": (7466, 7700),
+    # Re-baselined again in the same lane's own self-review round (#1614): 8130 B
+    # became 8379 B. A second reviewer round found the first fix's literal call
+    # still missing co-required flags (--lane-fill-window, and --lane/--lane-window
+    # for --lane-dispatch-state) and --intake-why, plus --tick-cost-why marked
+    # unconditional when oss_state.py only requires it while the tick-cost figures
+    # are 'unknown' -- fixed by adding the flags and nesting brackets accordingly.
+    # Ceiling moves to 8500 B, ~1.4% headroom.
+    "agents/tick-accounting.md": (8379, 8500),
     # #1583: new file. The developer lane's report phase -- the note, the JSON
     # report and the pull request payload -- used to be a phase file the lane
     # read inline at the end of a long, expensive run: measured on one lane,
