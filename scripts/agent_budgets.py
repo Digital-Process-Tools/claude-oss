@@ -440,7 +440,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # (trap.d/1544.tick-dispatch-why-section-now-overstates-what-stays-
     # unsplit.md, filed against #1544 step 2, named this exact fix). Ceiling
     # unchanged; 71 B headroom.
-    "agents/tick-dispatch.md": (6829, 6900),
+    # Re-baselined for #1579: 6829 B became 6876 B -- the --claim call dropped
+    # --lane, which only ever fed the claim receipt's own unread [lane] block,
+    # plus one sentence saying so. Ceiling unchanged; 24 B headroom.
+    "agents/tick-dispatch.md": (6876, 6900),
     # #1544 step 2: new file. `oss:sub-manager` used to call `pr_green.py
     # --wait` and then read `skills/manager/phases/review.md`'s checklist
     # (together over 24,000 B) inline, in the same long-lived context that

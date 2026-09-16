@@ -7743,8 +7743,8 @@ NOT_COMPARED_TOP_LEVEL = {
     ".github": "runs in this repository's CI, never in an install",
     ".gitignore": "a checkout's own bookkeeping, not read at runtime",
     ".markdownlint.json": "markdownlint's own config for this checkout (#1576), not read from "
-    "a plugin copy -- scaffold deliberately does not ship markdownlint at all, since it needs "
-    "an external binary install",
+    "a plugin copy -- the scaffolded default (#1578) lives in scripts/scaffold.py's own "
+    "MARKDOWNLINT_JSON template string, which is already inside the compared scripts/ tree",
     ".oss.json": "the config of whatever repo is being diagnosed, not of a plugin copy",
     ".supertool.json": "op configuration for a checkout, not read from a plugin copy",
     "CHANGELOG.md": "release history; a copy behind the clone is expected to differ and "

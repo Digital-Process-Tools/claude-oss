@@ -122,13 +122,21 @@ Four states, each with a different remedy — relay which one:
 | `not-found` | the runner is not installed here. Nothing to conclude about the suite |
 | `timeout` | **unverified**, not broken. Saying broken sends somebody to debug a suite that is merely slow |
 
-Write the command on `ok`. On anything else, say what happened and let the human
-decide — a `null` they chose beats a value they did not.
+Write the command on `ok`. On anything else, write `null` and say what happened. An
+unattended `/oss:run` has nobody to hand the decision to at this point (#1477), and `.oss.json`
+is still uncommitted here either way — the `null` is not a guess standing in for a human's
+answer, it is the honest "could not tell," and a human who wants a different value can write
+it in the same review pass that commits the file.
 
 ## Show, then write — two files, not one
 
-Print the derived config and what each value was derived *from*, then ask before writing. A config
-the user has not seen is a set of assumptions nobody reviewed.
+Print the derived config and what each value was derived *from*, then write it. Do not stop to ask
+first (#1477): `.oss.json` stays uncommitted until a human runs `git add` and commits it in review
+(`--split` below never runs `git add` for exactly this reason), the same gate curate's own
+pull-request-is-the-review pattern relies on (#1425). Asking here adds a second stop in front of a
+review that already exists, and under `/oss:run`'s unattended scheduler there is nobody present to
+answer it. Printing what was derived and from what is what makes that later review possible; asking
+first is not.
 
 Write the derived config to `.oss.json` in the repo root, then split it:
 
@@ -214,6 +222,15 @@ whether it may run. If nobody has told the harness about it, the first time anyo
 the merge step — gates all satisfied, review already spent, nothing to do but stop. **Ask the
 maintainer to add the rule; do not write it for them.** A permission grant arranged without asking
 is the tool deciding on an irreversible action, which is not this command's job.
+
+**This one stays a question; the config write above does not (#1477).** The other two asks in this
+file write into `.oss.json`, a tracked file nothing commits until a human reads the diff — writing
+either unasked adds no risk the commit gate does not already catch. This rule writes into
+`.claude/settings.local.json`: untracked, machine-scoped, never diffed, never reviewed by anyone.
+Granting it here is the harness's only standing authorization for a write op (`gh-pr-merge`), and
+once granted it fires without asking again for the rest of every tick on this machine. There is no
+later moment where a maintainer sees this decision and can undo it in review, so asking first is the
+only review this one will ever get.
 
 The rule goes in `.claude/settings.local.json`, not `.claude/settings.json`, for the same reason
 `.oss.json` and `.oss.local.json` split: it carries an absolute path off one person's disk. That

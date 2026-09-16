@@ -141,6 +141,26 @@ oss_fireworks
 # nobody earned. Silent when the fireworks were (no terminal, TERM=dumb, opted
 # out): every line below is decoration over stderr prose that still prints as
 # it always did, which is what the launcher tests read.
+# oss_step_begin prints the same aligned line a step will end on, but with an
+# in-flight mark instead of a verdict -- so whichever step is currently slow
+# is visible as "running", not as nothing (#1511). oss_step then overwrites
+# it in place: a carriage return moves to column 0 and the ANSI clear-line
+# sequence erases the rest of the line before the real verdict prints, so a
+# step called with no matching begin (most call sites, unchanged) still
+# renders exactly as before -- the clear is a no-op on an already-blank line.
+#
+# ONLY safe to pair with a step whose body writes NOTHING else to the
+# terminal between the begin call and the matching oss_step call. Neither
+# stream is buffered by line here, so an echo ... >&2 in between lands
+# glued onto the begin line's own unterminated "..." instead of on a line of
+# its own -- caught in self-review against the plugin and channel steps,
+# both of which have branches that echo diagnostic prose before reporting,
+# and removed from both for that reason. session has no such branch, which
+# is why it is the one call site this lands on.
+oss_step_begin() {
+    [ "${oss_steps:-0}" -eq 1 ] || return 0
+    printf '  %s▸%s %-9s %-40s %s...%s' "$d" "$r" "$1" "$2" "$d" "$r"
+}
 oss_step() {
     [ "${oss_steps:-0}" -eq 1 ] || return 0
     case $3 in
@@ -150,7 +170,7 @@ oss_step() {
         go)   mark="${w}▸${r}" ;;
         *)    mark="${y}?${r}" ;;
     esac
-    printf '  %s▸%s %-9s %-40s %s\n' "$d" "$r" "$1" "$2" "$mark"
+    printf '\r%s[K  %s▸%s %-9s %-40s %s\n' "$e" "$d" "$r" "$1" "$2" "$mark"
 }
 
 CHANNEL_FLAG="--dangerously-load-development-channels"
@@ -2114,6 +2134,7 @@ if [ "$channel_ready" -eq 1 ]; then
 else
     oss_step channel "opening without a channel (see above)" skip
 fi
+oss_step_begin session "opening"
 if [ "$#" -eq 0 ]; then
     oss_step session "opening $prompt" go
 else
