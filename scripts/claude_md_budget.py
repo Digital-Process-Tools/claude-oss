@@ -96,7 +96,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # margin because this row is self-referential (its own digits are part
     # of what it measures) and a tight margin here means a second pull
     # request just to fix the row.
-    "CLAUDE.md": (41489, 42000),
+    # Re-baselined for #1600, the third editing exception: agents/sub-manager.md's,
+    # agents/tick-merge.md's and agents/tick-accounting.md's own rows updated for
+    # the CURATE: reporting mechanism the diff adds, plus this row's own rewrites
+    # converging on the new size. 41489 B became 42787 B, past the old 42000 B
+    # ceiling. Ceiling moves to 43300 B, ~1.2% headroom, the same self-referential
+    # margin the #1586 note above explains.
+    "CLAUDE.md": (42787, 43300),
 }
 
 

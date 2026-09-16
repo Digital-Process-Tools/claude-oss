@@ -74,7 +74,9 @@ named:
 2. The post-merge obligations, gated on that read-back: release the issue's own GitHub assignee
    (`lane_setup.py <issue> --release`), verify every `Closes #N` actually closed, and reap the
    worktree (`|cleanup` handles it when the board holds exactly one idle tree; otherwise read
-   `git-worktrees` and reap by hand, recording any forced override with the reason).
+   `git-worktrees` and reap by hand, recording any forced override with the reason). If the head
+   branch matched `^curate/`, its title already carries the curate pass's own counts
+   (`commands/run/curate.md`'s format) -- report them as `CURATE: <counts>` below (#1600).
 3. The default-branch recheck (`gh-branch`) -- the merge is not done when the PR is green, per that
    file's own "The merge is not done when the PR is green" section.
 
@@ -90,8 +92,8 @@ above."
 ```
 MERGE: merged
 <the pull request number, the read-back state/mergedAt/mergeCommit, the cleanup outcome
-(cleaned / skipped: reason / forced with reason), the assignee-release outcome, and the
-gh-branch verdict on the default branch>
+(cleaned / skipped: reason / forced with reason), the assignee-release outcome, the
+gh-branch verdict on the default branch, and a `CURATE:` line for a curate-authored merge>
 ```
 
 ```

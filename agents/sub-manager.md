@@ -224,7 +224,9 @@ moment the only thing left this tick looks like "wait on CI, then review":
    (merge is not withheld from `sub-manager` by `scripts/agent_role.py`, only publish is, so no
    narrower reading applies), follows `skills/manager/phases/merge.md` in full, and reports
    `MERGE: merged` / `MERGE: not-merged` / `MERGE: could-not-run` -- read that report rather than
-   re-running any of it yourself. For `needs-fix`, resume the lane per "One dispatch per tick"
+   re-running any of it yourself. Carry any `CURATE:` line it reports into `oss:tick-accounting`'s
+   prompt as one of this tick's merge facts (#1600). For `needs-fix`, resume the lane per "One
+   dispatch per tick"
    above. `REVIEW: pending` falls through to step 3 with its observable line, verbatim;
    `REVIEW: could-not-run` folds into step 3 the same way any other unreadable input would, and so
    does a `MERGE: could-not-run`.

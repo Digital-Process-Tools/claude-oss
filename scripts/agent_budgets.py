@@ -364,7 +364,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # step folds `agent_role.py --clear` (a separate, skippable step) into the
     # already-mandatory `tick_handback.py` draft-validation call via a new
     # `--clear-marker-root` flag. Ceiling unchanged; 330 B headroom remains.
-    "agents/sub-manager.md": (24370, 24700),
+    # Re-baselined for #1600: 24370 B became 24491 B -- one sentence carrying
+    # `oss:tick-merge`'s optional `CURATE:` line into `oss:tick-accounting`'s
+    # prompt as a merge fact, so a curate-authored pull request merging on
+    # green (the `^curate/` gate came off in #1602/#1604) does not merge
+    # silently. Ceiling unchanged; 209 B headroom remains.
+    "agents/sub-manager.md": (24491, 24700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -523,8 +528,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # any other, per the maintainer decision that the gate produced a pull
     # request neither merged nor read. Ceiling unchanged; comfortably under
     # it.
-    "agents/tick-merge.md": (6950, 7300),
-    "agents/tick-accounting.md": (7219, 7700),
+    # Re-baselined for #1600: 6950 B became 7184 B -- when the merged pull
+    # request's head branch matches `^curate/`, report the curate pass's own
+    # counts (already in its title) as a `CURATE:` line, the one thing that
+    # used to sit unread in the pull-request list once #1602 dropped the
+    # gate. Ceiling unchanged; comfortably under it.
+    "agents/tick-merge.md": (7184, 7300),
+    # Re-baselined for #1600: 7219 B became 7459 B -- fold a `CURATE:` line
+    # into the drafted `TICK:` block's paragraph when the prompt names a
+    # curate-authored merge, the same optional-field fold `tick_handback.py`
+    # already gives `COST:`. Ceiling unchanged; comfortably under it.
+    "agents/tick-accounting.md": (7459, 7700),
     # #1583: new file. The developer lane's report phase -- the note, the JSON
     # report and the pull request payload -- used to be a phase file the lane
     # read inline at the end of a long, expensive run: measured on one lane,

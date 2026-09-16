@@ -97,6 +97,15 @@ of the states above is chosen: a missing or duplicated `COST:` line folds to the
 answer (`cost=None`), on the same reasoning `release_handback.py`'s own optional `GATE:` field
 already documents for a paused release.
 
+Every state above may also carry an optional `CURATE:` line (#1600) -- a sub-manager's own
+free-text report of a curate-authored pull request it merged this tick, e.g. "5 promoted, 4
+merged, 10 declined, 1 deferred". The `^curate/` never-auto-merge gate came off in #1602/#1604, so
+a curate pull request now merges on green in an ordinary tick's own merge step, with nothing left
+in the pull-request list to catch it if the merge itself goes unreported -- #1600's own finding is
+that a curate pull request merging silently and one that never ran render identically without
+this line. `CURATE:` follows exactly the same fold as `COST:`: it never affects which state is
+chosen, and a missing or duplicated line folds to the same "absent" answer (`curate=None`).
+
 ## What this deliberately does not do
 
 Release authority is not a state here and never will be. A sub-manager's
@@ -257,6 +266,14 @@ _KNOWN_TICK_ENDS = ("work-started", "blocked", "nothing-left")
 # answer rather than promoting either to could-not-classify.
 _COST = re.compile(r"^[ \t>*_#]*COST:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
 
+# #1600: an optional free-text report of a curate-authored pull request this
+# tick merged -- CURATE: <whatever summary the sub-manager wrote, verbatim,
+# e.g. "5 promoted, 4 merged, 10 declined, 1 deferred">. Same fold as COST:
+# above: this is metadata beside the outcome, never part of what chooses it,
+# so a missing or duplicated CURATE: line both answer `curate=None` rather
+# than promoting either shape to could-not-classify.
+_CURATE = re.compile(r"^[ \t>*_#]*CURATE:[ \t]*(.+)$", re.MULTILINE | re.IGNORECASE)
+
 
 def _find_optional_field(pattern, tail):
     """Like ``_find_field``, but zero or several matches both fold to
@@ -279,6 +296,7 @@ def _verdict(state, reason, **extra):
         "wait_dispatch": None,
         "wait_observable": None,
         "cost": None,
+        "curate": None,
     }
     out.update(extra)
     return out
@@ -400,6 +418,7 @@ def classify(message):
     # picked correctly.
     tail = text[header.end() :]
     cost = _find_optional_field(_COST, tail)
+    curate = _find_optional_field(_CURATE, tail)
 
     if declared == "completed":
         match, count = _find_field(_TICK_ENDS, tail)
@@ -450,6 +469,7 @@ def classify(message):
             ends=ends,
             quoted=header_line,
             cost=cost,
+            curate=curate,
         )
 
     if declared == "blocked":
@@ -480,6 +500,7 @@ def classify(message):
             detail=detail,
             quoted=header_line,
             cost=cost,
+            curate=curate,
         )
 
     if declared == "could-not-run":
@@ -510,6 +531,7 @@ def classify(message):
             detail=detail,
             quoted=header_line,
             cost=cost,
+            curate=curate,
         )
 
     # declared == "paused" -- the only remaining alternative in _TICK (#818)
@@ -546,6 +568,7 @@ def classify(message):
         wait_observable=wait_observable,
         quoted=header_line,
         cost=cost,
+        curate=curate,
     )
 
 
@@ -657,6 +680,8 @@ def main(argv=None):
         print("  wait_observable: {0}".format(verdict["wait_observable"]))
     if verdict["cost"]:
         print("  cost: {0}".format(verdict["cost"]))
+    if verdict["curate"]:
+        print("  curate: {0}".format(verdict["curate"]))
     if verdict["quoted"]:
         print("  quoted: {0}".format(verdict["quoted"]))
     if marker_note is not None:
