@@ -176,6 +176,25 @@ def test_a_bare_number_inside_unrelated_prose_is_not_read_as_a_pr():
     ) == ([], "unattributed")
 
 
+def test_a_comma_free_digit_run_longer_than_one_pr_number_is_rejected_not_split():
+    # #1618 second-pass review: a first draft of _BARE_PR_LIST_RE made the
+    # comma between repetitions OPTIONAL on every repetition, so a
+    # comma-free digit run longer than 6 characters still fullmatched --
+    # torn into several adjacent chunks with nothing between them -- and
+    # _BARE_PR_TOKEN_RE.findall then split it into fictitious PR numbers: a
+    # single malformed token silently reinterpreted as several unrelated
+    # ones. "0001587" must be rejected outright, never split into [158, 7].
+    assert lcr._pr_numbers_from_prompt("0001587") == []
+    assert lcr.attribute_issues("0001587", pr_issue_map={158: [999], 7: [111]}) == (
+        [],
+        "unattributed",
+    )
+    # The fix must not reject a genuine single PR number, or a genuine
+    # comma-separated list -- only a comma-free run past one token's length.
+    assert lcr._pr_numbers_from_prompt("1587") == [1587]
+    assert lcr._pr_numbers_from_prompt("1587, 1590") == [1587, 1590]
+
+
 # --- the third state: unattributed is a line, never a drop -------------------------
 
 

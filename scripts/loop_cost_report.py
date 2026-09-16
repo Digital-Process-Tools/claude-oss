@@ -152,7 +152,16 @@ _ISSUE_WINDOW = 120
 _WORKTREE_RE = re.compile(r"-wt/(\d+)\b")
 _BRANCH_RE = re.compile(r"\bbranch\s+[\w./-]*?(\d+)\b", re.IGNORECASE)
 _PR_PHRASE_RE = re.compile(r"pull request\s*#?(\d+)", re.IGNORECASE)
-_BARE_PR_LIST_RE = re.compile(r"^(?:#?\d{1,6}(?:\s*,\s*)?)+$")
+#: A required comma between repetitions -- #1618 second-pass review: a first
+#: draft made the comma optional on every repetition (`(?:\d{1,6}(?:,)?)+`),
+#: so a comma-free digit run longer than 6 characters (`"0001587"`) still
+#: fullmatched by being torn into several adjacent \d{1,6} chunks with
+#: nothing between them, and was then split into fictitious PR numbers by
+#: `_BARE_PR_TOKEN_RE.findall` -- a malformed token silently reinterpreted
+#: as several unrelated ones. Requiring the separator between the first
+#: token and every subsequent one closes that: nothing after the first
+#: `\d{1,6}` can match without a literal comma in between.
+_BARE_PR_LIST_RE = re.compile(r"^#?\d{1,6}(?:\s*,\s*#?\d{1,6})*$")
 _BARE_PR_TOKEN_RE = re.compile(r"#?(\d{1,6})")
 
 
