@@ -44,6 +44,17 @@ other loop PR, so nothing else lets the loop's own merge phase tell it apart fro
 lane finished. A head branch matching `^curate/` is what `skills/manager/phases/merge.md` gates on
 to hold this pull request for the maintainer instead of merging it on green (#1467).
 
+**A curate PR closes nothing, by construction, every time — set `no_close = true` in the payload
+before the guard makes you stop and ask (#1552).** The issue numbers in a fragment's own filename
+are provenance — which issue was being worked on when the trap was logged — never the subject of
+this pass, which consumed the fragment into a rule, a merge or a decline instead of doing that
+issue's own work. A `Closes #N` against one of them is wrong twice over: this pass did not do that
+work, and the named issue is typically still open with unrelated work outstanding. So the payload
+this step opens is the deliberately-closes-nothing branch of `pr_body.closes`'s three states — say
+`Part of #N` in the body for each fragment worth citing, if provenance is wanted visible, and set
+`no_close = true` at the payload's top level — `gh-pr-create` refuses outright on a body with no
+working `Closes #N`, and `no_close` is the named escape hatch that publishes it anyway.
+
 ## Read every fragment first, then decide
 
 Read them all before deciding any of them. A fragment read alone gets promoted; the same fragment
