@@ -111,7 +111,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # paragraph now says checks_succeeded is delivered on the channel, not
     # excluded (dropped from INITIAL_EXCLUDE, the asymmetry against
     # checks_failed was never argued for). Ceiling unchanged.
-    "commands/tick.md": (22424, 24500),
+    # Re-baselined for #1550: 22424 B became 23328 B -- the post-release
+    # triage step dispatches the identical oss:triager agent
+    # commands/run/triage.md's own sweep does, producing the identical
+    # five-part report, so it carried the identical cohort-burndown/
+    # findings-routing gap and needed the identical fix (found by review,
+    # not the issue's own stated scope). Ceiling unchanged, comfortably
+    # under.
+    "commands/tick.md": (23328, 24500),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at

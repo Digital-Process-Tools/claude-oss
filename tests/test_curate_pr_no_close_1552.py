@@ -1,10 +1,11 @@
 """#1552: `commands/run/curate.md` opened a pull request every pass but never
 said which branch of `pr_body.closes`'s three states its own payload is in.
 A curate pass consumes fragments -- provenance, never subject -- so its PR
-closes nothing by construction, every time. Without a stated convention, the
-report-schema guard refuses the payload (no working `Closes #N`) and the pass
-stops to ask a maintainer mid-pass -- the same human-in-the-loop failure
-#1443's "the PR is the review" premise exists to remove.
+closes nothing by construction, every time. Without a stated convention,
+`gh-pr-create`'s own closing-reference check refuses the payload (no working
+`Closes #N`) and the pass stops to ask a maintainer mid-pass -- the same
+human-in-the-loop failure #1443's "the PR is the review" premise exists to
+remove.
 
 The fix states the convention in `curate.md` itself, right beside the
 existing `curate/<UTC timestamp>` branch-naming paragraph: set `no_close =

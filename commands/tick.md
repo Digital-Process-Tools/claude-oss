@@ -137,12 +137,22 @@ Seven answers, not three, and only one of them is the ordinary case:
 
   ```bash
   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/oss_state.py" <state_file> --decision "triage sweep recorded" \
-    --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --triage-recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --triage-recorded "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --detail '{"cohort_burndown": {"open": <N>, "limit": <M>}}'
   ```
 
   `--triage-recorded` is an attachment to `--decision`, not its own mode flag -- `oss_state.py`'s
   argparse requires one of the mutually exclusive mode flags (`--decision`, `--read`, ...) first, and
-  `--decision` itself requires `--at` alongside it.
+  `--decision` itself requires `--at` alongside it. `--detail` persists the cohort burn-down the
+  same way `commands/run/triage.md`'s own sweep does (#1550) -- this dispatch runs the identical
+  agent (`agents/triager.md`), producing the identical five-part report, so the same loss applies
+  here: fill it with whichever of the report's own three answers the burn-down gave -- `{"open": N,
+  "limit": M}`, `"no cohort label"`, or `"could not count"` with the reason. **Board findings and
+  clusters from this sweep route through the same rule too**: `skills/manager/phases/findings.md`'s
+  "Routing a finding is the same read as ranking it" (#1275) -- a blocking finding filed as an
+  issue immediately, a non-blocking one written to `trap.d/<issue>.<slug>.md`, a cluster worth
+  taking opened as the proposed parent issue in this same session rather than only read once and
+  discarded.
 
 - **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
   names it — the same naming step 7 below always asked of a tick that ends blocked.

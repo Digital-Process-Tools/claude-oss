@@ -36,6 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 TRIAGE_MD = (REPO_ROOT / "commands" / "run" / "triage.md").read_text(encoding="utf-8")
+TICK_MD = (REPO_ROOT / "commands" / "tick.md").read_text(encoding="utf-8")
 
 
 def _collapse(text):
@@ -98,6 +99,28 @@ def test_triage_md_folds_cohort_burndown_into_the_detail_call():
 
 
 # --------------------------------------------------------- real mechanism
+
+
+def test_tick_md_post_release_dispatch_also_folds_in_burndown_and_routing():
+    """`commands/tick.md`'s own post-release triage step dispatches the same
+    `oss:triager` agent as `commands/run/triage.md`, producing the identical
+    five-part report -- so it carried the identical gap and needs the
+    identical fix, not just the manually-typed `/oss:triage` command."""
+    assert "--detail" in TICK_MD, (
+        "commands/tick.md's post-release triage step never mentions --detail "
+        "-- it dispatches the same agent as triage.md and has the same "
+        "cohort-burndown persistence gap"
+    )
+    idx = TICK_MD.find("--detail")
+    assert idx != -1
+    window = TICK_MD[max(0, idx - 400) : idx + 400]
+    assert "cohort_burndown" in window
+    assert "--triage-recorded" in window
+    collapsed = _collapse(TICK_MD)
+    assert "skills/manager/phases/findings.md" in collapsed and "#1275" in collapsed, (
+        "commands/tick.md's post-release triage step does not point board "
+        "findings/clusters at the findings-routing rule either"
+    )
 
 
 def test_detail_cohort_burndown_actually_persists(tmp_path):

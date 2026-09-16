@@ -491,7 +491,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 22,424 B | 24,500 B |
+| `commands/tick.md` | 23,328 B | 24,500 B |
 | `commands/run.md` | 8,863 B | 8,900 B |
 
 The plugin harness discovers slash commands from top-level `commands/*.md` only, never recursively,
