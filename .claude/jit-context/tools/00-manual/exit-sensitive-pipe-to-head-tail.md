@@ -9,5 +9,7 @@ mode: remind
 Never pipe a command whose exit code matters -- a rebase/push/merge/cherry-pick
 continuation, a background wait -- into head/tail. SIGPIPE truncates it; a
 pipeline's exit status is tail's, not the command's. Redirect to a file and read
-the file. After a multi-commit rebase, count commits
-(`git log --oneline <upstream>..HEAD`). (#1532, #1530)
+the file. After a multi-commit rebase, both count commits
+(`git log --oneline <upstream>..HEAD`) AND grep for a symbol only the later commit
+introduced -- counting catches a dropped commit, grepping catches one that applied
+as empty. (#1532, #1530)

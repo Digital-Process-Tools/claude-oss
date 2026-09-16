@@ -35,10 +35,13 @@ from pathlib import Path
 BUDGETS: dict[str, tuple[int, int]] = {
     # Shrunk for #1584: 2205 B became 771 B -- two incident narratives (#1532, #1530)
     # compressed to one directive sentence each plus the citation, the clean case #1584's
-    # own body used as the worked example.
+    # own body used as the worked example. Re-baselined in the same lane's own self-review
+    # round: 771 B became 912 B restoring the grep-for-a-symbol check a spawned reviewer
+    # found dropped during the first shrink -- counting commits alone cannot catch one that
+    # applied as an empty patch, only grepping for content the later commit introduced can.
     ".claude/jit-context/tools/00-manual/exit-sensitive-pipe-to-head-tail.md": (
-        771,
-        900,
+        912,
+        1000,
     ),
     # Shrunk for #1584: 7652 B became 3248 B -- nine distinct sub-rules, each compressed
     # to a directive-plus-citation bullet, incident narrative left in its own issue number.
@@ -57,8 +60,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     ),
     # Shrunk for #1584: 3009 B became 2128 B.
     ".claude/jit-context/tools/00-manual/supertool-payload-forms.md": (2128, 2350),
-    # Shrunk for #1584: 2815 B became 2079 B.
-    ".claude/jit-context/tools/01-oss/tree-snapshot-compare.md": (2079, 2300),
+    # Shrunk for #1584: 2815 B became 2079 B. Re-baselined in the same lane's own
+    # self-review round: 2079 B became 2156 B restoring a dropped conditional (the
+    # `compare` default only holds once the before-snapshot says its root resolved) a
+    # spawned reviewer found the description frontmatter still promising after the body
+    # dropped it.
+    ".claude/jit-context/tools/01-oss/tree-snapshot-compare.md": (2156, 2350),
 }
 
 

@@ -882,11 +882,11 @@ mode: remind
 ---
 
 **`compare` defaults to the before-snapshot's own recorded root, not the live cwd -- no
-same-call `cd` chaining needed.** An earlier version re-snapshotted whatever directory the later
-call happened to stand in, so a cwd reset between calls read the wrong tree and reported a false
-`mutated` verdict about the wrong repository. Pass `--root` explicitly only to compare against a
-different directory on purpose, or say so in the report if the pair ever lands on the wrong
-sibling worktree.
+same-call `cd` chaining needed -- but only once the before-snapshot itself says that root actually
+resolved.** An earlier version re-snapshotted whatever directory the later call happened to stand
+in, so a cwd reset between calls read the wrong tree and reported a false `mutated` verdict about
+the wrong repository. Pass `--root` explicitly only to compare against a different directory on
+purpose, or say so in the report if the pair ever lands on the wrong sibling worktree.
 
 **Write the before-snapshot inside the worktree, never a shared scratchpad.** A snapshot written
 to a shared scratchpad, verified readable right after the write, has been observed gone several
