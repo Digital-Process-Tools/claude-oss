@@ -120,7 +120,13 @@ the wrong caller. Clearing only fires when this call's own verdict is
 `completed`; every other state leaves the marker alone, since the tick is
 not actually over. A failure to import `agent_role` or to remove the marker
 never changes this command's exit code -- classification is this tool's
-job, and clearing is a courtesy performed alongside it.
+job, and clearing is a courtesy performed alongside it. The clear itself
+goes through `agent_role._clear_role_marker_detail`, not the public
+`clear_role_marker()` wrapper, so "no marker was there" and "a marker was
+found and the removal itself failed" (a permissions problem, a read-only
+mount) print as two different `marker:` lines rather than collapsing onto
+the same "nothing to clear" -- the latter would otherwise leave a marker
+that is still on disk reported as already gone.
 
 ## Exit codes
 
@@ -613,13 +619,29 @@ def main(argv=None):
         try:
             import agent_role as _agent_role
 
-            cleared = _agent_role.clear_role_marker(root=args.clear_marker_root)
+            # #1585 self-review: the public `clear_role_marker()` collapses
+            # "no marker was there" and "a marker was found and the removal
+            # itself failed" onto the same `False` -- exactly the defect
+            # class (#1137) `agent_role.py`'s own CLI already avoids by
+            # calling `_clear_role_marker_detail` instead. A caller here
+            # that used the collapsing wrapper would report "nothing to
+            # clear" for a marker that is still on disk after a failed
+            # unlink (permissions, a read-only mount), which is precisely
+            # the failure #1585 exists to fix, recurring one layer down.
+            state, exc = _agent_role._clear_role_marker_detail(
+                root=args.clear_marker_root
+            )
         except Exception:  # noqa: BLE001 -- clearing the marker is a
             # courtesy this command performs on the caller's behalf; it must
             # never fail the classification itself, which already happened.
             marker_note = "could not clear (agent_role unavailable)"
         else:
-            marker_note = "cleared" if cleared else "nothing to clear"
+            if state == _agent_role._MARKER_CLEARED:
+                marker_note = "cleared"
+            elif state == _agent_role._MARKER_OS_ERROR:
+                marker_note = "could not clear: {0}".format(exc)
+            else:
+                marker_note = "nothing to clear"
 
     print("VERDICT: {0} -- {1}".format(verdict["state"], verdict["reason"]))
     print("  source: {0}".format(source_note or "-"))

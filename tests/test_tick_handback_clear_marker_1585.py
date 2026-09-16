@@ -82,3 +82,31 @@ def test_clearing_when_nothing_was_ever_written_reports_nothing_to_clear(
     assert rc == 0
     out = capsys.readouterr().out
     assert "marker: nothing to clear" in out
+
+
+def test_a_removal_failure_is_reported_distinctly_not_as_nothing_to_clear(
+    tmp_path, monkeypatch, capsys
+):
+    """#1585 self-review (auditor finding): `clear_role_marker()` collapses
+    "no marker was there" and "a marker was found and removal failed" onto
+    the same `False` -- exactly the defect class `agent_role.py`'s own CLI
+    already avoids by reading `_clear_role_marker_detail` instead. This
+    proves the wiring in tick_handback.py does too, rather than reporting a
+    marker that is still on disk as already gone."""
+    root = _repo(tmp_path)
+    agent_role.write_role_marker("sub-manager", root=str(root), written_at=time.time())
+
+    def _boom(root):
+        return agent_role._MARKER_OS_ERROR, OSError("permission denied")
+
+    monkeypatch.setattr(agent_role, "_clear_role_marker_detail", _boom)
+
+    msg = tmp_path / "handback.txt"
+    msg.write_text(
+        "TICK: completed\nTICK-ENDS: nothing-left\nAll clean.\n", encoding="utf-8"
+    )
+    rc = tick_handback.main([str(msg), "--clear-marker-root", str(root)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "marker: could not clear" in out
+    assert "nothing to clear" not in out

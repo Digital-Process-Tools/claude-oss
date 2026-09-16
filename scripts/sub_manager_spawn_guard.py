@@ -45,6 +45,18 @@ today's behaviour, not to a new denial." A `subagents/`-shaped path also
 falls back unchanged -- this only ever widens what is allowed, never what is
 denied.
 
+Unlike `tool_input.subagent_type` -- which #1520 confirmed against the
+published SDK docs before this module was built on it -- the `subagents/`
+path-shape claim above is the issue's own investigation, not independently
+re-verified here against a live harness-captured payload. If the real shape
+ever diverges (a singular `subagent-<id>.jsonl`, no `subagents/` segment at
+all, something this module has not seen), `_is_subagent_transcript` would
+misread a genuine nested spawn as a main-session caller and this guard would
+fail open for the one case #1520 exists to deny -- the unsafe direction, not
+the safe fallback the issue's own rule describes for an absent/malformed
+path. A live-fire check the same way #1520 got one (a real refused spawn,
+read back) is the way to close this, not a synthetic test payload.
+
 Three states, not two (this repository's own defect class -- see CLAUDE.md):
 `decide()` returns `DECISION_DENY`, `DECISION_ALLOW`, or
 `DECISION_ALLOW_COULD_NOT_TELL` -- the last one distinguishes "looked and
@@ -119,6 +131,12 @@ def decide(payload, root=None):
     """The guard's verdict for one PreToolUse payload: `(decision, reason)`.
 
     `reason` is the human string for `DECISION_DENY`, `None` otherwise.
+    Before `root`/the marker are ever consulted, `payload["transcript_path"]`
+    is checked (#1585): a recognisably main-session path short-circuits to
+    `DECISION_ALLOW` unconditionally, because a main-session caller is never
+    a nested sub-manager spawn. Only a `subagents/`-shaped or unrecognisable
+    `transcript_path` reaches the marker-based decision below.
+
     `root` overrides where `agent_role.current_role` looks for the marker
     file; a real caller leaves it unset and this falls back to the
     payload's own `cwd` (the harness's convention -- see `board_touch.py`),
