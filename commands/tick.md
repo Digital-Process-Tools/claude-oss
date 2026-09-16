@@ -144,6 +144,20 @@ Seven answers, not three, and only one of them is the ordinary case:
   argparse requires one of the mutually exclusive mode flags (`--decision`, `--read`, ...) first, and
   `--decision` itself requires `--at` alongside it.
 
+  **Attach `--detail` to that same call to persist the cohort burn-down**, the same way
+  `commands/run/triage.md`'s own sweep does (#1550) -- this dispatch runs the identical agent
+  (`agents/triager.md`), producing the identical five-part report, so the same loss applies here.
+  Append `--detail '{"cohort_burndown": {"open": N, "limit": M}}'` to the call above, filling `N`
+  and `M` in with whichever of the report's own three answers the burn-down gave -- a real count
+  against its limit, the string `"no cohort label"`, or `"could not count"` with the reason (`N`/`M`
+  are placeholders for real numbers here, not literal syntax -- the fenced call above stays runnable
+  as shown, with no unresolved placeholder inside it, because #1436's own gate-3 test extracts and
+  runs that block verbatim). **Board findings and clusters from this sweep route through the same
+  rule too**: `skills/manager/phases/findings.md`'s "Routing a finding is the same read as ranking
+  it" (#1275) -- a blocking finding filed as an issue immediately, a non-blocking one written to
+  `trap.d/<issue>.<slug>.md`, a cluster worth taking opened as the proposed parent issue in this
+  same session rather than only read once and discarded.
+
 - **`blocked`** — the `BLOCKER:` line names exactly what and on what. Act on it, or arm a wakeup that
   names it — the same naming step 7 below always asked of a tick that ends blocked.
 - **`paused`** — the `WAIT-DISPATCH:` and `WAIT-OBSERVABLE:` lines name what this tick set in motion
