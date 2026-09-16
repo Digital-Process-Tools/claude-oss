@@ -7,6 +7,7 @@
 (^|/)scripts/doctor_check_[^/]+\.py$	doctor-check-module-scope-import.md
 (^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
 (^|/)(agents|commands|skills)/.*\.md$	frontmatter-key-spelling-is-unverifiable-from-source.md
+(^|/)(skills/manager/phases/dispatch\.md|agents/tick-dispatch\.md|agents/recon\.md)$	issue-design-question-not-dispatchable.md
 (^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$	issue-selection-goal.md
 (^|/)bin/oss-workspace$	launcher-prompt-selection.md
 (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
@@ -14,12 +15,15 @@
 (^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
 (^|/)scripts/oss_rules\.py$|(^|/)\.claude/jit-context/.*/00-index\.tsv$	rules-layer-symlinks.md
+(^|/)(commands/run/.*\.md|agents/scheduler-step\.md|commands/run\.md)$	run-step-worktree-and-pr-ownership.md
 (^|/)scripts/[^/]+\.py$	script-boundaries.md
 (^|/)(bin/[^/]+|scripts/shell_sources\.py|tests/test_unwired_scripts_253\.py)$	shell-sources-survey.md
 (^|/)scripts/statusline\.py$	statusline-cache-staleness.md
 (^|/)(agents/sub-manager\.md|commands/tick\.md|skills/manager/phases/tick-order\.md)$	sub-manager-goal.md
+(^|/)(skills/manager/phases/merge\.md|agents/sub-manager\.md)$	sub-manager-probe-is-not-maintainer-consent.md
 (^|/)scripts/sub_manager_spawn_guard\.py$	sub-manager-spawn-guard-fail-open-gaps.md
 (^|/)(scripts|tests)/[^/]+\.py$	subprocess-decodes-with-the-locale.md
 (^|/)tests/	test-fixture-pitfalls.md
 (^|/)trap\.d/	trap-fragments.md
+(^|/)agents/triager\.md$	triage-merged-but-still-open-needs-reopen-check.md
 (^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md

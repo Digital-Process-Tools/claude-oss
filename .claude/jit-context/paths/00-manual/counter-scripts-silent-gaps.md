@@ -86,6 +86,22 @@ found in a different module from the others, in the same release-audit round
   duplicated fact needs a same-value test between the two copies**, not
   just a test pinning each copy alone.
 
+- **A function whose own docstring argues against silent fallthrough can still fall through two
+  lines later.** `release_trigger.py`'s `_stale_local_head` (#1566) fetches the tracked remote and
+  correctly reports a *failed fetch* as `could-not-evaluate` rather than silently comparing against
+  a possibly-stale ref -- but the very next call, `git rev-list --count HEAD..upstream`, still
+  returns `None` on failure (`if not ok or not out.isdigit(): return None`), and the caller reads
+  `None` as "this check does not apply" and proceeds on an unconfirmed `HEAD`. Confirmed still live
+  by direct read after the fetch-path fix (#1591) shipped -- the docstring's own argument was never
+  applied to its sibling call three lines below. The same shape (`delta if delta is not None else
+  release_delta.compute(repo)`, with no staleness guard at all) is also live in every other direct
+  caller of `release_delta.compute()`: `agents/release-auditor.md`'s and `commands/release.md`'s
+  gate 3 invocation, `release_version.py`'s `_baseline()`, and `triage_trigger.py`'s own
+  `compute()` -- none of which got the guard `release_trigger.py` itself received. Whether the fix
+  belongs in `release_delta.compute()` itself, once, rather than repeated per-caller, is an open
+  question; the releaser's own fresh-checkout worktree is a real (if unconfirmed-sufficient)
+  mitigant the scheduler's long-lived clone does not have.
+
 **Must-fire control:** a script under `scripts/` that drops a malformed record
 with a bare `continue` and no counter. **Must-not-fire control:** the
 identical shape inside `tests/` (this rule is about the loop's own operational
@@ -99,5 +115,6 @@ word-boundary.md`, `trap.d/1508.doctor-event-filter-reports-one-poller-as-
 all.md`, `trap.d/1571.doctor-action-pins-drops-unresolved-when-drift-present.md`,
 `trap.d/1519.outbound-draft-pending-count-renders-unparseable-names-as-zero.md`,
 `trap.d/1519.outbound-naming-convention-forked-and-the-two-copies-already-
-disagree.md` and `trap.d/1571.ratelimit-backoff-constants-duplicated-with-no-
-cross-check.md`.
+disagree.md`, `trap.d/1571.ratelimit-backoff-constants-duplicated-with-no-
+cross-check.md`, `trap.d/1566.release-trigger-stale-head-second-git-call-swallows-failure.md`
+and `trap.d/1566.stale-head-shape-also-lives-in-release-delta-siblings.md`.

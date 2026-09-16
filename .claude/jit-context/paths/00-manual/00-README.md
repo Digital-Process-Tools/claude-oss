@@ -488,3 +488,82 @@ reads`, `1573.supertool-edit-with-no-cd-or-cwd-prefix-lands-in-the-wrong-tree`).
   classifier failure to `could-not-merge`, so nothing merges on an unread gate) and loud rather
   than silent when it fires. A one-off composition mismatch in one documented call, not a pattern
   this repo has hit more than once.
+
+## 2026-09-16 — 22 fragments, 5 promoted into 5 new rules, 4 merged, 10 declined, 1 deferred
+
+The four buckets sum to 22: seven fragments feed the five new rules below, four are merged into
+three existing ones, ten are declined outright with the reason, and one is left in `trap.d/`,
+unchanged, named as deferred.
+
+Five new rules: `paths/00-manual/issue-design-question-not-dispatchable.md` (from
+`1044.rank-then-hunt-half-is-an-undecided-design-question-not-a-diff`),
+`paths/00-manual/run-step-worktree-and-pr-ownership.md` (two fragments --
+`1389.run-step-in-the-main-clone-strands-it-on-a-feature-branch` and
+`1389.run-step-pull-requests-have-no-owner-in-the-merge-path`),
+`paths/00-manual/triage-merged-but-still-open-needs-reopen-check.md` (from
+`1550.merged-but-still-open-check-cannot-see-a-deliberate-reopen`),
+`paths/00-manual/sub-manager-probe-is-not-maintainer-consent.md` (from
+`1551.sub-manager-read-a-status-probe-as-maintainer-consent`), and
+`tools/00-manual/supertool-answers-can-diverge-from-ground-truth.md` (two fragments --
+`1566.supertool-read-grep-served-stale-cached-content` and
+`1576.supertool-validate-op-ignores-markdownlint-config`).
+
+Four merges: `paths/00-manual/counter-scripts-silent-gaps.md` (two fragments --
+`1566.release-trigger-stale-head-second-git-call-swallows-failure` and
+`1566.stale-head-shape-also-lives-in-release-delta-siblings` -- the same silent-fallthrough class
+this file already names, confirmed still live by direct read after the sibling fetch-path fix
+shipped), `paths/00-manual/sub-manager-spawn-guard-fail-open-gaps.md`
+(`1571.role-marker-is-not-cleared-when-a-sub-manager-finishes` -- a third gap in the same module's
+fail-open contract, compounding the marker-scope gap already recorded there), and
+`paths/00-manual/claude-md-budget-guard-derivation.md`
+(`1583.budget-guards-split-across-two-axes-and-only-one-runs-locally` -- a sharper statement of the
+same "which guard actually covers what you touched" problem this file already exists for).
+
+**Declined, with the reason.**
+
+- `1477.setup-md-still-has-a-third-unattended-ask-site` -- a genuine, narrow gap (a fifth unattended
+  "ask" site in `commands/run/setup.md`, lines 72-86, out of #1477's own scope), but it is a
+  specific line range to fix in code, not a reusable session rule. Worth a maintainer filing it as
+  its own issue; not a jit-context rule.
+- `1499.spawn-token-defeats-the-tick-cost-measurement` -- a real structural tension (the spawn token
+  has to be widely present to authenticate a message and uniquely present to identify a transcript;
+  it cannot be both), but the fix is a code/design decision (an agent id or session-scoped handle
+  in place of `--match` on the token), not a session behaviour a rule can change. The honest
+  `COST: not attempted` the fragment reports is itself the correct behaviour in the meantime.
+- `1520.live-fire-spawn-guard-check-is-not-safely-runnable-from-a-developer-lane` -- a one-off
+  recommendation (run this specific checklist item by hand, ideally against a disposable scratch
+  repository) for a single remaining item on issue #1520, not a pattern that recurs.
+- `1577.lane-cost-over-threshold-423554-context` -- the fragment's own text already states
+  `handback.md`'s answer: reporting rather than filing, no action required. Recorded here so a
+  future pass does not re-derive the same "no action" conclusion from scratch.
+- `1577.lane-setup-guard-derivation-misses-shipped-op-spellings` -- a real coverage gap in
+  `lane_setup.py`'s `CROSS_CUTTING_GUARDS` table, but the fragment itself says it needs a design
+  decision on the routing heuristic, out of scope for the lane that found it. A code fix, not a
+  session rule.
+- `1578.jit-context-readme-line-394-trips-markdownlint-atx-heading` -- a one-character fix (a
+  missing space after a leading `#` in `.claude/jit-context/paths/00-manual/00-README.md`), caused
+  by a two-commit composition gap already named in the fragment itself. Narrow enough to fix
+  directly; not a rule.
+- `1579.claim-lane-guard-scope-misses-two-documented-call-sites` -- `tests/test_dispatch_claim_
+  drops_lane_1579.py`'s own file list misses two of five documented `--claim` call shapes. A test
+  coverage gap to fix in the test itself, not a rule this index can express (the rule builder skips
+  `tests/`, and the finding is about that guard's own scope, not a pattern to watch for elsewhere).
+- `1581.claude-md-own-table-row-stale-behind-its-own-budget-dict` -- superseded by this pass's own
+  merge above: `1583.budget-guards-split-across-two-axes...` shows `test_claude_md_budget_table_
+  709.py` does in fact catch exactly this drift class (it failed in CI on four such rows), so this
+  fragment's core claim ("nothing catches this") no longer holds once 709/725 are the guards
+  actually run against the edited file.
+- `1583.claude-md-layout-lists-deleted-report-phase-file` -- a real, still-live stale line in
+  `CLAUDE.md`'s own Layout inventory, but `/oss:curate` has no authority to edit `CLAUDE.md` outside
+  its own three narrow exceptions, none of which cover this. Needs a maintainer or a lane whose own
+  diff already touches that file for an unrelated, in-scope reason.
+- `1583.loop-cost-report-missing-oss-lane-report-row` -- a missing `ATTRIBUTION_MAP` row for the
+  `oss:lane-report` spawn #1583 introduced, in `scripts/loop_cost_report.py`. A one-line code fix,
+  not a rule.
+
+**Deferred, left in `trap.d/` unchanged.**
+
+- `1544.tree-snapshot-vanished-inside-worktree` -- root cause genuinely unconfirmed (candidates
+  include an environment sweep, a reviewer spawn's own cleanup, or pytest's own side effects; none
+  ruled in or out). Too thin to tell a real rule from a one-off until it recurs or the cause is
+  pinned down.

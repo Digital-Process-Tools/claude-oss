@@ -26,7 +26,27 @@ nothing has hit either in practice yet:
   `oss:tick-dispatch` or a developer lane instead") that is wrong for
   a scheduler, which legitimately must spawn one.
 
-Both are `misreports`/`misdirects`, not merge-blocking. Read the
+- **The role marker is not cleared on a sub-manager's own clean exit, only read as a 4-hour TTL.**
+  Observed live, not reasoned: immediately after a tick handed back `TICK: completed` (confirmed by
+  `tick_handback.py`'s own classification and a `SendMessage` status check that got "my tick is
+  finished... no further work is in progress"), `agent_role.py` still read `sub-manager, marker
+  state: live`, and the scheduler's next spawn attempt was refused on "a running sub-manager may not
+  spawn a nested oss:sub-manager" -- a caller (the scheduler) that is not a sub-manager at all,
+  refused as if it were the thing the guard exists to stop. This compounds the marker-scope gap
+  above rather than being a separate mechanism: a stale marker from a crash and a stale marker from
+  an ordinary completed tick render identically, and both currently require a manual
+  `agent_role.py --clear` that nothing prompts. The guard fails *closed*, which is the safer
+  direction, but the refusal message names the wrong caller ("a nested spawn" when none happened),
+  sending whoever debugs it looking in the wrong place. Clearing the marker as part of the
+  sub-manager's own completion path, and having the refusal distinguish "the marker says a
+  sub-manager is live" from "you are that sub-manager," would close this without touching the TTL
+  design above.
+
+Both original gaps are `misreports`/`misdirects`, not merge-blocking. Read the
 current docstring's promise before changing either the import shape or
 the role check here -- it is the contract this file is supposed to
-keep and currently does not, in both these ways.
+keep and currently does not, in either of the original two ways, or in the
+completion-path gap just above.
+
+Routed via /oss:curate from
+`trap.d/1571.role-marker-is-not-cleared-when-a-sub-manager-finishes.md`.
