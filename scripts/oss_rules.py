@@ -496,6 +496,110 @@ Two refusals worth knowing before editing the file by hand:
   leaves something that still reads as a record.
 """
 
+#: #1607: the three most-missed words on the tracker, measured by
+#: `/claude-jit-context:stats` over this repository's own hooks.log (211,553 lines,
+#: 4,704 prompts with no vocabulary match at all) -- `oss` (75), `dev`/`devs` (94
+#: combined) and `sub-manager` (34). `mode: once` rather than the field being absent
+#: (which defaults to `remind`, delivering on every match): `claude-jit-context` 0.10.0
+#: dedupes `once` per reader rather than per session (#1584), which is what makes a
+#: keyword this frequent affordable to ship at all -- see #1607 and #1584 for the two
+#: halves of that argument.
+DEV_LANES = """---
+title: "How many developer lanes to run, and what one carries"
+description: "The recurring question is really one question asked many ways: how many lanes, when to start them, what a lane needs, and how many issues it carries."
+keywords: dev, devs, developer, developers, lane, lanes
+mode: once
+---
+
+A developer lane is one spawn of `agents/developer.md`: one worktree, TDD, self-review, a commit
+handed back. It never pushes, never opens a pull request, never merges -- the maintainer loop owns
+the push, the pull request, the merge and the release.
+
+**A lane carries up to three issues, bounded by file disjointness, not by ambition.** One issue per
+lane is the under-filled state: the lane pays its own context floor either way, so a second and
+third issue close to that same floor are close to free against a denominator that triples. Two
+issues that touch the same file are not one lane's problem to hold -- split them across lanes
+instead.
+
+**How many lanes run at once is a dispatch decision, not a number picked in advance.**
+`skills/manager/phases/dispatch.md` ranks the open, unclaimed board and claims what is claimable
+each tick; the count that comes out is however many file-disjoint groups the ranked issues resolve
+into that tick. "Start more devs" and "run as much dev as possible" are the same request answered
+the same way: let the ranked claim produce as many lanes as the board supports this tick, never a
+target chosen ahead of reading it.
+
+**What a lane needs to start**: an issue number (or up to three, via `--claim-also`) and a
+worktree path -- `lane_setup.py --claim` writes the GitHub assignee for the issue(s), which is the
+claim, not a local record of the worktree; `git worktree` state is the only authority on which
+worktrees are live. Beyond those, `agents/developer.md` re-derives everything else (config, guards)
+rather than trusting what its own spawn payload restates.
+"""
+
+#: #1607, same measurement as DEV_LANES above.
+SUB_MANAGER = """---
+title: "What a sub-manager is"
+description: "One tick, then it dies with its context. Holds every authority the loop needs except tag and publish."
+keywords: sub-manager, submanager
+mode: once
+---
+
+`agents/sub-manager.md` runs exactly one maintainer tick over the repo named by `.oss.json`, then
+dies -- its context is thrown away at the end of the tick, which is the design's whole cost story: a
+tick's price should track the tick it ran, not accumulate across every tick that ever ran.
+
+**It re-derives the board itself rather than trusting a handoff.** The tick state file records what
+was *believed* when it was written; the first call of a tick is the repo itself -- the last commit,
+the open pull requests, the open issues.
+
+**It holds every authority the loop needs except tag and publish.** It dispatches lanes, reviews
+pull requests, merges on green -- all of it. Only `agents/releaser.md` runs the release phase. Of
+the two, only publishing is code-enforced: `scripts/release_publish.py` reads a marker
+(`scripts/agent_role.py`) and refuses to publish a GitHub Release the instant it sees
+`sub-manager`. Tagging carries no such check -- `git tag` and `git push origin <tag>` are plain
+shell commands, so withholding tagging from a sub-manager rests on this file's own prose, not on
+anything a script enforces.
+
+**It never runs a whole tick inline.** Since #1544 it spawns one throwaway agent per step --
+`oss:tick-dispatch` (select, claim, render the lane call), `oss:tick-review` (wait for CI, review,
+route findings), `oss:tick-merge` (one merge), `oss:tick-accounting` (state file + a drafted
+handback) -- and stays the one live parent that receives each lane's own completion, rather than
+holding every step's own procedure in its own long-lived context for the rest of the tick.
+"""
+
+#: #1607, same measurement as DEV_LANES above. The hardest of the three to write well
+#: (highest count, and CLAUDE.md's governing rule keeps a fact about this one
+#: repository out of a body shipped into every managed repo) -- kept to the loop's own
+#: shape and its commands, nothing this-repo-specific.
+OSS_LOOP = """---
+title: "What `oss` is: the maintainer loop, its commands, and the decision boundary"
+description: "A repository that maintains itself, on a loop, with no human in the merge path -- and what that autonomy does and does not cover."
+keywords: oss, the loop, maintainer loop
+mode: once
+---
+
+`oss` is a maintainer loop for an open-source repository, installed into that repository as a
+Claude Code plugin. It triages the tracker, decides what is worth building, delegates
+implementation, reviews hard, merges on green, and releases -- unattended, no human in the merge
+path.
+
+**Four commands**, in `commands/`:
+
+| command | does |
+| --- | --- |
+| `/oss:run` | the scheduler -- sets up on first use, then triages, builds, reviews, merges and releases on a loop |
+| `/oss:tick` | one maintainer tick -- read the board, decide, delegate, review, merge on green |
+| `/oss:doctor` | diagnose this repo's oss setup |
+| `/oss:release` | cut a release -- gates first, then version sites, tag, publish |
+
+**The decision boundary**: the loop holds tag-and-publish authority when `.oss.json`'s
+`release.authority` says `loop` -- the gates still bind (CI green at leg level, review passed, the
+release delta clean), but no human approval is required to cross them. Everything upstream of a
+release is already the loop's own decision at every step: which issues to work, how to fix them,
+whether a finding blocks. Autonomous here does not mean unbounded, though -- the loop is shaped as
+much around cost as around correctness, since an unattended run spends real quota on every turn of
+every agent it spawns; see `CLAUDE.md`'s token-economy section for the numbers that constrain it.
+"""
+
 #: Why this ships unconditionally rather than being written only into a tree where the
 #: binary was found (#294).
 #:
@@ -1023,6 +1127,9 @@ def rules(
         "vocabulary": {
             "oss-state.md": STATE_FILE,
             "plugin-currency.md": PLUGIN_CURRENCY,
+            "dev-lanes.md": DEV_LANES,
+            "sub-manager-vocab.md": SUB_MANAGER,
+            "oss-loop.md": OSS_LOOP,
         },
         "tools": {
             "supertool-required.md": TOOLS_SUPERTOOL,
