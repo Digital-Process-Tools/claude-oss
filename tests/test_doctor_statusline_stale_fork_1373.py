@@ -36,9 +36,14 @@ NOW = 1_000_000.0
 
 
 def test_stale_default_branch_marker_forks_a_refresh(monkeypatch, tmp_path):
+    """#1635: merely being past `REFRESH_AFTER` no longer counts as a cause at
+    all (it renders the last-known state, not `?`), so this fixture now
+    carries a recorded `board_refresh_failed_at` -- a refresh that was
+    actually attempted and failed -- to reach the same fork-triggering path."""
     cache = {
-        "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
+        "fetched_at": NOW - 5,
         "default_branch_state": "green",
+        "board_refresh_failed_at": NOW - 5,
         "doctor_verdict": "ok",
         "doctor_fetched_at": NOW - 5,
     }
@@ -104,8 +109,9 @@ def test_stale_warn_says_forked_when_a_fresh_refresh_actually_started(
     happened unless `statusline.fork_refresh` actually reported starting
     one -- must-fire half of the pair below."""
     cache = {
-        "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
+        "fetched_at": NOW - 5,
         "default_branch_state": "green",
+        "board_refresh_failed_at": NOW - 5,
         "doctor_verdict": "ok",
         "doctor_fetched_at": NOW - 5,
     }
@@ -131,8 +137,9 @@ def test_stale_warn_does_not_claim_a_fork_when_none_started(monkeypatch, tmp_pat
     fresh process (busy lock, failed spawn, ...), the WARN must say so
     rather than repeating the "just forked" claim regardless."""
     cache = {
-        "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
+        "fetched_at": NOW - 5,
         "default_branch_state": "green",
+        "board_refresh_failed_at": NOW - 5,
         "doctor_verdict": "ok",
         "doctor_fetched_at": NOW - 5,
     }

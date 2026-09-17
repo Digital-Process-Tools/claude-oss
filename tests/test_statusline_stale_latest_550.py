@@ -102,27 +102,45 @@ def _rig(monkeypatch, tmp_path, installed_version="0.13.0"):
     )
 
 
-def test_gather_marks_a_comparison_stale_once_its_own_interval_has_passed(
+def test_gather_marks_a_comparison_unknown_on_a_recorded_failed_refresh(
     tmp_path, monkeypatch
 ):
-    """Must-fire: a `latest` reading well past `LATEST_UNKNOWN_AFTER` renders `?`
-    rather than a false `behind`/`ahead`.
-
-    Moved from `LATEST_REFRESH_AFTER` to `LATEST_UNKNOWN_AFTER` by #1464: a
-    reading merely past `LATEST_REFRESH_AFTER` is DUE for a refresh, not yet
-    stale enough to distrust -- see `tests/test_statusline_latest_grace_1464.py`
-    for the "merely due" must-not-fire case this boundary move makes room for.
+    """Must-fire: a `latest` reading with a refresh recorded as having FAILED
+    since the last success renders `?` rather than a false `behind`/`ahead` --
+    the one condition `latest_is_unknown` folds on since #1635 removed its own
+    age ceiling (age alone is a trigger to refresh, never a reason to distrust
+    what is already known; see `tests/test_statusline_latest_grace_1464.py`).
     """
     _rig(monkeypatch, tmp_path, installed_version="0.13.0")
     now = 100_000.0
     cache = {
         "fetched_at": now - 10,
-        "latest_fetched_at": now - statusline.LATEST_UNKNOWN_AFTER - 1,
+        "latest_fetched_at": now - statusline.LATEST_REFRESH_AFTER - 30,
+        "latest_refresh_failed_at": now - 5,
         "latest": {"owner/repo": "0.12.0"},
     }
     statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
     facts = statusline.gather({}, str(tmp_path), now=now)
     assert facts["plugins"][0][1]["state"] == "unknown"
+
+
+def test_gather_keeps_rendering_a_reading_however_old_absent_a_recorded_failure(
+    tmp_path, monkeypatch
+):
+    """Must-not-fire control for the case above (#1635): however long past due,
+    with no recorded refresh failure, `gather()` still renders the last-known
+    comparison rather than folding to `?` on age alone -- the removed ceiling
+    this pair replaces."""
+    _rig(monkeypatch, tmp_path, installed_version="0.13.0")
+    now = 100_000.0
+    cache = {
+        "fetched_at": now - 10,
+        "latest_fetched_at": now - statusline.LATEST_REFRESH_AFTER * 10,
+        "latest": {"owner/repo": "0.12.0"},
+    }
+    statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
+    facts = statusline.gather({}, str(tmp_path), now=now)
+    assert facts["plugins"][0][1]["state"] == "ahead"
 
 
 def test_the_incident_itself_is_a_fresh_reading_that_is_simply_wrong(

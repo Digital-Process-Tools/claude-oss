@@ -512,12 +512,20 @@ def test_render_omits_the_marker_when_nothing_was_asked():
 # --------------------------------------------------------------------- gather()
 
 
-def _cache(default_branch_state, fetched_at, now, stale_after=None):
+def _cache(
+    default_branch_state,
+    fetched_at,
+    now,
+    stale_after=None,
+    board_refresh_failed_at=None,
+):
     document = {"repo": "owner/repo", "fetched_at": fetched_at, "prs": 0, "issues": 0}
     if default_branch_state is not None:
         document["default_branch_state"] = default_branch_state
     if stale_after is not None:
         document["stale_after"] = stale_after
+    if board_refresh_failed_at is not None:
+        document["board_refresh_failed_at"] = board_refresh_failed_at
     return document
 
 
@@ -543,11 +551,15 @@ def test_gather_reads_a_fresh_green_reading_through(tmp_path, monkeypatch):
     assert facts["default_branch_state"] == "green"
 
 
-def test_gather_folds_a_stale_reading_to_unknown_even_though_it_says_green(
+def test_gather_keeps_rendering_a_merely_due_reading_even_though_it_is_old(
     tmp_path, monkeypatch
 ):
-    """The must-not-render-confidently case. A reading older than `REFRESH_AFTER`
-    must never render as a confident `ok`, no matter what it says (#515)."""
+    """#1635: age is a trigger to refresh, never a reason to distrust what is
+    already known -- `gather()` already forked a refresh for this same due
+    reading in this same pass (`board_stale`/`_fork_refresh`), so a reading
+    older than `REFRESH_AFTER` with no recorded failure still renders its
+    last-known state. See the must-fire pairing below for the one condition
+    that DOES fold it: a refresh actually attempted and failed."""
     now = 1_000_000.0
     cache = _cache("green", now - statusline.REFRESH_AFTER - 1, now)
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
@@ -566,15 +578,47 @@ def test_gather_folds_a_stale_reading_to_unknown_even_though_it_says_green(
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
     facts = statusline.gather({}, ".", now=now)
+    assert facts["default_branch_state"] == "green"
+
+
+def test_gather_folds_to_unknown_on_a_recorded_failed_board_refresh(
+    tmp_path, monkeypatch
+):
+    """Must-fire control for the case above (#1635): a refresh WAS attempted and
+    recorded as having failed (`board_refresh_failed_at`, set by `refresh()`
+    when `_gh_default_branch_state` got nothing back) -- that is no longer
+    "merely due", it is known-unconfirmable right now, so it folds even though
+    the reading itself is otherwise a real, recognised state."""
+    now = 1_000_000.0
+    cache = _cache("green", now - 1, now, board_refresh_failed_at=now - 1)
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(statusline, "read_cache", lambda path: cache)
+    monkeypatch.setattr(
+        statusline,
+        "repo_config",
+        lambda root: {"repo": "owner/repo", "default_branch": "main"},
+    )
+    monkeypatch.setattr(statusline, "board_is_due", lambda c, n: False)
+    monkeypatch.setattr(
+        statusline, "_fork_refresh", lambda root, repo, session_id=None: None
+    )
+    monkeypatch.setattr(statusline, "branch_name", lambda root: "main")
+    monkeypatch.setattr(statusline, "repo_version", lambda root: "0.19.0")
+    monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
+    monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
+    facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] == "unknown"
 
 
-def test_gather_folds_to_unknown_when_stale_after_says_so_even_inside_the_interval(
-    tmp_path, monkeypatch
-):
-    """The other half of #515/#516: `stale_after` (written by the merge/close hook,
-    #516) can mark a reading stale before `REFRESH_AFTER` alone would -- exactly
-    the moment this issue is about, right after this loop's own merge."""
+def test_gather_keeps_rendering_even_when_stale_after_says_so(tmp_path, monkeypatch):
+    """The other half of #515/#516, revised by #1635: `stale_after` (written by
+    the merge/close hook, #516) still marks the board due -- and still forks a
+    refresh -- before `REFRESH_AFTER` alone would, but merely being due (by
+    either route) no longer folds the render on its own. The moment right
+    after this loop's own merge shows the last-known state (which will itself
+    shortly become `running`/`no-run` once CI starts, per the issue's own
+    resolution) rather than `?`, unless a refresh is actually attempted and
+    fails."""
     now = 1_000_000.0
     cache = _cache("green", now - 1, now, stale_after=now - 1)
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
@@ -594,7 +638,7 @@ def test_gather_folds_to_unknown_when_stale_after_says_so_even_inside_the_interv
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
     facts = statusline.gather({}, ".", now=now)
-    assert facts["default_branch_state"] == "unknown"
+    assert facts["default_branch_state"] == "green"
 
 
 def test_gather_is_none_when_no_default_branch_is_configured(tmp_path, monkeypatch):
@@ -613,3 +657,79 @@ def test_gather_is_none_when_no_default_branch_is_configured(tmp_path, monkeypat
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
     facts = statusline.gather({}, ".", now=now)
     assert facts["default_branch_state"] is None
+
+
+# ------------------------------------------------------------------------ refresh()
+
+
+def _stub_refresh_deps(monkeypatch):
+    monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, n: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_unlabelled_issue_counts", lambda repo, n, pl, ll: {}
+    )
+    monkeypatch.setattr(statusline, "check_rollup_counts", lambda rollups, prs: {})
+    monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: {})
+    monkeypatch.setattr(
+        statusline, "inbound_reading", lambda repo, i, p, unruled_issues=None: {}
+    )
+    monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
+    monkeypatch.setattr(
+        statusline, "_channel_reading", lambda root, config: (None, None)
+    )
+    monkeypatch.setattr(statusline, "_doctor_reading", lambda root: None)
+
+
+def test_refresh_records_a_board_failure_when_the_forge_does_not_answer(
+    tmp_path, monkeypatch
+):
+    """Must-fire, #1635: mirrors `latest`'s own failure handling (#1464) -- a
+    configured `default_branch` whose ask got nothing back keeps the
+    last-known state and records the failure, rather than overwriting a real
+    reading with `None`."""
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "repo_config",
+        lambda root: {"repo": "owner/repo", "default_branch": "main"},
+    )
+    _stub_refresh_deps(monkeypatch)
+    monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda repo, b: None)
+    now = 1000.0
+    previous = {"fetched_at": now - 100, "default_branch_state": "green"}
+    statusline.cache_path("owner/repo").parent.mkdir(parents=True, exist_ok=True)
+    statusline.cache_path("owner/repo").write_text(
+        json.dumps(previous), encoding="utf-8"
+    )
+    document = statusline.refresh("root", now=now)
+    assert document["default_branch_state"] == "green"
+    assert document["board_refresh_failed_at"] == now
+
+
+def test_refresh_clears_a_prior_board_failure_on_a_successful_ask(
+    tmp_path, monkeypatch
+):
+    """Must-not-fire control for the case above: a successful fetch clears any
+    previously-recorded failure, rather than leaving a stale marker that would
+    keep folding a now-good reading to `unknown`."""
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "repo_config",
+        lambda root: {"repo": "owner/repo", "default_branch": "main"},
+    )
+    _stub_refresh_deps(monkeypatch)
+    monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda repo, b: "green")
+    now = 1000.0
+    previous = {
+        "fetched_at": now - 100,
+        "default_branch_state": "bad",
+        "board_refresh_failed_at": now - 90,
+    }
+    statusline.cache_path("owner/repo").parent.mkdir(parents=True, exist_ok=True)
+    statusline.cache_path("owner/repo").write_text(
+        json.dumps(previous), encoding="utf-8"
+    )
+    document = statusline.refresh("root", now=now)
+    assert document["default_branch_state"] == "green"
+    assert document["board_refresh_failed_at"] is None

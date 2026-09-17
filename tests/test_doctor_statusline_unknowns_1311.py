@@ -192,13 +192,32 @@ def test_default_branch_not_asked_when_never_cached():
     assert result["reason"] == "not-asked"
 
 
-def test_default_branch_stale_outranks_a_present_raw_value():
+def test_default_branch_merely_stale_is_not_a_cause_at_all_1635():
+    """#1635: age (`board_is_due`) no longer folds `gather()`'s own render, so
+    it must not fold this diagnostic's own cause either -- a merely-old
+    reading with no recorded failure has a real, recognised state and no `?`
+    to explain. See the must-fire pairing below for the one condition that
+    DOES: a refresh actually attempted and failed."""
     cache = {
         "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
         "default_branch_state": "green",
     }
     result = mod.default_branch_cause({"default_branch": "main"}, cache, NOW)
-    assert result["reason"] == "stale"
+    assert result["reason"] is None
+    assert result["state"] == "green"
+
+
+def test_default_branch_refresh_failed_outranks_a_present_raw_value():
+    """Must-fire control for the case above (#1635): a refresh WAS attempted
+    and recorded as having failed, at least as recent as `fetched_at` --
+    folds even though the cached value is otherwise a real state."""
+    cache = {
+        "fetched_at": NOW - 5,
+        "default_branch_state": "green",
+        "board_refresh_failed_at": NOW - 5,
+    }
+    result = mod.default_branch_cause({"default_branch": "main"}, cache, NOW)
+    assert result["reason"] == "refresh-failed"
 
 
 def test_default_branch_no_answer_when_gh_call_failed():
@@ -303,10 +322,16 @@ def test_branch_stale_reports_wait_not_warn_1479(monkeypatch, tmp_path):
     refresh (test_doctor_statusline_stale_fork_1373.py) and settles without
     a manual op or a scaffold run. The asymmetry was #1479's own reproduction:
     the same repo, no code change, a different WARN/NOTICE count run to run
-    purely because this clock crossed its own boundary between two runs."""
+    purely because this clock crossed its own boundary between two runs.
+
+    #1635 renamed the cause itself from "stale" to "refresh-failed" (age
+    alone no longer folds this field at all), so the fixture now needs a
+    recorded failure rather than merely an old `fetched_at`; the WAIT level
+    this test pins is unaffected by that rename."""
     cache = {
-        "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
+        "fetched_at": NOW - 5,
         "default_branch_state": "green",
+        "board_refresh_failed_at": NOW - 5,
     }
     monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
     mod.check_statusline_unknowns(
@@ -325,10 +350,14 @@ def test_branch_stale_reports_wait_not_warn_1479(monkeypatch, tmp_path):
 def test_doctor_stale_reports_wait_not_warn_1479(monkeypatch, tmp_path):
     """#1479, the `/oss:doctor` reading's own copy of the fix above -- same
     fork-based clock, same asymmetry, a third field the issue's own recon
-    did not name but shares the identical shape."""
+    did not name but shares the identical shape.
+
+    #1635 renamed the cause from "stale" to "refresh-failed" for the same
+    reason as the branch test above; the fixture needs a recorded failure."""
     cache = {
         "doctor_verdict": "ok",
-        "doctor_fetched_at": NOW - statusline.DOCTOR_REFRESH_AFTER - 10,
+        "doctor_fetched_at": NOW - 5,
+        "doctor_refresh_failed_at": NOW - 5,
     }
     monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
     mod.check_statusline_unknowns(
@@ -445,9 +474,10 @@ def test_all_five_channel_reasons_are_distinguishable(monkeypatch, tmp_path):
 def test_all_default_branch_reasons_are_distinguishable(monkeypatch, tmp_path):
     reasons_and_caches = {
         "not-asked": {},
-        "stale": {
-            "fetched_at": NOW - statusline.REFRESH_AFTER - 5,
+        "refresh-failed": {
+            "fetched_at": NOW - 5,
             "default_branch_state": "green",
+            "board_refresh_failed_at": NOW - 5,
         },
         "no-answer": {"fetched_at": NOW - 5, "default_branch_state": None},
         "unrecognized": {"fetched_at": NOW - 5, "default_branch_state": "purple"},
@@ -551,13 +581,30 @@ def test_doctor_not_asked_when_never_cached():
     assert result["reason"] == "not-asked"
 
 
-def test_doctor_stale_when_reading_older_than_interval():
+def test_doctor_merely_stale_is_not_a_cause_at_all_1635():
+    """#1635: age (`DOCTOR_REFRESH_AFTER`) no longer folds `gather()`'s own
+    render, so it must not fold this diagnostic's own cause either -- a
+    merely-old reading with no recorded failure has a real, recognised
+    verdict and no `?` to explain. See the must-fire pairing below."""
     cache = {
         "doctor_verdict": "ok",
         "doctor_fetched_at": NOW - statusline.DOCTOR_REFRESH_AFTER - 10,
     }
     result = mod.doctor_cause(cache, NOW)
-    assert result["reason"] == "stale"
+    assert result["reason"] is None
+    assert result["state"] == "ok"
+
+
+def test_doctor_refresh_failed_outranks_a_present_verdict():
+    """Must-fire control for the case above (#1635): a refresh WAS attempted
+    and recorded as having failed, at least as recent as `doctor_fetched_at`."""
+    cache = {
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": NOW - 5,
+        "doctor_refresh_failed_at": NOW - 5,
+    }
+    result = mod.doctor_cause(cache, NOW)
+    assert result["reason"] == "refresh-failed"
 
 
 def test_doctor_no_answer_when_verdict_is_none():

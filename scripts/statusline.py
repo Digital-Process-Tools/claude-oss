@@ -99,17 +99,6 @@ REFRESH_AFTER = 60
 #: them.
 LATEST_REFRESH_AFTER = 3600
 
-#: The RENDER-time boundary for folding a `latest` comparison to `unknown` (#1464), a
-#: different question from `LATEST_REFRESH_AFTER` above (which governs when `refresh()`
-#: re-asks). A reading crossing `LATEST_REFRESH_AFTER` is merely DUE -- the detached
-#: refresh it provokes can take up to ~60s to land -- and folding to `unknown` at that
-#: exact instant showed `unknown` for a reading correct a second earlier and correct
-#: again a minute later. `2x` the refresh interval, the issue's own proposed boundary,
-#: is past the point where "a refresh just has not landed yet" is a credible
-#: explanation, so only a reading this old (or one a refresh was actually attempted
-#: and failed against, see `latest_is_unknown`) folds early.
-LATEST_UNKNOWN_AFTER = 2 * LATEST_REFRESH_AFTER
-
 #: A third clock (#613), beside the two above, for the one field that answers a
 #: question neither of them can afford: is the watch channel actually delivering.
 #: `channel:health` is classed `acts` and spawns `claude mcp get` once per
@@ -825,22 +814,33 @@ def latest_is_due(cache, now):
 
 
 def latest_is_unknown(cache, now):
-    """Should `gather()` fold the cached `latest` comparison to `unknown` (#1464)?
+    """Should `gather()` fold the cached `latest` comparison to `unknown` (#1464, #1635)?
 
-    NOT the same threshold `latest_is_due` uses. A reading merely due -- between one and
-    two `LATEST_REFRESH_AFTER` intervals old -- still renders as its last-known state,
-    because the detached refresh a due reading provokes can take up to ~60s to land, and
-    folding at the exact instant of due-ness showed `unknown` for a comparison that was
-    correct a second earlier and would be correct again once the refresh lands.
+    NOT the same threshold `latest_is_due` uses. A reading merely due -- however long
+    past `LATEST_REFRESH_AFTER` -- still renders as its last-known state, because the
+    detached refresh a due reading provokes is the thing that keeps it current; age on
+    its own is a trigger to refresh, never a reason to distrust what is already known
+    (#1635's own governing rule, applied here as well as to the board and doctor folds
+    it was filed over). Folding at the exact instant of due-ness -- or at any fixed
+    ceiling past it -- showed `unknown` for a comparison that was correct a second
+    earlier and would be correct again once the refresh lands.
 
-    Folds early on either of two conditions:
+    `now` is accepted for signature symmetry with this module's other `now`-taking
+    predicates; it plays no part in the decision below.
+
+    Folds only on:
 
     * a refresh was attempted and failed SINCE the last success -- `latest_refresh_failed_at`
       newer than the stamp `_latest_stamp_key` reads. That is no longer "merely due", it is
       known to be unconfirmable right now. A failure recorded BEFORE the most recent success
       is stale news, superseded, and must not fold an otherwise-fine reading.
-    * the reading is past `LATEST_UNKNOWN_AFTER` (2x the refresh interval) with no fresher
-      stamp -- past the point where "a refresh just has not landed yet" is credible.
+    * no reading having been taken at all -- `_latest_stamp_key` names no stamp.
+
+    A former third leg, a hard `LATEST_UNKNOWN_AFTER` ceiling (2x the refresh interval),
+    was removed by #1635: it guarded a "refresh not landed yet" state that cannot persist
+    while the network works, since a due reading provokes its own refresh on every render
+    -- so a reading that stays old is a reading whose refreshes are failing, which the
+    failed-refresh check above already catches.
 
     Does not affect a `latest` entry that was never fetched at all for a given plugin --
     `version_status` already folds that to `unknown` because `theirs is None`, independent
@@ -850,11 +850,10 @@ def latest_is_unknown(cache, now):
         return True
     key = _latest_stamp_key(cache)
     stamp = cache.get(key)
+    if not isinstance(stamp, (int, float)):
+        return True
     failed_at = cache.get("latest_refresh_failed_at")
-    if isinstance(failed_at, (int, float)):
-        if not isinstance(stamp, (int, float)) or failed_at > stamp:
-            return True
-    return _is_due(cache, key, LATEST_UNKNOWN_AFTER, now)
+    return isinstance(failed_at, (int, float)) and failed_at > stamp
 
 
 def _is_due(cache, key, interval, now):
@@ -2945,10 +2944,24 @@ def refresh(root, now=None, session_id=None):
         # be indistinguishable from a cache written before this field existed, which
         # is exactly the ambiguity `pr_checks`' own `isinstance` guard exists to avoid.
         # `_gh_default_branch_state` itself already answers `None` for an unconfigured
-        # `default_branch`, so no separate `if` is needed here.
-        document["default_branch_state"] = _gh_default_branch_state(
-            repo, config.get("default_branch")
-        )
+        # `default_branch`, so no separate `if` is needed to tell the two `None`s apart
+        # here -- only `board_refresh_failed_at` below needs to, since ONLY the second
+        # (configured-but-unanswered) is a genuine failure to record (#1635).
+        new_branch_state = _gh_default_branch_state(repo, config.get("default_branch"))
+        if config.get("default_branch") and new_branch_state is None:
+            # Configured, but this attempt got nothing back. Mirrors `latest`'s own
+            # failure handling (#1464): keep the last-known state rather than
+            # overwriting it with `None`, and record that this attempt failed so
+            # `gather()` can tell "still due" from "asked and failed" (#1635).
+            document["default_branch_state"] = previous.get("default_branch_state")
+            document["board_refresh_failed_at"] = now
+        else:
+            document["default_branch_state"] = new_branch_state
+            # A success -- or a deliberately unconfigured `default_branch`, which is
+            # not a failure at all -- clears any prior failure marker, exactly as
+            # `latest` does: a stale marker left in place would keep folding a
+            # now-good (or now-moot) reading to `unknown`.
+            document["board_refresh_failed_at"] = None
     carried = previous.get("latest")
     carried = dict(carried) if isinstance(carried, dict) else {}
     carried_stamp = previous.get("latest_fetched_at")
@@ -3018,18 +3031,37 @@ def refresh(root, now=None, session_id=None):
             document["channel"] = previous.get("channel")
             document["channel_fetched_at"] = previous_channel_stamp
     previous_doctor_stamp = previous.get("doctor_fetched_at")
+    previous_doctor_failed_at = previous.get("doctor_refresh_failed_at")
     doctor_due = not isinstance(previous_doctor_stamp, (int, float)) or (
         now - previous_doctor_stamp >= DOCTOR_REFRESH_AFTER
     )
     if doctor_due:
-        document["doctor_verdict"] = _doctor_reading(root)
-        document["doctor_fetched_at"] = now
+        new_verdict = _doctor_reading(root)
+        if new_verdict is None:
+            # Asked and got nothing back. Mirrors `latest`'s own failure handling
+            # (#1464) and the board's above (#1635): the old stamp stays in place
+            # (so the next render treats this as still due, retrying sooner rather
+            # than waiting out a fresh-looking `DOCTOR_REFRESH_AFTER`), the old
+            # verdict is kept rather than overwritten with `None`, and the failure
+            # IS recorded so `gather()` can tell "still due" from "asked and failed".
+            document["doctor_verdict"] = previous.get("doctor_verdict")
+            document["doctor_fetched_at"] = previous_doctor_stamp
+            document["doctor_refresh_failed_at"] = now
+        else:
+            document["doctor_verdict"] = new_verdict
+            document["doctor_fetched_at"] = now
+            # A success clears any prior failure -- leaving a stale failure marker
+            # in place would keep folding a now-good reading to `unknown`.
+            document["doctor_refresh_failed_at"] = None
     else:
         # Carried forward under its OWN old stamp, same shape as `channel`/`latest`
         # above and for the same reason: re-stamping `now` would make an old reading
         # indistinguishable from a fresh one at the render.
         document["doctor_verdict"] = previous.get("doctor_verdict")
         document["doctor_fetched_at"] = previous_doctor_stamp
+        # Not attempted this pass -- whatever failure record was already there (or
+        # was not) carries forward unchanged; this is not itself an ask.
+        document["doctor_refresh_failed_at"] = previous_doctor_failed_at
     path = cache_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -3300,19 +3332,31 @@ def gather(payload, root, now=None):
     board_stale = board_is_due(cache, now)
     if board_stale:
         _fork_refresh(root, config.get("repo"), current_session)
-    # Same fold `plugin_facts`/`version_status` already do for `latest` (#550), on
-    # the same board clock `board_is_due` already computes above -- `default_branch`
-    # itself present-but-unconfigured stays `None` (never asked, #613's own
-    # convention), and a configured one whose reading has outlived `board_is_due`'s
-    # own interval (or was marked stale by this session's own merge/close, #516)
-    # folds to `"unknown"` rather than rendering whatever it last said. This is the
-    # one field on this line where a stale `ok` is actively dangerous: #856's own
-    # motivating case is the moment right after a merge, when the previous reading
-    # is confidently green about a commit that no longer exists.
+    # #1635: age is a trigger to refresh (via `board_stale`/`_fork_refresh` just
+    # above), never a reason to distrust what is already known -- the same rule
+    # #1464 already applied to `latest` below, extended here to the board. A
+    # reading merely due keeps rendering its last-known state; `_fork_refresh` has
+    # already been asked to replace it in this same pass. Only a recorded failed
+    # refresh (`board_refresh_failed_at`, set by `refresh()` when the forge did not
+    # answer), or a value that is not one of the four real states at all (never
+    # fetched, or a hand-edited/corrupted cache), folds to `"unknown"`.
+    # `default_branch` itself present-but-unconfigured stays `None` (never asked,
+    # #613's own convention).
     default_branch_state = None
     if config.get("default_branch"):
         raw_branch_state = (cache or {}).get("default_branch_state")
-        if board_stale or raw_branch_state not in ("green", "bad", "running", "no-run"):
+        board_fetched_at = (cache or {}).get("fetched_at")
+        board_failed_at = (cache or {}).get("board_refresh_failed_at")
+        board_refresh_failed = isinstance(board_failed_at, (int, float)) and (
+            not isinstance(board_fetched_at, (int, float))
+            or board_failed_at >= board_fetched_at
+        )
+        if board_refresh_failed or raw_branch_state not in (
+            "green",
+            "bad",
+            "running",
+            "no-run",
+        ):
             default_branch_state = "unknown"
         else:
             default_branch_state = raw_branch_state
@@ -3352,15 +3396,19 @@ def gather(payload, root, now=None):
             current_session=current_session,
         )
 
-    # Its own clock (`DOCTOR_REFRESH_AFTER`), independent of the board clock above --
-    # `default_branch_state` folds on `board_stale` because a fresh commit falsifies it
-    # within seconds; a doctor reading has no such falsifying event and is only ever
-    # too old on its own much longer interval. A reading absent or older than that
-    # interval folds to `None` here, rendered `?` by `_doctor_field`, never a guess.
+    # #1635: same rule as the board and `latest` above -- a doctor reading merely
+    # due for its own (much longer, `DOCTOR_REFRESH_AFTER`) interval keeps rendering
+    # its last-known verdict, rather than folding to `None`/`?` on age alone. `?` is
+    # reserved for a reading that was never taken at all, or one `refresh()` just
+    # attempted and could not get an answer for (`doctor_refresh_failed_at`, set the
+    # same way `board_refresh_failed_at`/`latest_refresh_failed_at` are).
     raw_doctor_stamp = (cache or {}).get("doctor_fetched_at")
-    if isinstance(raw_doctor_stamp, (int, float)) and (
-        now - raw_doctor_stamp < DOCTOR_REFRESH_AFTER
-    ):
+    doctor_failed_at = (cache or {}).get("doctor_refresh_failed_at")
+    doctor_refresh_failed = isinstance(doctor_failed_at, (int, float)) and (
+        not isinstance(raw_doctor_stamp, (int, float))
+        or doctor_failed_at >= raw_doctor_stamp
+    )
+    if isinstance(raw_doctor_stamp, (int, float)) and not doctor_refresh_failed:
         doctor_state = _doctor_verdict_state((cache or {}).get("doctor_verdict"))
     else:
         doctor_state = None

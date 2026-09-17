@@ -20,3 +20,10 @@ wrong — and the marker table. **These are the mechanics underneath it**, each 
 - **Test the stale case and the fresh-but-wrong case in the same fixture.** They are different
   defects and neither mechanism catches the other's. A fixture with one of them proves nothing about
   the incident that produced both.
+- **Age is a trigger to refresh, never a reason to distrust what is already known (#1635).** A due
+  reading already provoked its own refresh in this same pass; folding on age alone shows `unknown`
+  for a reading that is still correct while that refresh is in flight. The one thing that DOES fold
+  a reading is a refresh actually attempted and recorded as having failed
+  (`latest_refresh_failed_at`, `board_refresh_failed_at`, `doctor_refresh_failed_at`) -- or a reading
+  never taken at all. This governs all three cached fields on the line (`latest`, the default-branch
+  marker, `/oss:doctor`), not only the one #1464 first fixed it for.

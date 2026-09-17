@@ -46,18 +46,21 @@ own two conditions test them:
 
 * ``"not-asked"`` -- no cache document exists at all: no board reading has
   ever been cached for this repo.
-* ``"stale"`` -- ``board_is_due`` is true: the cached board (including the
-  default-branch reading, which shares its clock, #856) is older than its
-  own refresh interval, or was marked stale by this session's own merge or
-  close (#516). Checked before the raw value below regardless of what that
-  value says, mirroring ``gather()``'s own ``or`` -- a stale reading of a
+* ``"refresh-failed"`` -- ``board_refresh_failed_at`` names a refresh that was
+  actually ATTEMPTED and got nothing back, at least as recent as the board's
+  own ``fetched_at`` (#1635). Merely being due for a refresh (``board_is_due``)
+  is NOT this cause any more: age is a trigger to refresh, never a reason to
+  distrust what is already known, and `gather()` keeps rendering the
+  last-known state for a reading that is merely due -- see this module's own
+  #1635 update. Checked before the raw value below regardless of what that
+  value says, mirroring ``gather()``'s own ``or`` -- a failed refresh of a
   real value is still ``"unknown"`` there.
-* ``"no-answer"`` -- the board is fresh, but the cached
-  ``default_branch_state`` is ``None``: the last refresh's own ``gh`` call
-  for this branch's CI state did not answer.
-* ``"unrecognized"`` -- the board is fresh, and the cached value is present
-  but is not one of the four ``_gh_default_branch_state`` can ever produce
-  -- a hand-edited or otherwise corrupted cache file.
+* ``"no-answer"`` -- no refresh failure is recorded, but the cached
+  ``default_branch_state`` is ``None``: nothing has ever answered for this
+  branch's CI state.
+* ``"unrecognized"`` -- the cached value is present but is not one of the
+  four ``_gh_default_branch_state`` can ever produce -- a hand-edited or
+  otherwise corrupted cache file.
 
 **A fifth cause, shared by both fields and checked before either one: the
 cache file EXISTS and could not be read or parsed (self-review finding,
@@ -294,8 +297,12 @@ def default_branch_cause(config, cache, now, repo_missing=False):
     fetched_at = (cache or {}).get("fetched_at")
     if not isinstance(fetched_at, (int, float)):
         return {"applicable": True, "reason": "not-asked"}
-    if statusline.board_is_due(cache, now):
-        return {"applicable": True, "reason": "stale"}
+    # #1635: mirrors `gather()`'s own fold exactly -- age (`board_is_due`) is no
+    # longer part of this decision. Only a refresh actually attempted and
+    # recorded as having failed, at least as recent as `fetched_at`, counts.
+    failed_at = (cache or {}).get("board_refresh_failed_at")
+    if isinstance(failed_at, (int, float)) and failed_at >= fetched_at:
+        return {"applicable": True, "reason": "refresh-failed"}
     raw_state = (cache or {}).get("default_branch_state")
     if raw_state in ("green", "bad", "running", "no-run"):
         return {"applicable": True, "reason": None, "state": raw_state}
@@ -362,8 +369,12 @@ def doctor_cause(cache, now, repo_missing=False):
     fetched_at = (cache or {}).get("doctor_fetched_at")
     if not isinstance(fetched_at, (int, float)):
         return {"reason": "not-asked"}
-    if now - fetched_at >= statusline.DOCTOR_REFRESH_AFTER:
-        return {"reason": "stale"}
+    # #1635: mirrors `gather()`'s own fold exactly -- age (`DOCTOR_REFRESH_AFTER`)
+    # is no longer part of this decision. Only a refresh actually attempted and
+    # recorded as having failed, at least as recent as `fetched_at`, counts.
+    failed_at = (cache or {}).get("doctor_refresh_failed_at")
+    if isinstance(failed_at, (int, float)) and failed_at >= fetched_at:
+        return {"reason": "refresh-failed"}
     verdict = (cache or {}).get("doctor_verdict")
     if verdict is None:
         return {"reason": "no-answer"}
@@ -466,30 +477,26 @@ _BRANCH_EXPLAIN = {
         "real state (`?` once a first reading exists and then goes stale). "
         "{remedy}",
     ),
-    "stale": (
-        # #1479: the same #1440 reasoning `_CHANNEL_EXPLAIN["stale"]` above
-        # already applies here -- this row already names a `{fork_sentence}`
-        # because the cache clock running out forks its own background
-        # refresh (test_doctor_statusline_stale_fork_1373.py), the very
-        # thing that makes a "stale" reading settle on its own rather than
-        # needing a maintainer or the loop to clear it. Leaving this row WARN
-        # while the channel row beside it was already WAIT is exactly the
-        # asymmetry #1479 reported: the same repo, no code change, printing
-        # a different WARN/NOTICE count run to run purely because this clock
-        # crossed its own boundary between two runs.
+    "refresh-failed": (
+        # #1635: renamed from "stale" -- age (`board_is_due`) no longer folds
+        # `gather()`'s own render at all, so this row can only fire on a
+        # refresh that was actually attempted and got nothing back. Keeps the
+        # same WAIT-with-`{fork_sentence}` shape #1479 argued for: the next
+        # render's own due-triggered refresh (or the fork this check just
+        # attempted) can still self-heal it, so this is not necessarily a
+        # WARN a maintainer must act on by hand.
         "WAIT",
-        "statusline default-branch marker: the cached board (including the "
-        "default branch's own CI state, which shares its clock, #856) is "
-        "older than its own refresh interval, or was marked stale by a "
-        "recent merge/close in this session -- renders `unk`. {fork_sentence} "
-        "Or force it synchronously now: {remedy}",
+        "statusline default-branch marker: the last refresh's own `gh` call "
+        "for this branch's CI state was attempted and did not answer -- "
+        "renders `unk`. {fork_sentence} Or force it synchronously now: "
+        "{remedy}",
     ),
     "no-answer": (
         "WARN",
-        "statusline default-branch marker: the last refresh's own `gh` call "
-        "for this branch's CI state did not answer -- renders `unk`. Confirm "
-        "`gh auth status` and that the configured `default_branch` exists on "
-        "the forge, then: {remedy}",
+        "statusline default-branch marker: no reading has ever answered for "
+        "this branch's CI state (and no refresh has been recorded as having "
+        "failed either) -- renders `unk`. Confirm `gh auth status` and that "
+        "the configured `default_branch` exists on the forge, then: {remedy}",
     ),
     "unrecognized": (
         "WARN",
@@ -527,15 +534,16 @@ _DOCTOR_EXPLAIN = {
         "/oss:doctor reading: nobody has taken a doctor reading yet for "
         "this repo (no cached `doctor_verdict`) -- renders `dr?`. {remedy}",
     ),
-    "stale": (
-        # #1479: same reasoning as `_BRANCH_EXPLAIN["stale"]` above -- a real
-        # clock (the fork this row's own `{fork_sentence}` names) already
-        # settles this without a manual op or a scaffold run, so it is a
-        # WAIT, not a WARN, matching the channel and branch rows beside it.
+    "refresh-failed": (
+        # #1635: renamed from "stale" -- age (`DOCTOR_REFRESH_AFTER`) no
+        # longer folds `gather()`'s own render at all, so this row can only
+        # fire on a refresh that was actually attempted and got nothing back.
+        # Kept as WAIT, matching `_BRANCH_EXPLAIN`'s own row: the fork this
+        # row's own `{fork_sentence}` names can still self-heal it.
         "WAIT",
-        "/oss:doctor reading: the cached doctor reading is older than its "
-        "own refresh interval -- renders `dr?`. {fork_sentence} Or force it "
-        "synchronously now: {remedy}",
+        "/oss:doctor reading: the last background doctor run was attempted "
+        "and produced no verdict this statusline can read back -- renders "
+        "`dr?`. {fork_sentence} Or force it synchronously now: {remedy}",
     ),
     "no-answer": (
         "WARN",
@@ -706,10 +714,12 @@ def check_statusline_unknowns(project_dir, config, now=None):
     reading, each with a runnable remedy (#1311). See the module docstring
     for the full derivation.
 
-    #1373: when any of the three causes below is `"stale"`, this also forks
-    the same background refresh a live statusline render would have forked
-    on its own -- see `_maybe_fork_refresh`'s own docstring for why that
-    stays inside the report-only contract rather than crossing into repair.
+    #1373: when any of the three causes below is `"stale"` (the channel field)
+    or `"refresh-failed"` (the board or doctor fields, #1635), this also
+    forks the same background refresh a live statusline render would have
+    forked on its own -- see `_maybe_fork_refresh`'s own docstring for why
+    that stays inside the report-only contract rather than crossing into
+    repair.
     """
     if config is None:
         doctor.unmeasured("statusline unknowns")
@@ -752,7 +762,11 @@ def check_statusline_unknowns(project_dir, config, now=None):
     # ever read from a "stale" template.
     forked = False
     if not repo_missing and any(
-        result.get("reason") == "stale"
+        # #1635: the channel field's own cause is still spelled "stale" (out
+        # of this issue's scope, #613/#1440's own clock); the board and
+        # doctor fields were renamed to "refresh-failed" when their own age
+        # fold was removed -- both still warrant a fork attempt.
+        result.get("reason") in ("stale", "refresh-failed")
         for result in (channel_result, branch_result, doctor_result)
     ):
         forked = _maybe_fork_refresh(project_dir, repo, now)

@@ -1,5 +1,5 @@
 """A `latest` comparison merely DUE must not fold to `unknown` before it is
-actually stale (#1464).
+actually stale (#1464), and no ceiling of AGE ALONE folds it either (#1635).
 
 `gather()` used to fold the `latest` plugin-version comparison to `unknown` the
 INSTANT `latest_fetched_at`'s age crossed `LATEST_REFRESH_AFTER` (3600s) -- even
@@ -8,11 +8,15 @@ land. For that whole gap the statusline showed `plug 0check 4unknown` on data
 that was correct a second earlier and is correct again a minute later.
 
 The fix (#1464): `gather()` keeps rendering the last-known comparison while a
-refresh is merely due, and only folds to `unknown` when (a) a refresh was
+refresh is merely due, and only folds to `unknown` when a refresh was
 attempted and failed since the last success (`latest_refresh_failed_at` newer
-than the last `latest_fetched_at`), or (b) the reading is well past due --
-past `LATEST_UNKNOWN_AFTER`, `2 * LATEST_REFRESH_AFTER`. A `latest` entry that
-was never fetched at all is unaffected by any of this -- see
+than the last `latest_fetched_at`). #1464 also left a hard ceiling in place --
+`LATEST_UNKNOWN_AFTER`, `2 * LATEST_REFRESH_AFTER` -- past which age alone still
+folded. #1635 removed that ceiling too: a due reading provokes its own refresh
+on every render, so a reading that stays old for any length of time is a
+reading whose refreshes are failing, which the failed-refresh check above
+already catches without a second, redundant clock. A `latest` entry that was
+never fetched at all is unaffected by any of this -- see
 `test_statusline_stale_latest_550.py`'s own `version_status`/`plugin_facts`
 coverage for that path, which this file does not repeat.
 
@@ -75,17 +79,20 @@ def test_a_reading_merely_due_is_not_yet_unknown():
     assert not statusline.latest_is_unknown(cache, now)
 
 
-def test_a_reading_past_the_unknown_boundary_is_unknown():
-    """Must-fire control for the case above: past `LATEST_UNKNOWN_AFTER`
-    (2x the refresh interval), with no fresher reading and no recorded
-    failure, the benefit of the doubt runs out."""
+def test_a_reading_however_old_is_not_unknown_absent_a_recorded_failure():
+    """Must-not-fire control for the case above, and the #1635 removal itself:
+    a reading any age at all, with no recorded refresh failure, still renders
+    its last-known state -- there is no longer a fixed ceiling past which age
+    alone folds it, because a due reading provokes its own refresh on every
+    render and a reading that stays old is caught by the failed-refresh check
+    instead."""
     cache = {
         "fetched_at": 1000.0,
         "latest_fetched_at": 1000.0,
         "latest": {"owner/repo": "0.12.0"},
     }
-    now = 1000.0 + statusline.LATEST_UNKNOWN_AFTER + 1
-    assert statusline.latest_is_unknown(cache, now)
+    now = 1000.0 + statusline.LATEST_REFRESH_AFTER * 100
+    assert not statusline.latest_is_unknown(cache, now)
 
 
 def test_a_recorded_failed_refresh_folds_early_even_within_the_grace_window():
@@ -134,19 +141,23 @@ def test_gather_keeps_the_last_known_state_while_merely_due(tmp_path, monkeypatc
     assert facts["plugins"][0][1]["state"] == "ahead"
 
 
-def test_gather_folds_to_unknown_once_well_past_due(tmp_path, monkeypatch):
-    """Must-fire control for the case above: past `LATEST_UNKNOWN_AFTER`,
-    `gather()` still folds to `unknown`."""
+def test_gather_keeps_rendering_however_far_past_due_absent_a_recorded_failure(
+    tmp_path, monkeypatch
+):
+    """Must-not-fire control, #1635: `gather()` itself keeps rendering the
+    last-known comparison arbitrarily far past due, as long as no refresh has
+    been recorded as having failed -- see `test_gather_folds_to_unknown_on_a_
+    recorded_failed_refresh` below for the must-fire pairing."""
     _rig(monkeypatch, tmp_path, installed_version="0.13.0")
     now = 100_000.0
     cache = {
         "fetched_at": now - 10,
-        "latest_fetched_at": now - statusline.LATEST_UNKNOWN_AFTER - 1,
+        "latest_fetched_at": now - statusline.LATEST_REFRESH_AFTER * 100,
         "latest": {"owner/repo": "0.12.0"},
     }
     statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
     facts = statusline.gather({}, str(tmp_path), now=now)
-    assert facts["plugins"][0][1]["state"] == "unknown"
+    assert facts["plugins"][0][1]["state"] == "ahead"
 
 
 def test_gather_folds_to_unknown_on_a_recorded_failed_refresh(tmp_path, monkeypatch):
