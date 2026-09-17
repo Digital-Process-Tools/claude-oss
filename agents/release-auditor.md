@@ -196,6 +196,15 @@ nothing in this grant stops you performing any of them. If a class is genuinely 
 without acting, that is `could not run` — which stops the release, and is exactly what it
 is for.
 
+**Take the mutation receipt `agents/audit/shared.md` describes for your own run.** Name the file
+from which round this is, never a fixed shared name:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > /tmp/oss-release-auditor-round<1|2>-tree-before.json
+# ... audit the range below ...
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before /tmp/oss-release-auditor-round<1|2>-tree-before.json
+```
+
 ## Report format
 
 Open with the verdict line, in exactly one of these shapes, and nothing before it:
@@ -228,6 +237,9 @@ checklist in effect: could not tell — <what was missing>
 
 It is reported whatever the classes came back as: `clean` under a `could not tell` is a clean audit
 of unknown vintage, and without the line it reads as an ordinary clean one.
+
+Then a `TREE:` line, in the same three states as the receipt above -- `clean` / `mutated` /
+`could-not-compare` -- never omitted.
 
 Then, per class, one line each — every class named even when empty, because a class you skipped and a
 class that was clean look identical otherwise. A class with no findings carries its grade from *A

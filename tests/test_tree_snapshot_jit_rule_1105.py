@@ -36,13 +36,16 @@ import oss_rules  # noqa: E402
 
 TREE_SNAPSHOT_RULE = "tree-snapshot-compare.md"
 
-#: The literal shape agents/developer/review.md tells a lane to type.
+#: The literal shape agents/developer/review.md tells a lane to type (#1643: the
+#: before-snapshot is written to a file, never a shell variable -- shell state does
+#: not persist across this harness's separate Bash tool calls).
 REALISTIC_SNAPSHOT_COMMAND = (
-    'BEFORE=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot)'
+    'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > '
+    "/tmp/oss-developer-review-1234-tree-before.json"
 )
 REALISTIC_COMPARE_COMMAND = (
-    "printf '%s' \"$BEFORE\" | "
-    'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before -'
+    'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before '
+    "/tmp/oss-developer-review-1234-tree-before.json"
 )
 
 #: Must-not-fire control: an ordinary Bash call with nothing to do with the compare step.

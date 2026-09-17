@@ -167,7 +167,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # own row and ceiling raised (four times, across two review rounds), plus this row
     # and weighed sentence recording it, updated to match each time. 54831 B became
     # 57816 B, past the 55200 B ceiling. Ceiling moves to 58100 B, ~0.45% headroom.
-    "CLAUDE.md": (57816, 58100),
+    # Re-baselined for #1642/#1643: agent budget rows and one weighed sentence
+    # updated for the mutation-receipt guard added to agents/auditor.md and
+    # agents/release-auditor.md, plus agents/developer/review.md's own row for
+    # its shell-variable-to-file fix. 57816 B became 58495 B, past the 58100 B
+    # ceiling. Ceiling moves to 58600 B, ~0.2% headroom.
+    "CLAUDE.md": (58495, 58600),
 }
 
 

@@ -42,3 +42,15 @@ both cuts select against the answer. Narrow the op instead.
 You may read test files, reason about coverage, and name a test that should exist and does not.
 You may not run the suite, and may not ask a spawned agent for a verdict on one (#874). A finding
 resting on a claim about test behaviour says `reasoned`, never `observed`.
+
+## Take a mutation receipt for your own run (#1642)
+
+You are the reader, not a caller waiting on a spawn -- so what `agents/developer/review.md` and
+`agents/tick-review.md` take around a spawned reviewer, you take around your own procedure:
+snapshot the worktree before your first read, compare again right before you compose your report.
+Your own run spans several separate Bash calls, and a shell variable does not survive between
+them, so write the snapshot to a file rather than holding it in one -- your own spine below names
+the file. `clean` (exit 0) is what you report. `mutated` (exit 1) names what changed -- restore it
+(`git checkout -- <path>`, or recreate a deleted untracked one) and say so rather than absorb it
+silently. `could-not-compare` (exit 3) is `could not check`, never `clean`. Carry the result
+forward as a `TREE:` line in your report, per your own spine's report format.

@@ -48,6 +48,16 @@ piece of session state that lives on nobody's disk -- has no path to resolve, so
 does not reach it. That shape stays governed by "run only ops that read" above, and by
 nothing this paragraph adds.
 
+**Take the mutation receipt `agents/audit/shared.md` describes for your own run**, not only the
+worktree-boundary judgment call above. Name the file from the issue/PR number(s) your brief names
+(dash-joined; no number named, use your own PID):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > /tmp/oss-auditor-<numbers>-tree-before.json
+# ... run the checklist below ...
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before /tmp/oss-auditor-<numbers>-tree-before.json
+```
+
 `supertool 'git-diff:branch:full'` is usually the first call you make.
 
 ## The checklist
@@ -183,8 +193,9 @@ required.
 
 ## Report format
 
-Compact. Group by class, in order, and give **every** class a line even when it is empty, because a
-class you skipped and a class that was clean look identical otherwise.
+Compact. Open with a `TREE:` line -- `clean` / `mutated` / `could-not-compare`, per the receipt
+above, never omitted. Then group by class, in order, and give **every** class a line even when it
+is empty, because a class you skipped and a class that was clean look identical otherwise.
 
 For each class, exactly one of three verdicts:
 

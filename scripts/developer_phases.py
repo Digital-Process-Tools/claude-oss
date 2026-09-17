@@ -90,7 +90,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # something else. Nothing already in the file argued that point, so
         # nothing was cut to make room; the ceiling moved to 13500 B, ~10%
         # headroom over the new size.
-        12272,
+        # Re-baselined for #1643: the mutation-receipt snapshot now writes to
+        # a named file under /tmp rather than a shell variable, which does
+        # not survive across this harness's separate Bash calls and silently
+        # defeated the check every self-review round depends on. 12272 B
+        # became 13235 B. Ceiling unchanged -- still under it.
+        13235,
         13500,
         "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
     ),

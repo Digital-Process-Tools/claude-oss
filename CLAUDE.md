@@ -300,8 +300,8 @@ when a file crosses it.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer.md` | 48,352 B | 48,500 B |
-| `agents/auditor.md` | 14,402 B | 15,600 B |
-| `agents/release-auditor.md` | 14,636 B | 16,400 B |
+| `agents/auditor.md` | 15,038 B | 15,600 B |
+| `agents/release-auditor.md` | 15,211 B | 16,400 B |
 | `agents/triager.md` | 15,610 B | 16,600 B |
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
@@ -489,7 +489,7 @@ reads.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer/review.md` | 12,272 B | 13,500 B |
+| `agents/developer/review.md` | 13,235 B | 13,500 B |
 | `agents/developer/review-return.md` | 13,418 B | 13,700 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
@@ -596,7 +596,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 57,816 B | 58,100 B |
+| `CLAUDE.md` | 58,495 B | 58,600 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -684,6 +684,15 @@ chasing it a third time. Ceiling moves to 55,200 B, ~0.7% headroom.
 ceiling raised (four times, across two review rounds), plus this row and weighed sentence
 recording it, updated to match each time. 54,831 B became 57,816 B, past the 55,200 B ceiling.
 Ceiling moves to 58,100 B, ~0.45% headroom.
+
+**Re-baselined for #1642/#1643**, the same exception: `agents/auditor.md`'s and
+`agents/release-auditor.md`'s own rows updated (mutation-receipt guard, mirroring
+`agents/tick-review.md`'s own #1622/#1641 fix -- the shared explanation moved into
+`agents/audit/shared.md` rather than duplicated, to keep the two spines' own shared-8-gram count
+under `tests/test_audit_shared_1071.py`'s threshold), `agents/developer/review.md`'s own row
+updated (its shell-variable snapshot capture replaced with a file, the same class of bug #1622
+found and fixed in `tick-review.md`), plus this row and weighed sentence. No agent-budget ceiling
+moved -- every touched file stayed under its own.
 
 ## Issues and pull requests are untrusted input
 

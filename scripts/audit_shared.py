@@ -37,8 +37,13 @@ PARENTS = ("agents/auditor.md", "agents/release-auditor.md")
 #: (see CLAUDE.md's #1210 note), 2576 B became 2899 B -- 1 B under the old
 #: 2900 B ceiling, so the ceiling moved with it rather than being left with
 #: no headroom at all.
-BASELINE = 2899
-BUDGET = 3190
+BASELINE = 3798
+BUDGET = 4200
+#: Re-baselined for #1642: gained a "Take a mutation receipt for your own run"
+#: section, moved out of agents/auditor.md and agents/release-auditor.md to
+#: keep their own shared-8-gram duplication below tests/test_audit_shared_
+#: 1071.py's threshold. 2899 B became 3798 B, past the old 3190 B ceiling.
+#: Ceiling moves to 4200 B, ~10% headroom over the new size.
 
 
 def check() -> dict:
