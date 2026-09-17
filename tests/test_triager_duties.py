@@ -262,7 +262,7 @@ def test_a_shipped_milestone_is_stated_as_a_rule_not_only_as_a_finding():
 # decision before treating the empty list as new.
 MILESTONE_ABSENCE_ANCHORS = [
     "if no milestones exist on the repo, say so and stop",
-    "do not invent one, and do not create one",
+    "the same as creating labels",
     "_milestones_note",
     "not a gap to re-report every sweep",
 ]
@@ -387,6 +387,7 @@ def test_the_disagreement_check_fires_on_the_brief_without_it():
         COHORT_STATE_ANCHORS,
         STALE_PREMISE_ANCHORS,
         DISAGREEMENT_ANCHORS,
+        MILESTONE_ABSENCE_ANCHORS,
     ],
 )
 def test_every_anchor_is_already_flattened(anchors):
@@ -409,6 +410,7 @@ DOCUMENT_ANCHORS = (
     + COHORT_STATE_ANCHORS
     + STALE_PREMISE_ANCHORS
     + DISAGREEMENT_ANCHORS
+    + MILESTONE_ABSENCE_ANCHORS
 )
 
 
