@@ -105,16 +105,40 @@ def test_channel_status_not_asked_is_cannot_determine():
     assert result["reason"] == "not-asked"
 
 
-def test_channel_status_a_stale_reading_is_cannot_determine_not_a_false_state():
-    """Must-fire half of the stale/fresh-but-wrong pair (#550/#551's lesson, a
-    third instrument): a reading older than its own interval renders `?`, never
-    the real (and possibly now-false) state it once carried."""
+def test_channel_status_merely_due_is_not_a_cause_at_all_1636():
+    """#1636: age (`CHANNEL_REFRESH_AFTER`) no longer folds this field's own
+    render, the same rule #1635/#1464 already apply to the board/doctor/latest
+    fields -- a reading merely due for its own refresh interval, with no
+    recorded refresh failure, keeps rendering the real state it holds. See the
+    must-fire pairing right below: a refresh actually attempted and recorded
+    as having failed."""
     now = 1_000.0
     result = statusline.channel_status(
-        "forwarding", "derivation", now - statusline.CHANNEL_REFRESH_AFTER - 1, now
+        "forwarding",
+        "derivation",
+        now - statusline.CHANNEL_REFRESH_AFTER - 1,
+        now,
+    )
+    assert result["state"] == "forwarding"
+    assert result["reason"] is None
+
+
+def test_channel_status_a_failed_refresh_is_cannot_determine_1636():
+    """Must-fire control for the test above (#1636): a refresh WAS attempted
+    and recorded as having failed, at least as recent as `fetched_at` --
+    folds even though the cached value is otherwise a real state, mirroring
+    `board_refresh_failed_at`/`doctor_refresh_failed_at`/
+    `latest_refresh_failed_at`'s own established shape."""
+    now = 1_000.0
+    result = statusline.channel_status(
+        "forwarding",
+        "derivation",
+        now - statusline.CHANNEL_REFRESH_AFTER - 1,
+        now,
+        refresh_failed_at=now - statusline.CHANNEL_REFRESH_AFTER - 1,
     )
     assert result["state"] == "cannot_determine"
-    assert result["reason"] == "stale"
+    assert result["reason"] == "refresh-failed"
 
 
 def test_channel_status_the_must_not_fire_control_a_fresh_reading_is_real():
@@ -210,9 +234,12 @@ def _rig(monkeypatch, tmp_path, watch_channel=None):
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
 
 
-def test_gather_a_stale_channel_reading_renders_cannot_determine(tmp_path, monkeypatch):
-    """Must-fire half of the pairing, exercised through `gather()` itself, the
-    same level #550/#551's own suite pins the equivalent for `latest`."""
+def test_gather_a_merely_due_channel_reading_renders_the_real_state_1636(
+    tmp_path, monkeypatch
+):
+    """#1636: exercised through `gather()` itself, the same level #550/#551's
+    own suite pins the equivalent for `latest` -- a reading merely due, with
+    no recorded refresh failure, is not folded to `?` any more."""
     _rig(monkeypatch, tmp_path)
     now = 100_000.0
     cache = {
@@ -222,8 +249,28 @@ def test_gather_a_stale_channel_reading_renders_cannot_determine(tmp_path, monke
     }
     statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
     facts = statusline.gather({}, str(tmp_path), now=now)
+    assert facts["channel"]["state"] == "forwarding"
+    assert facts["channel"]["reason"] is None
+
+
+def test_gather_a_failed_channel_refresh_renders_cannot_determine_1636(
+    tmp_path, monkeypatch
+):
+    """Must-fire control for the test above (#1636): a recorded
+    `channel_refresh_failed_at` at least as recent as `channel_fetched_at`
+    still folds, mirroring `board_refresh_failed_at`/`doctor_refresh_failed_at`."""
+    _rig(monkeypatch, tmp_path)
+    now = 100_000.0
+    cache = {
+        "fetched_at": now - 10,
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
+        "channel_fetched_at": now - statusline.CHANNEL_REFRESH_AFTER - 1,
+        "channel_refresh_failed_at": now - statusline.CHANNEL_REFRESH_AFTER - 1,
+    }
+    statusline.cache_path("owner/repo").write_text(json.dumps(cache), encoding="utf-8")
+    facts = statusline.gather({}, str(tmp_path), now=now)
     assert facts["channel"]["state"] == "cannot_determine"
-    assert facts["channel"]["reason"] == "stale"
+    assert facts["channel"]["reason"] == "refresh-failed"
 
 
 def test_gather_the_must_not_fire_control_a_fresh_but_possibly_wrong_reading_is_real(
@@ -680,6 +727,80 @@ def test_refresh_carries_the_channel_reading_forward_when_not_due(
     assert called == []  # not due: no subprocess attempt at all
     assert document["channel"] == previous["channel"]
     assert document["channel_fetched_at"] == now - 5  # NOT re-stamped to `now`
+    assert document["channel_refresh_failed_at"] is None  # nothing was attempted
+
+
+def test_refresh_records_a_failed_channel_reading_1636(tmp_path, monkeypatch):
+    """#1636: mirrors `latest`/`board`/`doctor`'s own failure handling -- a
+    due channel reading that comes back `None` (the preset not declared, the
+    binary could not run, no recognisable `channel: ` line) carries the OLD
+    reading and OLD stamp forward, under its own old stamp so it is due
+    again immediately, and records the failure so `channel_status` can tell
+    "still due" from "asked and failed"."""
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "repo_config",
+        lambda root: {"repo": "owner/repo", "default_branch": "main"},
+    )
+    monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
+    monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
+    monkeypatch.setattr(
+        statusline,
+        "_channel_reading",
+        lambda root, config: (None, "derivation"),
+    )
+    now = 1_000.0
+    previous = {
+        "fetched_at": now - 5,
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
+        "channel_fetched_at": now - statusline.CHANNEL_REFRESH_AFTER - 1,
+    }
+    statusline.cache_path("owner/repo").parent.mkdir(parents=True, exist_ok=True)
+    statusline.cache_path("owner/repo").write_text(
+        json.dumps(previous), encoding="utf-8"
+    )
+    document = statusline.refresh(str(tmp_path), now=now)
+    assert document["channel"] == previous["channel"]
+    assert document["channel_fetched_at"] == previous["channel_fetched_at"]
+    assert document["channel_refresh_failed_at"] == now
+
+
+def test_refresh_clears_a_prior_channel_failure_on_success_1636(tmp_path, monkeypatch):
+    """A success clears any prior failure -- leaving a stale failure marker
+    in place would keep folding a now-good reading to `cannot_determine`."""
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "repo_config",
+        lambda root: {"repo": "owner/repo", "default_branch": "main"},
+    )
+    monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
+    monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
+    monkeypatch.setattr(
+        statusline,
+        "_channel_reading",
+        lambda root, config: ("forwarding", "derivation"),
+    )
+    now = 1_000.0
+    previous = {
+        "fetched_at": now - 5,
+        "channel": {"raw_state": "not_delivering", "attribution": "derivation"},
+        "channel_fetched_at": now - statusline.CHANNEL_REFRESH_AFTER - 1,
+        "channel_refresh_failed_at": now - statusline.CHANNEL_REFRESH_AFTER - 1,
+    }
+    statusline.cache_path("owner/repo").parent.mkdir(parents=True, exist_ok=True)
+    statusline.cache_path("owner/repo").write_text(
+        json.dumps(previous), encoding="utf-8"
+    )
+    document = statusline.refresh(str(tmp_path), now=now)
+    assert document["channel"]["raw_state"] == "forwarding"
+    assert document["channel_fetched_at"] == now
+    assert document["channel_refresh_failed_at"] is None
 
 
 def test_refresh_does_not_ask_when_watch_channel_is_off(tmp_path, monkeypatch):
@@ -707,6 +828,7 @@ def test_refresh_does_not_ask_when_watch_channel_is_off(tmp_path, monkeypatch):
     assert called == []
     assert document["channel"] is None
     assert document["channel_fetched_at"] is None
+    assert document["channel_refresh_failed_at"] is None
 
 
 # ------------------------------------------------------------------ oss_config

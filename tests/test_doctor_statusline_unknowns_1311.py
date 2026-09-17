@@ -127,13 +127,31 @@ def test_channel_not_asked_when_no_cache_entry():
     assert result["reason"] == "not-asked"
 
 
-def test_channel_stale_when_reading_older_than_interval():
+def test_channel_merely_stale_is_not_a_cause_at_all_1636():
+    """#1636: age (`CHANNEL_REFRESH_AFTER`) no longer folds `gather()`'s own
+    render for this field either, so it must not fold this diagnostic's own
+    cause. See the must-fire pairing below: a refresh actually attempted and
+    recorded as having failed."""
     cache = {
         "channel": {"raw_state": "forwarding", "attribution": "derivation"},
         "channel_fetched_at": NOW - statusline.CHANNEL_REFRESH_AFTER - 10,
     }
     result = mod.channel_cause({}, cache, NOW)
-    assert result["reason"] == "stale"
+    assert result["reason"] is None
+    assert result["state"] == "forwarding"
+
+
+def test_channel_refresh_failed_outranks_a_present_raw_value_1636():
+    """Must-fire control for the test above (#1636): a refresh WAS attempted
+    and recorded as having failed, at least as recent as `channel_fetched_at`
+    -- folds even though the cached value is otherwise a real state."""
+    cache = {
+        "channel": {"raw_state": "forwarding", "attribution": "derivation"},
+        "channel_fetched_at": NOW - statusline.CHANNEL_REFRESH_AFTER - 10,
+        "channel_refresh_failed_at": NOW - statusline.CHANNEL_REFRESH_AFTER - 10,
+    }
+    result = mod.channel_cause({}, cache, NOW)
+    assert result["reason"] == "refresh-failed"
 
 
 def test_channel_not_attributable_when_neither_route_settles_it():
@@ -303,12 +321,19 @@ def test_every_channel_warn_names_a_runnable_command(monkeypatch, tmp_path):
 
 
 def test_channel_stale_reports_wait_not_warn_1440(monkeypatch, tmp_path):
-    """#1440: a cache older than its own refresh interval settles on the very
-    next statusline render -- it is not the loop's or a maintainer's to
-    clear, so it must WAIT, and the line must still name what settles it."""
+    """#1440: a refresh actually attempted and recorded as failed settles on
+    the very next statusline render -- it is not the loop's or a
+    maintainer's to clear, so it must WAIT, and the line must still name
+    what settles it.
+
+    #1636 renamed the cause itself from "stale" to "refresh-failed" (age
+    alone no longer folds this field at all, matching #1635's own rename for
+    the board/doctor fields), so the fixture now needs a recorded failure
+    rather than merely an old `channel_fetched_at`."""
     cache = {
         "channel": {"raw_state": "forwarding", "attribution": "derivation"},
         "channel_fetched_at": NOW - statusline.CHANNEL_REFRESH_AFTER - 10,
+        "channel_refresh_failed_at": NOW - statusline.CHANNEL_REFRESH_AFTER - 10,
     }
     monkeypatch.setattr(mod, "_read_cache_or_unreadable", lambda path: (cache, False))
     mod.check_statusline_unknowns(str(tmp_path), {"repo": "a/b"}, now=NOW)
@@ -449,9 +474,10 @@ def test_statusline_import_failure_is_unmeasured_not_an_unclearable_warn(
 def test_all_five_channel_reasons_are_distinguishable(monkeypatch, tmp_path):
     reasons_and_caches = {
         "not-asked": {"channel": {}, "channel_fetched_at": None},
-        "stale": {
+        "refresh-failed": {
             "channel": {"raw_state": "forwarding", "attribution": "derivation"},
             "channel_fetched_at": NOW - statusline.CHANNEL_REFRESH_AFTER - 10,
+            "channel_refresh_failed_at": NOW - statusline.CHANNEL_REFRESH_AFTER - 10,
         },
         "not-attributable": {
             "channel": {"raw_state": "forwarding", "attribution": "not-attributable"},

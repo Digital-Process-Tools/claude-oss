@@ -271,6 +271,7 @@ def channel_cause(config, cache, now, repo_missing=False):
         raw_channel.get("attribution", "not-attributable"),
         fetched_at,
         now,
+        refresh_failed_at=(cache or {}).get("channel_refresh_failed_at"),
     )
     return {
         "applicable": True,
@@ -435,17 +436,26 @@ _CHANNEL_EXPLAIN = {
         "statusline channel: nobody has taken a `channel:health` reading yet "
         "for this repo (no cached channel entry) -- renders `ch?`. {remedy}",
     ),
-    "stale": (
+    "refresh-failed": (
         # #1440: a cache clock running out settles on its own -- the very
         # next statusline render forks a background refresh -- so it is not
         # a WARN wearing a self-heal disclaimer, it is a WAIT. Every other
         # row in this table stays WARN: none of them names a moment that
         # clears the gap on its own the way this one's own refresh interval
         # does.
+        #
+        # #1636: renamed from "stale" -- MERE interval age (`channel_status`'s
+        # own `CHANNEL_REFRESH_AFTER` leg) no longer folds `gather()`'s own
+        # render at all, so this row can only fire on a refresh that was
+        # actually attempted and got nothing back (`channel_refresh_failed_at`,
+        # mirroring `board_refresh_failed_at`/`doctor_refresh_failed_at`/
+        # `latest_refresh_failed_at`). The WAIT level is unaffected by the
+        # rename: the same fork this row's own `{fork_sentence}` names can
+        # still self-heal it.
         "WAIT",
-        "statusline channel: the cached `channel:health` reading is older "
-        "than its own refresh interval -- renders `ch?`. {fork_sentence} Or "
-        "force it synchronously now: {remedy}",
+        "statusline channel: the last `channel:health` refresh was attempted "
+        "and got nothing back -- renders `ch?`. {fork_sentence} Or force it "
+        "synchronously now: {remedy}",
     ),
     "declaration-unreadable": (
         "WARN",
@@ -741,12 +751,12 @@ def check_statusline_unknowns(project_dir, config, now=None):
     reading, each with a runnable remedy (#1311). See the module docstring
     for the full derivation.
 
-    #1373: when any of the three causes below is `"stale"` (the channel field)
-    or `"refresh-failed"` (the board or doctor fields, #1635), this also
-    forks the same background refresh a live statusline render would have
-    forked on its own -- see `_maybe_fork_refresh`'s own docstring for why
-    that stays inside the report-only contract rather than crossing into
-    repair.
+    #1373: when any of the three causes below is `"refresh-failed"` (all
+    three fields, #1635/#1636) or `"invalidated"` (the board field alone,
+    #516), this also forks the same background refresh a live statusline
+    render would have forked on its own -- see `_maybe_fork_refresh`'s own
+    docstring for why that stays inside the report-only contract rather than
+    crossing into repair.
     """
     if config is None:
         doctor.unmeasured("statusline unknowns")
@@ -785,17 +795,16 @@ def check_statusline_unknowns(project_dir, config, now=None):
     # #1373's own reviewer round: `forked` is threaded into every `_report_*`
     # call below so the WARN text reflects what `_maybe_fork_refresh` ACTUALLY
     # did, never a blanket claim -- `False` (the default) is also the correct
-    # value passed when nothing was stale, since `_fork_sentence` is only
-    # ever read from a "stale" template.
+    # value passed when nothing needed a fork, since `_fork_sentence` is only
+    # ever read from a "refresh-failed"/"invalidated" template.
     forked = False
     if not repo_missing and any(
-        # #1635: the channel field's own cause is still spelled "stale" (out
-        # of this issue's scope, #613/#1440's own clock); the board and
-        # doctor fields were renamed to "refresh-failed" when their own age
-        # fold was removed, and the board field alone can also report
-        # "invalidated" (this session's own merge/close, #516) -- all three
-        # still warrant a fork attempt.
-        result.get("reason") in ("stale", "refresh-failed", "invalidated")
+        # #1635/#1636: every one of the three fields is now spelled
+        # "refresh-failed" for a refresh that was actually attempted and got
+        # nothing back; the board field alone can also report "invalidated"
+        # (this session's own merge/close, #516) -- all still warrant a fork
+        # attempt.
+        result.get("reason") in ("refresh-failed", "invalidated")
         for result in (channel_result, branch_result, doctor_result)
     ):
         forked = _maybe_fork_refresh(project_dir, repo, now)
