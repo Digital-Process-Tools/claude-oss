@@ -55,7 +55,13 @@ permissions:
 jobs:
   pytest:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # #1658: 15 left no headroom on windows-latest, where the suite itself finishes
+    # (green) in ~862-873s (0:14:22-0:14:33) and checkout/setup/dependency-install
+    # overhead pushes the job's total wall time past the ceiling -- three
+    # back-to-back cancellations on the same green commit (jobs #105401634166,
+    # #105406249723, #105410692355). 20 restores several minutes of real margin over
+    # the slowest observed leg without removing the cap on a genuine hang.
+    timeout-minutes: 20
     # #1246: the `os` x `python-version` product below is the full 3x4 release matrix,
     # unconditionally -- so `full_matrix: true` restores full coverage by excluding
     # nothing, rather than needing a second, separately-maintained matrix to drift out
