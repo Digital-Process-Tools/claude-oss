@@ -255,6 +255,34 @@ def test_a_shipped_milestone_is_stated_as_a_rule_not_only_as_a_finding():
     assert "a shipped milestone ends at zero" in _triager()
 
 
+# #1611: a tracker with zero milestones re-files the identical unranked finding
+# every triage sweep unless the triager knows to say so and stop, the same as
+# the label-absence rule it already carries. The anchors below are the two
+# halves of that rule: stop rather than invent, and check for a recorded
+# decision before treating the empty list as new.
+MILESTONE_ABSENCE_ANCHORS = [
+    "if no milestones exist on the repo, say so and stop",
+    "do not invent one, and do not create one",
+    "_milestones_note",
+    "not a gap to re-report every sweep",
+]
+
+
+def test_an_empty_milestone_list_is_a_stop_not_a_fresh_finding_every_sweep():
+    assert not _unmet(TRIAGER.read_text(encoding="utf-8"), MILESTONE_ABSENCE_ANCHORS)
+
+
+def test_the_milestone_absence_check_fires_on_a_document_that_only_has_the_old_rule():
+    old_rule_only = (
+        "**Milestone** -- this release if it is a blocker, the next if it is not."
+    )
+    missing = _unmet(old_rule_only, MILESTONE_ABSENCE_ANCHORS)
+    assert missing == MILESTONE_ABSENCE_ANCHORS, (
+        "the milestone-absence check passes on a document carrying only the "
+        "old rule with no stop-and-check instruction: {}".format(missing)
+    )
+
+
 # The burn-down got a duty, a counting trap and a limit in #148. What it did not
 # get is the thing this plugin is named after: a third state. `Clusters` has one
 # spelled out; the cohort row had two -- a number, and the limit beside it -- so

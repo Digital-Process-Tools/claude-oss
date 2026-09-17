@@ -55,6 +55,12 @@ one-off unlabelled -- there is nowhere declared to put it.
 **Milestone** — this release if it is a blocker, the next if it is not. **"Next" is a decision, not a
 default**, so say why in one line.
 
+**If no milestones exist on the repo, say so and stop** for that dimension, exactly as the label rule
+above — do not invent one, and do not create one: creating milestones is the maintainer's act, the
+same as creating labels. Check whether `.oss.json` already carries a `_milestones_note` recording the
+maintainer's decision (use milestones, or decline them) before surfacing the empty list as a fresh
+finding — a decision already recorded is not a gap to re-report every sweep.
+
 ## What you must never do
 
 - **Never write a `cohort-*` label** — and **never remove one either**. Freezing a cohort is the
