@@ -551,8 +551,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # explicitly ruled out. Wraps its own procedure in `tree_snapshot.py`'s existing
     # snapshot/compare (already used around `agents/developer/review.md`'s reviewer
     # spawns), reported as a new `TREE:` line beside every `REVIEW:` header. 10785 B
-    # became 12029 B, past the old ceiling. Ceiling moves to 12200 B, ~1.4% headroom.
-    "agents/tick-review.md": (12029, 12200),
+    # became 12029 B, past the old ceiling.
+    # Re-baselined again in the same lane's own self-review round: a spawned reviewer
+    # found the first draft copied `agents/developer/review.md`'s `BEFORE=$(...)`
+    # shell-variable idiom verbatim into a spawn whose own procedure spans many
+    # separate Bash tool calls -- shell state does not survive between them, so the
+    # variable would be empty by the time `compare` ran, reporting `could-not-compare`
+    # on every real use. Fixed by writing the before-snapshot to a file instead. 12029
+    # B became 12840 B, past the old ceiling. Ceiling moves to 13000 B, ~1.2% headroom.
+    "agents/tick-review.md": (12840, 13000),
     # #1544 steps 3-4: two new files. `oss:sub-manager` used to merge on green
     # and assemble its own state-file entry and `TICK:` handback inline, in
     # the same long-lived context that dispatch and review had already been

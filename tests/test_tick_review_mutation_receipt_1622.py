@@ -52,6 +52,31 @@ def test_it_documents_both_a_snapshot_and_a_compare_call():
     )
 
 
+def test_the_before_snapshot_is_written_to_a_file_never_a_shell_variable():
+    """Steps 1-3 span many separate Bash tool calls, and shell state (a `BEFORE=$(...)`
+    variable) does not persist between them -- only a real file on disk does. A call
+    shape that captures the before-snapshot in a variable and reads it back several
+    calls later would silently degrade to `could-not-compare` on every real run,
+    never `clean` or `mutated` (found in this file's own self-review round)."""
+    text = _text()
+    fences = re.findall(r"```bash\n(.*?)```", text, re.DOTALL)
+    assert fences, "agents/tick-review.md has no fenced bash block to check"
+    code = "\n".join(fences)
+    assert "BEFORE=$(" not in code, (
+        "agents/tick-review.md's own bash snippet captures the before-snapshot in a "
+        "shell variable -- that does not survive the separate Bash calls steps 1-3 require"
+    )
+    assert re.search(r"snapshot\s*>\s*\S", code), (
+        "agents/tick-review.md does not redirect the snapshot to a file in its own "
+        "bash snippet -- the only form that survives across separate Bash tool calls"
+    )
+    assert re.search(r"compare\s+--before\s+(?!-\b)\S", code), (
+        "agents/tick-review.md's compare call does not point --before at a file path "
+        "in its own bash snippet (a bare `--before -` reads stdin, which is exactly the "
+        "shell-variable shape that does not survive across calls)"
+    )
+
+
 def test_every_documented_tree_snapshot_flag_is_one_the_script_actually_parses():
     """The same #1530 class test_tick_review_call_shape_1544.py already pins for
     pr_green.py: a flag that reads plausibly but does not exist."""
