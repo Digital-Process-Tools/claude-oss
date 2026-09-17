@@ -90,8 +90,19 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # something else. Nothing already in the file argued that point, so
         # nothing was cut to make room; the ceiling moved to 13500 B, ~10%
         # headroom over the new size.
-        12272,
-        13500,
+        # Re-baselined for #1643: the mutation-receipt snapshot now writes to
+        # a named file rather than a shell variable, which does not survive
+        # across this harness's separate Bash calls and silently defeated
+        # the check every self-review round depends on. 12272 B became
+        # 13235 B. Ceiling unchanged -- still under it.
+        # Re-baselined UP in the same lane's self-review round: an auditor
+        # finding moved the snapshot file from /tmp (a shared scratchpad the
+        # shipped tree-snapshot-compare.md jit rule already warns against)
+        # to a worktree-local, SNAPSHOT_ARTIFACT_RE-matching path. 13235 B
+        # became 13772 B, past the 13500 B ceiling. Ceiling moves to
+        # 15200 B, ~10% headroom over the new size.
+        13772,
+        15200,
         "self-review: spawning the two reviewers, the tree snapshot receipt, dispositions",
     ),
     "agents/developer/review-return.md": (

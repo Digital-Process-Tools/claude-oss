@@ -164,15 +164,34 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # that pointer, so the marker sentence silently stopped existing
     # anywhere the test could see it. Restored in this file's own text
     # alongside the pointer. 12963 B became 13273 B. Ceiling unchanged.
-    "agents/auditor.md": (14402, 15600),
+    "agents/auditor.md": (15084, 15600),
     # Re-baselined DOWN for #1071, the same extraction: 14953 B became
     # 13992 B. Ceiling left unchanged for the same reason.
+    # Re-baselined UP for #1642: gained the same mutation-receipt guard
+    # agents/tick-review.md carries (#1622/#1641), snapshotting this spawn's
+    # own run around its checklist rather than only stating the worktree-
+    # boundary judgment call as prose. 14402 B became 15038 B (the shared
+    # explanation moved to agents/audit/shared.md to keep this file and
+    # release-auditor.md's own shared-8-gram duplication below
+    # tests/test_audit_shared_1071.py's threshold), then 15469 B in the same
+    # lane's self-review round after an auditor finding: the snapshot moved
+    # from /tmp (a shared scratchpad the shipped tree-snapshot-compare.md
+    # jit rule already warns against) to a worktree-local, SNAPSHOT_ARTIFACT_
+    # RE-matching path, then reworded once more (moving the never-/tmp rule
+    # into agents/audit/shared.md) to clear the 150-8-gram duplication
+    # threshold: 15469 B became 15084 B. Ceiling unchanged -- comfortably
+    # under it.
     # Re-baselined UP for #1210, the same restoration as auditor.md above,
     # then reworded once more in the same lane's self-review round to keep
     # tests/test_audit_shared_1071.py's own duplication threshold (< 150
     # shared 8-grams between the two files) from being crossed again by the
     # restoration: 13992 B became 14424 B. Ceiling unchanged.
-    "agents/release-auditor.md": (14636, 16400),
+    "agents/release-auditor.md": (15273, 16400),
+    # Re-baselined for #1642: gained the same mutation-receipt guard as
+    # agents/auditor.md above. 14636 B became 15211 B, then 15639 B in the
+    # same lane's self-review round for the same /tmp-to-worktree-local move,
+    # then reworded once more for the same duplication-threshold reason:
+    # 15639 B became 15273 B. Ceiling unchanged -- comfortably under it.
     # Re-baselined for #1391's own self-review round, same fix as
     # agents/developer.md above: 15467 B became 15488 B.
     # Re-baselined for #1410: 15488 B became 15522 B -- the cohort-freeze

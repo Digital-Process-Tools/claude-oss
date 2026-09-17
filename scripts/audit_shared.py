@@ -37,8 +37,17 @@ PARENTS = ("agents/auditor.md", "agents/release-auditor.md")
 #: (see CLAUDE.md's #1210 note), 2576 B became 2899 B -- 1 B under the old
 #: 2900 B ceiling, so the ceiling moved with it rather than being left with
 #: no headroom at all.
-BASELINE = 2899
-BUDGET = 3190
+BASELINE = 4232
+BUDGET = 4650
+#: Re-baselined for #1642: gained a "Take a mutation receipt for your own run"
+#: section, moved out of agents/auditor.md and agents/release-auditor.md to
+#: keep their own shared-8-gram duplication below tests/test_audit_shared_
+#: 1071.py's threshold. 2899 B became 3798 B, past the old 3190 B ceiling,
+#: then 4232 B in the same lane's self-review round after an auditor finding
+#: moved the snapshot's own worktree-local, never-/tmp naming rule into this
+#: section too (both spines' own text had shared it verbatim, which nearly
+#: exhausted the 150-8-gram duplication budget on its own). Ceiling moves to
+#: 4650 B, ~10% headroom over the new size.
 
 
 def check() -> dict:
