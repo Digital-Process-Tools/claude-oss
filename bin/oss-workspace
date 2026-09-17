@@ -160,11 +160,12 @@ oss_fireworks
 # `plugin` calls oss_step FIRST and echoes its diagnostic prose only after,
 # so the in-flight line is always overwritten before anything else reaches
 # the terminal -- EXCEPT the python_bin branch of the check itself (#1648),
-# which deliberately terminates the in-flight mark with a real newline
-# before streaming per-plugin progress lines into what used to be this
-# call's own silent ~46s: see that call site's own comment for why the
-# broken pairing is still safe there. channel still has the hazard and is
-# NOT wired to oss_step_begin.
+# which MAY stream per-plugin progress lines into what used to be this
+# call's own silent ~46s: `plugin_update.main()`'s own progress writer, not
+# this shell, decides whether to break the pairing, and only on the first
+# line it actually streams -- see that call site's own comment for why the
+# broken pairing is still safe when it happens, and why it is conditional at
+# all. channel still has the hazard and is NOT wired to oss_step_begin.
 oss_step_begin() {
     [ "${oss_steps:-0}" -eq 1 ] || return 0
     printf '  %s▸%s %-9s %-40s %s...%s' "$d" "$r" "$1" "$2" "$d" "$r"
@@ -302,23 +303,41 @@ if [ -n "$python_bin" ]; then
     # still needs. Closed again right after so it does not leak into the
     # `exec claude` this script eventually runs.
     #
+    # Gated on `oss_steps` (the same flag `oss_step_begin`/`oss_step`
+    # themselves gate on): when steps are not being shown at all (no TTY,
+    # `TERM=dumb`, fireworks opted out), fd 3 is never opened, so
+    # `plugin_update.main()`'s own `os.fdopen(3, ...)` fails exactly as it
+    # would for any other caller and nothing streams -- this path renders
+    # byte-for-byte as it did before this change (found in self-review: an
+    # unconditional `exec 3>&1` here would have let a REAL update's progress
+    # lines reach a "silent" terminal that no other step writes to).
+    #
     # The `oss_step_begin` call just above is normally paired with a matching
     # `oss_step` that overwrites its dangling, no-newline "checking..." mark
     # IN PLACE -- safe only when nothing else reaches the terminal in
     # between (see the hazard comment above `oss_step_begin`'s own
     # definition). Streaming per-plugin progress into exactly that gap is
-    # the point of this change, so the pairing is deliberately broken here:
-    # a real newline below terminates "checking..." as an ordinary, complete
-    # line rather than leaving it dangling for a stream of progress lines to
-    # glue onto. Each progress line python writes also ends in its own "\n",
-    # so by the time the `oss_step` call in the `case` below runs, the
-    # cursor sits on a fresh, empty line -- its own `\r` + clear-to-EOL is a
-    # no-op there, never an erasure of a real progress line.
-    printf '\n'
-    exec 3>&1
+    # the point of this change, so the pairing is broken -- but only when a
+    # progress line is ACTUALLY about to be written: `plugin_update.main()`'s
+    # own `_progress` closure writes the terminating newline lazily, on its
+    # first real call, rather than this shell doing it unconditionally
+    # (self-review finding: `update()` returns with zero progress calls on
+    # its debounce/opt-out/unreadable-manifest paths -- the common case for a
+    # session opened shortly after another one -- and an unconditional
+    # newline here would have left THOSE runs' "checking..." mark frozen,
+    # permanently un-overwritten, on every ordinary launch). Each progress
+    # line, when one streams, ends in its own "\n", so by the time the
+    # `oss_step` call in the `case` below runs, the cursor sits on a fresh,
+    # empty line -- its own `\r` + clear-to-EOL is a no-op there, never an
+    # erasure of a real progress line.
+    if [ "${oss_steps:-0}" -eq 1 ]; then
+        exec 3>&1
+    fi
     auto_update_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
         --root "$repo_root" --caller launcher --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
-    exec 3>&-
+    if [ "${oss_steps:-0}" -eq 1 ]; then
+        exec 3>&-
+    fi
     if [ "$auto_update_status" -ne 0 ]; then
         oss_step plugin "could not check (exit $auto_update_status)" ask
         echo "oss-workspace: could not check whether the oss plugin is current" \

@@ -74,10 +74,44 @@ def test_a_writable_fd_3_becomes_a_real_progress_callback(monkeypatch):
     _stub_update(monkeypatch, capture)
     assert plugin_update.main(["--root", "."]) == 0
     assert capture["kwargs"]["progress"] is not None
+    # #1648 self-review: the terminating newline for the shell's own dangling
+    # in-flight "checking..." mark is written lazily, once, before the FIRST
+    # real progress line -- never unconditionally -- so a run that streams at
+    # least one line still starts with exactly one newline.
     assert writer.lines == [
+        "\n",
         "    checking marketplace...\n",
         "    marketplace: ok\n",
     ]
+    assert writer.closed
+
+
+def test_no_bytes_are_written_when_update_never_calls_progress_1648(monkeypatch):
+    """#1648 self-review: `update()` returns with ZERO calls to `progress` on
+    its debounce/opt-out/unreadable-manifest paths -- the common case for a
+    session opened shortly after another one. On those runs, even with fd 3
+    open and writable, NOTHING may be written to it -- not even the
+    terminating newline -- or the shell's own dangling "checking..." mark
+    would be frozen, permanently un-overwritten, on every ordinary launch."""
+    writer = _FakeWriter()
+    monkeypatch.setattr(
+        plugin_update.os, "fdopen", lambda fd, mode, closefd=True: writer
+    )
+    capture = {}
+
+    def _fake_update(**kwargs):
+        # Simulates a debounced/opted-out/unreadable-manifest run: `update()`
+        # returns immediately WITHOUT ever calling the `progress` callback it
+        # was handed.
+        capture["kwargs"] = kwargs
+        return {"state": "off", "detail": "switched off by OSS_NO_AUTO_UPDATE"}
+
+    monkeypatch.setattr(plugin_update, "update", _fake_update)
+    monkeypatch.setattr(plugin_update, "write_receipt", lambda document: None)
+    monkeypatch.setattr(plugin_update, "read_receipt", lambda: None)
+    assert plugin_update.main(["--root", "."]) == 0
+    assert capture["kwargs"]["progress"] is not None
+    assert writer.lines == []
     assert writer.closed
 
 

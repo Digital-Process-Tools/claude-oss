@@ -108,15 +108,19 @@ top-level ``config is None`` branch already follows.
 
 **The `/oss:doctor` reading (`dr`), and why it gets no bulleted derivation
 here the way the two fields above do (#1345).** Unlike the channel and
-default-branch fields, the cache carries no code for WHICH of five distinct
-causes (no `doctor.py` located, the subprocess could not start,
-`DOCTOR_TIMEOUT` expiry, a non-zero exit, no `VERDICT:` line) produced a
-`None` verdict -- `statusline.py`'s own `_doctor_reading` folds all five into
-the identical `None` before it is ever written to disk. So `doctor_cause`
+default-branch fields, the cache carries no code for WHICH of FOUR remaining
+causes (no `doctor.py` located, the subprocess could not start, a non-zero
+exit, no `VERDICT:` line) produced a `None` verdict -- `statusline.py`'s own
+`_doctor_reading` still folds those four into the identical `None` before it
+is ever written to disk. The fifth cause, `DOCTOR_TIMEOUT` expiry, no longer
+folds here (#1650): it carries its own stamp and renders its own `timeout`
+state distinct from `dr?`, so `doctor_cause`'s own `"refresh-failed"` reason
+below can mean either one -- see that function's docstring. So `doctor_cause`
 distinguishes only what the cache DOES allow (never asked, refresh-failed, an
-unrecognised verdict shape, and the honest `"no-answer"` fold of the five
-real causes) rather than a five-way split this module cannot see through the
-cache alone -- see `doctor_cause`'s own docstring for the full reasoning.
+unrecognised verdict shape, and the honest `"no-answer"` fold of the four
+remaining real causes) rather than a five-way split this module cannot see
+through the cache alone -- see `doctor_cause`'s own docstring for the full
+reasoning.
 
 **`repo-missing`, a cause shared by all three fields (self-review finding,
 #1345).** A `.oss.json` with no usable `repo` means there is nowhere to look
@@ -364,17 +368,28 @@ def doctor_cause(cache, now, repo_missing=False):
     ``"applicable": False`` arm.
 
     **Unlike ``channel_cause``/``default_branch_cause``, the cache does not
-    carry enough to name which of ``_doctor_reading``'s five causes produced a
-    ``None`` verdict** -- no ``doctor.py`` located, the subprocess could not be
-    started, ``DOCTOR_TIMEOUT`` expiry, a non-zero exit, and no ``VERDICT:``
-    line in the output all fold into the identical ``None`` in
-    ``statusline.py`` before it is ever written to disk. Re-running the
-    diagnostic here to tell them apart would mean this module -- itself one of
-    doctor's own checks -- spawning a second, recursive `doctor.py` subprocess
-    on every render, which is exactly the cost `_doctor_reading` already pays
-    once per refresh interval and is not this check's to pay again. So
-    ``"no-answer"`` below names the fold honestly, per the issue's own stated
-    fallback, rather than guessing at which of the five actually happened.
+    carry enough to name which of ``_doctor_reading``'s remaining FOUR causes
+    produced a ``None`` verdict** -- no ``doctor.py`` located, the subprocess
+    could not be started, a non-zero exit, and no ``VERDICT:`` line in the
+    output all still fold into the identical ``None`` in ``statusline.py``
+    before it is ever written to disk. Re-running the diagnostic here to tell
+    them apart would mean this module -- itself one of doctor's own checks --
+    spawning a second, recursive `doctor.py` subprocess on every render, which
+    is exactly the cost `_doctor_reading` already pays once per refresh
+    interval and is not this check's to pay again. So ``"no-answer"`` below
+    names the fold honestly, per the issue's own stated fallback, rather than
+    guessing at which of the four actually happened.
+
+    **The fifth cause, `DOCTOR_TIMEOUT` expiry, is no longer folded into this
+    same `None` (#1650).** `statusline.refresh` now records it under its own
+    `doctor_refresh_timed_out_at` stamp, and `statusline.gather` renders it as
+    its own `"timeout"` state (`dr` + a distinct YELLOW glyph) rather than the
+    `dr?` every cause named above still gets. This function's own
+    `"refresh-failed"` reason below still covers BOTH -- a timeout and every
+    other kind of failed refresh -- because the remedy (force a refresh) is
+    the same either way; only the RENDERED glyph differs, which is why
+    `_DOCTOR_EXPLAIN["refresh-failed"]`'s own message says so explicitly
+    rather than asserting `dr?` unconditionally.
     """
     if statusline is None:
         return {"reason": "could-not-determine"}
@@ -577,18 +592,26 @@ _DOCTOR_EXPLAIN = {
         # fire on a refresh that was actually attempted and got nothing back.
         # Kept as WAIT, matching `_BRANCH_EXPLAIN`'s own row: the fork this
         # row's own `{fork_sentence}` names can still self-heal it.
+        #
+        # #1650: this reason still covers a DOCTOR_TIMEOUT expiry alongside
+        # every other kind of failed refresh -- the remedy is identical
+        # either way -- but the RENDERED glyph now differs between them, so
+        # the message says so rather than asserting `dr?` unconditionally.
         "WAIT",
         "/oss:doctor reading: the last background doctor run was attempted "
         "and produced no verdict this statusline can read back -- renders "
-        "`dr?`. {fork_sentence} Or force it synchronously now: {remedy}",
+        "`dr?`, or a distinct YELLOW `dr` marker if that attempt specifically "
+        "timed out (#1650). {fork_sentence} Or force it synchronously now: "
+        "{remedy}",
     ),
     "no-answer": (
         "WARN",
         "/oss:doctor reading: the last background doctor run produced no "
         "verdict this statusline can read back -- renders `dr?`. The cache "
-        "does not record which of five causes it was (no doctor.py located, "
-        "the subprocess could not start, DOCTOR_TIMEOUT expired, it exited "
-        "non-zero, or its output had no `VERDICT:` line); run `/oss:doctor` "
+        "does not record which of four causes it was (no doctor.py located, "
+        "the subprocess could not start, it exited non-zero, or its output "
+        "had no `VERDICT:` line -- a DOCTOR_TIMEOUT expiry renders its own "
+        "distinct state and is never folded here, #1650); run `/oss:doctor` "
         "(or the script directly) to see the real one, then: {remedy}",
     ),
     "unrecognized": (

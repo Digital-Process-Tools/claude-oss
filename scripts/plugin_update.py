@@ -1075,10 +1075,29 @@ def main(argv=None):
     except OSError:
         progress_writer = None
 
+    # `bin/oss-workspace`'s own `oss_step_begin plugin "checking"` call leaves a
+    # dangling, no-newline "checking..." mark on the terminal, normally
+    # overwritten in place by the paired `oss_step` once this whole check
+    # returns. Streaming into that gap breaks the pairing -- but only on runs
+    # that actually stream something: `update()` returns early, with ZERO
+    # calls to `progress`, on its debounce/opt-out/unreadable-manifest paths,
+    # which are the common case for a session opened shortly after another
+    # one. Terminating the in-flight mark unconditionally (in the shell, or
+    # here on every call) would leave a permanent, un-overwritten "checking..."
+    # line on exactly that common path -- found in self-review. So the
+    # newline is written here, lazily, on the FIRST real progress line only:
+    # a run that never streams anything leaves the mark untouched, and
+    # `bin/oss-workspace`'s own `oss_step` still overwrites it in place
+    # exactly as it did before this change.
+    progress_started = [False]
+
     def _progress(step_name, verdict=None):
         if progress_writer is None:
             return
         try:
+            if not progress_started[0]:
+                progress_writer.write("\n")
+                progress_started[0] = True
             if verdict is None:
                 progress_writer.write("    checking {}...\n".format(step_name))
             else:
