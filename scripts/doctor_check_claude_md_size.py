@@ -22,12 +22,16 @@ circular `ImportError` the moment this module (or its own test) loads first.
 Per `CLAUDE.md`'s own governing rule ("a fact about one repository never
 lives in shared code"), the size ceiling this check compares against is read
 from `.oss.json`'s own `claude_md_size_threshold` key -- joining the
-`triage_route_threshold` / `curate_route_threshold` / `release_route_
-threshold` / `outbound_route_threshold` family `scripts/oss_config.py`
-already carries (#1155/#1395). Per the trap recorded for that exact family
+`triage_route_threshold` / `curate_route_threshold` family `scripts/
+oss_config.py` already carries (#1155). That family used to also carry
+`release_route_threshold` and `outbound_route_threshold`; #1652/#1653
+removed both rather than wiring them (see `oss_config.py`'s own `OPTIONAL_
+KEYS` comment for why), so this threshold now joins a family of two, not
+four. Per the trap recorded against that exact family
 (`.claude/jit-context/paths/00-manual/config-value-validation.md` --
-`outbound_route_threshold` shipped validated-but-unread), the reader lives
-right here, not just a set-membership declaration in `OPTIONAL_KEYS`.
+`outbound_route_threshold` shipped validated-but-unread), the reader for
+THIS key lives right here, not just a set-membership declaration in
+`OPTIONAL_KEYS`.
 
 Absent config must not silently mean "fine": an oversized `CLAUDE.md` on a
 repo with no threshold configured renders `NOTICE`, naming the size found and

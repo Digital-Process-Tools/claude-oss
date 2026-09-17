@@ -58,18 +58,40 @@ OPTIONAL_KEYS = {
     # them. Absent/null is the default and leaves the gate unconditional, same
     # as before this key existed -- see `user_visible_paths_problem` below.
     "user_visible_paths",
-    # #1155: `bin/oss-workspace`'s three threshold routes -- open issues with
-    # no lane-*/priority-* label, trap.d/ fragments waiting, changelog.d/
-    # fragments waiting. Each is a per-repo fact on purpose: absent means this
-    # repo does not want the route, the same rule `changelog_untagged` and
-    # `user_visible_paths` already use. See `scripts/workspace_routes.py`.
+    # #1155: `next_action.py`'s own threshold routes -- open issues with no
+    # lane-*/priority-* label, trap.d/ fragments waiting. Each is a per-repo
+    # fact on purpose: absent means this repo does not want the route, the
+    # same rule `changelog_untagged` and `user_visible_paths` already use.
+    # See `scripts/workspace_routes.py`.
+    #
+    # This used to be three routes (#1652: `release_route_threshold` was
+    # here too, mapped by `workspace_routes.THRESHOLD_KEY` and measured by
+    # `next_action._routes()` on every `rank()` call) and then four (#1395:
+    # `outbound_route_threshold`, below). Both were removed rather than
+    # wired, and each removal is a LEGACY_KEYS tombstone below rather than a
+    # deletion, so a repo that already set either keeps validating clean:
+    #
+    # * #1652 -- `_release_candidate` (`scripts/next_action.py`) never took
+    #   `routes` as an argument and never read this route at all;
+    #   `release_trigger.py` already owns whether a release is due, with its
+    #   own richer fired/not-fired/could-not-tell vocabulary (merged PR
+    #   count, soak hours), and does not need the repeat-suppression receipt
+    #   `curate`/`triage` both do (`next_action.py:79-80` states this
+    #   directly) -- a threshold layered on top would have been redundant,
+    #   not complementary. `bin/oss-workspace` no longer calls
+    #   `workspace_routes` at all (job 2 moved into `next_action.py`,
+    #   `docs/open-the-workspace.md`), so nothing else was reading this
+    #   route's counted value either.
+    # * #1653 -- `outbound_route_threshold` was declared and validated from
+    #   the day it was born, but `workspace_routes.THRESHOLD_KEY` never
+    #   carried an `outbound` entry and `next_action.py` never had a branch
+    #   for it -- see the trap this exact key prompted,
+    #   `.claude/jit-context/paths/00-manual/config-value-validation.md`.
+    #   No outbound drain procedure exists for a route to point at either
+    #   (`commands/run.md`'s sources are `inbound`, `release`, `curate` and
+    #   `triage`), so wiring one for symmetry alone was declined.
     "triage_route_threshold",
     "curate_route_threshold",
-    "release_route_threshold",
-    # #1395: outbound/'s own threshold, on the identical rule -- absent means
-    # this repository does not want the route, so nothing here drains a
-    # queue it never opted into.
-    "outbound_route_threshold",
     # #1631: the size ceiling scripts/doctor_check_claude_md_size.py compares
     # this repo's own CLAUDE.md against. Absent means the check reports the
     # size it found with no ceiling to gate on (`unconfigured`, a NOTICE),
@@ -112,7 +134,14 @@ _RESERVED_PREFIX = "_"
 # They stay in KNOWN_KEYS on purpose. Every `.oss.json` an earlier version wrote still
 # carries the block, and a validator that starts refusing it turns a cleanup into a
 # breaking change for repos that did nothing.
-LEGACY_KEYS = {"ci"}
+#
+# `release_route_threshold` (#1652) and `outbound_route_threshold` (#1653) joined this
+# set for the same reason, one layer thinner: neither was ever emitted by a scaffold
+# run, but both were declared in `OPTIONAL_KEYS` and validated clean for a repo that set
+# either by hand -- see the comment above `OPTIONAL_KEYS` for why each was removed
+# rather than wired. Tombstoning rather than deleting outright keeps that repo's
+# `.oss.json` validating clean too, the identical reasoning `ci` above already gives.
+LEGACY_KEYS = {"ci", "release_route_threshold", "outbound_route_threshold"}
 
 # The config is two files because its keys have two different owners (#34).
 #
