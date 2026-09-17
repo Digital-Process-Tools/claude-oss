@@ -163,7 +163,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 54831 B across two chased-then-widened ceiling drafts; final ceiling set at
     # 55200 B, ~0.7% headroom, wide enough to absorb this comment's own bytes
     # without a third chase.
-    "CLAUDE.md": (54906, 55200),
+    # Re-baselined for #1622, the third editing exception: `agents/tick-review.md`'s
+    # own row and ceiling raised (four times, across two review rounds), plus this row
+    # and weighed sentence recording it, updated to match each time. 54831 B became
+    # 57816 B, past the 55200 B ceiling. Ceiling moves to 58100 B, ~0.45% headroom.
+    "CLAUDE.md": (57816, 58100),
 }
 
 

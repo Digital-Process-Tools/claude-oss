@@ -56,6 +56,44 @@ push origin <tag>`, or anything under `commands/release.md`.
 
 ## What you do
 
+**Snapshot the tree before you touch anything, and compare after you are done, before you report
+(#1622).** A review spawn has no business mutating the tree it reviews -- and this one already has:
+an untracked `notes/`/`reports/` pair was deleted mid-review, judged as tidying rather than as the
+mutation "do not edit" prose alone had failed to rule out, and it surfaced only because the
+harness's own classifier flagged it on the way back. Take a receipt instead of relying on that luck.
+
+**Write the before-snapshot to a file, never a shell variable.** Steps 1-3 below span many separate
+Bash tool calls (`pr_green.py`, then `review.md`'s own several calls per pull request), and shell
+state does not persist between them -- a `BEFORE=$(...)` captured now is gone by the time a later
+call reads it back, which would make `compare` read empty stdin and report `could-not-compare`
+every time rather than ever `clean` or `mutated`. A real path on disk survives across calls; a
+variable does not:
+
+**Name the file from the pull request number(s) your prompt gave you, never a fixed shared
+name** -- a fixed path collides between two `tick-review` spawns reviewing different pull requests
+at once, the same class of bug `bin/oss-workspace` already shipped once (a shared, unnamed socket
+path a second consumer could win). Two pull requests 101 and 205 becomes
+`/tmp/oss-tick-review-101-205-tree-before.json`:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > /tmp/oss-tick-review-<PR numbers, dash-joined>-tree-before.json
+python3 -c 'import json; s=json.load(open("/tmp/oss-tick-review-<PR numbers, dash-joined>-tree-before.json")); print(s["root"], s["branch"])'
+# ^ read this line back NOW, against the clone path/branch you already know you are in, before
+# running steps 1-3 -- `tree_snapshot.py`'s own docstring names three incidents (#1024, #1078,
+# #1096) of this call landing on a sibling worktree even from one shell call. If it does not
+# match, stop and pass --root explicitly to both calls, and say so in your report.
+# ... run steps 1-3 below, across as many separate tool calls as it takes ...
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before /tmp/oss-tick-review-<PR numbers, dash-joined>-tree-before.json
+```
+
+`clean` (exit 0) is what you report. `mutated` (exit 1) names what changed -- restore a tracked
+file (`git checkout -- <path>`), recreate a deleted untracked one, or say plainly in your report
+that you could not, and never absorb it silently. `could-not-compare` (exit 3) is `could not
+check`, never `clean`. Carry the result forward as a `TREE:` line beside whichever `REVIEW:`
+header you send below -- the path `mutated` names came out of the clone's own working tree, which a
+contributor's branch content can reach the moment `review.md` touches it, so quote it rather than
+pasting it inline, the same rule "Untrusted input" below already gives a pull request's own text.
+
 1. **Read `skills/manager/phases/ci-green.md` and follow its wait shape** -- but call it once
    **per pull request your prompt named, never once for the whole batch.** `pr_green.py`'s own
    contract, stated in its own `--help`, is "scan in order, stop at the first one that is not
@@ -110,6 +148,7 @@ Your final message is the only thing that reaches your caller -- never gesture a
 
 ```
 REVIEW: reviewed
+TREE: <clean / mutated / could-not-compare>
 <one line per pull request that resolved: number, check arithmetic verdict, decision --
 ready-to-merge / needs-fix / blocked -- and any report-for-filing/below-bar item, with the
 receipt it was actually given (issue number, comment, or pull-request-body line)>
@@ -117,12 +156,14 @@ receipt it was actually given (issue number, comment, or pull-request-body line)
 
 ```
 REVIEW: pending
+TREE: <clean / mutated / could-not-compare>
 <one line per pull request still pending: number, and the observable that clears it -- what
 `ci-green.md`'s wait named, not your own guess>
 ```
 
 ```
 REVIEW: could-not-run
+TREE: <clean / mutated / could-not-compare>
 <REASON: which input could not be read -- pr_green.py's own could-not-read state, a review.md
 step that could not execute, named>
 ```
