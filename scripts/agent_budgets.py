@@ -552,14 +552,21 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # snapshot/compare (already used around `agents/developer/review.md`'s reviewer
     # spawns), reported as a new `TREE:` line beside every `REVIEW:` header. 10785 B
     # became 12029 B, past the old ceiling.
-    # Re-baselined twice more in the same lane's own self-review round: a `BEFORE=$(...)`
+    # Re-baselined twice more in a first self-review round: a `BEFORE=$(...)`
     # shell-variable copied from `agents/developer/review.md` verbatim would not survive
     # the many separate Bash calls this spawn's own procedure needs, so the mechanism
     # would report `could-not-compare` on every real use -- fixed by writing the
     # before-snapshot to a file instead; and the sibling mechanism's own root/branch
     # verification (added there after #1024/#1078/#1096) was missing here -- added. 12029
-    # B became 13322 B across both fixes. Ceiling moves to 13500 B, ~1.3% headroom.
-    "agents/tick-review.md": (13322, 13500),
+    # B became 13322 B across both fixes.
+    # Re-baselined again in a required second-pass round: the temp file chosen was a
+    # fixed, shared name two `tick-review` spawns reviewing different pull requests at
+    # once would collide on -- fixed by naming it from the pull request number(s) the
+    # spawn was given; and a quoting instruction wrongly said a mutated path came from
+    # "a lane worktree," copied verbatim from `agents/developer/review.md` without
+    # adapting it -- corrected to "the clone," which is where this file actually runs.
+    # 13322 B became 13869 B. Ceiling moves to 14100 B, ~1.7% headroom.
+    "agents/tick-review.md": (13869, 14100),
     # #1544 steps 3-4: two new files. `oss:sub-manager` used to merge on green
     # and assemble its own state-file entry and `TICK:` handback inline, in
     # the same long-lived context that dispatch and review had already been

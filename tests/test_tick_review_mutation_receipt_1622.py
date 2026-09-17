@@ -130,6 +130,24 @@ def test_it_verifies_root_and_branch_immediately_after_the_before_snapshot():
     )
 
 
+def test_the_temp_file_name_is_not_a_fixed_shared_path():
+    """Two `tick-review` spawns reviewing different pull requests at once must not
+    collide on the same before-snapshot path -- the same class of bug
+    `bin/oss-workspace` already shipped once with a shared, unnamed socket path a
+    second consumer could win (found in the second self-review round)."""
+    text = _text()
+    fences = re.findall(r"```bash\n(.*?)```", text, re.DOTALL)
+    code = "\n".join(fences)
+    assert "oss-tick-review-tree-before.json" not in code, (
+        "agents/tick-review.md's bash snippet still names a fixed, shared temp file "
+        "with no per-pull-request uniqueness -- two concurrent spawns would collide"
+    )
+    assert "PR numbers" in code or "pull request" in text, (
+        "agents/tick-review.md does not instruct the spawn to derive the temp file "
+        "name from the pull request number(s) it was given"
+    )
+
+
 def test_the_three_tree_states_are_all_named():
     text = _text()
     for state in ("clean", "mutated", "could-not-compare"):

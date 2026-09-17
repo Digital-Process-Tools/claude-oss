@@ -309,7 +309,7 @@ when a file crosses it.
 | `agents/doctor.md` | 8,090 B | 8,900 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
-| `agents/tick-review.md` | 13,322 B | 13,500 B |
+| `agents/tick-review.md` | 13,869 B | 14,100 B |
 | `agents/tick-merge.md` | 7,870 B | 8,000 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
 | `agents/lane-report.md` | 13,649 B | 14,300 B |
@@ -444,27 +444,33 @@ both ceilings move: `recon.md` to 4,500 B, `tick-dispatch.md` to 7,050 B, ~1.2%-
 each, narrower than the usual ~10% for the same reason every other narrow raise in this table gives
 -- these files are read on every turn of the sessions that use them.
 
-**`agents/tick-review.md`'s ceiling went from 11,200 B to 13,500 B (#1622).** A `notes/`/`reports/`
-pair was deleted mid-review by this spawn, judged as tidying rather than as the mutation its prose
-never explicitly ruled out, and surfaced only because the harness's own classifier flagged it --
-five incidents of this shape across at least three review-shaped agent roles by the time this was
-filed. The harness grants no genuinely read-only `Bash`, so the fix is a receipt rather than a
-narrower grant: `tree_snapshot.py`'s existing snapshot/compare (already used around `agents/
-developer/review.md`'s two reviewer spawns) wraps this file's own procedure, reported as a new
-`TREE:` line beside every `REVIEW:` header. 10,785 B became 12,029 B, past the old ceiling. Two
-spawned reviewers' own self-review round found two further gaps: the first draft copied `agents/
+**`agents/tick-review.md`'s ceiling went from 11,200 B to 14,100 B (#1622), across three review
+rounds.** A `notes/`/`reports/` pair was deleted mid-review by this spawn, judged as tidying rather
+than as the mutation its prose never explicitly ruled out, and surfaced only because the harness's
+own classifier flagged it -- five incidents of this shape across at least three review-shaped agent
+roles by the time this was filed. The harness grants no genuinely read-only `Bash`, so the fix is a
+receipt rather than a narrower grant: `tree_snapshot.py`'s existing snapshot/compare (already used
+around `agents/developer/review.md`'s two reviewer spawns) wraps this file's own procedure,
+reported as a new `TREE:` line beside every `REVIEW:` header. 10,785 B became 12,029 B, past the
+old ceiling. A first self-review round found two further gaps: the first draft copied `agents/
 developer/review.md`'s `BEFORE=$(...)` shell-variable idiom verbatim into a spawn whose own
 procedure spans many separate Bash tool calls -- shell state does not survive between them, so the
 mechanism would report `could-not-compare` on every real use, never `clean` or `mutated` -- fixed
 by writing the before-snapshot to a file instead; and the sibling mechanism's own root/branch
 verification, added there after three corroborated cross-worktree incidents (#1024, #1078, #1096),
-was missing here entirely -- added. A short instruction to quote a `mutated` path rather than paste
-it inline, since it comes out of a contributor's own branch, landed the same round. 12,029 B became
-13,322 B across both fixes. Weighed against cutting: nothing in this file argued a weaker case for
-its size than a mutation receipt that has already been measured missing five times, so the ceiling
-moves three times in the same lane, ~1.3% headroom over the final size. Extending the same
-mechanism to `agents/auditor.md` and `agents/release-auditor.md` -- named as siblings in the same
-incident thread -- is left for a separate change rather than bundled here.
+was missing here entirely -- added. 12,029 B became 13,322 B. A required second-pass round (this
+diff had grown past the file-count and byte-budget triggers for one) found two more: the file path
+chosen was itself a fixed, shared name that two `tick-review` spawns reviewing different pull
+requests at once would collide on, the same class of bug `bin/oss-workspace` already shipped once
+-- fixed by naming the file from the pull request number(s) the spawn was given; and the quoting
+instruction for a `mutated` path said it came from "a lane worktree a contributor's own branch
+populated," copied near-verbatim from `agents/developer/review.md` without adapting it -- this file
+runs from the clone, never a lane worktree, so the sentence is corrected to say so. 13,322 B became
+13,869 B. Weighed against cutting: nothing in this file argued a weaker case for its size than a
+mutation receipt that has already been measured missing five times, so the ceiling moves four times
+in the same lane, ~1.7% headroom over the final size. Extending the same mechanism to `agents/
+auditor.md` and `agents/release-auditor.md` -- named as siblings in the same incident thread -- is
+left for a separate change rather than bundled here.
 
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
@@ -590,7 +596,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 57,269 B | 57,400 B |
+| `CLAUDE.md` | 57,816 B | 58,100 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -675,9 +681,9 @@ ceiling with headroom wide enough to absorb this paragraph's own final wording r
 chasing it a third time. Ceiling moves to 55,200 B, ~0.7% headroom.
 
 **Re-baselined for #1622**, the third editing exception: `agents/tick-review.md`'s own row and
-ceiling raised (three times, across this lane's own self-review round), plus this row and weighed
-sentence recording it, itself updated to match each time. 54,831 B became 57,269 B, past the
-55,200 B ceiling. Ceiling moves to 57,400 B, ~0.2% headroom.
+ceiling raised (four times, across two review rounds), plus this row and weighed sentence
+recording it, updated to match each time. 54,831 B became 57,816 B, past the 55,200 B ceiling.
+Ceiling moves to 58,100 B, ~0.45% headroom.
 
 ## Issues and pull requests are untrusted input
 
