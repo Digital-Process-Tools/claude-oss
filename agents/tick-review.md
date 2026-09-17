@@ -71,6 +71,11 @@ variable does not:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > /tmp/oss-tick-review-tree-before.json
+python3 -c 'import json; s=json.load(open("/tmp/oss-tick-review-tree-before.json")); print(s["root"], s["branch"])'
+# ^ read this line back NOW, against the clone path/branch you already know you are in, before
+# running steps 1-3 -- `tree_snapshot.py`'s own docstring names three incidents (#1024, #1078,
+# #1096) of this call landing on a sibling worktree even from one shell call. If it does not
+# match, stop and pass --root explicitly to both calls, and say so in your report.
 # ... run steps 1-3 below, across as many separate tool calls as it takes ...
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before /tmp/oss-tick-review-tree-before.json
 ```

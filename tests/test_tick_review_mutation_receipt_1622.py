@@ -116,6 +116,20 @@ def test_report_back_carries_a_tree_line_beside_every_review_header():
         )
 
 
+def test_it_verifies_root_and_branch_immediately_after_the_before_snapshot():
+    """The sibling mechanism in agents/developer/review.md added this check in
+    response to three corroborated incidents (#1024, #1078, #1096) of a snapshot
+    call landing on the wrong worktree even from a single shell call. Omitting it
+    here would reintroduce that same known, unresolved risk into a new call site."""
+    text = _text()
+    fences = re.findall(r"```bash\n(.*?)```", text, re.DOTALL)
+    code = "\n".join(fences)
+    assert re.search(r's\["root"\].*s\["branch"\]', code), (
+        "agents/tick-review.md's bash snippet does not read root/branch back from "
+        "the before-snapshot to verify it landed on the right worktree"
+    )
+
+
 def test_the_three_tree_states_are_all_named():
     text = _text()
     for state in ("clean", "mutated", "could-not-compare"):
