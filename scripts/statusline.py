@@ -1373,9 +1373,13 @@ def _doctor_field(state, symbols, color=False):
     `symbols["own"]`, doctor's `usable with gaps` -- reusing the glyph `_channel_field`
     uses for its own "a real finding that is neither pass nor fail" state, because that
     is exactly what a WARN is here too. `"bad"` -> `symbols["bad"]`, `not usable`.
-    Anything else -- `None`, because the reading is absent or stale (folded by
-    `gather()` before this function ever sees it), or a verdict shape doctor has never
-    printed -- renders `symbols["unk"]`, never a guess.
+    Anything else -- `None`, because the reading was never taken at all, or a due
+    refresh was actually attempted and got nothing back (`doctor_refresh_failed_at`,
+    folded by `gather()` before this function ever sees it -- #1635), or a verdict
+    shape doctor has never printed -- renders `symbols["unk"]`, never a guess. A
+    reading merely due for its own refresh interval is NOT folded here any more
+    (#1635): `gather()` keeps rendering the last-known verdict while a refresh is
+    merely in flight.
 
     **Named risk, not fixed here (the issue's own "Edge case" section, #1314): a
     single persistent false-positive WARN pins this marker at the `gaps` glyph
@@ -1432,13 +1436,16 @@ def _default_branch_marker(state, symbols, color=False):
     and a marker that silently drifted to mean "is MY branch green" would be
     actively misleading rather than merely wrong.
 
-    `None` -- rendering nothing, never `?` -- when `state` is `None`: either the
-    config declares no default branch to compare against (a deliberate absence of
-    the question, the channel field's own convention, #613), or `gather()` has
-    already folded a stale reading into `"unknown"` before this function ever
-    sees it, in which case `state == "unknown"` reaches here and DOES render --
-    the `unk` glyph -- because a stale reading is a real answer ("we cannot
-    currently say"), not the same absence as never having asked at all.
+    `None` -- rendering nothing, never `?` -- when `state` is `None`: the config
+    declares no default branch to compare against (a deliberate absence of the
+    question, the channel field's own convention, #613). A reading `gather()` has
+    folded to `"unknown"` -- a recorded failed refresh, `stale_after` having
+    invalidated it (this session's own merge/close, #516), or a value that was
+    never fetched at all (#1635) -- reaches here as `state == "unknown"` and DOES
+    render, the `unk` glyph, because that is a real answer ("we cannot currently
+    say"), not the same absence as never having asked at all. A reading merely
+    due for its own refresh interval, with none of the above, is NOT folded any
+    more (#1635) and reaches here as its own last-known state instead.
 
     Colour reinforces the glyph and is never its only carrier (#549/#550): every
     state below is a distinct shape in `_symbols`, monochrome or not.
@@ -1528,8 +1535,10 @@ def render(facts, ascii_only=False, color=False):
         blocks.append(channel_block)
     # Always shown, unlike `ch` above -- there is no deliberate off switch for
     # `/oss:doctor` the way `watch_channel: false` turns the channel field off
-    # (#613's own convention), so an absent or stale reading renders `dr?` rather
-    # than disappearing from the line (#1314).
+    # (#613's own convention), so a reading never taken, or one a due refresh
+    # actually attempted and failed to get back, renders `dr?` rather than
+    # disappearing from the line (#1314). A reading merely due for its own
+    # refresh interval renders its last-known verdict instead (#1635).
     blocks.append(_doctor_field(facts.get("doctor_state"), symbols, color))
     return symbols["sep"].join(blocks)
 
@@ -3332,16 +3341,32 @@ def gather(payload, root, now=None):
     board_stale = board_is_due(cache, now)
     if board_stale:
         _fork_refresh(root, config.get("repo"), current_session)
-    # #1635: age is a trigger to refresh (via `board_stale`/`_fork_refresh` just
-    # above), never a reason to distrust what is already known -- the same rule
-    # #1464 already applied to `latest` below, extended here to the board. A
-    # reading merely due keeps rendering its last-known state; `_fork_refresh` has
-    # already been asked to replace it in this same pass. Only a recorded failed
-    # refresh (`board_refresh_failed_at`, set by `refresh()` when the forge did not
-    # answer), or a value that is not one of the four real states at all (never
-    # fetched, or a hand-edited/corrupted cache), folds to `"unknown"`.
-    # `default_branch` itself present-but-unconfigured stays `None` (never asked,
-    # #613's own convention).
+    # #1635: MERE interval age is a trigger to refresh (via `board_stale`/
+    # `_fork_refresh` just above), never a reason to distrust what is already
+    # known -- the same rule #1464 already applied to `latest` below, extended
+    # here to the board. A reading merely due for `REFRESH_AFTER` keeps
+    # rendering its last-known state; `_fork_refresh` has already been asked to
+    # replace it in this same pass.
+    #
+    # `stale_after` is a DIFFERENT trigger of `board_is_due` and is NOT covered
+    # by that relaxation (self-review finding, #1635): it is written by the
+    # `PostToolUse` hook the moment THIS session merges a pull request or
+    # closes an issue (#516), and the issue's own recon left this exact
+    # question open ("item 4") without resolving it either way. The danger
+    # #856 was filed over is real here specifically: right after a merge, the
+    # cached `raw_branch_state` is not merely old, it is confidently `green`
+    # about a commit that no longer exists, for the whole gap until the forked
+    # refresh (6+ `gh` calls, not instant) lands. So `stale_after` having
+    # passed still folds the render to `"unknown"` immediately, exactly as it
+    # did before this issue -- only the pure-age leg of `board_is_due` stopped
+    # folding.
+    #
+    # Beyond both of those: a recorded failed refresh (`board_refresh_failed_at`,
+    # set by `refresh()` when the forge did not answer), or a value that is not
+    # one of the four real states at all (never fetched, or a hand-edited/
+    # corrupted cache), also folds to `"unknown"`. `default_branch` itself
+    # present-but-unconfigured stays `None` (never asked, #613's own
+    # convention).
     default_branch_state = None
     if config.get("default_branch"):
         raw_branch_state = (cache or {}).get("default_branch_state")
@@ -3351,11 +3376,14 @@ def gather(payload, root, now=None):
             not isinstance(board_fetched_at, (int, float))
             or board_failed_at >= board_fetched_at
         )
-        if board_refresh_failed or raw_branch_state not in (
-            "green",
-            "bad",
-            "running",
-            "no-run",
+        board_stale_after = (cache or {}).get("stale_after")
+        board_invalidated = isinstance(board_stale_after, (int, float)) and (
+            now >= board_stale_after
+        )
+        if (
+            board_refresh_failed
+            or board_invalidated
+            or raw_branch_state not in ("green", "bad", "running", "no-run")
         ):
             default_branch_state = "unknown"
         else:

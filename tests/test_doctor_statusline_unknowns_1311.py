@@ -220,6 +220,20 @@ def test_default_branch_refresh_failed_outranks_a_present_raw_value():
     assert result["reason"] == "refresh-failed"
 
 
+def test_default_branch_invalidated_by_stale_after_still_folds_immediately():
+    """Must-fire, self-review finding on this same issue (#1635): unlike mere
+    interval age (the must-not-fire test above), `stale_after` (this session's
+    own merge/close, #516) still folds immediately -- the cached value is not
+    merely old, it is confidently about a commit that no longer exists."""
+    cache = {
+        "fetched_at": NOW - 1,
+        "default_branch_state": "green",
+        "stale_after": NOW - 1,
+    }
+    result = mod.default_branch_cause({"default_branch": "main"}, cache, NOW)
+    assert result["reason"] == "invalidated"
+
+
 def test_default_branch_no_answer_when_gh_call_failed():
     cache = {"fetched_at": NOW - 5, "default_branch_state": None}
     result = mod.default_branch_cause({"default_branch": "main"}, cache, NOW)

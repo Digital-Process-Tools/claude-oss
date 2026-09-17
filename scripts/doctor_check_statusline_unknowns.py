@@ -46,16 +46,22 @@ own two conditions test them:
 
 * ``"not-asked"`` -- no cache document exists at all: no board reading has
   ever been cached for this repo.
+* ``"invalidated"`` -- ``stale_after`` has passed: THIS session merged a pull
+  request or closed an issue (#516), which falsifies the cached CI reading
+  outright rather than merely aging it -- the reading is confidently about a
+  commit that no longer exists, not just old. Kept as an immediate fold
+  (#1635's own self-review finding): only the OTHER trigger of
+  ``board_is_due`` -- mere interval age -- stopped folding.
 * ``"refresh-failed"`` -- ``board_refresh_failed_at`` names a refresh that was
   actually ATTEMPTED and got nothing back, at least as recent as the board's
-  own ``fetched_at`` (#1635). Merely being due for a refresh (``board_is_due``)
-  is NOT this cause any more: age is a trigger to refresh, never a reason to
-  distrust what is already known, and `gather()` keeps rendering the
+  own ``fetched_at`` (#1635). Merely being due for a refresh on interval age
+  alone is NOT this cause any more: age is a trigger to refresh, never a
+  reason to distrust what is already known, and `gather()` keeps rendering the
   last-known state for a reading that is merely due -- see this module's own
   #1635 update. Checked before the raw value below regardless of what that
   value says, mirroring ``gather()``'s own ``or`` -- a failed refresh of a
   real value is still ``"unknown"`` there.
-* ``"no-answer"`` -- no refresh failure is recorded, but the cached
+* ``"no-answer"`` -- neither of the above applies, but the cached
   ``default_branch_state`` is ``None``: nothing has ever answered for this
   branch's CI state.
 * ``"unrecognized"`` -- the cached value is present but is not one of the
@@ -297,9 +303,16 @@ def default_branch_cause(config, cache, now, repo_missing=False):
     fetched_at = (cache or {}).get("fetched_at")
     if not isinstance(fetched_at, (int, float)):
         return {"applicable": True, "reason": "not-asked"}
-    # #1635: mirrors `gather()`'s own fold exactly -- age (`board_is_due`) is no
-    # longer part of this decision. Only a refresh actually attempted and
-    # recorded as having failed, at least as recent as `fetched_at`, counts.
+    # #1635: mirrors `gather()`'s own fold exactly -- MERE interval age
+    # (`board_is_due`'s own `REFRESH_AFTER` leg) is no longer part of this
+    # decision. `stale_after` (the merge/close event, #516) is a different
+    # trigger of `board_is_due` and still folds immediately, same as
+    # `gather()`'s own self-review finding on this issue: the cached value is
+    # not merely old in that case, it is confidently about a commit that no
+    # longer exists.
+    stale_after = (cache or {}).get("stale_after")
+    if isinstance(stale_after, (int, float)) and now >= stale_after:
+        return {"applicable": True, "reason": "invalidated"}
     failed_at = (cache or {}).get("board_refresh_failed_at")
     if isinstance(failed_at, (int, float)) and failed_at >= fetched_at:
         return {"applicable": True, "reason": "refresh-failed"}
@@ -477,14 +490,28 @@ _BRANCH_EXPLAIN = {
         "real state (`?` once a first reading exists and then goes stale). "
         "{remedy}",
     ),
+    "invalidated": (
+        # #1635 self-review finding: distinct from "refresh-failed" below --
+        # this session's own merge/close (#516) falsified the reading
+        # outright, it did not merely age past its interval. Still a WAIT: the
+        # same fork this check just attempted (or the next render's own) can
+        # replace it with a fresh, real reading.
+        "WAIT",
+        "statusline default-branch marker: this session just merged a pull "
+        "request or closed an issue, which falsifies the cached CI state for "
+        "the branch (it may now be about a commit that no longer exists) -- "
+        "renders `unk`. {fork_sentence} Or force it synchronously now: "
+        "{remedy}",
+    ),
     "refresh-failed": (
-        # #1635: renamed from "stale" -- age (`board_is_due`) no longer folds
-        # `gather()`'s own render at all, so this row can only fire on a
-        # refresh that was actually attempted and got nothing back. Keeps the
-        # same WAIT-with-`{fork_sentence}` shape #1479 argued for: the next
-        # render's own due-triggered refresh (or the fork this check just
-        # attempted) can still self-heal it, so this is not necessarily a
-        # WARN a maintainer must act on by hand.
+        # #1635: renamed from "stale" -- MERE interval age (`board_is_due`'s
+        # own `REFRESH_AFTER` leg) no longer folds `gather()`'s own render at
+        # all, so this row can only fire on a refresh that was actually
+        # attempted and got nothing back. Keeps the same WAIT-with-
+        # `{fork_sentence}` shape #1479 argued for: the next render's own
+        # due-triggered refresh (or the fork this check just attempted) can
+        # still self-heal it, so this is not necessarily a WARN a maintainer
+        # must act on by hand.
         "WAIT",
         "statusline default-branch marker: the last refresh's own `gh` call "
         "for this branch's CI state was attempted and did not answer -- "
@@ -765,8 +792,10 @@ def check_statusline_unknowns(project_dir, config, now=None):
         # #1635: the channel field's own cause is still spelled "stale" (out
         # of this issue's scope, #613/#1440's own clock); the board and
         # doctor fields were renamed to "refresh-failed" when their own age
-        # fold was removed -- both still warrant a fork attempt.
-        result.get("reason") in ("stale", "refresh-failed")
+        # fold was removed, and the board field alone can also report
+        # "invalidated" (this session's own merge/close, #516) -- all three
+        # still warrant a fork attempt.
+        result.get("reason") in ("stale", "refresh-failed", "invalidated")
         for result in (channel_result, branch_result, doctor_result)
     ):
         forked = _maybe_fork_refresh(project_dir, repo, now)

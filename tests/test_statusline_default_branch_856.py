@@ -610,15 +610,20 @@ def test_gather_folds_to_unknown_on_a_recorded_failed_board_refresh(
     assert facts["default_branch_state"] == "unknown"
 
 
-def test_gather_keeps_rendering_even_when_stale_after_says_so(tmp_path, monkeypatch):
-    """The other half of #515/#516, revised by #1635: `stale_after` (written by
-    the merge/close hook, #516) still marks the board due -- and still forks a
-    refresh -- before `REFRESH_AFTER` alone would, but merely being due (by
-    either route) no longer folds the render on its own. The moment right
-    after this loop's own merge shows the last-known state (which will itself
-    shortly become `running`/`no-run` once CI starts, per the issue's own
-    resolution) rather than `?`, unless a refresh is actually attempted and
-    fails."""
+def test_gather_folds_to_unknown_when_stale_after_says_so_even_inside_the_interval(
+    tmp_path, monkeypatch
+):
+    """The other half of #515/#516, RESTORED after a self-review finding on this
+    same issue (#1635): a reviewer spawn correctly flagged an earlier draft that
+    let `stale_after` stop folding along with mere interval age, which silently
+    reopened #856's own motivating danger -- the moment right after THIS
+    session's own merge/close (#516), the cached `green` is not merely old, it
+    is confidently about a commit that no longer exists, for the whole gap
+    until the forked refresh (6+ `gh` calls) lands. `stale_after` marks the
+    board due -- and still forks a refresh -- before `REFRESH_AFTER` alone
+    would, and (unlike mere interval age, see the must-not-fire pairing above)
+    it still folds the render to `unknown` immediately, exactly as before this
+    issue."""
     now = 1_000_000.0
     cache = _cache("green", now - 1, now, stale_after=now - 1)
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
@@ -638,7 +643,7 @@ def test_gather_keeps_rendering_even_when_stale_after_says_so(tmp_path, monkeypa
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "git_release_progress", lambda root: {})
     facts = statusline.gather({}, ".", now=now)
-    assert facts["default_branch_state"] == "green"
+    assert facts["default_branch_state"] == "unknown"
 
 
 def test_gather_is_none_when_no_default_branch_is_configured(tmp_path, monkeypatch):
