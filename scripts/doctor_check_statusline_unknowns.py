@@ -570,8 +570,10 @@ _BRANCH_EXPLAIN = {
 
 #: reason -> (doctor state, message template taking `remedy`), the `dr` field's
 #: own version of `_CHANNEL_EXPLAIN`/`_BRANCH_EXPLAIN` above. `"no-answer"` is
-#: the honest fold of the five causes `doctor_cause`'s own docstring names --
-#: this check does not guess at which one happened.
+#: the honest fold of the FOUR remaining causes `doctor_cause`'s own docstring
+#: names -- this check does not guess at which one happened. The fifth cause,
+#: a `DOCTOR_TIMEOUT` expiry, no longer folds here (#1650): it renders its own
+#: distinct `"timeout"` state instead, via `"refresh-failed"` below.
 _DOCTOR_EXPLAIN = {
     "repo-missing": (
         "WARN",
