@@ -159,6 +159,30 @@ def test_a_failed_transport_warns_rather_than_passing():
     assert "failed transport" in _text()
 
 
+def test_a_failed_transport_beside_an_untrusted_forwarding_reading_reports_both_facts_1625():
+    """#1625 defect 1: `source == "cached-other-session"` is deliberately
+    excluded from the OK-suppression guard (#1437 -- doctor cannot verify a
+    cross-session reading is its own), but that must not make the WARN below
+    it claim "no channel:health reading establishes a live consumer" when one
+    plainly does. The two facts -- a failed `claude mcp list` transport, and a
+    `channel:health` reading of `forwarding` this check does not trust enough
+    to suppress on -- are reported as separate facts, never joined into one
+    false claim."""
+    conn.check_mcp_channel_connection(
+        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _name: "/usr/bin/claude",
+        env=LAUNCHED,
+        resolve=lambda _d: ("forwarding", "cached-other-session", 33.0),
+    )
+    assert _levels() == ["WARN"]
+    text = _text()
+    assert "no channel:health reading establishes a live consumer" not in text, text
+    assert "forwarding" in text, text
+    assert (
+        "cannot verify" in text or "cannot trust" in text or "cannot confirm" in text
+    ), text
+
+
 def test_a_live_transport_passes_and_says_what_it_does_not_prove():
     """Positive control, and a content assertion: an OK that did not disclaim
     the probe would be the same false confidence in a new place."""

@@ -359,6 +359,39 @@ def check_mcp_channel_connection(
         # op, no scaffold run and no clock clears it -- WAIT needs a real
         # clock"), a state with no working clock is not a WAIT; report it as
         # the same WARN below unconditionally.
+        #
+        # #1625 defect 1: `raw_state == "forwarding"` with `source ==
+        # "cached-other-session"` falls through the OK-suppression guard
+        # above (by design -- #1437 says this reading is not trusted enough
+        # to suppress on) and used to land in the plain WARN below, which
+        # claims "no channel:health reading establishes a live consumer to
+        # explain it". That is false exactly here: a reading does establish
+        # one, it is just not trusted enough to act on. The two facts are
+        # reported separately instead of joined into one false claim.
+        if raw_state == "forwarding" and source == "cached-other-session":
+            aged = (
+                " ({:.0f}s old)".format(age)
+                if isinstance(age, (int, float)) and age
+                else ""
+            )
+            doctor.report(
+                "WARN",
+                "channel MCP connection: every MCP server resolving to the "
+                "claude-channel consumer reports a failed transport ({}). "
+                "Separately: a channel:health reading of forwarding{} does "
+                "exist, but this check cannot verify it is this session's own "
+                "(#1437 -- the reading carries a `session` attribution nothing "
+                "here can confirm or deny), so it does not explain the failed "
+                "transport away. The two facts may describe the SAME socket or "
+                "two different ones -- `claude mcp list` forks a probe against "
+                "whatever socket this consumer would bind, which is not "
+                "necessarily the one a live consumer already holds. "
+                "`./supertool channel:health` names the live consumer's own "
+                "socket in its `socket:` row; `lsof /tmp/supertool-watch.sock` "
+                "names whatever process holds the default one this transport "
+                "may have failed on.".format(detail, aged),
+            )
+            return
         doctor.report(
             "WARN",
             "channel MCP connection: every MCP server resolving to the "

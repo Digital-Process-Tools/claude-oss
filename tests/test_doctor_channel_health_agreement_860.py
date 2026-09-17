@@ -469,6 +469,40 @@ def test_preset_disabled_helper_does_not_fold_unknown_into_disabled(monkeypatch)
 # --------------------------------------------------------------------------
 
 
+def test_check_reports_notice_for_a_cached_other_session_forwarding_reading_1625(
+    monkeypatch,
+):
+    """#1625 defect 2: `cached-other-session` with the `watch` preset enabled
+    fell all the way to the plain WARN fallback -- a state no manual op and no
+    `/oss:scaffold` run can ever clear, since a fresh cache write always
+    carries a `session` key (#1362) and doctor.py carries no session identity
+    of its own to compare against (#1437): this check can never confirm such a
+    reading is not "other", so the state is structurally permanent, not a gap
+    that will close on its own. Per doctor-check-contract test 1, a WARN
+    nothing can clear is a bug in the check -- NOTICE, not WARN or WAIT (WAIT
+    needs a real clock, and there is none here)."""
+    fake = _FakeStatusline(
+        cache={
+            "channel": {"raw_state": "forwarding", "session": "some-session"},
+            "channel_fetched_at": 967.0,
+        },
+        preset_declared=True,
+    )
+    monkeypatch.setattr(agreement, "statusline", fake)
+
+    def run(argv, **kw):
+        return _Completed(
+            0, b"oss-channel:    bun /x/notifiers/claude-channel/channel.ts\n"
+        )
+
+    agreement.check_channel_health_agreement(
+        "/repo", run=run, which=lambda name: "/usr/bin/claude", env={}, now=1000.0
+    )
+    level, message = doctor.FINDINGS[-1]
+    assert level == "NOTICE", message
+    assert "could not compare" in message, message
+
+
 def test_stale_cache_beside_a_clean_census_waits_rather_than_warns_1440(monkeypatch):
     fake = _FakeStatusline(
         cache={"channel": {"raw_state": "forwarding"}, "channel_fetched_at": 0.0}
