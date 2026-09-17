@@ -56,6 +56,24 @@ push origin <tag>`, or anything under `commands/release.md`.
 
 ## What you do
 
+**Snapshot the tree before you touch anything, and compare after you are done, before you report
+(#1622).** A review spawn has no business mutating the tree it reviews -- and this one already has:
+an untracked `notes/`/`reports/` pair was deleted mid-review, judged as tidying rather than as the
+mutation "do not edit" prose alone had failed to rule out, and it surfaced only because the
+harness's own classifier flagged it on the way back. Take a receipt instead of relying on that luck:
+
+```bash
+BEFORE=$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot)
+# ... run steps 1-3 below ...
+printf '%s' "$BEFORE" | python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before -
+```
+
+`clean` (exit 0) is what you report. `mutated` (exit 1) names what changed -- restore a tracked
+file (`git checkout -- <path>`), recreate a deleted untracked one, or say plainly in your report
+that you could not, and never absorb it silently. `could-not-compare` (exit 3) is `could not
+check`, never `clean`. Carry the result forward as a `TREE:` line beside whichever `REVIEW:`
+header you send below.
+
 1. **Read `skills/manager/phases/ci-green.md` and follow its wait shape** -- but call it once
    **per pull request your prompt named, never once for the whole batch.** `pr_green.py`'s own
    contract, stated in its own `--help`, is "scan in order, stop at the first one that is not
@@ -110,6 +128,7 @@ Your final message is the only thing that reaches your caller -- never gesture a
 
 ```
 REVIEW: reviewed
+TREE: <clean / mutated / could-not-compare>
 <one line per pull request that resolved: number, check arithmetic verdict, decision --
 ready-to-merge / needs-fix / blocked -- and any report-for-filing/below-bar item, with the
 receipt it was actually given (issue number, comment, or pull-request-body line)>
@@ -117,12 +136,14 @@ receipt it was actually given (issue number, comment, or pull-request-body line)
 
 ```
 REVIEW: pending
+TREE: <clean / mutated / could-not-compare>
 <one line per pull request still pending: number, and the observable that clears it -- what
 `ci-green.md`'s wait named, not your own guess>
 ```
 
 ```
 REVIEW: could-not-run
+TREE: <clean / mutated / could-not-compare>
 <REASON: which input could not be read -- pr_green.py's own could-not-read state, a review.md
 step that could not execute, named>
 ```

@@ -546,7 +546,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # avoid stating a real cost. Ceiling moves to 11200 B, ~5% headroom.
     # Re-baselined for #1616: 10697 B became 10785 B -- the same "## Trap"
     # trigger line. Ceiling unchanged; comfortably under it.
-    "agents/tick-review.md": (10785, 11200),
+    # Re-baselined for #1622: a `notes/`/`reports/` pair was deleted mid-review by
+    # this spawn, judged as tidying rather than as the mutation its prose never
+    # explicitly ruled out. Wraps its own procedure in `tree_snapshot.py`'s existing
+    # snapshot/compare (already used around `agents/developer/review.md`'s reviewer
+    # spawns), reported as a new `TREE:` line beside every `REVIEW:` header. 10785 B
+    # became 12029 B, past the old ceiling. Ceiling moves to 12200 B, ~1.4% headroom.
+    "agents/tick-review.md": (12029, 12200),
     # #1544 steps 3-4: two new files. `oss:sub-manager` used to merge on green
     # and assemble its own state-file entry and `TICK:` handback inline, in
     # the same long-lived context that dispatch and review had already been
