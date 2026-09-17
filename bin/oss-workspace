@@ -161,11 +161,10 @@ oss_fireworks
 # so the in-flight line is always overwritten before anything else reaches
 # the terminal -- EXCEPT the python_bin branch of the check itself (#1648),
 # which MAY stream per-plugin progress lines into what used to be this
-# call's own silent ~46s: `plugin_update.main()`'s own progress writer, not
-# this shell, decides whether to break the pairing, and only on the first
-# line it actually streams -- see that call site's own comment for why the
-# broken pairing is still safe when it happens, and why it is conditional at
-# all. channel still has the hazard and is NOT wired to oss_step_begin.
+# call's own silent ~46s. plugin_update.main()'s own progress writer, not
+# this shell, decides whether to break the pairing, and only on its first
+# real write -- see that call site's own short comment. channel still has
+# the hazard and is NOT wired to oss_step_begin.
 oss_step_begin() {
     [ "${oss_steps:-0}" -eq 1 ] || return 0
     printf '  %s▸%s %-9s %-40s %s...%s' "$d" "$r" "$1" "$2" "$d" "$r"
@@ -289,47 +288,15 @@ fi
 # extra by this running here instead of in the background.
 oss_step_begin plugin "checking"
 if [ -n "$python_bin" ]; then
-    # #1648: this call is otherwise silent for however long the marketplace
-    # refresh and every per-plugin `claude plugin update` take (measured ~46s
-    # cold) -- `plugin_update.py --print-state`'s only output is ONE line at
-    # the very end, captured below into `auto_update_line`. `exec 3>&1` opens
-    # descriptor 3 as a duplicate of THIS shell's own stdout -- the real
-    # terminal, not the pipe `$(...)` below captures stdout into -- so a
-    # subprocess started inside that command substitution still inherits fd 3
-    # pointing at the terminal. `plugin_update.main()` writes one line per
-    # step directly to fd 3 when it is open (nothing when it is not, which is
-    # every other caller); those lines land on the terminal in real time,
-    # entirely separate from the final tab-separated state line this capture
-    # still needs. Closed again right after so it does not leak into the
-    # `exec claude` this script eventually runs.
-    #
-    # Gated on `oss_steps` (the same flag `oss_step_begin`/`oss_step`
-    # themselves gate on): when steps are not being shown at all (no TTY,
-    # `TERM=dumb`, fireworks opted out), fd 3 is never opened, so
-    # `plugin_update.main()`'s own `os.fdopen(3, ...)` fails exactly as it
-    # would for any other caller and nothing streams -- this path renders
-    # byte-for-byte as it did before this change (found in self-review: an
-    # unconditional `exec 3>&1` here would have let a REAL update's progress
-    # lines reach a "silent" terminal that no other step writes to).
-    #
-    # The `oss_step_begin` call just above is normally paired with a matching
-    # `oss_step` that overwrites its dangling, no-newline "checking..." mark
-    # IN PLACE -- safe only when nothing else reaches the terminal in
-    # between (see the hazard comment above `oss_step_begin`'s own
-    # definition). Streaming per-plugin progress into exactly that gap is
-    # the point of this change, so the pairing is broken -- but only when a
-    # progress line is ACTUALLY about to be written: `plugin_update.main()`'s
-    # own `_progress` closure writes the terminating newline lazily, on its
-    # first real call, rather than this shell doing it unconditionally
-    # (self-review finding: `update()` returns with zero progress calls on
-    # its debounce/opt-out/unreadable-manifest paths -- the common case for a
-    # session opened shortly after another one -- and an unconditional
-    # newline here would have left THOSE runs' "checking..." mark frozen,
-    # permanently un-overwritten, on every ordinary launch). Each progress
-    # line, when one streams, ends in its own "\n", so by the time the
-    # `oss_step` call in the `case` below runs, the cursor sits on a fresh,
-    # empty line -- its own `\r` + clear-to-EOL is a no-op there, never an
-    # erasure of a real progress line.
+    # #1648: this call is silent for up to ~46s cold. exec 3>&1 dupes fd 3
+    # to the real terminal (not the $(...) capture pipe below), so a
+    # subprocess started inside the substitution inherits it and
+    # plugin_update.main() can stream one line per step there in real time.
+    # Gated on oss_steps: with steps not shown at all, fd 3 stays closed and
+    # main()'s own os.fdopen(3) fails exactly as for every other caller, so
+    # this path is unchanged. See CLAUDE.md's own trap.d for the fuller
+    # reasoning and the in-flight-mark/lazy-newline detail (kept short here
+    # after #1654's Windows CI leg broke on this comment's own length).
     if [ "${oss_steps:-0}" -eq 1 ]; then
         exec 3>&1
     fi
