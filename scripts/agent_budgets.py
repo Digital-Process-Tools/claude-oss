@@ -200,7 +200,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # commands/release.md. Comfortably under the 16600 B ceiling.
     # Re-baselined for #1616: 15522 B became 15610 B -- the same "## Trap"
     # trigger line. Ceiling unchanged; comfortably under it.
-    "agents/triager.md": (15610, 16600),
+    # Re-baselined for #1611: 15610 B became 16094 B -- the milestone rule
+    # now says what to do when a repo's tracker has zero milestones (say so
+    # and stop, the same as the label rule, and check .oss.json's
+    # _milestones_note before re-filing). Ceiling unchanged; comfortably
+    # under it.
+    "agents/triager.md": (16094, 16600),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):

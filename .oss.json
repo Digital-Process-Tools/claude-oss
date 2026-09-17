@@ -74,6 +74,7 @@
         "tests/test_unwired_scripts_253.py"
     ]
   },
+  "_milestones_note": "#1611: declined, not merely absent -- zero milestones exist and the loop tracks release grouping through the labels.priority/lanes/cohort-* fields already above, not GitHub milestones. Recorded here so a triage sweep reads this note before re-filing the empty list as a fresh finding.",
   "milestones": [],
   "release": {
     "authority": "loop",
