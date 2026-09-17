@@ -9,6 +9,13 @@ doctor verdict	doctor-warning-lifecycle.md
 usable with gaps	doctor-warning-lifecycle.md	
 clear the warnings	doctor-warning-lifecycle.md	
 remove all warnings	doctor-warning-lifecycle.md	
+merge conflict	hand-merged-conflict-is-not-a-real-merge.md	
+conflicting	hand-merged-conflict-is-not-a-real-merge.md	generic
+mergeable	hand-merged-conflict-is-not-a-real-merge.md	
+hand-resolve	hand-merged-conflict-is-not-a-real-merge.md	
+single parent	hand-merged-conflict-is-not-a-real-merge.md	
+merge origin main	hand-merged-conflict-is-not-a-real-merge.md	
+git merge-tree	hand-merged-conflict-is-not-a-real-merge.md	
 subagent	jit-rules-and-subagents.md	
 sub-agent	jit-rules-and-subagents.md	
 spawned agent	jit-rules-and-subagents.md	
@@ -53,10 +60,3 @@ lane worktree	worktree-writes-land-where-cwd-says.md
 cd prefix	worktree-writes-land-where-cwd-says.md	
 sibling lane	worktree-writes-land-where-cwd-says.md	
 main clone	worktree-writes-land-where-cwd-says.md	
-merge conflict	hand-merged-conflict-is-not-a-real-merge.md	
-conflicting	hand-merged-conflict-is-not-a-real-merge.md	
-mergeable	hand-merged-conflict-is-not-a-real-merge.md	
-hand-resolve	hand-merged-conflict-is-not-a-real-merge.md	
-single parent	hand-merged-conflict-is-not-a-real-merge.md	
-merge origin/main	hand-merged-conflict-is-not-a-real-merge.md	
-git merge-tree	hand-merged-conflict-is-not-a-real-merge.md	

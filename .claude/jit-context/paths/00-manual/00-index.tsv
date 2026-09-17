@@ -12,6 +12,7 @@
 (^|/)bin/oss-workspace$	launcher-prompt-selection.md
 (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
 (^|/)(agents/([^/]+\.md|[^/]+/[^/]+\.md)|skills/manager/([^/]+\.md|phases/[^/]+\.md)|commands/[^/]+\.md|\.claude/jit-context/.+\.md)$	md-is-a-manual-not-a-rationale.md
+(^|/)(CLAUDE\.md|agents/.+\.md|commands/.+\.md|skills/manager/.+\.md|trap\.d/.+\.md|\.claude/jit-context/.+\.md)$	md018-issue-ref-at-line-start.md
 (^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
 (^|/)scripts/[^/]+\.py$	regex-against-stringified-path-assumes-posix-separator.md
@@ -29,4 +30,3 @@
 (^|/)trap\.d/	trap-fragments.md
 (^|/)agents/triager\.md$	triage-merged-but-still-open-needs-reopen-check.md
 (^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md
-(^|/)(CLAUDE\.md|agents/.+\.md|commands/.+\.md|skills/manager/.+\.md|trap\.d/.+\.md|\.claude/jit-context/.+\.md)$	md018-issue-ref-at-line-start.md
