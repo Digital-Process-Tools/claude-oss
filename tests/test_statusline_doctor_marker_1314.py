@@ -185,8 +185,8 @@ def test_render_falls_back_to_unk_when_the_reading_is_absent():
 # --------------------------------------------------------------------- gather()
 
 
-def _cache(doctor_verdict, doctor_fetched_at, now):
-    return {
+def _cache(doctor_verdict, doctor_fetched_at, now, doctor_refresh_failed_at=None):
+    document = {
         "repo": "owner/repo",
         "fetched_at": now,
         "prs": 0,
@@ -194,6 +194,9 @@ def _cache(doctor_verdict, doctor_fetched_at, now):
         "doctor_verdict": doctor_verdict,
         "doctor_fetched_at": doctor_fetched_at,
     }
+    if doctor_refresh_failed_at is not None:
+        document["doctor_refresh_failed_at"] = doctor_refresh_failed_at
+    return document
 
 
 def _stub_common(monkeypatch, tmp_path, cache):
@@ -218,13 +221,30 @@ def test_gather_reads_a_fresh_reading_through(tmp_path, monkeypatch):
     assert facts["doctor_state"] == "ok"
 
 
-def test_gather_folds_a_stale_reading_to_none_even_though_it_says_ok(
+def test_gather_keeps_rendering_a_merely_due_reading_even_though_it_is_old(
     tmp_path, monkeypatch
 ):
-    """The must-not-render-confidently case. A reading older than
-    `DOCTOR_REFRESH_AFTER` must never render as a confident `ok`."""
+    """#1635: age is a trigger to refresh, never a reason to distrust what is
+    already known -- a reading older than `DOCTOR_REFRESH_AFTER`, with no
+    recorded refresh failure, still renders its last-known verdict. See the
+    must-fire pairing below for the one condition that DOES fold it: a
+    refresh actually attempted and failed."""
     now = 1_000_000.0
     cache = _cache("ok", now - statusline.DOCTOR_REFRESH_AFTER - 1, now)
+    _stub_common(monkeypatch, tmp_path, cache)
+    facts = statusline.gather({}, ".", now=now)
+    assert facts["doctor_state"] == "ok"
+
+
+def test_gather_folds_to_none_on_a_recorded_failed_doctor_refresh(
+    tmp_path, monkeypatch
+):
+    """Must-fire control for the case above (#1635): a refresh WAS attempted
+    and recorded as having failed (`doctor_refresh_failed_at`, set by
+    `refresh()` when `_doctor_reading` got nothing back) -- folds even though
+    the cached verdict is otherwise a real, recognised state."""
+    now = 1_000_000.0
+    cache = _cache("ok", now - 1, now, doctor_refresh_failed_at=now - 1)
     _stub_common(monkeypatch, tmp_path, cache)
     facts = statusline.gather({}, ".", now=now)
     assert facts["doctor_state"] is None
@@ -275,6 +295,55 @@ def test_refresh_carries_a_fresh_reading_forward_under_its_own_stamp(
     assert document["doctor_verdict"] == "ok"
     assert document["doctor_fetched_at"] == now - 5
     assert calls == []
+
+
+def test_refresh_records_a_doctor_failure_when_the_subprocess_answers_nothing(
+    tmp_path, monkeypatch
+):
+    """Must-fire, #1635: mirrors `latest`'s own failure handling (#1464) -- a
+    due doctor reading that got nothing back (`_doctor_reading` returned
+    `None`) keeps the last-known verdict under its OWN old stamp (so it stays
+    due, retrying sooner) and records the failure, rather than overwriting a
+    real verdict with `None`."""
+    now = 1_000_000.0
+    previous = {
+        "doctor_verdict": "ok",
+        "doctor_fetched_at": now - statusline.DOCTOR_REFRESH_AFTER - 5,
+        "fetched_at": now - 5,
+    }
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(statusline, "read_cache", lambda path: previous)
+    monkeypatch.setattr(statusline, "repo_config", lambda root: {"repo": None})
+    monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
+    monkeypatch.setattr(statusline, "_doctor_reading", lambda root: None)
+    document = statusline.refresh(str(tmp_path), now=now)
+    assert document["doctor_verdict"] == "ok"
+    assert document["doctor_fetched_at"] == now - statusline.DOCTOR_REFRESH_AFTER - 5
+    assert document["doctor_refresh_failed_at"] == now
+
+
+def test_refresh_clears_a_prior_doctor_failure_on_a_successful_ask(
+    tmp_path, monkeypatch
+):
+    """Must-not-fire control for the case above: a successful fetch clears any
+    previously-recorded failure, rather than leaving a stale marker that would
+    keep folding a now-good reading to `None`/`?`."""
+    now = 1_000_000.0
+    previous = {
+        "doctor_verdict": "bad",
+        "doctor_fetched_at": now - statusline.DOCTOR_REFRESH_AFTER - 5,
+        "doctor_refresh_failed_at": now - statusline.DOCTOR_REFRESH_AFTER,
+        "fetched_at": now - 5,
+    }
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(statusline, "read_cache", lambda path: previous)
+    monkeypatch.setattr(statusline, "repo_config", lambda root: {"repo": None})
+    monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
+    monkeypatch.setattr(statusline, "_doctor_reading", lambda root: "ok")
+    document = statusline.refresh(str(tmp_path), now=now)
+    assert document["doctor_verdict"] == "ok"
+    assert document["doctor_fetched_at"] == now
+    assert document["doctor_refresh_failed_at"] is None
 
 
 # ------------------------------------------------------------- _doctor_script_path
