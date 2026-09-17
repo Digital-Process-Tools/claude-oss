@@ -48,21 +48,26 @@ snapshot the tree before you spawn, and compare after both return.
 call are separate Bash tool calls, and shell state does not persist between them -- a
 `BEFORE=$(...)` captured now is gone by the time a later call reads it back, which would make
 `compare` read empty stdin and report `could-not-compare` every time rather than ever `clean` or
-`mutated`. A real path on disk survives across calls; a variable does not. **Name the file from
-your own issue number(s), never a fixed shared name** -- a fixed path collides with a concurrent
-lane's own review round, the same class of bug `bin/oss-workspace` already shipped once (a shared,
-unnamed socket path a second consumer could win). Issue 1234 becomes
-`/tmp/oss-developer-review-1234-tree-before.json`:
+`mutated`. A real path on disk survives across calls; a variable does not. **Write it inside your
+own worktree, never a shared scratchpad** -- `.claude/jit-context/tools/01-oss/tree-snapshot-
+compare.md` names an incident of a `/tmp` snapshot verified readable right after the write and
+gone several calls later, root cause unconfirmed. **Name the file from your own issue number(s),
+never a fixed shared name** -- a fixed path collides with a concurrent lane's own review round,
+the same class of bug `bin/oss-workspace` already shipped once (a shared, unnamed socket path a
+second consumer could win), and end it in `-before-snapshot.json` so `compare` excludes it as its
+own bookkeeping artifact rather than reporting it as a mutation (`tree_snapshot.SNAPSHOT_ARTIFACT_
+RE`, #1330). Issue 1234 becomes `oss-developer-review-1234-before-snapshot.json`:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > /tmp/oss-developer-review-<your issue number(s), dash-joined>-tree-before.json
-python3 -c 'import json; s=json.load(open("/tmp/oss-developer-review-<your issue number(s), dash-joined>-tree-before.json")); print(s["root"], s["branch"])'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > oss-developer-review-<your issue number(s), dash-joined>-before-snapshot.json
+python3 -c 'import json; s=json.load(open("oss-developer-review-<your issue number(s), dash-joined>-before-snapshot.json")); print(s["root"], s["branch"])'
 # ^ read this line back NOW, against your own known worktree path and branch, before
 # spawning anything -- three incidents (#1024, #1078, #1096) reported this call landing on a
 # *sibling* lane's worktree even from one shell call. If root or branch is not yours, stop and
 # pass --root <your worktree path> explicitly to both calls below, and say so in your report.
 # ... spawn both agents, wait for both final messages ...
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before /tmp/oss-developer-review-<your issue number(s), dash-joined>-tree-before.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before oss-developer-review-<your issue number(s), dash-joined>-before-snapshot.json
+# delete the snapshot file once compare has run, so it does not linger as a stray untracked file
 ```
 
 Neither call needs an explicit `--root`. `snapshot` reads the calling process's actual cwd at that

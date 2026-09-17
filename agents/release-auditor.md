@@ -196,13 +196,14 @@ nothing in this grant stops you performing any of them. If a class is genuinely 
 without acting, that is `could not run` — which stops the release, and is exactly what it
 is for.
 
-**Take the mutation receipt `agents/audit/shared.md` describes for your own run.** Name the file
-from which round this is, never a fixed shared name:
+**The mutation-receipt mechanism `agents/audit/shared.md` sets out applies to you too.** Pick your
+own filename for whichever round this is, never a fixed shared name:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > /tmp/oss-release-auditor-round<1|2>-tree-before.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > release-auditor-round<1|2>-before-snapshot.json
 # ... audit the range below ...
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before /tmp/oss-release-auditor-round<1|2>-tree-before.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before release-auditor-round<1|2>-before-snapshot.json
+# clean the file up once compare has finished running
 ```
 
 ## Report format

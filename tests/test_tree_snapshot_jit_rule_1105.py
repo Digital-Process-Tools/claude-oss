@@ -38,14 +38,16 @@ TREE_SNAPSHOT_RULE = "tree-snapshot-compare.md"
 
 #: The literal shape agents/developer/review.md tells a lane to type (#1643: the
 #: before-snapshot is written to a file, never a shell variable -- shell state does
-#: not persist across this harness's separate Bash tool calls).
+#: not persist across this harness's separate Bash tool calls -- and #1642's own
+#: self-review round moved it inside the worktree, never /tmp, per this same rule's
+#: own "never a shared scratchpad" clause below).
 REALISTIC_SNAPSHOT_COMMAND = (
     'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > '
-    "/tmp/oss-developer-review-1234-tree-before.json"
+    "oss-developer-review-1234-before-snapshot.json"
 )
 REALISTIC_COMPARE_COMMAND = (
     'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before '
-    "/tmp/oss-developer-review-1234-tree-before.json"
+    "oss-developer-review-1234-before-snapshot.json"
 )
 
 #: Must-not-fire control: an ordinary Bash call with nothing to do with the compare step.

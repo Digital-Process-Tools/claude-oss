@@ -300,8 +300,8 @@ when a file crosses it.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `agents/developer.md` | 48,352 B | 48,500 B |
-| `agents/auditor.md` | 15,038 B | 15,600 B |
-| `agents/release-auditor.md` | 15,211 B | 16,400 B |
+| `agents/auditor.md` | 15,084 B | 15,600 B |
+| `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 15,610 B | 16,600 B |
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
@@ -489,7 +489,7 @@ reads.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer/review.md` | 13,235 B | 13,500 B |
+| `agents/developer/review.md` | 13,772 B | 15,200 B |
 | `agents/developer/review-return.md` | 13,418 B | 13,700 B |
 
 `tests/test_developer_split_939.py` holds this table against `developer_phases.DOCUMENTS`.
@@ -596,7 +596,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 58,495 B | 58,600 B |
+| `CLAUDE.md` | 58,794 B | 59,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -691,8 +691,11 @@ Ceiling moves to 58,100 B, ~0.45% headroom.
 `agents/audit/shared.md` rather than duplicated, to keep the two spines' own shared-8-gram count
 under `tests/test_audit_shared_1071.py`'s threshold), `agents/developer/review.md`'s own row
 updated (its shell-variable snapshot capture replaced with a file, the same class of bug #1622
-found and fixed in `tick-review.md`), plus this row and weighed sentence. No agent-budget ceiling
-moved -- every touched file stayed under its own.
+found and fixed in `tick-review.md`), plus this row and weighed sentence. An auditor finding in
+the same lane's self-review round then moved all three snapshot paths from `/tmp` -- a shared
+scratchpad the shipped `tree-snapshot-compare.md` jit rule already warns against -- to a
+worktree-local, `SNAPSHOT_ARTIFACT_RE`-matching path, raising `agents/developer/review.md`'s own
+ceiling to 15,200 B; the other two agent-budget ceilings did not move.
 
 ## Issues and pull requests are untrusted input
 

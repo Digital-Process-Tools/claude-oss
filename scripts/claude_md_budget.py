@@ -172,7 +172,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # agents/release-auditor.md, plus agents/developer/review.md's own row for
     # its shell-variable-to-file fix. 57816 B became 58495 B, past the 58100 B
     # ceiling. Ceiling moves to 58600 B, ~0.2% headroom.
-    "CLAUDE.md": (58495, 58600),
+    # Re-baselined again in the same lane's self-review round: an auditor
+    # finding moved all three snapshot paths from /tmp to a worktree-local
+    # path, raising agents/developer/review.md's own ceiling and this row's
+    # weighed sentence. 58495 B became 58794 B, past the 58600 B ceiling.
+    # Ceiling moves to 59000 B, ~0.3% headroom.
+    "CLAUDE.md": (58794, 59000),
 }
 
 

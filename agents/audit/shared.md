@@ -49,8 +49,13 @@ You are the reader, not a caller waiting on a spawn -- so what `agents/developer
 `agents/tick-review.md` take around a spawned reviewer, you take around your own procedure:
 snapshot the worktree before your first read, compare again right before you compose your report.
 Your own run spans several separate Bash calls, and a shell variable does not survive between
-them, so write the snapshot to a file rather than holding it in one -- your own spine below names
-the file. `clean` (exit 0) is what you report. `mutated` (exit 1) names what changed -- restore it
-(`git checkout -- <path>`, or recreate a deleted untracked one) and say so rather than absorb it
-silently. `could-not-compare` (exit 3) is `could not check`, never `clean`. Carry the result
-forward as a `TREE:` line in your report, per your own spine's report format.
+them, so write the snapshot to a file rather than holding it in one, inside the worktree itself
+rather than `/tmp` or another shared scratchpad -- `.claude/jit-context/tools/01-oss/tree-
+snapshot-compare.md` names an incident of exactly that vanishing mid-run -- named so it ends in
+`-before-snapshot.json`, which `compare` excludes from its own report as a bookkeeping artifact
+(`tree_snapshot.SNAPSHOT_ARTIFACT_RE`, #1330); your own spine below gives the rest of the name and
+the exact commands, and delete the file once `compare` has run. `clean` (exit 0) is what you
+report. `mutated` (exit 1) names what changed -- restore it (`git checkout -- <path>`, or recreate
+a deleted untracked one) and say so rather than absorb it silently. `could-not-compare` (exit 3)
+is `could not check`, never `clean`. Carry the result forward as a `TREE:` line in your report,
+per your own spine's report format.

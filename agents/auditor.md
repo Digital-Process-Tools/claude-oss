@@ -53,9 +53,10 @@ worktree-boundary judgment call above. Name the file from the issue/PR number(s)
 (dash-joined; no number named, use your own PID):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > /tmp/oss-auditor-<numbers>-tree-before.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" snapshot > oss-auditor-<numbers>-before-snapshot.json
 # ... run the checklist below ...
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before /tmp/oss-auditor-<numbers>-tree-before.json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tree_snapshot.py" compare --before oss-auditor-<numbers>-before-snapshot.json
+# delete the snapshot file once compare has run
 ```
 
 `supertool 'git-diff:branch:full'` is usually the first call you make.
