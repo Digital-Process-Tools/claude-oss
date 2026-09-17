@@ -14,14 +14,25 @@ keywords: subagent, sub-agent, spawned agent, developer lane, sub-manager, jit r
 - **The hooks do run for a spawn.** `.claude/jit-context/.discovery/logs/hooks.log` carries a
   `pre-path` and a `pre-tool (Bash)` line at the spawn's timestamp. Read the log before
   concluding a rule never fires in a subagent.
-- **Dedup is per `session_id`, and a spawn carries its parent's.** `jit_session_key` in the
-  plugin's `common.sh` reads it off the hook payload; the marker files live under
-  `.claude/jit-context/.discovery/state/`. One shown set for the session and every agent in it.
-- **Consequence for the loop:** scheduler, sub-manager and every developer lane are one session.
-  A rule the sub-manager's own board read tripped, or the first lane tripped, reaches no later
-  lane. `agents/*.md` prose is the only instruction a lane is guaranteed to hold; a trap moved
-  out of a brief into a jit rule reaches a lane only if nothing earlier in the session touched
-  the same match.
+- **Dedup used to be per `session_id` for every dimension, and a spawn carries its parent's --
+  #1584 changed this for `tools` only.** `claude-jit-context` 0.10.0 added `jit_agent_key()`
+  (keyed on the hook payload's own `transcript_path`, which a spawn does NOT share with its
+  parent), and `pre-tool-hook.sh` uses it for `mode: once` dedup on the `tools` dimension since
+  commit `09155e9a`. **`paths` and `vocabulary` -- this rule's own dimension -- were not
+  touched and could not be:** neither carries a `mode` column at all (confirmed against
+  `doctor.py`'s documented index arities and `common.sh` itself, which uses `jit_agent_key()`
+  "ONLY by pre-tool-hook.sh"), so a `paths` or `vocabulary` rule still dedups on plain
+  `session_id` regardless of anything written in its frontmatter, on every `claude-jit-context`
+  version including the one running right now.
+- **Consequence for the loop, split by dimension:** a `tools` rule in `mode: once` now reaches
+  one lane per invocation, on `claude-jit-context` >= 0.10.0 -- an install below that floor (no
+  version is pinned in `plugin.json`, itself a separate gap) silently falls back to the old
+  per-session behaviour with no signal that it has. A `paths` or `vocabulary` rule -- this file
+  included -- still reaches only the first agent in the whole session to trip it: scheduler,
+  sub-manager and every developer lane remain one session for those two dimensions. `agents/*.md`
+  prose is the only instruction a lane is guaranteed to hold; a trap moved out of a brief into a
+  `paths`/`vocabulary` jit rule reaches a lane only if nothing earlier in the session touched the
+  same match.
 - **To probe:** batch a known-good control (a rule already seen to fire this session) and read
   `hooks.log` for `(none) [shown:N]` -- that string means suppressed, not unmatched.
 
@@ -37,12 +48,18 @@ those two apart is the first thing this repository says about itself. That contr
 by luck, not design, and it is the only reason the false reading cost two minutes instead of an
 afternoon spent editing a correct rule until it "worked".
 
-**And a `mode: remind` rule fires once per session, so it is a greeting rather than a guard against
-a habit (#1146).** Measured in a five-hour session: `md-is-a-manual-not-a-rationale.md` was written
-at ~10:50 and fired at ~11:00, the 15th and last entry in that session's shown set. At 12:34 the
-same session rewrote two phase files and put rationale straight back in -- five clauses of it --
-with no reminder, because the rule had been shown ninety minutes earlier. The maintainer caught it
-by eye; the hook did not.
+**And a `mode: remind` (or, since #1584, `mode: once`) `tools` rule fires once per lane, so it is a
+greeting rather than a guard against a habit within one lane's own turns (#1146).** Measured in a
+five-hour session: `md-is-a-manual-not-a-rationale.md` was written at ~10:50 and fired at ~11:00,
+the 15th and last entry in that session's shown set. At 12:34 the same session rewrote two phase
+files and put rationale straight back in -- five clauses of it -- with no reminder, because the
+rule had been shown ninety minutes earlier. The maintainer caught it by eye; the hook did not. That
+measurement predates #1584 and is unaffected by it: a `tools` rule now dedups per *reader*
+(transcript_path) rather than per session, which stops a **later spawn** from missing what an
+**earlier** one already saw, but a single reader still sees its own `once`/`remind` row exactly
+once for the rest of its own life -- the "greeting, not a guard against a habit" problem is about
+repetition *within* one reader's turns, which #1584 does not touch. A `paths` or `vocabulary` rule
+(this file's own dimension) still dedups per session exactly as measured above, #1584 or not.
 
 Every hook line in between reads `(none) [shown:4]`. **That string means suppressed, not
 unmatched** -- the rule matched every one of those edits and was withheld each time.

@@ -29,3 +29,4 @@
 (^|/)trap\.d/	trap-fragments.md
 (^|/)agents/triager\.md$	triage-merged-but-still-open-needs-reopen-check.md
 (^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md
+(^|/)(CLAUDE\.md|agents/.+\.md|commands/.+\.md|skills/manager/.+\.md|trap\.d/.+\.md|\.claude/jit-context/.+\.md)$	md018-issue-ref-at-line-start.md

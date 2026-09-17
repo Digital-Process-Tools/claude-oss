@@ -2,7 +2,6 @@
 title: "A regex matched against str(Path) assumes the host's own separator, quietly"
 description: "_WORKTREE_RE = re.compile(r'-wt/(\d+)\b') only matches a forward-slash-separated worktree path; str(Path) on Windows renders with a backslash, so a real Windows-run transcript never matches and falls through to unattributed rather than erroring."
 match: (^|/)scripts/[^/]+\.py$
-mode: once
 ---
 
 **`scripts/loop_cost_report.py`'s `_WORKTREE_RE` (#1618) only matches a forward-slash-separated
