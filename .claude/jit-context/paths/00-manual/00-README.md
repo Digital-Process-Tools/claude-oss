@@ -627,3 +627,87 @@ only `subprocess` reads).
   independently re-verifying the new semantics against the 45 default-mode files the same comment
   flags as a separate open question, risks landing a second wrong claim into a rule already caught
   getting a harness-payload fact wrong once. Left for the dedicated rewrite the issue asked for.
+
+## 2026-09-17 — 17 fragments, 3 promoted, 3 merged, 10 declined, 1 deferred
+
+**Promoted.**
+
+- `1629.markdownlint-md018-false-trips-on-issue-number-references` -> `paths/00-manual/
+  md018-issue-ref-at-line-start.md` -- a real, recurring papercut with no config escape
+  (`.markdownlint.json` enables MD018 with no rule-specific exception), narrow enough to state as
+  a rule rather than an incident.
+- `1629.supertool-head-substring-guard-and-git-diff-branch-form-friction` -> `tools/00-manual/
+  supertool-op-discoverability-friction.md` -- two op-shape papercuts (`| head` after a supertool
+  call still refused; `git-diff:branch:BASE:full` is the working form, not a bare ref), both
+  generalisable and neither already stated.
+- `1637.hand-merged-conflict-resolution-is-not-a-real-merge` -> `vocabulary/00-manual/
+  hand-merged-conflict-is-not-a-real-merge.md` -- a real mechanism (`git merge-base` is graph-only,
+  not content-only), confirmed on PR #1637 with `git log --format=%P` and `git merge-tree`, worth
+  knowing before anyone else "resolves" a `CONFLICTING` state by hand.
+
+**Merged.**
+
+- `1584.jit-rules-and-subagents-vocab-stale-after-once-flip` -> `vocabulary/00-manual/
+  jit-rules-and-subagents.md`, rewritten in place. This fragment was deferred by the prior curate
+  pass (recorded below, 2026-09-05 section is not the one -- see the "Deferred" entry this section
+  now supersedes) specifically because the new semantics needed independent re-verification; this
+  pass had two further fragments (`1584.jit-once-mode-flip-shipped-with-no-version-floor`,
+  `1584.vocab-and-paths-rules-copied-mode-once-into-dimensions-with-no-mode-field`) that already
+  re-derived the claim against `claude-jit-context` 0.10.0's own `scripts/common.sh` (confirmed
+  directly here too: `jit_agent_key()` is "Used ONLY by pre-tool-hook.sh" -- i.e. only the `tools`
+  dimension gets per-reader dedup; `paths`/`vocabulary` still dedup on plain `session_id`
+  regardless of any `mode` field), which removed the risk the deferral was protecting against.
+- `1628.toml-literal-block-backslash-doubling-costs-several-retries` -> `tools/00-manual/
+  supertool-payload-forms.md`, widened `match` to also fire on `paste:@`/`edit:@` (previously
+  scoped to `gh-*` ops only) and added the specific reflex this fragment describes (doubling a
+  backslash out of Python-string habit, when a TOML literal block does zero escape processing).
+- `1629.supertool-cwd-op-not-usable-inside-batch-payload` -> `vocabulary/00-manual/
+  worktree-writes-land-where-cwd-says.md`, a new bullet alongside its other `cwd:PATH` op-shape
+  papercuts.
+
+**Declined -- code-level defects, not rule content (an observation about one incident, not
+something a jit rule fixes by reminding a future reader).** Each names a concrete fix in its own
+fragment; none of them is curatable via a `.claude/jit-context/` rule, so none is promoted, merged
+or filed from here -- filing is out of this pass's four-outcome scope.
+
+- `1584.jit-once-mode-flip-shipped-with-no-version-floor-on-jit-context-dependency` -- needs a
+  `plugin.json` dependency version floor (or a `doctor.py`/`plugin_update.py` check), not a rule.
+- `1584.remind-budgets-module-budgets-zero-remind-mode-files-after-once-flip` -- needs
+  `scripts/remind_budgets.py`'s own docstring/follow-up sweep restated in terms of `once`, not a
+  rule about the module.
+- `1584.vocab-and-paths-rules-copied-mode-once-into-dimensions-with-no-mode-field` -- the generator
+  bug itself (`scripts/oss_rules.py` writing `mode: once` for `paths`/`vocabulary`, and the three
+  `01-oss` vocabulary files carrying it) needs a code fix plus `oss_rules.install()` regeneration,
+  which this pass does not do; the one `00-manual` file this pass **can** safely touch
+  (`paths/00-manual/regex-against-stringified-path-assumes-posix-separator.md`) had its erroneous
+  `mode: once` stripped directly in this same PR as incidental cleanup, since paths carries no
+  `mode` column at all.
+- `1628.dirt-state-porcelain-scan-cannot-see-gitignored-artifact-allowlist-paths` -- needs
+  `scripts/worktree_reap.py`'s `dirt_state` to also read `git status --ignored`; a code fix.
+- `1628.doctor-check-worktree-reap-warn-with-no-remedy-when-lsof-absent` -- needs
+  `scripts/doctor_check_worktree_reap.py`'s could-not-tell arm changed WARN to NOTICE, matching two
+  sibling modules' own precedent; a code fix, not new knowledge to remind anyone of.
+- `1628.gitignore-scaffold-template-still-missing-artifact-allowlist-entries` -- needs
+  `scripts/scaffold.py`'s `GITIGNORE` template updated, plus a doc note that already-scaffolded
+  repos need the addition applied by hand; a code/template fix.
+- `1628.raw-heredoc-write-block-applies-outside-the-repo-too` -- the fragment's own author states
+  "No rule change suggested here -- the guard did exactly what it says it does," logged only in
+  case the same reasonable-sounding exception recurs; nothing to promote.
+- `1629.supertool-git-commit-requires-explicit-paths-with-at-payload-message` -- already stated,
+  verbatim in substance, by `tools/00-manual/git-commit-no-paths-refusal.md` (from #1467).
+- `1637.lsof-nonzero-exit-partial-output-misread-as-unoccupied` -- needs
+  `scripts/worktree_reap.py`'s `_lsof_process_cwds` to read `rc` and return `None` on non-zero exit,
+  matching the sibling `_gh_json` pattern two functions away; a code fix.
+- `1638.cohort-35-freeze-partial-due-to-stale-partial-attempt-residue` -- needs
+  `scripts/cohort_freeze_record.py`'s `label_filter` route to exclude non-open issues, or the 17
+  stray labels stripped by hand; a code/data fix, explicitly scoped by its own fragment as "not this
+  release's own responsibility to fix live."
+
+**Deferred, left in `trap.d/` unchanged.**
+
+- `1632.red-curate-pr-has-no-owner-after-its-spawn-dies` -- the fragment's own text states the
+  open question plainly: "What is not established is whether the scheduler should be doing that at
+  all, or whether curate's own PR belongs in the next tick's review set." That is an architecture
+  decision for `skills/manager/` (does a tick's own review step need to pick up a PR opened by a
+  different spawn?), not a call this pass can make alone, and not a jit rule -- a future agent
+  cannot fix a missing ownership seam by being reminded of one.

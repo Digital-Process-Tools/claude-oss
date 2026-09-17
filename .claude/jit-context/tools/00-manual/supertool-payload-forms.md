@@ -1,8 +1,8 @@
 ---
 title: "gh-issue-create / gh-pr-create / gh-issue-comment take a JSON or TOML payload, never a .md"
-description: "Passing a markdown file to an @FILE op fails with 'Expected = after a key in a key/value pair'. Convert to JSON, or TOML literal strings -- basic strings eat backslash escapes."
+description: "Passing a markdown file to an @FILE op fails with 'Expected = after a key in a key/value pair'. Convert to JSON, or TOML literal strings -- basic strings eat backslash escapes. A literal block also does ZERO escape processing of its own, so doubling a backslash out of Python-string reflex writes the double, not the one you meant."
 tool: Bash
-match: ~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit
+match: ~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit|paste:@|edit:@
 mode: once
 ---
 
@@ -38,3 +38,15 @@ line N (70%)`).
 **Labels are exact repo spellings, not conventions.** `priority-high`, not `priority:high`; check
 with `gh-labels` rather than guessing, or the create refuses after you have written the whole
 body.
+
+**A `''' ... '''` TOML literal block also fires for `paste:@-`/`edit:@-`, not only the `gh-*`
+ops above, and the reflex that trips there is the opposite kind of mistake.** Coming from Python
+source, where `\n` inside a string literal is a one-character escape, the habit is to double a
+backslash as though the TOML layer will also interpret one -- it will not: a literal block writes
+the exact bytes typed, so doubling turns one real backslash into two literal ones plus whatever
+followed. Refused with the line/column of the offending run and two opposite fixes (meant AS
+WRITTEN vs. meant HALF); read which one applies before resending, and if a payload genuinely mixes
+a real doubled backslash (a Windows-path example inside a docstring) with content that needs
+correcting, add `literal_backslashes = true` at the payload's top level, or scope it to one field
+with `literal_backslashes = ["content"]`, rather than fighting the refusal occurrence by occurrence
+(#1628).

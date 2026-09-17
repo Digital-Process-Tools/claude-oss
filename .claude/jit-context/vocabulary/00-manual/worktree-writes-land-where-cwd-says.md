@@ -72,6 +72,13 @@ very lane assigned to investigate it.
   `supertool 'cwd:<worktree>' 'edit:@-'` on one call, confirmed by the
   edit receipt's own `[branch: ...]` footer (#1573).
 
+- **`cwd:PATH` cannot ride inside a `batch:@-` payload -- it has to be its own
+  top-level call.** Folded into a batch alongside other ops it fails with
+  `unknown operation: cwd`. Reading outside the current worktree (a sibling
+  worktree's cache path, a plugin's own checkout) is `supertool "cwd:PATH" "read:..."`
+  as two separate top-level calls, or `cwd:PATH` issued alone right before the batch,
+  never a `{op = "cwd", ...}` entry inside one (#1629).
+
 For `tree_snapshot` specifically -- where to write the before-snapshot,
 what `compare` already defaults to, and why `could-not-compare` is not
 `clean` -- see `tools/00-manual/tree-snapshot-compare.md`, which owns
