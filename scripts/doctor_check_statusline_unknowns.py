@@ -113,7 +113,7 @@ causes (no `doctor.py` located, the subprocess could not start,
 `DOCTOR_TIMEOUT` expiry, a non-zero exit, no `VERDICT:` line) produced a
 `None` verdict -- `statusline.py`'s own `_doctor_reading` folds all five into
 the identical `None` before it is ever written to disk. So `doctor_cause`
-distinguishes only what the cache DOES allow (never asked, stale, an
+distinguishes only what the cache DOES allow (never asked, refresh-failed, an
 unrecognised verdict shape, and the honest `"no-answer"` fold of the five
 real causes) rather than a five-way split this module cannot see through the
 cache alone -- see `doctor_cause`'s own docstring for the full reasoning.
@@ -123,9 +123,9 @@ cache alone -- see `doctor_cause`'s own docstring for the full reasoning.
 up a cache at all -- distinct from `"not-asked"`, whose own remedy
 (`--refresh`) cannot resolve anything without `repo` set either. Computed
 once in `check_statusline_unknowns` and threaded through every `*_cause`
-call, checked ahead of `cache-unreadable` and the individual not-asked/stale
-derivations for the same reason: no `repo` means `cache` itself is `None`
-for a reason distinct from either of those.
+call, checked ahead of `cache-unreadable` and the individual
+not-asked/refresh-failed derivations for the same reason: no `repo` means
+`cache` itself is `None` for a reason distinct from either of those.
 
 Python 3.9 compatible.
 """

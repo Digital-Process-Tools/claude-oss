@@ -345,12 +345,17 @@ def test_channel_stale_reports_wait_not_warn_1440(monkeypatch, tmp_path):
     state, msg = channel_findings[0]
     assert state == "WAIT", doctor.FINDINGS
     # #1071/main merge: the message text itself now comes from the shared
-    # {fork_sentence}/{remedy} template every other "stale" row already
-    # uses (main introduced it after #1440 forked) -- the WAIT/WARN level
-    # is #1440's own contribution and is asserted above; what this still
-    # checks is that the line names what settles it, in whichever of the
-    # two fork_sentence variants applies here.
+    # {fork_sentence}/{remedy} template every other "refresh-failed" row
+    # already uses (main introduced it after #1440 forked) -- the WAIT/WARN
+    # level is #1440's own contribution and is asserted above; what this
+    # still checks is that the line names what settles it, in whichever of
+    # the two fork_sentence variants applies here.
     assert "fork" in msg.lower() and "background refresh" in msg
+    # Self-review finding on #1636: the two assertions above are also true
+    # of the OLD "stale" fold (same WAIT level, same shared template), so on
+    # their own they do not prove the #1636 rename/behavior change actually
+    # ran -- pin the underlying cause explicitly.
+    assert mod.channel_cause({}, cache, NOW)["reason"] == "refresh-failed"
 
 
 def test_branch_stale_reports_wait_not_warn_1479(monkeypatch, tmp_path):
@@ -497,6 +502,13 @@ def test_all_five_channel_reasons_are_distinguishable(monkeypatch, tmp_path):
     }
     messages = {}
     for reason, cache in reasons_and_caches.items():
+        # Self-review finding on #1636: assert the fixture actually produces
+        # the reason its own key names -- a fixture that silently drifted
+        # onto a DIFFERENT reason (e.g. the "refresh-failed" row above
+        # falling back to the retired "stale") would still pass the
+        # distinctness check below, since five distinct-but-wrong reasons
+        # are just as distinct as five correct ones.
+        assert mod.channel_cause({}, cache, NOW)["reason"] == reason
         doctor.FINDINGS.clear()
         monkeypatch.setattr(
             mod, "_read_cache_or_unreadable", lambda path, c=cache: (c, False)
