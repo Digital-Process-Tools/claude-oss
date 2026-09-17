@@ -3070,6 +3070,11 @@ from doctor_check_statusline import (
 # check and its docstring, unchanged; this is a pure relocation.
 from doctor_check_trap_queue import check_trap_queue
 
+# #1651: the triage route's own twin of check_trap_queue above -- see
+# doctor_check_triage_route.py for the four states and why this reads the
+# statusline's own cached board rather than a second gh call.
+from doctor_check_triage_route import check_triage_route
+
 # #845's `check_vanished_worktrees` lived here until #1532. It read the local
 # lane registry for records whose own worktree directory was already gone;
 # with the registry retired there is no record to read, and the question it
@@ -9664,6 +9669,9 @@ def main(argv=None):
     check_latest_skew(project_dir, config)
     check_ci_enforcement(project_dir, config)
     check_trap_queue(project_dir, config=config)
+    # #1651: the same shape, one route over -- a label-coverage triage backlog
+    # with no triage_route_threshold configured.
+    check_triage_route(project_dir, config=config)
     # A fact about the plugin, not about the project, so it needs no config and runs
     # even when everything else was unmeasurable.
     check_agent_dispatch()

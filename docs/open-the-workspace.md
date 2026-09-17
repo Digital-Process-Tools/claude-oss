@@ -164,10 +164,12 @@ successor to this section lives in `commands/run.md`, not here:
   report what is not rather than only relaying a verdict to a launcher that cannot act on it.
 - **Step 2** calls `scripts/next_action.py --root . --json`, whose `rank()` composes the same
   `scripts/workspace_routes.py` threshold routes this section used to describe (`triage_route_
-  threshold`, `curate_route_threshold`, `release_route_threshold`, `ROUTES = ("release", "triage",
-  "curate")` for precedence, the `over`/`under`/`could-not-count` third state, the #1064-style
-  receipt so a route does not re-fire on an unchanged signature) alongside an `inbound` source and
-  the `setup`/`unsafe` cases the two tooling routes above used to cover on their own. See
+  threshold`, `curate_route_threshold`, `ROUTES = ("triage", "curate")` for precedence, the
+  `over`/`under`/`could-not-count` third state, the #1064-style receipt so a route does not re-fire
+  on an unchanged signature) alongside a `release` source of its own (`release_trigger.py`, not a
+  `workspace_routes` threshold -- #1652 removed the third route this used to name,
+  `release_route_threshold`, as redundant against that trigger), an `inbound` source, and the
+  `setup`/`unsafe` cases the two tooling routes above used to cover on their own. See
   `commands/run.md` for the full shape -- `unsafe` refuses, `due` (`setup`, when there is no
   `.oss.json` yet) spawns and re-asks, `ranked` orders every candidate rather than picking one
   silently, and `nothing-due` falls through to the ordinary dispatch cadence

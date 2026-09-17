@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-"""Three threshold routes for `bin/oss-workspace`'s job 2 (#1155): /oss:triage,
-/oss:curate and /oss:release, each a standing count crossing a per-repo
+"""Two threshold routes, read by `next_action.py`'s own `rank()` (#1155):
+/oss:triage and /oss:curate, each a standing count crossing a per-repo
 threshold.
 
-Both of `bin/oss-workspace`'s built routes today decide the next prompt from a
-fact about the *tooling* (has the plugin moved, is the setup diagnostic
-clean). Neither is a fact about the repository's own work. This module adds
-three routes that are: open issues missing a `lane-*` or `priority-*` label,
-`trap.d/` fragments waiting for `/oss:curate`, and `changelog.d/` fragments
-waiting for `/oss:release`.
+`bin/oss-workspace` used to call this module directly for its own job-2
+routing; #1389/#1390/#1392 removed that call, and job 2 now lives entirely
+in `next_action.py`'s `rank()` (see `docs/open-the-workspace.md`'s "Job 2
+moved" section). This module's own routes are: open issues missing a
+`lane-*` or `priority-*` label, and `trap.d/` fragments waiting for
+`/oss:curate`.
+
+This used to be a third route too -- `release`, counting `changelog.d/`
+fragments waiting for `/oss:release`. #1652 removed it: `next_action.py`'s
+`_release_candidate` never took `routes` as an argument and never read this
+route's counted value at all, `release_trigger.py` already owns whether a
+release is due with its own richer fired/not-fired/could-not-tell
+vocabulary, and does not need the repeat-suppression receipt `curate`/
+`triage` both do -- a threshold layered on top would have been redundant,
+not complementary.
 
 ## The states
 
@@ -30,9 +39,9 @@ the same rule `changelog_untagged` and `user_visible_paths` already use.
 ## Precedence
 
 More than one route can be `over` at once. Ranked by what blocks the most,
-never by which check happened to run first: a release folds fragments and
-moves the tag; a triage pass changes what the next tick can see; curate
-changes nothing downstream. `ROUTES` below is that order.
+never by which check happened to run first: a triage pass changes what the
+next tick can see; curate changes nothing downstream. `ROUTES` below is
+that order.
 
 ## The receipt
 
@@ -42,7 +51,7 @@ pin every launch to `/oss:curate` forever. `oss_state.workspace_route_
 check` arms a route only when its signature (state plus count) has moved
 since the last receipt recorded for that route -- every failure to compare
 fails OPEN, arming as though no receipt exists, the same direction every
-other unknown in `bin/oss-workspace` fails.
+other unknown in this repository's own loop fails.
 
 ## What this deliberately does not do
 
@@ -71,7 +80,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gh_which  # noqa: E402
 import oss_config  # noqa: E402
 import oss_state  # noqa: E402
-import release_version  # noqa: E402
 import trap_curate  # noqa: E402
 
 
@@ -98,10 +106,11 @@ COULD_NOT_COUNT = "could-not-count"
 
 #: Most-blocking first (#1155's own argument -- see the module docstring).
 #: Ties (more than one route `over` at once) are broken by this order.
-ROUTES = ("release", "triage", "curate")
+#: #1652 removed the third entry this used to carry, `"release"` -- see the
+#: module docstring's own "used to be a third route too" paragraph.
+ROUTES = ("triage", "curate")
 
 PROMPT_FOR_ROUTE = {
-    "release": "/oss:release",
     "triage": "/oss:triage",
     "curate": "/oss:curate",
 }
@@ -109,7 +118,6 @@ PROMPT_FOR_ROUTE = {
 #: The one per-repo fact each route reads from `.oss.json`. Absent means the
 #: repository declares it does not want the route.
 THRESHOLD_KEY = {
-    "release": "release_route_threshold",
     "triage": "triage_route_threshold",
     "curate": "curate_route_threshold",
 }
@@ -304,21 +312,6 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     return result["count"], result["why"]
 
 
-def release_count(repo_root, config):
-    """(count_or_None, why). Reuses `release_version._fragment_dir` (the
-    three ways `changelog_dir` reaches a directory) and `release_version.
-    _scan` (every fragment present, regardless of whether it validates) --
-    the raw file count is the same one `release_version.compute` reads to
-    propose a number, without needing a baseline version to do it."""
-    directory, problem = release_version._fragment_dir(repo_root, None, config)
-    if directory is None:
-        return None, problem
-    scan, error = release_version._scan(directory)
-    if scan is None:
-        return None, error
-    return scan["count"], "{0} fragment(s) in {1}".format(scan["count"], directory)
-
-
 def triage_count(repo, gh, run, timeout=25):
     """(count_or_None, why). `repo` is `.oss.json`'s own `owner/name`
     string. The count is the LARGER of "open issues with no `lane-*`
@@ -422,8 +415,6 @@ def decide(repo_root, config, gh=None, run=subprocess.run, git_bin=None):
             count, why = curate_count(
                 repo_root, config=config, run=run, git_bin=git_bin
             )
-        elif name == "release":
-            count, why = release_count(repo_root, config)
         else:
             count, why = triage_count(repo, gh, run)
         results[name] = {

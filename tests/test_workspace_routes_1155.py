@@ -1,8 +1,9 @@
-"""#1155 -- three threshold routes for `bin/oss-workspace`'s job 2: /oss:triage,
-/oss:curate and /oss:release, each a standing count crossing a per-repo
-threshold, in three states (`over`/`under`/`could-not-count`), and gated by
-a #1064-shaped receipt so a count stuck `over` does not re-fire on every
-launch forever.
+"""#1155 -- two threshold routes, read by `next_action.py`'s own `rank()`:
+/oss:triage, /oss:curate, each a standing count crossing a per-repo threshold, in three
+states (`over`/`under`/`could-not-count`), and gated by a #1064-shaped
+receipt so a count stuck `over` does not re-fire on every launch forever.
+Used to also cover /oss:release; #1652 removed that route -- see
+`workspace_routes.py`'s own module docstring.
 
 Every negative assertion below (a route that must NOT arm) is paired with a
 positive control in the same test or its sibling, per this repo's own rule:
@@ -50,8 +51,7 @@ def _run(args, cwd, env=None):
 @pytest.fixture
 def repo(tmp_path):
     """A real, minimal git repo with its own trap.d/ and changelog.d/, so
-    `curate_count`/`release_count` exercise the real directories rather
-    than a mock."""
+    `curate_count` exercises the real directory rather than a mock."""
     root = tmp_path / "repo"
     root.mkdir()
     env = _git_env()
@@ -386,25 +386,6 @@ def test_waiting_at_ref_does_not_descend_into_a_subdirectory(repo_on_main):
     assert result["fragments"][0]["name"] == "1.a.md", result
 
 
-# --- release_count -----------------------------------------------------------
-
-
-def test_release_count_counts_real_changelog_fragments(repo):
-    (repo / "changelog.d").mkdir()
-    (repo / "changelog.d" / "1.fixed.md").write_text("- fixed a thing\n")
-    (repo / "changelog.d" / "2.added.md").write_text("- added a thing\n")
-    (repo / "changelog.d" / "README.md").write_text("ignored\n")
-    config = _write_config(repo)
-    count, why = workspace_routes.release_count(str(repo), config)
-    assert count == 2, why
-
-
-def test_release_count_of_a_missing_directory_is_could_not_count(repo):
-    config = _write_config(repo, {"changelog_dir": "nonexistent.d"})
-    count, why = workspace_routes.release_count(str(repo), config)
-    assert count is None, why
-
-
 # --- triage_count ------------------------------------------------------------
 
 
@@ -440,7 +421,6 @@ def test_route_with_no_configured_threshold_is_not_evaluated(repo):
     armed, results = workspace_routes.decide(str(repo), config, gh=None)
     assert armed is None
     assert results["curate"] == {"configured": False}
-    assert results["release"] == {"configured": False}
     assert results["triage"] == {"configured": False}
 
 
@@ -475,44 +455,43 @@ def test_an_invalid_threshold_is_could_not_count_not_silently_ignored(repo):
     assert armed is None
 
 
-def test_precedence_prefers_release_over_triage_over_curate(repo, monkeypatch):
+def test_precedence_prefers_triage_over_curate(repo, monkeypatch):
+    """#1652: ROUTES used to be ("release", "triage", "curate"); with
+    `release` removed, triage is now the first, most-blocking entry."""
     (repo / "trap.d").mkdir()
     for i in range(6):
         (repo / "trap.d" / "{0}.a.md".format(i)).write_text("x\n")
-    (repo / "changelog.d").mkdir()
-    for i in range(6):
-        (repo / "changelog.d" / "{0}.fixed.md".format(i)).write_text("- x\n")
     config = _write_config(
         repo,
         {
             "curate_route_threshold": 1,
-            "release_route_threshold": 1,
             "triage_route_threshold": 1,
         },
     )
     run = _fake_run_issues(no_lane=5, no_priority=5, total=5)
     armed, results = workspace_routes.decide(str(repo), config, gh="gh", run=run)
-    assert armed == "release"
-    assert results["release"]["state"] == "over"
+    assert armed == "triage"
     assert results["triage"]["state"] == "over"
     assert results["curate"]["state"] == "over"
 
 
-def test_precedence_falls_through_to_triage_when_release_is_under(repo):
+def test_precedence_falls_through_to_curate_when_triage_is_under(repo):
+    """Positive control for the assertion above: when triage is under its
+    own threshold, precedence falls through to curate rather than staying
+    stuck on the higher-ranked route."""
     config = _write_config(
         repo,
         {
             "curate_route_threshold": 1,
-            "release_route_threshold": 100,
-            "triage_route_threshold": 1,
+            "triage_route_threshold": 100,
         },
     )
     (repo / "trap.d").mkdir()
     for i in range(6):
         (repo / "trap.d" / "{0}.a.md".format(i)).write_text("x\n")
-    run = _fake_run_issues(no_lane=5, no_priority=5, total=5)
+    run = _fake_run_issues(no_lane=0, no_priority=0, total=5)
     armed, results = workspace_routes.decide(str(repo), config, gh="gh", run=run)
-    assert armed == "triage"
+    assert armed == "curate"
 
 
 # --- the CLI: not-configured, over, receipt suppression, re-arm -------------
