@@ -71,13 +71,18 @@ def test_no_unlabelled_issues_reports_ok(monkeypatch, tmp_path):
 
 def test_no_cache_at_all_is_could_not_read_not_zero(monkeypatch, tmp_path):
     """A repo whose board was never refreshed must not render as a repo with no
-    unlabelled issues -- the third-state rule this module exists to keep."""
+    unlabelled issues -- the third-state rule this module exists to keep. WAIT,
+    not WARN: this settles on its own the next time a session refreshes the
+    board (self-review finding, Explore reviewer -- the first draft WARNed
+    here, which fires on every freshly scaffolded repo and broke
+    test_doctor_inprocess.py's clean-verdict fixture, a repo whose board was
+    simply never asked for rather than genuinely misconfigured)."""
     doctor.FINDINGS.clear()
     _write_cache(monkeypatch, tmp_path, None)
     mod.check_triage_route(str(tmp_path), config={"repo": "example/example"})
     assert len(doctor.FINDINGS) == 1
     state, message = doctor.FINDINGS[0]
-    assert state == "WARN", (state, message)
+    assert state == "WAIT", (state, message)
     assert "could not be read" in message, message
     assert "UNKNOWN, not zero" in message, message
 
@@ -128,11 +133,13 @@ def test_both_axes_unmeasured_in_an_otherwise_readable_cache_is_could_not_read(
 ):
     """A cache file that exists and reads cleanly, but never populated either
     count (an old cache from before this field existed, or a repo declaring no
-    priority-*/lane-* spellings at all) is UNKNOWN, not a real zero."""
+    priority-*/lane-* spellings at all) is UNKNOWN, not a real zero. WAIT, not
+    WARN, for the same reason the no-cache-at-all case above is: it settles
+    the next time a session refreshes the board."""
     doctor.FINDINGS.clear()
     _write_cache(monkeypatch, tmp_path, {"prs": 3})
     mod.check_triage_route(str(tmp_path), config={"repo": "example/example"})
     assert len(doctor.FINDINGS) == 1
     state, message = doctor.FINDINGS[0]
-    assert state == "WARN", (state, message)
+    assert state == "WAIT", (state, message)
     assert "could not be read" in message, message

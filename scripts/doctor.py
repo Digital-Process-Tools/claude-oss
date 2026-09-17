@@ -3071,7 +3071,7 @@ from doctor_check_statusline import (
 from doctor_check_trap_queue import check_trap_queue
 
 # #1651: the triage route's own twin of check_trap_queue above -- see
-# doctor_check_triage_route.py for the four states and why this reads the
+# scripts/doctor_check_triage_route.py for the states and why this reads the
 # statusline's own cached board rather than a second gh call.
 from doctor_check_triage_route import check_triage_route
 

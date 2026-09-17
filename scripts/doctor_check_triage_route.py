@@ -65,34 +65,61 @@ except ImportError:  # pragma: no cover - statusline.py sits beside this file
 TRIAGE_ROUTE_THRESHOLD_KEY = "triage_route_threshold"
 
 
+#: `_unlabelled_counts`'s own third state, for whichever reason the two
+#: counts could not be read: `WAIT_NOT_ASKED` settles on its own -- the
+#: statusline refreshes automatically the next time anyone opens a session
+#: in this repo (`REFRESH_AFTER` in `statusline.py`), so a repo that simply
+#: has not been read yet is not a standing problem, and reporting WARN for
+#: it would fire on every freshly scaffolded repo and every CI/test
+#: environment that runs `doctor.py` without ever having run a session
+#: first (self-review finding, Explore reviewer: exactly this shape broke
+#: `tests/test_doctor_inprocess.py::test_verdict_says_ok_only_when_
+#: nothing_warned`'s clean-verdict fixture). `WARN_UNREADABLE` is the
+#: genuinely standing problem this check cannot wait out: no `repo`
+#: configured at all, or `statusline` itself could not be imported --
+#: neither clears on its own, so per `doctor-check-contract.md` test 1
+#: these stay WARN.
+WAIT_NOT_ASKED = "not-asked"
+WARN_UNREADABLE = "unreadable"
+
+
 def _unlabelled_counts(config):
-    """``(no_priority, no_lane, reason_or_None)`` off the last cached board
-    reading -- never a fresh ``gh`` call of this check's own (see module
-    docstring). ``reason`` is set, and both counts are ``None``, only when
-    nothing usable could be read at all: no ``repo`` configured to look a
-    cache up by, ``statusline`` itself unavailable, no cache file, or a
-    cache file carrying neither count. Either individual count may still be
-    ``None`` on its own when the other is a real int -- that is a repo that
-    has declared no priority (or no lane) label spellings at all, a
-    deliberate per-repo choice ``_unlabelled_field`` already renders as ``?``
-    for that axis alone, not a failure of this check.
+    """``(no_priority, no_lane, reason_or_None, state_or_None)`` off the last
+    cached board reading -- never a fresh ``gh`` call of this check's own
+    (see module docstring). ``reason``/``state`` are set, and both counts
+    are ``None``, only when nothing usable could be read at all. ``state``
+    is one of `WAIT_NOT_ASKED` / `WARN_UNREADABLE` (see their own constants
+    above) and decides WAIT vs WARN in `check_triage_route`. Either
+    individual count may still be ``None`` on its own when the other is a
+    real int -- that is a repo that has declared no priority (or no lane)
+    label spellings at all, a deliberate per-repo choice `_unlabelled_field`
+    already renders as `?` for that axis alone, not a failure of this
+    check.
     """
     if statusline is None:
-        return None, None, "the statusline module could not be imported"
+        return (
+            None,
+            None,
+            "the statusline module could not be imported",
+            WARN_UNREADABLE,
+        )
     repo = (config or {}).get("repo") if isinstance(config, dict) else None
     if not isinstance(repo, str) or not repo.strip():
         return (
             None,
             None,
             "no repo configured in .oss.json, so the cached board could not be located",
+            WARN_UNREADABLE,
         )
     cache = statusline.read_cache(statusline.cache_path(repo))
     if cache is None:
         return (
             None,
             None,
-            "no cached board reading exists yet for this repo (open a session, or "
-            "run python3 scripts/statusline.py --refresh --root . to populate one)",
+            "no cached board reading exists yet for this repo (settles the next "
+            "time a session opens here, or run "
+            "python3 scripts/statusline.py --refresh --root . now)",
+            WAIT_NOT_ASKED,
         )
     board = statusline.board_from_cache(cache)
     no_priority = board.get("issues_no_priority")
@@ -101,11 +128,13 @@ def _unlabelled_counts(config):
         return (
             None,
             None,
-            "the cached board carries no unlabelled-issue reading (either this repo "
-            "declares no priority-*/lane-* label spellings at all, or the last count "
-            "could not be taken)",
+            "the cached board carries no unlabelled-issue reading yet (either "
+            "this repo declares no priority-*/lane-* label spellings at all, "
+            "or the last count has not been taken) -- settles the next time a "
+            "session refreshes the board",
+            WAIT_NOT_ASKED,
         )
-    return no_priority, no_lane, None
+    return no_priority, no_lane, None, None
 
 
 def check_triage_route(project_dir, config=None):
@@ -114,10 +143,11 @@ def check_triage_route(project_dir, config=None):
     reasoning behind ``config``."""
     import doctor
 
-    no_priority, no_lane, reason = _unlabelled_counts(config)
+    no_priority, no_lane, reason, state = _unlabelled_counts(config)
     if reason is not None:
+        level = "WAIT" if state == WAIT_NOT_ASKED else "WARN"
         doctor.report(
-            "WARN",
+            level,
             "triage route: could not be read -- {}. UNKNOWN, not zero: nothing here "
             "has been shown to be empty.".format(reason),
         )
