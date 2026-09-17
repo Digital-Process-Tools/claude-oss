@@ -335,6 +335,32 @@ def check_channel_health_agreement(
             "nothing to answer with until that changes -- {}".format(detail),
         )
         return
+    # #1625 defect 2: `cached-other-session` (#1437) with the `watch` preset
+    # enabled falls all the way to the plain WARN below -- and that WARN
+    # never clears. A fresh cache write always carries a `session` key
+    # (#1362), and this module has no session identity of its own to compare
+    # against (`resolve_channel_health_reading`'s own docstring), so it can
+    # never confirm such a reading is not "other" -- unlike `cached-stale`,
+    # which clears when a later refresh lands inside the staleness window
+    # again, there is no refresh outcome that ever turns `cached-other-
+    # session` into something this module can compare. Per doctor-check-
+    # contract test 1, a WARN nothing can clear is a bug in the check;
+    # NOTICE is the state #764 created for exactly this "structurally unable
+    # to ever answer" shape -- the same one the preset-disabled branch above
+    # already uses, for a different structural reason.
+    if health_source == "cached-other-session":
+        doctor.report(
+            "NOTICE",
+            "channel census vs channel:health: could not compare -- {}. "
+            "Structurally unresolvable from here, not a gap that will close "
+            "on its own: this reading carries a `session` attribution this "
+            "module has no session identity of its own to compare against "
+            "(#1437), so it can never be confirmed as this session's own no "
+            "matter how many times the cache refreshes. `./supertool "
+            "channel:health`, run directly inside the session in question, "
+            "answers what this check structurally cannot.".format(detail),
+        )
+        return
     # #1440: a census that answered fine, beside a health cache too old to
     # speak, is a clock running out -- not a fault either instrument found.
     # `_census_signal` returning non-None is what tells this apart from the
