@@ -3108,6 +3108,12 @@ from doctor_check_fragments_readme import (
 # chosen over a threshold or a narrower literal scope.
 from doctor_check_lane_coupling import check_lane_coupling
 
+# #1631: does this repo's own CLAUDE.md still fit under a configured size
+# ceiling? Its own module per the #497/#630 convention -- see
+# scripts/doctor_check_claude_md_size.py for the over/under/unconfigured/
+# could-not-tell states and why the remedy names the jit-context route.
+from doctor_check_claude_md_size import check_claude_md_size
+
 # scripts/doctor_check_test_measurement.py (#932): a maintainer attestation
 # that this repo's pytest run measures test duration and coverage -- its own
 # module per the #497/#630 convention. The full path is named here because
@@ -9606,6 +9612,9 @@ def main(argv=None):
     # declared lanes, unacknowledged? See doctor_check_lane_coupling.py for
     # the three states and the allowlist-based noise-reduction design.
     check_lane_coupling(project_dir, config)
+    # #1631: has this repo's own CLAUDE.md outgrown a configured size
+    # ceiling? See doctor_check_claude_md_size.py for the four states.
+    check_claude_md_size(project_dir, config)
     # #932: a maintainer attestation, not a derived fact -- see the module's
     # own docstring for why this never parses `addopts` itself.
     check_test_measurement(project_dir, config)

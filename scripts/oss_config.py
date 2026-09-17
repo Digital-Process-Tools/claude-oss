@@ -70,6 +70,15 @@ OPTIONAL_KEYS = {
     # this repository does not want the route, so nothing here drains a
     # queue it never opted into.
     "outbound_route_threshold",
+    # #1631: the size ceiling scripts/doctor_check_claude_md_size.py compares
+    # this repo's own CLAUDE.md against. Absent means the check reports the
+    # size it found with no ceiling to gate on (`unconfigured`, a NOTICE),
+    # never a silent OK -- see that module's docstring. Read directly by
+    # `check_claude_md_size`, not merely declared here: the trap recorded in
+    # `.claude/jit-context/paths/00-manual/config-value-validation.md` is
+    # `outbound_route_threshold` shipping validated-but-unread, and the fix
+    # for this key is to never repeat that.
+    "claude_md_size_threshold",
 }
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
