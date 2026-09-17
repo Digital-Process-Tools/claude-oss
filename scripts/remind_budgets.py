@@ -64,7 +64,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     ),
     # Shrunk for #1584: 3009 B became 2128 B.
     # Re-baselined for #1584 part one: mode: remind -> mode: once, -2 B.
-    ".claude/jit-context/tools/00-manual/supertool-payload-forms.md": (2126, 2350),
+    # Re-baselined for #1638: 2126 B became 3269 B -- a curate pass merged a doubled-backslash
+    # TOML literal-block caveat (paste:@-/edit:@- match added alongside the gh-* ops) into the
+    # existing gh-* payload-escaping rule rather than appending a sibling file; the declared row
+    # moves with that legitimate growth per the module's own "replace, don't append" convention.
+    ".claude/jit-context/tools/00-manual/supertool-payload-forms.md": (3269, 3600),
     # Shrunk for #1584: 2815 B became 2079 B. Re-baselined in the same lane's own
     # self-review round: 2079 B became 2156 B restoring a dropped conditional (the
     # `compare` default only holds once the before-snapshot says its root resolved) a
