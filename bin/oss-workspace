@@ -159,8 +159,12 @@ oss_fireworks
 # landed on (#1511). plugin is wired too now (#1609): every branch under
 # `plugin` calls oss_step FIRST and echoes its diagnostic prose only after,
 # so the in-flight line is always overwritten before anything else reaches
-# the terminal. channel still has the hazard and is NOT wired to
-# oss_step_begin.
+# the terminal -- EXCEPT the python_bin branch of the check itself (#1648),
+# which deliberately terminates the in-flight mark with a real newline
+# before streaming per-plugin progress lines into what used to be this
+# call's own silent ~46s: see that call site's own comment for why the
+# broken pairing is still safe there. channel still has the hazard and is
+# NOT wired to oss_step_begin.
 oss_step_begin() {
     [ "${oss_steps:-0}" -eq 1 ] || return 0
     printf '  %s▸%s %-9s %-40s %s...%s' "$d" "$r" "$1" "$2" "$d" "$r"
@@ -284,8 +288,37 @@ fi
 # extra by this running here instead of in the background.
 oss_step_begin plugin "checking"
 if [ -n "$python_bin" ]; then
+    # #1648: this call is otherwise silent for however long the marketplace
+    # refresh and every per-plugin `claude plugin update` take (measured ~46s
+    # cold) -- `plugin_update.py --print-state`'s only output is ONE line at
+    # the very end, captured below into `auto_update_line`. `exec 3>&1` opens
+    # descriptor 3 as a duplicate of THIS shell's own stdout -- the real
+    # terminal, not the pipe `$(...)` below captures stdout into -- so a
+    # subprocess started inside that command substitution still inherits fd 3
+    # pointing at the terminal. `plugin_update.main()` writes one line per
+    # step directly to fd 3 when it is open (nothing when it is not, which is
+    # every other caller); those lines land on the terminal in real time,
+    # entirely separate from the final tab-separated state line this capture
+    # still needs. Closed again right after so it does not leak into the
+    # `exec claude` this script eventually runs.
+    #
+    # The `oss_step_begin` call just above is normally paired with a matching
+    # `oss_step` that overwrites its dangling, no-newline "checking..." mark
+    # IN PLACE -- safe only when nothing else reaches the terminal in
+    # between (see the hazard comment above `oss_step_begin`'s own
+    # definition). Streaming per-plugin progress into exactly that gap is
+    # the point of this change, so the pairing is deliberately broken here:
+    # a real newline below terminates "checking..." as an ordinary, complete
+    # line rather than leaving it dangling for a stream of progress lines to
+    # glue onto. Each progress line python writes also ends in its own "\n",
+    # so by the time the `oss_step` call in the `case` below runs, the
+    # cursor sits on a fresh, empty line -- its own `\r` + clear-to-EOL is a
+    # no-op there, never an erasure of a real progress line.
+    printf '\n'
+    exec 3>&1
     auto_update_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
         --root "$repo_root" --caller launcher --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
+    exec 3>&-
     if [ "$auto_update_status" -ne 0 ]; then
         oss_step plugin "could not check (exit $auto_update_status)" ask
         echo "oss-workspace: could not check whether the oss plugin is current" \

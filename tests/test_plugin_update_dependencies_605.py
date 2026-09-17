@@ -159,6 +159,68 @@ def test_the_marketplace_is_refreshed_exactly_once_for_the_whole_run(tmp_path):
     assert len(refreshes) == 1, runner.calls
 
 
+def test_the_marketplace_refresh_is_narrowed_to_the_manifests_own_marketplace_1648(
+    tmp_path,
+):
+    """#1648: when the loop plugin and every declared dependency resolve to ONE
+    marketplace, the refresh names it explicitly rather than refreshing every
+    installed marketplace on the machine -- measured 15.8s against 3.5s."""
+    plugins = _registry(
+        tmp_path,
+        {
+            "oss@dpt": _installed(tmp_path, "9.9.9"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
+            "supertool@dpt": _installed(tmp_path, "0.40.0"),
+        },
+    )
+    runner = _Runner()
+    plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path),
+        plugins_root=plugins,
+        env={},
+        runner=runner,
+    )
+    refreshes = [
+        call
+        for call in runner.calls
+        if call[:4] == ["claude", "plugin", "marketplace", "update"]
+    ]
+    assert refreshes == [["claude", "plugin", "marketplace", "update", "dpt"]], (
+        runner.calls
+    )
+
+
+def test_the_marketplace_refresh_falls_back_to_bare_when_a_dependency_is_unqualified_1648(
+    tmp_path,
+):
+    """Must-fire control for the case above: a dependency with no marketplace on
+    record (not in `installed_plugins.json` at all) must NOT be silently dropped
+    from the refresh -- the whole run falls back to the bare, unnarrowed command
+    rather than guessing or narrowing to an incomplete set."""
+    plugins = _registry(
+        tmp_path,
+        {
+            "oss@dpt": _installed(tmp_path, "9.9.9"),
+            # "remember" declared as a dependency below but absent here entirely.
+        },
+    )
+    runner = _Runner()
+    plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path, dependencies=("remember",)),
+        plugins_root=plugins,
+        env={},
+        runner=runner,
+    )
+    refreshes = [
+        call
+        for call in runner.calls
+        if call[:4] == ["claude", "plugin", "marketplace", "update"]
+    ]
+    assert refreshes == [["claude", "plugin", "marketplace", "update"]], runner.calls
+
+
 def test_a_dependency_is_updated_at_every_scope_it_is_installed_at(tmp_path):
     """#521's finding, which is a property of the loop plugin's update and has to hold
     for a dependency's too: an install at two scopes is two installs."""
@@ -606,3 +668,86 @@ def test_the_dependency_row_is_not_emitted_when_the_updater_never_ran(
     doctor.check_auto_update(str(tmp_path))
     assert len(doctor.FINDINGS) == 1, doctor.FINDINGS
     assert "dependencies" not in doctor.FINDINGS[0][1], doctor.FINDINGS
+
+
+# ------------------------------------------------------------- progress callback (#1648)
+
+
+def test_progress_reports_the_marketplace_the_loop_plugin_and_every_dependency(
+    tmp_path,
+):
+    """#1648: the caller finds out about each step BEFORE it starts (verdict=None)
+    and AFTER it ends (a real verdict), in the same order they are updated --
+    marketplace, then the loop plugin, then each declared dependency."""
+    plugins = _registry(
+        tmp_path,
+        {
+            "oss@dpt": _installed(tmp_path, "9.9.9"),
+            "remember@dpt": _installed(tmp_path, "9.21.0"),
+        },
+    )
+    runner = _Runner()
+    calls = []
+    plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path, dependencies=("remember",)),
+        plugins_root=plugins,
+        env={},
+        runner=runner,
+        progress=lambda name, verdict=None: calls.append((name, verdict)),
+    )
+    names_in_order = [name for name, verdict in calls]
+    assert names_in_order == [
+        "marketplace",
+        "marketplace",
+        "oss",
+        "oss",
+        "remember",
+        "remember",
+    ], calls
+    # The first call for each name is the "starting" signal (verdict=None); the
+    # second is the real outcome.
+    assert calls[0] == ("marketplace", None), calls
+    assert calls[1][1] is not None, calls
+    assert calls[2] == ("oss", None), calls
+    assert calls[3][1] is not None, calls
+    assert calls[4] == ("remember", None), calls
+    assert calls[5][1] is not None, calls
+
+
+def test_a_raising_progress_callback_never_fails_the_update_1648(tmp_path):
+    """Must-fire control: reporting progress is strictly secondary to the update
+    itself -- a callback that raises on every call must not prevent the loop
+    plugin from being updated, or change what the receipt says about it."""
+    plugins = _registry(tmp_path, {"oss@dpt": _installed(tmp_path, "9.9.9")})
+    runner = _Runner()
+
+    def _raising_progress(name, verdict=None):
+        raise RuntimeError("a progress writer that has gone away")
+
+    document = plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path, dependencies=None),
+        plugins_root=plugins,
+        env={},
+        runner=runner,
+        progress=_raising_progress,
+    )
+    assert runner.updates_for("oss"), runner.calls
+    assert document.get("plugin") == "oss", document
+
+
+def test_no_progress_callback_by_default_is_the_unaffected_control_1648(tmp_path):
+    """Positive control for the two tests above: every existing caller of
+    `update()` passes no `progress` at all and must behave exactly as before --
+    nothing raises, nothing is required to be wired up."""
+    plugins = _registry(tmp_path, {"oss@dpt": _installed(tmp_path, "9.9.9")})
+    runner = _Runner()
+    document = plugin_update.update(
+        root=tmp_path,
+        plugin_root=_plugin_root(tmp_path, dependencies=None),
+        plugins_root=plugins,
+        env={},
+        runner=runner,
+    )
+    assert document.get("plugin") == "oss", document
