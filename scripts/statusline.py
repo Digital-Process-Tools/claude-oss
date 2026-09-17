@@ -404,10 +404,11 @@ def channel_status(
     interval=CHANNEL_REFRESH_AFTER,
     session=None,
     current_session=None,
+    refresh_failed_at=None,
 ):
     """Fold a raw `channel:health` reading, its own age, its attribution and
     (#1362) the session that took it into the state `render` actually shows
-    (#613, widened by #754, widened again by #1362).
+    (#613, widened by #754, widened again by #1362, and by #1636).
 
     Five ways this becomes `cannot_determine` before a caller ever sees one of
     the five real states, and each is a distinct reason a reader might act on
@@ -422,11 +423,17 @@ def channel_status(
       sessions on one repo -- one armed via `bin/oss-workspace`, one a bare
       `claude` -- can hold genuinely different, simultaneously correct
       answers. Checked right after `not-asked`, before attribution or
-      staleness: a reading that is not this session's own cannot be trusted
-      regardless of how sound it otherwise looks.
-    * ``stale``        -- the reading is older than its own refresh interval
-      (#550/#551's lesson, applied a third time: never let an old reading
-      render as though it were fresh).
+      refresh-failure: a reading that is not this session's own cannot be
+      trusted regardless of how sound it otherwise looks.
+    * ``refresh-failed`` -- (#1636, renamed from ``stale``) a refresh WAS
+      attempted (`refresh()` found this reading due) and got nothing back --
+      `refresh_failed_at` recorded at least as recent as `fetched_at`. MERE
+      interval age is no longer part of this decision at all: age is a
+      trigger to refresh (`refresh()`'s own due check forks/attempts one),
+      never a reason to distrust a reading that is still the best one held --
+      the same rule #1464/#1635 already apply to `latest`, the default-branch
+      marker and the `/oss:doctor` reading. A reading merely due, with no
+      recorded failure, falls through to the real-state branch below.
     * ``not-attributable`` -- the channel name this reading came from is
       neither what this repository's own `.oss.json` would derive NOR what
       this repository's own tracked `.supertool.json` declares, so the socket
@@ -458,8 +465,9 @@ def channel_status(
     the consumer died one second after the reading was taken -- renders exactly
     like a correct one. Nothing performs "the consumer died" the way
     `/oss:release` performs a publish, so there is no falsifying event to
-    invalidate the cache against; #613's own docstring on `CHANNEL_REFRESH_AFTER`
-    states that gap rather than papering over it.
+    invalidate the cache against on its own -- `refresh_failed_at` catches a
+    DIFFERENT gap (a refresh that was attempted and got nothing back), not
+    this one, and this function does not claim otherwise.
 
     `not-asked` is checked BEFORE attribution, and that order is deliberate: a
     cache holding no reading at all also holds no attribution, so `attribution`
@@ -467,6 +475,13 @@ def channel_status(
     report every never-asked repository as "not this repo's fleet" instead of
     "nobody has looked yet", which is a different and more alarming claim about
     a question that was never even put.
+
+    `interval`/`now` are still accepted -- both callers (this module's own
+    `gather()` and `doctor_check_statusline_unknowns.py`) pass them
+    positionally -- but neither decides the fold any more; `refresh()` is
+    what reads `interval` to decide whether a fetch is due, and this
+    function only ever sees the OUTCOME of that decision, via
+    `refresh_failed_at`.
     """
     if not isinstance(fetched_at, (int, float)):
         return {"state": "cannot_determine", "reason": "not-asked"}
@@ -476,8 +491,11 @@ def channel_status(
         return {"state": "cannot_determine", "reason": "declaration-unreadable"}
     if attribution not in ("derivation", "declaration"):
         return {"state": "cannot_determine", "reason": "not-attributable"}
-    if now - fetched_at >= interval:
-        return {"state": "cannot_determine", "reason": "stale"}
+    refresh_failed = isinstance(refresh_failed_at, (int, float)) and (
+        refresh_failed_at >= fetched_at
+    )
+    if refresh_failed:
+        return {"state": "cannot_determine", "reason": "refresh-failed"}
     if raw_state not in CHANNEL_STATES.values():
         return {"state": "cannot_determine", "reason": "unrecognized"}
     return {"state": raw_state, "reason": None}
@@ -3017,28 +3035,54 @@ def refresh(root, now=None, session_id=None):
         # question nobody could answer.
         document["channel"] = None
         document["channel_fetched_at"] = None
+        document["channel_refresh_failed_at"] = None
     else:
         previous_channel_stamp = previous.get("channel_fetched_at")
+        previous_channel_failed_at = previous.get("channel_refresh_failed_at")
         channel_due = not isinstance(previous_channel_stamp, (int, float)) or (
             now - previous_channel_stamp >= CHANNEL_REFRESH_AFTER
         )
         if channel_due:
             raw_state, attribution = _channel_reading(root, config)
-            document["channel"] = {
-                "raw_state": raw_state,
-                "attribution": attribution,
-                # #1362 -- which session took this reading, so a later render
-                # (possibly a different session on this same repository) can
-                # tell whether it is entitled to adopt it.
-                "session": session_id,
-            }
-            document["channel_fetched_at"] = now
+            if raw_state is None:
+                # Asked and got nothing back (#1636, mirroring `latest`'s own
+                # failure handling, #1464, and the board's/doctor's, #1635):
+                # the old reading and its old stamp stay in place (so the next
+                # render treats this as still due, retrying sooner rather than
+                # waiting out a fresh-looking `CHANNEL_REFRESH_AFTER`), and the
+                # failure IS recorded so `channel_status` can tell "still due"
+                # from "asked and failed". A raw_state that IS a string but not
+                # one of the five recognised ones is a DIFFERENT case (a real
+                # answer, just an unexpected one) and takes the `else` branch
+                # below like any other success -- `channel_status`'s own
+                # `"unrecognized"` reason catches that one, unconditionally.
+                document["channel"] = previous.get("channel")
+                document["channel_fetched_at"] = previous_channel_stamp
+                document["channel_refresh_failed_at"] = now
+            else:
+                document["channel"] = {
+                    "raw_state": raw_state,
+                    "attribution": attribution,
+                    # #1362 -- which session took this reading, so a later
+                    # render (possibly a different session on this same
+                    # repository) can tell whether it is entitled to adopt it.
+                    "session": session_id,
+                }
+                document["channel_fetched_at"] = now
+                # A success clears any prior failure -- leaving a stale
+                # failure marker in place would keep folding a now-good
+                # reading to `cannot_determine` (#1636).
+                document["channel_refresh_failed_at"] = None
         else:
             # Carried forward under its OWN old stamp, same shape as `latest`
             # above and for the same reason: re-stamping `now` would make an
             # old reading indistinguishable from a fresh one at the render.
             document["channel"] = previous.get("channel")
             document["channel_fetched_at"] = previous_channel_stamp
+            # Not attempted this pass -- whatever failure record was already
+            # there (or was not) carries forward unchanged; this is not
+            # itself an ask.
+            document["channel_refresh_failed_at"] = previous_channel_failed_at
     previous_doctor_stamp = previous.get("doctor_fetched_at")
     previous_doctor_failed_at = previous.get("doctor_refresh_failed_at")
     doctor_due = not isinstance(previous_doctor_stamp, (int, float)) or (
@@ -3422,6 +3466,7 @@ def gather(payload, root, now=None):
             now,
             session=raw_channel.get("session"),
             current_session=current_session,
+            refresh_failed_at=(cache or {}).get("channel_refresh_failed_at"),
         )
 
     # #1635: same rule as the board and `latest` above -- a doctor reading merely
