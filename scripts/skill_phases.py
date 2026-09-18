@@ -410,7 +410,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # pass instead of aging unseen forever. Nothing already here argued
         # a weaker case for its size, so nothing was cut to make room;
         # ceiling moved to 20900 B, ~10% headroom over the new size.
-        18944,
+        # Re-baselined in the same lane's own self-review round: 18944 B
+        # became 19297 B -- a reviewer found the new paragraph never named
+        # its own residual limit (a superseding pull request no lane ever
+        # named is not caught here either), unlike the sibling paragraph
+        # right above it, which does name that limit for a closed-elsewhere
+        # pull request. Ceiling unchanged; ~8% headroom remains.
+        19297,
         20900,
         "a lane reported back: reading the report, pushing, opening the pull request",
     ),

@@ -702,7 +702,8 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # knows" and the field-mapping paragraph both gained a sentence naming
     # `superseded_by_pr`, the field that makes a declined-in-favour-of-an-
     # existing-pull-request report actionable rather than ending in prose.
-    # Ceiling unchanged; comfortably under it.
+    # Ceiling unchanged; 83 B headroom (~0.6%), razor-thin -- the next edit
+    # to this file, for any reason, pays for itself or raises the ceiling.
     "agents/lane-report.md": (14217, 14300),
 }
 

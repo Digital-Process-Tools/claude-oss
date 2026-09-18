@@ -62,7 +62,10 @@ pull request to **this tick's own review set** — the same list of numbers `age
 hands `oss:tick-review`, alongside anything this tick's own dispatch opened — so it gets a real
 review pass instead of aging unseen. `could-not-read` on the report itself is not this field's
 absence; carry the report's own unreadable state forward rather than treating a report you never
-opened as one with nothing to say.
+opened as one with nothing to say. **This does not catch a superseding pull request no lane ever
+named** -- one a lane missed during recon, one whose report could not be read, or an issue that
+simply stops being dispatched before any lane reaches it -- and that residual gap is not solved
+here either, the same posture the paragraph above takes for a pull request closed by someone else.
 
 ## Opening the pull request
 

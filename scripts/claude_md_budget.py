@@ -177,7 +177,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # path, raising agents/developer/review.md's own ceiling and this row's
     # weighed sentence. 58495 B became 58794 B, past the 58600 B ceiling.
     # Ceiling moves to 59000 B, ~0.3% headroom.
-    "CLAUDE.md": (60590, 60900),
+    "CLAUDE.md": (62278, 62500),
 }
 
 

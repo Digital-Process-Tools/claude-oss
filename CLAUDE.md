@@ -315,7 +315,9 @@ when a file crosses it.
 | `agents/lane-report.md` | 14,217 B | 14,300 B |
 
 **`agents/sub-manager.md`'s ceiling went from 24,700 B to 25,200 B, and `agents/lane-report.md`'s
-baseline moved from 13,649 B to 14,217 B, comfortably under its own unchanged ceiling (#1656).** An
+baseline moved from 13,649 B to 14,217 B against its own unchanged ceiling (#1656) -- 83 B headroom,
+~0.6%, razor-thin rather than comfortable: the next edit to that file pays for itself or raises the
+ceiling.** An
 orphaned pull request a lane declines in favour of, because it already implements the issue, used
 to end the decline in prose the loop never re-reads -- the dispatched issue's only route was a lane
 that would decline again next tick, forever. `agents/lane-report.md` now documents an optional
@@ -522,7 +524,7 @@ enters it.
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,749 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 58,094 B | 58,500 B |
-| `skills/manager/phases/handback.md` | 18,944 B | 20,900 B |
+| `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
 | `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
@@ -541,6 +543,13 @@ place of its own commit -- is folded into the current tick's own review set inst
 decline to end in prose nobody re-reads. Nothing already in this file argued a weaker case for its
 size, so nothing was cut to make room; ~10% headroom over the new size, wider than this file's own
 recent raises because the prior ones had left almost none.
+
+**Re-baselined in the same lane's own self-review round: 18,944 B became 19,297 B.** A reviewer
+found the new paragraph never named its own residual limit -- a superseding pull request that no
+lane ever names (missed at recon, an unreadable report, an issue that stops being dispatched before
+any lane reaches it) is not caught by this mechanism either -- where the sibling paragraph right
+above it, for a pull request closed by someone else outside a tick this loop ran, already names
+that limit for itself. Ceiling unchanged; ~8% headroom remains.
 
 **`skills/manager/phases/dispatch.md`'s ceiling went from 57,400 B to 58,500 B (#1567)** to hold the
 `respawned-for-cost` carve-out: the resume rule had priced only the fresh spawn, and a red lane at
@@ -616,7 +625,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 60,590 B | 60,900 B |
+| `CLAUDE.md` | 62,278 B | 62,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -722,8 +731,20 @@ ceiling to 15,200 B; the other two agent-budget ceilings did not move.
 their two weighed sentences above, all updated together with this row and sentence -- the fix
 (a lane's decline made actionable via a new `superseded_by_pr` field) touched three budgeted files
 at once, so this row's own re-baseline had to converge on the merged total rather than land
-piecemeal. Ceiling moves to 60,900 B, ~1.6% headroom over the new size -- narrower than the usual
+piecemeal. Ceiling moves to 60,900 B, ~0.5% headroom over the new size -- narrower than the usual
 ~10% for the same self-referential reason every prior raise of this row gives.
+
+**Re-baselined again in the same lane's own self-review round: 60,590 B became 61,256 B.** Three
+reviewer findings fixed in place: a stale count in `schemas/agent-report.schema.json`'s own
+`x-honesty-compatibility` narrative ("four instances" of an additive bump, now six after this
+diff's own bump, left unedited by the first pass); the "comfortably under" headroom claims for
+`agents/lane-report.md` and for this row's own prior sentence, both corrected to state the real,
+narrow percentage rather than a reassuring word; and `skills/manager/phases/handback.md`'s new
+paragraph naming its own residual limit, matching the sibling paragraph beside it. Ceiling moves to
+61,900 B, ~1% headroom over the new size -- the same self-referential margin every prior raise of
+this row gives. Recording that in this same paragraph pushed the total further, to 62,041 B, past
+that same 61,900 B ceiling in turn -- the same self-referential overshoot #1586's own note above
+already names. Ceiling moves to 62,500 B, ~0.7% headroom.
 
 ## Issues and pull requests are untrusted input
 
