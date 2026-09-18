@@ -43,6 +43,112 @@ def test_pytest_sessionfinish_arms_a_repeating_stack_dump(monkeypatch):
     assert calls == [(phd.POST_SESSION_DUMP_AFTER_SECONDS, True, sys.stderr, False)]
 
 
+def test_pytest_configure_arms_controller_watchdog_when_not_a_worker(monkeypatch):
+    """#1671: the controller must arm its own watchdog too, and early.
+
+    A worker's `pytest_sessionfinish` dump (above) is armed relative to when
+    IT finishes, then forwarded to the controller's own captured job log.
+    But the 2026-09-18 recurrence showed both workers idle, waiting on the
+    controller, with NO controller dump anywhere in that same log -- so if
+    the controller is stuck somewhere other than its own post-summary
+    teardown, the sessionfinish-armed timer never gets a chance to run
+    there at all. `pytest_configure` arms a second, controller-only timer
+    at process start instead, covering the controller's whole lifetime.
+
+    A plain object with no `workerinput` attribute stands in for the
+    controller's own `Config`, exactly like a non-xdist run's `Config` --
+    xdist sets `workerinput` only on a worker's.
+    """
+    calls = []
+
+    def fake_dump_traceback_later(timeout, repeat=False, file=None, exit=False):
+        calls.append((timeout, repeat, file, exit))
+
+    monkeypatch.setattr(
+        phd.faulthandler, "dump_traceback_later", fake_dump_traceback_later
+    )
+
+    class FakeControllerConfig:
+        pass
+
+    phd.pytest_configure(FakeControllerConfig())
+
+    assert calls == [(phd.CONTROLLER_DUMP_AFTER_SECONDS, True, sys.stderr, False)]
+
+
+def test_pytest_configure_does_not_arm_for_an_xdist_worker(monkeypatch):
+    """The positive control's pair: a worker must NOT get this second timer.
+
+    A worker already gets its own watchdog from `pytest_sessionfinish`,
+    armed relative to when it finishes -- which is what matters for a
+    worker, since a worker's whole life is running tests. Arming this
+    early timer there too would just be a redundant second timer with no
+    diagnostic gain. Without this test, a helper that always returns
+    `True` (or one that is never actually called) would make the sibling
+    test above pass for the wrong reason -- this is the "must not fire"
+    half CLAUDE.md's own negative-assertion rule requires.
+    """
+    calls = []
+
+    def fake_dump_traceback_later(timeout, repeat=False, file=None, exit=False):
+        calls.append((timeout, repeat, file, exit))
+
+    monkeypatch.setattr(
+        phd.faulthandler, "dump_traceback_later", fake_dump_traceback_later
+    )
+
+    class FakeWorkerConfig:
+        workerinput = {"workerid": "gw0"}
+
+    phd.pytest_configure(FakeWorkerConfig())
+
+    assert calls == []
+
+
+@needs_yaml
+def test_controller_dump_delay_fits_inside_the_jobs_own_margin():
+    """The controller-only timer must fire strictly before the job's own cap,
+    and strictly after the suite's own observed worst-case runtime -- else it
+    either never gets a chance to dump (killed by the cap first, #1660's own
+    original bug) or fires spuriously on every green run (armed tighter than
+    the suite itself normally takes).
+
+    What this does NOT do, matching `test_dump_delay_fits_inside_the_jobs_own_margin`'s
+    own caveat above: it compares CONTROLLER_DUMP_AFTER_SECONDS against pytest's OWN
+    self-reported worst-case runtime and the job's stated cap, both HAND-MAINTAINED
+    constants read from source rather than measured live. It does not call
+    `phd.pytest_configure` (the two tests above this one already exercise that
+    directly) and it cannot see the one thing this timer's own margin actually depends
+    on and this file's docstring is explicit about being unmeasured: how much of the
+    job's own wall clock is spent on checkout/setup-python/install BEFORE pytest ever
+    starts, which is time `pytest_configure`'s own clock never sees at all.
+    """
+    job = _pytest_job()
+    cap_minutes = job.get("timeout-minutes")
+    assert isinstance(cap_minutes, int), "timeout-minutes is not an int: {!r}".format(
+        cap_minutes
+    )
+    cap_seconds = cap_minutes * 60
+    worst_case_seconds = OBSERVED_WORST_CASE_SUITE_MINUTES * 60
+    assert phd.CONTROLLER_DUMP_AFTER_SECONDS > worst_case_seconds, (
+        "posthang_diagnostics_1660.CONTROLLER_DUMP_AFTER_SECONDS ({!r}s) is not "
+        "greater than the observed worst-case suite runtime ({:.1f}s) -- the "
+        "controller's own watchdog would fire on every ordinary green run, not "
+        "only on a real hang".format(
+            phd.CONTROLLER_DUMP_AFTER_SECONDS, worst_case_seconds
+        )
+    )
+    assert phd.CONTROLLER_DUMP_AFTER_SECONDS < cap_seconds, (
+        "posthang_diagnostics_1660.CONTROLLER_DUMP_AFTER_SECONDS ({!r}s) is not "
+        "less than the job's own timeout-minutes cap ({:.1f}s) -- the "
+        "controller's own watchdog would be killed by the job's cap before it "
+        "ever gets a chance to dump a stack, exactly the #1660 recurrence this "
+        "module exists to explain".format(
+            phd.CONTROLLER_DUMP_AFTER_SECONDS, cap_seconds
+        )
+    )
+
+
 @needs_yaml
 def test_dump_delay_fits_inside_the_jobs_own_margin():
     """#1660's own recurrence, reported after this diagnostic first shipped: the
