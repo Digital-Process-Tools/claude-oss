@@ -52,6 +52,21 @@ approach, a scope change, a duplicate — run this check as part of that same st
 sweep. **A pull request closed by someone else, outside a tick this loop ran, is not observed by this
 step**; that gap is named rather than silently solved.
 
+**A report naming `superseded_by_pr` is the sibling gap, one step earlier (#1656).** A lane that
+declines its own issue because an already-open pull request already implements it is right to
+decline — duplicating in-flight work in another agent's worktree is worse than doing nothing — but a
+decline that ends only in prose is invisible to every tick after the one that noticed it: dispatch
+re-selects the same issue next tick, a fresh lane re-discovers the same pull request, and declines
+again, forever. Release the issue as normal. Then, when `superseded_by_pr` names a number, add that
+pull request to **this tick's own review set** — the same list of numbers `agents/sub-manager.md`
+hands `oss:tick-review`, alongside anything this tick's own dispatch opened — so it gets a real
+review pass instead of aging unseen. `could-not-read` on the report itself is not this field's
+absence; carry the report's own unreadable state forward rather than treating a report you never
+opened as one with nothing to say. **This does not catch a superseding pull request no lane ever
+named** -- one a lane missed during recon, one whose report could not be read, or an issue that
+simply stops being dispatched before any lane reaches it -- and that residual gap is not solved
+here either, the same posture the paragraph above takes for a pull request closed by someone else.
+
 ## Opening the pull request
 
 Pushing and opening is yours, and it is one read plus one call:

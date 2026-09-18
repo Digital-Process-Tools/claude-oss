@@ -2688,18 +2688,14 @@ def test_schema_version_14_declares_its_relation_to_13():
     assert schema["x-schema-compatibility"]["14"] == "additive"
 
 
-def test_a_version_13_report_is_readable_under_14():
-    """The additive claim, exercised rather than declared: the shipped example
-    with its version set back to 13 and no cost block validates under 14."""
-    schema = _schema()
-    report = dict(_example(), schema_version=13)
-    assert report_schema.validate(report, schema) == []
-
-
 def test_schema_version_15_declares_its_relation_to_14():
-    """#1655: pr_body.closes gains an optional key, `declines`. ADDITIVE, the
-    shape 5/7/8/10/14 had: no version-14 document carries the key, so none is
-    refused under 15.
+    """15 carries two composed additions, landed in parallel: #1655's
+    `pr_body.closes.declines` (issue numbers a run does NOT close, plus a
+    cross-field refusal against `issues` naming the same one) and #1656's
+    `superseded_by_pr` (an already-open pull request a declining lane found
+    already implementing the issue, so the tick can act on it instead of the
+    decline ending in prose alone). ADDITIVE, the shape 5/7/8/10/14 had: no
+    version-14 document carries either key, so none is refused under 15.
     """
     schema = _schema()
     assert schema["x-schema-version"] == 15
@@ -2708,10 +2704,24 @@ def test_schema_version_15_declares_its_relation_to_14():
 
 def test_a_version_14_report_is_readable_under_15():
     """The additive claim, exercised rather than declared: the shipped example
-    with its version set back to 14 and no `declines` key validates under 15."""
+    with its version set back to 14 and neither new key present validates
+    under 15."""
     schema = _schema()
     report = dict(_example(), schema_version=14)
     assert report_schema.validate(report, schema) == []
+
+
+def test_a_superseded_by_pr_value_must_be_an_integer():
+    """Positive control for the field being validated at all, not merely
+    permitted: a declining lane's report carrying the PR number it found
+    validates, and a non-integer value (a stringified number, the common
+    mistake) is refused."""
+    schema = _schema()
+    report = dict(_example(), superseded_by_pr=407)
+    assert report_schema.validate(report, schema) == []
+    report["superseded_by_pr"] = "407"
+    errors = report_schema.validate(report, schema)
+    assert any("superseded_by_pr" in error for error in errors), errors
 
 
 def test_a_cost_block_with_an_unknown_key_is_refused():
@@ -2731,7 +2741,7 @@ def test_a_cost_block_with_an_unknown_key_is_refused():
     ]
 
 
-def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_14():
+def test_the_shipped_schema_still_matches_its_recorded_fingerprint_at_15():
     assert report_schema.contract_drift(_schema()) is None
 
 

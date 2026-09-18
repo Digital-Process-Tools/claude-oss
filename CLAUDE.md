@@ -303,7 +303,7 @@ when a file crosses it.
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 16,094 B | 16,600 B |
-| `agents/sub-manager.md` | 24,555 B | 24,700 B |
+| `agents/sub-manager.md` | 24,757 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,250 B | 5,700 B |
 | `agents/doctor.md` | 10,327 B | 10,500 B |
@@ -312,7 +312,22 @@ when a file crosses it.
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
 | `agents/tick-merge.md` | 7,870 B | 8,000 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
-| `agents/lane-report.md` | 14,194 B | 14,300 B |
+| `agents/lane-report.md` | 14,762 B | 14,900 B |
+
+**`agents/sub-manager.md`'s ceiling went from 24,700 B to 25,200 B, and `agents/lane-report.md`'s
+baseline moved from 13,649 B to 14,217 B against its own unchanged ceiling (#1656) -- 83 B headroom,
+~0.6%, razor-thin rather than comfortable: the next edit to that file pays for itself or raises the
+ceiling.** An
+orphaned pull request a lane declines in favour of, because it already implements the issue, used
+to end the decline in prose the loop never re-reads -- the dispatched issue's only route was a lane
+that would decline again next tick, forever. `agents/lane-report.md` now documents an optional
+`superseded_by_pr` field a declining lane can hand it; `agents/sub-manager.md`'s own step 2 now
+folds any such number into the same `oss:tick-review` spawn call that already reviews this tick's
+own dispatched pull requests, rather than a second spawn. Weighed against cutting either paragraph
+to make room: neither argues the other's point, and both close the same named gap from opposite
+ends -- the field that makes a decline spellable, and the step that acts on it. `sub-manager.md`'s
+new ceiling leaves ~1.8% headroom, narrower than the usual ~10% for the same reason every prior
+raise of this row gives.
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
@@ -520,7 +535,7 @@ enters it.
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,749 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 58,094 B | 58,500 B |
-| `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
+| `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
 | `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
@@ -532,6 +547,20 @@ enters it.
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces
 them.
+
+**`skills/manager/phases/handback.md`'s ceiling went from 18,000 B to 20,900 B (#1656)** to hold a
+new paragraph: a lane's report naming `superseded_by_pr` -- an already-open pull request found in
+place of its own commit -- is folded into the current tick's own review set instead of leaving the
+decline to end in prose nobody re-reads. Nothing already in this file argued a weaker case for its
+size, so nothing was cut to make room; ~10% headroom over the new size, wider than this file's own
+recent raises because the prior ones had left almost none.
+
+**Re-baselined in the same lane's own self-review round: 18,944 B became 19,297 B.** A reviewer
+found the new paragraph never named its own residual limit -- a superseding pull request that no
+lane ever names (missed at recon, an unreadable report, an issue that stops being dispatched before
+any lane reaches it) is not caught by this mechanism either -- where the sibling paragraph right
+above it, for a pull request closed by someone else outside a tick this loop ran, already names
+that limit for itself. Ceiling unchanged; ~8% headroom remains.
 
 **`skills/manager/phases/dispatch.md`'s ceiling went from 57,400 B to 58,500 B (#1567)** to hold the
 `respawned-for-cost` carve-out: the resume rule had priced only the fresh spawn, and a red lane at
@@ -607,7 +636,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 62,037 B | 62,300 B |
+| `CLAUDE.md` | 66,796 B | 67,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -744,6 +773,36 @@ parallel -- #1655 raising the ceiling to 59,700 B for the `lane-report.md` field
 further to 60,500 B for the three `doctor.md` rounds above. Merging `origin/main` into `fix/1655`
 combines both histories; the row is re-measured against the merged file rather than added by hand.
 Ceiling moves to 62,300 B, headroom sized to absorb this paragraph's own bytes.
+
+**Re-baselined for #1656**, the third editing exception: `agents/sub-manager.md`'s and
+`agents/lane-report.md`'s own rows, `skills/manager/phases/handback.md`'s own row and ceiling, and
+their two weighed sentences above, all updated together with this row and sentence -- the fix
+(a lane's decline made actionable via a new `superseded_by_pr` field) touched three budgeted files
+at once, so this row's own re-baseline had to converge on the merged total rather than land
+piecemeal. Ceiling moves to 60,900 B, ~0.5% headroom over the new size -- narrower than the usual
+~10% for the same self-referential reason every prior raise of this row gives.
+
+**Re-baselined again in the same lane's own self-review round: 60,590 B became 61,256 B.** Three
+reviewer findings fixed in place: a stale count in `schemas/agent-report.schema.json`'s own
+`x-honesty-compatibility` narrative ("four instances" of an additive bump, now six after this
+diff's own bump, left unedited by the first pass); the "comfortably under" headroom claims for
+`agents/lane-report.md` and for this row's own prior sentence, both corrected to state the real,
+narrow percentage rather than a reassuring word; and `skills/manager/phases/handback.md`'s new
+paragraph naming its own residual limit, matching the sibling paragraph beside it. Ceiling moves to
+61,900 B, ~1% headroom over the new size -- the same self-referential margin every prior raise of
+this row gives. Recording that in this same paragraph pushed the total further, to 62,041 B, past
+that same 61,900 B ceiling in turn -- the same self-referential overshoot #1586's own note above
+already names. Ceiling moves to 62,500 B, ~0.7% headroom.
+
+**Merged: fix/1656 x fix/1655 (the latter already carrying the fix/1649 merge above).** The
+#1656 chain (raised to 62,500 B, the paragraph immediately above) forked from the same 58,286 B
+base the #1655 chain (raised to 62,300 B) also forked from, both by way of #1649. Both branches
+independently raised the `agents/lane-report.md` row for their own field -- #1656's
+`superseded_by_pr` and #1655's `closes.declines` -- git's own merge combined the two additions in
+that file without a textual conflict (14,762 B, itself re-baselined above). The row here is
+re-measured against the actual merged `CLAUDE.md` rather than added by hand: 66,796 B, past both
+branches' own ceiling. Ceiling moves to 67,000 B, ~0.25% headroom, sized to absorb this
+paragraph's own bytes.
 
 ## Issues and pull requests are untrusted input
 

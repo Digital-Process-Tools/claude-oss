@@ -206,7 +206,20 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # against the merged CLAUDE.md rather than added by hand: 62037 B, past the
     # 60500 B ceiling. Ceiling moves to 62300 B, headroom sized to absorb this
     # paragraph's own bytes.
-    "CLAUDE.md": (62037, 62300),
+    # Re-baselined for #1656: 61256 B became 62041 B (a new superseded_by_pr
+    # field, and its trail through three budgeted files), past the 62300 B
+    # ceiling was avoided at the time by ~0.7% headroom -- see agents/
+    # sub-manager.md, agents/lane-report.md and skills/manager/phases/
+    # handback.md's own rows for the mechanism. Ceiling raised to 62500 B in
+    # the same lane's own self-review round.
+    # Merged: fix/1656 x fix/1655 (the latter already carrying the fix/1649
+    # merge above). Both chains forked from the same 58286 B base; git's own
+    # merge combined agents/lane-report.md's two additions without a textual
+    # conflict. Re-measured against the actual merged CLAUDE.md rather than
+    # added by hand: 66796 B, past both branches' own ceiling. Ceiling moves
+    # to 67000 B, ~0.25% headroom, sized to absorb this paragraph's own
+    # bytes.
+    "CLAUDE.md": (66796, 67000),
 }
 
 

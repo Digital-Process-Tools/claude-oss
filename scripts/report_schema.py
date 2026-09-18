@@ -286,17 +286,32 @@ CONTRACT_FINGERPRINTS = {
     # else, back to the shape 5/7/8/10 had. ADDITIVE: no version-13 document
     # carries the key, so none is refused under 14.
     14: "e42ba0065e3bb281c3075305d4068c1c69254283dc176944fd99e8ceb032a925",
-    # 15 (#1655): pr_body.closes gains an optional key, `declines` -- issue numbers
-    # this run does NOT close, checked regardless of `state` against the body with
-    # the same keyword-binding absence detector `issues` already gets, plus a new
-    # cross-field rule refusing `issues` and `declines` naming the same number.
-    # ADDITIVE, the shape 5/7/8/10/14 had: no version-14 document carries the key,
-    # so none is refused under 15. Motivated by a real merge (jit-context PR #412
-    # against #402) where a whole-body `closes: {state: closes, issues: [...]}`
-    # for a DIFFERENT issue left a body's own "does not close #402" disclaimer,
-    # followed by a bound `Closes #402` four lines later, entirely unchecked --
-    # the single global `state` had no way to name #402's own disposition at all.
-    15: "8e900f79b0b72c482d0bcf70aad4c2f5cc8d700c5a7c4b85f81a7e4d8c7004a4",
+    # 15 (#1655, #1656): two optional keys landed on the same contract number,
+    # composed rather than sequenced, since both are additive and neither
+    # shipped in a release before the other arrived:
+    #
+    # pr_body.closes gains an optional key, `declines` -- issue numbers this
+    # run does NOT close, checked regardless of `state` against the body with
+    # the same keyword-binding absence detector `issues` already gets, plus a
+    # new cross-field rule refusing `issues` and `declines` naming the same
+    # number (#1655). Motivated by a real merge (jit-context PR #412 against
+    # #402) where a whole-body `closes: {state: closes, issues: [...]}` for a
+    # DIFFERENT issue left a body's own "does not close #402" disclaimer,
+    # followed by a bound `Closes #402` four lines later, entirely unchecked
+    # -- the single global `state` had no way to name #402's own disposition
+    # at all.
+    #
+    # A second top-level optional key, `superseded_by_pr` -- the number of an
+    # already-open pull request a declining lane found already implementing
+    # this issue, so the tick can act on it instead of the decline ending in
+    # prose alone (#1656).
+    #
+    # ADDITIVE, back to the shape 5/7/8/10/14 had: no version-14 document
+    # carries either key, so none is refused under 15. The fingerprint below
+    # is taken over the schema with BOTH additions present, since a document
+    # is fingerprinted whole and there is no way to record two partial
+    # contracts under one number.
+    15: "af20fc4f84565e6c75286b066da141ed10955110e89fcf300024a18f0199c0d5",
 }
 
 _TYPES = {
