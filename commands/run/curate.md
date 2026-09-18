@@ -13,12 +13,14 @@ it as part of that promotion while the clone sat checked out on this pass's own 
 concurrent tick's snapshot compare reported the change as a mutation it did not cause.
 
 Read `worktree_root` and `clone` the same way a developer lane does -- `.oss.json`'s tracked
-config plus the git-excluded `.oss.local.json` beside it -- then:
+config plus the git-excluded `.oss.local.json` beside it -- then, with `<UTC timestamp>` in the
+same `YYYYMMDDTHHMMSSZ` form `agents/developer.md` and `agents/lane-report.md` already pin
+(a colon in the bare form is illegal in a git ref and in a Windows path):
 
 ```bash
 cd <clone> && git fetch -q origin
-git worktree add <worktree_root>/curate-<UTC timestamp> -b curate/<UTC timestamp> origin/<default_branch>
-cd <worktree_root>/curate-<UTC timestamp>
+git worktree add <worktree_root>/curate-<UTC timestamp, YYYYMMDDTHHMMSSZ> -b curate/<UTC timestamp, YYYYMMDDTHHMMSSZ> origin/<default_branch>
+cd <worktree_root>/curate-<UTC timestamp, YYYYMMDDTHHMMSSZ>
 ```
 
 Run every step below from inside that worktree. Never check out this pass's branch, and never

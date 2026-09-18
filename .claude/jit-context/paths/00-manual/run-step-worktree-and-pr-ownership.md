@@ -4,10 +4,14 @@ description: "commands/run/*.md and agents/scheduler-step.md have no equivalent 
 match: (^|/)(commands/run/.*\.md|agents/scheduler-step\.md|commands/run\.md)$
 ---
 
-Observed 2026-09-15/16 on the curate step of an `/oss:run` (PR #1575).
+Observed 2026-09-15/16 on the curate step of an `/oss:run` (PR #1575), and recurred 2026-09-18
+(#1670): a tick running concurrently in the same clone observed curate's own writes -- a trap.d/
+fragment promoted into a jit-context rule and deleted as part of that promotion -- as an
+unexplained mutation via `tree_snapshot.py`'s before/after compare, because the clone was checked
+out on curate's own branch mid-tick.
 
 **Work in a worktree, never the primary clone.** A developer lane gets a worktree precisely so
-the clone stays on the default branch; nothing in `commands/run/*.md` says where an `/oss:run`
+the clone stays on the default branch; nothing in `commands/run/*.md` said where an `/oss:run`
 step should work, and the curate spawn did its work directly in the primary clone. It could not
 safely be returned to `main` while a tick was running (a branch switch under a live sub-manager
 is the same destructive-concurrency shape the loop warns about elsewhere), so the clone stayed on
@@ -15,6 +19,13 @@ is the same destructive-concurrency shape the loop warns about elsewhere), so th
 `gh-pr-merge`'s own cleanup refused both the worktree ("occupied") and the branch delete ("used by
 worktree"), parking the clone on a branch that no longer existed upstream. Recovery
 (`git checkout main && git pull --ff-only` then `git branch -D`) is cheap but nothing prompts it.
+
+**The worktree half is fixed for curate specifically, as of #1670**: `commands/run/curate.md` now
+states, in the same explicit shape `agents/developer.md` uses, that it must cut and work inside its
+own worktree before reading anything, and never work in the primary clone. The five sibling
+procedures (`setup`, `scaffold`, `install-audit`, `triage`, `changelog`) were not touched by that
+fix and may share the same gap -- this rule's own `match` still fires on all six, on purpose, until
+each is checked. The PR-ownership half below is unchanged and still open.
 
 **A pull request a step opens has nobody whose job it is to merge it.** `commands/run.md` gives
 the scheduler no merge step -- it spawns a step, reads the report, and moves on. A running tick
