@@ -51,9 +51,11 @@ GROUP_STATES = STATES + (STATE_LANE_OTHER,)
 def _looks_like_a_declared_path(token):
     """Whether a backtick-quoted `token`, pulled from an issue's title or
     body, is shaped like a file or glob this lane could touch -- rather than
-    an inline code identifier, a shell command, or a state word this
+    an inline code identifier, a shell command, a state word this
     repository's own issues quote constantly (`` `could-not-tell` ``,
-    `` `resolved-to-nothing` ``). Cheap and deliberately conservative: a
+    `` `resolved-to-nothing` ``), or a key-value fragment copied out of a
+    payload or an error message (`` `paths=[...]` ``, #1679). Cheap and
+    deliberately conservative: a
     false negative here just means one candidate path is missed (the issue
     may still be found through a different backtick span, or not at all,
     which is `_derive_declared_files`'s own "could not be derived" state,
