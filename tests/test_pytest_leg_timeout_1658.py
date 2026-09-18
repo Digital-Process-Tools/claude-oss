@@ -14,6 +14,17 @@ This mirrors #303's own shape (see `test_shell_leg_budget_303.py`): a
 `timeout-minutes` kill on Windows always reads as `cancelled`, never `failure`, so
 the tests results being all-green does not save the leg.
 
+#1658's own fix (15 -> 20) was not the last word: on PR #1654 the same leg was
+cancelled AGAIN, on two independent back-to-back runs against the identical commit
+`fad72a25` (jobs #105421966394, #105427076121), both reporting `7559 passed, 156
+skipped, 5 warnings in 1176.55s (0:19:36)` -- ~5 minutes longer than #1658's own
+measured baseline, and within 24 seconds of the 20-minute cap itself (#1660). The
+suite's own reported runtime is not stable; the constant below tracks the most
+recent measured worst case, and the margin below is deliberately generous rather
+than exact, since the growth trend itself is unexplained (#1660 also adds a
+faulthandler-based diagnostic -- `tests/posthang_diagnostics_1660.py` -- for
+whichever thread is still alive if this recurs).
+
 What this file holds: the `pytest` job still carries *some* wall-clock cap (a
 regression of #1658's own fix could remove the cap entirely rather than raise it),
 and that cap leaves real headroom over the slowest leg's own observed suite runtime
@@ -30,10 +41,12 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "tests.yml"
 
-#: The slowest leg's own observed suite runtime, in minutes, from the three CI runs
-#: named above. The cap must clear this with real margin for setup/checkout/install
-#: overhead, which #1658's own investigation measured at ~30-40s on top of it.
-OBSERVED_WORST_CASE_SUITE_MINUTES = 873.43 / 60.0
+#: The slowest leg's own observed suite runtime, in minutes -- updated by #1660 to
+#: the most recent measured worst case (job #105427076121, 1176.55s), since #1658's
+#: own reading (873.43s) was already superseded twice on the same commit. The cap
+#: must clear this with real margin for setup/checkout/install overhead on top of
+#: it, AND for the fact that this number has grown once already and may again.
+OBSERVED_WORST_CASE_SUITE_MINUTES = 1176.55 / 60.0
 
 try:
     import yaml
@@ -92,8 +105,7 @@ def test_the_pytest_job_cap_clears_the_observed_worst_case_with_margin():
     assert margin >= 3, (
         "the pytest job's timeout-minutes ({!r}) leaves only {:.1f} minutes over "
         "the observed worst-case suite runtime of {:.1f} minutes (job "
-        "#105410692355, 873.43s) -- #1658 was exactly this: a green suite "
-        "cancelled by the job's own ceiling before it could report as such".format(
-            cap, margin, OBSERVED_WORST_CASE_SUITE_MINUTES
-        )
+        "#105427076121, 1176.55s) -- #1658 and #1660 were exactly this: a green "
+        "suite cancelled by the job's own ceiling before it could report as "
+        "such".format(cap, margin, OBSERVED_WORST_CASE_SUITE_MINUTES)
     )
