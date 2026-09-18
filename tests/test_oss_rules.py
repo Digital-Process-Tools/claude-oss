@@ -247,6 +247,35 @@ def test_a_changelog_rule_exists_and_fires_on_the_fragment_directory():
     assert "changelog.d" in body.split("\n---\n")[0]
 
 
+def test_the_changelog_rule_does_not_mix_indented_and_fenced_code_blocks():
+    """markdownlint's MD046 ("consistent code block style") requires one style per
+    document. The removed-compatibility example used to be a bare 4-space indent
+    while the check command a few paragraphs later is fenced with ```bash -- the
+    first code block in the document sets what MD046 expects from every later one,
+    so a downstream repo that lints its own tracked markdown (claude-supertool,
+    via tests/test_markdownlint_noise_2012.py) flagged the fenced block as the
+    wrong style (#1647, filed upstream from claude-supertool#2586). Both examples
+    must render fenced, or a fresh `/oss:scaffold --apply` keeps reintroducing the
+    finding in any repo that runs markdownlint over its own tree.
+    """
+    rule = oss_rules.changelog_fragments(".oss/assemble_changelog.py", "changelog.d")
+    in_fence = False
+    indented_code_lines = []
+    for line in rule.splitlines():
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if line.startswith("    ") and line.strip():
+            indented_code_lines.append(line)
+    assert not indented_code_lines, indented_code_lines
+    # Positive control: the other code block genuinely exists and stays fenced --
+    # an assertion that finds no indented block also passes on a rule with no code
+    # blocks left at all.
+    assert "```bash" in rule, rule
+
+
 # --- #109: a description: for every shipped entry, or summary injection has nothing to say ---
 
 
