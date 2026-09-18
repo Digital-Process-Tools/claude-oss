@@ -55,13 +55,28 @@ import sys
 
 #: Seconds after a session finishes (i.e. right around when pytest's own
 #: "N passed" summary is printed) before the first stack dump fires, repeating
-#: at the same interval until the process actually exits. Chosen well above the
-#: ~24s of job-wall-clock margin #1660 measured left under the OLD 20-minute cap
-#: (so an ordinary run's own teardown, however it compares to that margin, does
-#: not trip this), and well below the ~10 minutes of margin the NEW 30-minute
-#: cap leaves over the current worst-case suite runtime, so several samples are
-#: still possible before that cap fires on a genuine hang.
-POST_SESSION_DUMP_AFTER_SECONDS = 60
+#: at the same interval until the process actually exits.
+#:
+#: Was 60, chosen against a claim -- "well below the ~10 minutes of margin the
+#: NEW 30-minute cap leaves" -- that #1660's own THIRD occurrence falsified
+#: before this module had ever fired once: job #105442284149 (commit
+#: `c201a8a0`) printed its summary at 1773.10s against the by-then-raised
+#: 30-minute (1800s) cap, a margin of only 26.9s. A 60s delay is not "well
+#: below" a 26.9s margin, it is 33.1s PAST it -- the diagnostic added
+#: specifically to explain a recurrence was, on its first real recurrence,
+#: mathematically incapable of ever firing, which is the whole explanation for
+#: why that job's 1414-line log carried no `faulthandler` output at all.
+#:
+#: 15 is chosen to sit comfortably under every margin observed so far (~24s,
+#: ~24s, ~26.9s across three occurrences at two different cap values) while
+#: staying well above how long an ordinary session's own post-summary teardown
+#: is reasoned to take (not measured per-leg on every OS/interpreter this
+#: repository runs -- see the module docstring's own caveat on that). If the
+#: margin keeps shrinking as the underlying runtime growth continues,
+#: `tests/test_posthang_diagnostics_1660.py`'s
+#: `test_dump_delay_fits_inside_the_jobs_own_margin` is the guard that will go
+#: red before this constant is wrong again, rather than after.
+POST_SESSION_DUMP_AFTER_SECONDS = 15
 
 
 def pytest_sessionfinish(session, exitstatus):

@@ -81,6 +81,24 @@ jobs:
     # exited. 30 is deliberately generous rather than a repeat of the same narrow
     # margin #1658 used, since the runtime has already grown once, unexplained,
     # and may again before the diagnostic pins down why.
+    #
+    # It did grow again, and the diagnostic did not help: a THIRD occurrence
+    # (job #105442284149, commit `c201a8a0`, carrying #1660's own faulthandler
+    # diagnostic) still ended `cancelled`, `1773.10s (0:29:33)` against this
+    # 30-minute cap -- only ~26.9s of margin, and no `faulthandler` output
+    # anywhere in that job's log. That is not the diagnostic failing to catch a
+    # hang; it never got the chance to -- `POST_SESSION_DUMP_AFTER_SECONDS` was
+    # 60 at the time, so the first dump was scheduled for 33s AFTER this cap
+    # would already have killed the job. Fixed in
+    # `tests/posthang_diagnostics_1660.py` (lowered to 15, with a coupling test
+    # in `tests/test_posthang_diagnostics_1660.py` that goes red if this margin
+    # ever gets too tight for it again). This cap is left at 30 rather than
+    # raised a third time: the growth (873s -> 1176.55s -> 1773.10s) has tracked
+    # each cap raise closely enough that raising it again is not expected to
+    # hold either, and #1660's own issue text argues against repeating that fix
+    # for however long the trend continues. The next recurrence, if the
+    # diagnostic can now actually fire, is what settles whether this is a real
+    # hang or something else growing the suite's own reported runtime.
     timeout-minutes: 30
     # #1246: the `os` x `python-version` product below is the full 3x4 release matrix,
     # unconditionally -- so `full_matrix: true` restores full coverage by excluding
