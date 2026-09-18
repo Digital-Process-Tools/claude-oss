@@ -24,6 +24,7 @@ LANE_SETUP_PATH = REPO_ROOT / "scripts" / "lane_setup.py"
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import lane_setup  # noqa: E402
+import select_issues_companions  # noqa: E402
 
 
 def _board(issues, capped=False, cap_detail=""):
@@ -66,6 +67,40 @@ def test_control_a_backtick_state_word_is_not_read_as_a_path():
         REPO_ROOT, "discusses `could-not-tell` and `resolved-to-nothing`", ""
     )
     assert resolved is None
+
+
+def test_1679_a_key_value_fragment_in_prose_is_not_read_as_a_path():
+    """#1679: this repository's own tickets quote CLI payload fragments in
+    backticks constantly -- `` `paths=[...]` `` is a TOML field name copied
+    out of an error message, not a glob. Before the fix it survived
+    `_looks_like_a_declared_path` (it has no `/` but does have a `.`, from
+    the `...`) and was handed to `resolve_lane` as the issue's own claimed
+    file set, which then resolved to no files on disk -- turning a
+    priority-low candidate could-not-tell on every tick that read this body."""
+    body = "lane pattern for #2592: resolved to no files on disk (`paths=[...]`)"
+    resolved = lane_setup._derive_declared_files(REPO_ROOT, "a title", body)
+    assert resolved is None
+
+
+def test_control_1679_a_real_path_beside_a_key_value_fragment_still_resolves():
+    """Control for the test above: the filter must reject the key=value
+    token specifically, not the whole body -- a genuine path quoted in the
+    same text must still be found."""
+    body = (
+        "lane pattern for #2592: resolved to no files on disk (`paths=[...]`), "
+        "see `scripts/lane_setup.py` for the caller"
+    )
+    resolved = lane_setup._derive_declared_files(REPO_ROOT, "a title", body)
+    assert resolved is not None
+    assert "scripts/lane_setup.py" in resolved["files"]
+
+
+def test_1679_the_lead_pattern_path_rejects_the_same_dark_input():
+    """The sibling call site (#1135's lead-pattern extraction, not #851's
+    companion path) shares the identical filter -- confirm it too."""
+    body = "lane pattern for #2592: resolved to no files on disk (`paths=[...]`)"
+    patterns = select_issues_companions._derive_declared_patterns("a title", body)
+    assert patterns is None
 
 
 def test_a_directory_path_expands_like_an_ordinary_lane_pattern():

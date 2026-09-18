@@ -69,6 +69,14 @@ def _looks_like_a_declared_path(token):
         return False
     if len(token) > 200:
         return False
+    # A token carrying `=` is a key-value fragment -- a TOML field name, a
+    # CLI flag assignment, a dict repr -- quoted in prose, not a path.
+    # #1679: `` `paths=[...]` `` (a literal TOML field name copied out of a
+    # dark-input error message) has no `/` but does have a `.` (from the
+    # `...`), so it survived the separator/dot check below and was handed to
+    # `resolve_lane` as a claimed file, resolving to no files on disk.
+    if "=" in token:
+        return False
     # A bare word with neither a path separator nor a dot is virtually never
     # a file this repository tracks (`could-not-tell`, `available`, `main`)
     # -- excluding it is what keeps this option (1) "cheap" rather than
