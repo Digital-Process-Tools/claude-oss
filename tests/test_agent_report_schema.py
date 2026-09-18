@@ -180,6 +180,17 @@ def _mutations():
         report["pr_body"]["closes"] = {"state": "closes-nothing"}
         return report
 
+    def pr_body_closes_and_declines_the_same_issue(report):
+        # #1655: the same number in both `issues` and `declines` says one merge
+        # both closes and does not close it -- a contradiction the report can
+        # make about itself, before the body is even opened.
+        report["pr_body"]["closes"] = {
+            "state": "closes",
+            "issues": [123],
+            "declines": [123],
+        }
+        return report
+
     def pr_body_absent_without_reason(report):
         report["pr_body"] = {"state": "not-written", "path": None}
         return report
@@ -289,6 +300,9 @@ def _mutations():
         ),
         "pr-body-closing-nothing-carries-a-reason": (
             pr_body_closing_nothing_without_a_reason
+        ),
+        "pr-body-declines-and-issues-do-not-overlap": (
+            pr_body_closes_and_declines_the_same_issue
         ),
         "below-bar-item-carries-a-quotable-pr-anchor": below_bar_item_without_an_anchor,
         "below-bar-item-needs-a-pull-request-body": (
@@ -1044,6 +1058,29 @@ def _disk_mutations(tmp_path):
             ),
             tmp_path,
         ),
+        # #1655: the report closes #406 and declines #402 -- a genuine mixed
+        # outcome -- and the body binds `Closes #406` correctly but ALSO carries
+        # a bold disclaimer immediately in front of a bound reference to #402.
+        # A forge reads the keyword by position, not the sentence's meaning, so
+        # this is the exact shape that closed #402 on merge despite the report's
+        # own words (jit-context PR #412). Nothing else in this table can refuse
+        # it: #406 is bound as declared, the closes/declines pair does not
+        # overlap, and the payload otherwise parses and matches the shape.
+        "pr-body-body-does-not-bind-a-closing-keyword-to-a-declined-issue": (
+            _report_with_payload(
+                tmp_path,
+                payload={
+                    "title": "t",
+                    "body": "**This does not close #402** -- the mechanism was "
+                    "never confirmed, only made checkable.\n\nCloses #406.",
+                    "head": "fix/123",
+                    "base": "main",
+                },
+                name="declined-but-bound.pr.json",
+                closes={"state": "closes", "issues": [406], "declines": [402]},
+            ),
+            tmp_path,
+        ),
     }
 
 
@@ -1063,6 +1100,29 @@ def test_every_on_disk_claim_has_a_case_that_proves_it(tmp_path):
             sorted(claimed - proven), sorted(proven - claimed)
         )
     )
+
+
+def test_a_genuine_mixed_disposition_validates_clean(tmp_path):
+    """#1655's positive control: closing one carried issue while genuinely
+    declining another, with a body that keeps its disclaimer clear of any bound
+    keyword for the declined number, must not be refused by the new check --
+    only the CONTRADICTION (a bound keyword despite `declines`) is a defect."""
+    report, base_dir = (
+        _report_with_payload(
+            tmp_path,
+            payload={
+                "title": "t",
+                "body": "Closes #406. Part of the same investigation, #402 is "
+                "unrelated and stays open.",
+                "head": "fix/123",
+                "base": "main",
+            },
+            name="mixed-outcome.pr.json",
+            closes={"state": "closes", "issues": [406], "declines": [402]},
+        ),
+        tmp_path,
+    )
+    assert not report_schema.validate_pr_body(report, base_dir=base_dir)
 
 
 def test_a_markdown_body_is_refused_by_name():
@@ -2620,18 +2680,22 @@ def test_schema_version_13_declares_its_relation_to_12():
 def test_schema_version_14_declares_its_relation_to_13():
     """#1499: one optional key, `cost`, carrying the lane's own token spend as
     scripts/agent_cost.py measured it. ADDITIVE, the shape 5/7/8/10 had: no
-    version-13 document carries the key, so none is refused under 14.
+    version-13 document carries the key, so none is refused under 14. The
+    historical record, not the current contract number -- see the 15-test
+    below for the version-version assertion, since #1655 moved that past 14.
     """
     schema = _schema()
     assert schema["x-schema-compatibility"]["14"] == "additive"
 
 
 def test_schema_version_15_declares_its_relation_to_14():
-    """#1656: one optional key, `superseded_by_pr`, naming an already-open
-    pull request a declining lane found already implementing this issue, so
-    the tick can act on it instead of the decline ending in prose alone.
-    ADDITIVE, the shape 5/7/8/10/14 had: no version-14 document carries the
-    key, so none is refused under 15.
+    """15 carries two composed additions, landed in parallel: #1655's
+    `pr_body.closes.declines` (issue numbers a run does NOT close, plus a
+    cross-field refusal against `issues` naming the same one) and #1656's
+    `superseded_by_pr` (an already-open pull request a declining lane found
+    already implementing the issue, so the tick can act on it instead of the
+    decline ending in prose alone). ADDITIVE, the shape 5/7/8/10/14 had: no
+    version-14 document carries either key, so none is refused under 15.
     """
     schema = _schema()
     assert schema["x-schema-version"] == 15
@@ -2640,7 +2704,7 @@ def test_schema_version_15_declares_its_relation_to_14():
 
 def test_a_version_14_report_is_readable_under_15():
     """The additive claim, exercised rather than declared: the shipped example
-    with its version set back to 14 and no superseded_by_pr key validates
+    with its version set back to 14 and neither new key present validates
     under 15."""
     schema = _schema()
     report = dict(_example(), schema_version=14)

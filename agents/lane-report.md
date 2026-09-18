@@ -175,6 +175,12 @@ drift this repository keeps paying for.
   fenced.
 - **One `Closes` line per issue.** `Closes #A #B` links both numbers and **closes only `#A`**, so
   `#B` needs a keyword of its own. The validator refuses the second number for exactly that reason.
+- **A mixed multi-issue outcome names each side (#1655).** Argued that one carried issue is not
+  actually fixed while genuinely closing another in the same pull request? Name the unfixed one in
+  `closes.declines`, never prose alone -- a forge honours a keyword by its position next to the
+  number, not the sentence around it, so `**does not close #402**` four lines before `Closes #402`
+  still closes it (observed once, `jit-context` PR #412, reopened by hand). The validator refuses a
+  body binding a keyword to a number `declines` names.
 - **Write the line while you write the body.** The refusal names the remedy, but it arrives after
   the payload exists, and the repair is then an edit to the body *and* the report rather than one
   line composed once.
