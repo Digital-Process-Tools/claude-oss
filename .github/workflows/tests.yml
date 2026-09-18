@@ -336,7 +336,7 @@ jobs:
       # eleven of them -- #1177's own fix for the identical mistake on the coverage flag.
       - name: Run tests
         run: |
-          pytest -n auto --dist loadfile ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '--no-cov' || '' }} ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '-m "not invariant"' || '' }}
+          pytest -n auto --dist loadfile -o faulthandler_timeout=180 ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '--no-cov' || '' }} ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '-m "not invariant"' || '' }}
   shell:
     runs-on: ubuntu-latest
     timeout-minutes: 10
