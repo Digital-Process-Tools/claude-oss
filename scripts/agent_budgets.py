@@ -477,7 +477,18 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # reaches disposition 3's `could-not-tell:`). Nothing already in this
     # file argued a weaker case to cut in its place, so the ceiling moves to
     # 8900 B, ~10% headroom.
-    "agents/doctor.md": (8090, 8900),
+    # Re-baselined for #1649: 8090 B became 9061 B. `on-default`'s write-then-
+    # commit path never checked branch protection, and the findings-only run it
+    # already does cannot substitute -- `check_branch_protection` answers OK
+    # when the branch IS protected, and `--findings` suppresses OK lines
+    # (#1455), so the one line that would say "stop" is the one line the
+    # spawn's own diagnostic pass never shows it. Fixed by calling
+    # `doctor_check_branch_protection.branch_protection_state` directly before
+    # writing, and adding a `could-not-repair:` outcome for `protected` /
+    # `could-not-tell` so a commit that cannot land without a bypass push is
+    # never reported as `repaired`. Nothing here argued for cutting instead;
+    # ceiling moves to 9200 B, ~1.5% headroom.
+    "agents/doctor.md": (9061, 9200),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the

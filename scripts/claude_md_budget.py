@@ -177,7 +177,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # path, raising agents/developer/review.md's own ceiling and this row's
     # weighed sentence. 58495 B became 58794 B, past the 58600 B ceiling.
     # Ceiling moves to 59000 B, ~0.3% headroom.
-    "CLAUDE.md": (58286, 59000),
+    # Re-baselined for #1649, the third editing exception: agents/doctor.md's own
+    # row and ceiling raised for the on-default branch-protection gate, plus this
+    # row's own rewrites converging on the new size. 58794 B became 58939 B.
+    # Ceiling unchanged; comfortably under it.
+    "CLAUDE.md": (58939, 59000),
 }
 
 

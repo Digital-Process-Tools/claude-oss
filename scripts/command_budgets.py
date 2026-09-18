@@ -234,7 +234,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # same trap. Nothing already in the file argued either point, so nothing
     # was cut to make room; the ceiling moves to 10600 B, ~10% headroom over
     # the new size.
-    "commands/run.md": (9586, 10600),
+    # Re-baselined for #1649: 9586 B became 9612 B -- the step 1 doctor spawn
+    # pinned to run_in_background: false, the one bare Agent(...) call #1586's
+    # own fix elsewhere did not reach. Ceiling unchanged; comfortably under it.
+    "commands/run.md": (9612, 10600),
 }
 
 

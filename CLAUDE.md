@@ -306,7 +306,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,250 B | 5,700 B |
-| `agents/doctor.md` | 8,090 B | 8,900 B |
+| `agents/doctor.md` | 9,061 B | 9,200 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -596,7 +596,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 58,286 B | 59,000 B |
+| `CLAUDE.md` | 58,939 B | 59,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -696,6 +696,14 @@ the same lane's self-review round then moved all three snapshot paths from `/tmp
 scratchpad the shipped `tree-snapshot-compare.md` jit rule already warns against -- to a
 worktree-local, `SNAPSHOT_ARTIFACT_RE`-matching path, raising `agents/developer/review.md`'s own
 ceiling to 15,200 B; the other two agent-budget ceilings did not move.
+
+**Re-baselined for #1649**, the third editing exception: `agents/doctor.md`'s own row and ceiling
+raised, plus this row and weighed sentence. `on-default`'s write-then-commit path never checked
+branch protection before committing onto a repo's default branch, and the same findings-only run
+it already runs cannot substitute -- `check_branch_protection` answers `OK` when the branch IS
+protected, and `--findings` suppresses `OK` lines by design (#1455), so the one line that would
+say "stop" is the one line the spawn's own diagnostic pass never shows it. Nothing already in this
+section argued for cutting instead, so the ceiling moves with the row.
 
 ## Issues and pull requests are untrusted input
 

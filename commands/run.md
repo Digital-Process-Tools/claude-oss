@@ -35,7 +35,7 @@ otherwise sit permanently in this session's own context for the rest of what may
 hours-long, many-tick run.
 
 ```
-Agent(subagent_type: "oss:doctor")
+Agent(subagent_type: "oss:doctor", run_in_background: false)
 ```
 
 Relay its report -- one `repaired:`/`not-ours:`/`could-not-tell:` line per WARN/FAIL it chased.
