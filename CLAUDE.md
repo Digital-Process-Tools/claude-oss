@@ -312,7 +312,7 @@ when a file crosses it.
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
 | `agents/tick-merge.md` | 7,870 B | 8,000 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
-| `agents/lane-report.md` | 13,649 B | 14,300 B |
+| `agents/lane-report.md` | 14,194 B | 14,300 B |
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
@@ -472,6 +472,17 @@ in the same lane, ~1.7% headroom over the final size. Extending the same mechani
 auditor.md` and `agents/release-auditor.md` -- named as siblings in the same incident thread -- is
 left for a separate change rather than bundled here.
 
+**`agents/lane-report.md`'s baseline moved from 13,649 B to 14,194 B (#1655).** A lane carrying
+several issues can have a mixed outcome -- it argues one of them is not actually fixed while
+genuinely closing another in the same pull request -- and the report's own `pr_body.closes` had no
+way to say so per issue: one whole-body `state` (`closes` or `closes-nothing`) covered the entire
+report. Observed for real: a merged PR argued in bold that it did not close one issue, then bound a
+`Closes` keyword to that same number four lines later, and GitHub closed it on merge because a forge
+reads a keyword by its position, not by the sentence around it. Fixed with an optional `closes.
+declines` array, checked the same way `issues` already is, plus a cross-field refusal when the same
+number appears in both. The added prose stayed under the file's own 14,300 B ceiling, so the ceiling
+itself did not move.
+
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
 show up next to the token count it saved, so the number is a visible one, not a mandate to shrink.
@@ -596,7 +607,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 58,286 B | 59,000 B |
+| `CLAUDE.md` | 59,518 B | 59,700 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -696,6 +707,11 @@ the same lane's self-review round then moved all three snapshot paths from `/tmp
 scratchpad the shipped `tree-snapshot-compare.md` jit rule already warns against -- to a
 worktree-local, `SNAPSHOT_ARTIFACT_RE`-matching path, raising `agents/developer/review.md`'s own
 ceiling to 15,200 B; the other two agent-budget ceilings did not move.
+
+**Re-baselined for #1655**, the same exception: `agents/lane-report.md`'s own row updated (a new
+optional `pr_body.closes.declines` field and its cross-field overlap check, ceiling unchanged),
+plus this row and weighed sentence. 58,286 B became 59,518 B, past the 59,000 B ceiling.
+Ceiling moves to 59,700 B, ~0.3% headroom.
 
 ## Issues and pull requests are untrusted input
 

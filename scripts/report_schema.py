@@ -286,6 +286,17 @@ CONTRACT_FINGERPRINTS = {
     # else, back to the shape 5/7/8/10 had. ADDITIVE: no version-13 document
     # carries the key, so none is refused under 14.
     14: "e42ba0065e3bb281c3075305d4068c1c69254283dc176944fd99e8ceb032a925",
+    # 15 (#1655): pr_body.closes gains an optional key, `declines` -- issue numbers
+    # this run does NOT close, checked regardless of `state` against the body with
+    # the same keyword-binding absence detector `issues` already gets, plus a new
+    # cross-field rule refusing `issues` and `declines` naming the same number.
+    # ADDITIVE, the shape 5/7/8/10/14 had: no version-14 document carries the key,
+    # so none is refused under 15. Motivated by a real merge (jit-context PR #412
+    # against #402) where a whole-body `closes: {state: closes, issues: [...]}`
+    # for a DIFFERENT issue left a body's own "does not close #402" disclaimer,
+    # followed by a bound `Closes #402` four lines later, entirely unchecked --
+    # the single global `state` had no way to name #402's own disposition at all.
+    15: "8e900f79b0b72c482d0bcf70aad4c2f5cc8d700c5a7c4b85f81a7e4d8c7004a4",
 }
 
 _TYPES = {
@@ -1002,6 +1013,21 @@ def _rule_pr_body(node, path, errors):
             "forgotten keyword are one missing line apart, and without one they render "
             "identically.".format(_label(closes_path))
         )
+    # #1655: `declines` names issues this run does NOT close, alongside `issues`
+    # naming what it does -- a lane carrying several issues with a mixed outcome.
+    # Declaring the same number in both would say one merge both closes and does
+    # not close it, which is a contradiction in the report itself, before the body
+    # is even opened.
+    overlap = set(_issue_numbers(closes.get("issues"))) & set(
+        _issue_numbers(closes.get("declines"))
+    )
+    if overlap:
+        errors.append(
+            "{}: `issues` and `declines` both name {} -- one report cannot say the "
+            "same merge both closes and does not close the same issue.".format(
+                _label(closes_path), sorted(overlap)
+            )
+        )
 
 
 # --- the third receipt (#411) ---------------------------------------------------
@@ -1405,6 +1431,29 @@ def closing_body_errors(closes, body):
                 "expects the issue to survive the merge; the same absence pointing the "
                 "other way closes one nobody decided to close.".format(
                     _one_line(found.group(0), 60)
+                )
+            )
+    # #1655: `declines` is checked regardless of `state` -- a report can legitimately
+    # close one carried issue while declining another in the same body. Reopened by
+    # hand once already (PR jit-context#412 against #402): the body argued in bold
+    # that the merge did not close #402, then bound `Closes #402` four lines later,
+    # and nothing before this checked a declared-not-closing number against the body
+    # at all because the whole-report `state` was `closes` for a different issue.
+    for issue in _issue_numbers(closes.get("declines")):
+        pattern = re.compile(
+            _BOUND + r"(?:#{n}(?!\d)|https?://\S*?/issues/{n}(?!\d))".format(n=issue),
+            re.IGNORECASE,
+        )
+        found = pattern.search(text)
+        if found is not None:
+            errors.append(
+                "pr_body.payload.body: the report declares `declines` for #{n} -- this "
+                "run does not close it -- and the body binds a closing keyword ({kw}) to "
+                "#{n} anyway. A forge matches a closing keyword by its position relative "
+                "to the reference, not by the sentence's meaning, so a disclaiming "
+                "sentence in front of it still binds -- merging this would close #{n} "
+                "despite the report's own words saying it stays open.".format(
+                    n=issue, kw=_one_line(found.group(0), 60)
                 )
             )
     return errors

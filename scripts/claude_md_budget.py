@@ -177,7 +177,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # path, raising agents/developer/review.md's own ceiling and this row's
     # weighed sentence. 58495 B became 58794 B, past the 58600 B ceiling.
     # Ceiling moves to 59000 B, ~0.3% headroom.
-    "CLAUDE.md": (58286, 59000),
+    # Re-baselined for #1655: agents/lane-report.md's own row updated (a new
+    # optional pr_body.closes.declines field), plus this row and weighed
+    # sentence. 58286 B became 59518 B, past the 59000 B ceiling. Ceiling
+    # moves to 59700 B, ~0.3% headroom.
+    "CLAUDE.md": (59518, 59700),
 }
 
 
