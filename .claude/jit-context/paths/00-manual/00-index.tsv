@@ -1,11 +1,14 @@
+(^|/)(commands/.*\.md|agents/.*\.md)$	agent-call-needs-run-in-background-pin.md
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
 (^|/)(CLAUDE\.md|scripts/lane_setup\.py|scripts/claude_md_budget\.py)$	claude-md-budget-guard-derivation.md
 (^|/)scripts/(oss_config|scaffold|fix_commit_scope)\.py$	config-value-validation.md
 (^|/)scripts/[^/]+\.py$	counter-scripts-silent-gaps.md
 (^|/)trap\.d/	curate-pass-git-add-before-delete.md
+(^|/)\.claude/jit-context/.*\.md$	curate-pr-jit-file-needs-remind-budgets-check.md
 (^|/)(scripts/doctor(_check_[a-z0-9_]+)?\.(py|sh)|commands/doctor\.md)$	doctor-check-contract.md
 (^|/)scripts/doctor_check_[^/]+\.py$	doctor-check-module-scope-import.md
 (^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
+(^|/)agents/(developer/review-return|tick-review|tick-accounting)\.md$	findings-brief-bans-above-and-tallies.md
 (^|/)(agents|commands|skills)/.*\.md$	frontmatter-key-spelling-is-unverifiable-from-source.md
 (^|/)(skills/manager/phases/dispatch\.md|agents/tick-dispatch\.md|agents/recon\.md)$	issue-design-question-not-dispatchable.md
 (^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$	issue-selection-goal.md
@@ -15,6 +18,7 @@
 (^|/)(CLAUDE\.md|agents/.+\.md|commands/.+\.md|skills/manager/.+\.md|trap\.d/.+\.md|\.claude/jit-context/.+\.md)$	md018-issue-ref-at-line-start.md
 (^|/)\.github/workflows/	owned-workflow-constraints.md
 (^|/)(bin/[^/]+|scripts/[^/]+\.sh)$	posix-shell-portability.md
+(^|/)(skills/manager/phases/dispatch\.md|agents/tick-dispatch\.md|agents/sub-manager\.md)$	recheck-red-main-before-file-and-dispatch.md
 (^|/)scripts/[^/]+\.py$	regex-against-stringified-path-assumes-posix-separator.md
 (^|/)scripts/oss_rules\.py$|(^|/)\.claude/jit-context/.*/00-index\.tsv$	rules-layer-symlinks.md
 (^|/)(commands/run/.*\.md|agents/scheduler-step\.md|commands/run\.md)$	run-step-worktree-and-pr-ownership.md
