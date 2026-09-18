@@ -75,7 +75,7 @@ def test_a_writable_fd_3_becomes_a_real_progress_callback(monkeypatch):
     )
     capture = {}
     _stub_update(monkeypatch, capture)
-    assert plugin_update.main(["--root", "."]) == 0
+    assert plugin_update.main(["--root", ".", "--progress-fd", "3"]) == 0
     assert capture["kwargs"]["progress"] is not None
     # #1648 self-review: the terminating newline for the shell's own dangling
     # in-flight "checking..." mark is written lazily, once, before the FIRST
@@ -112,17 +112,16 @@ def test_no_bytes_are_written_when_update_never_calls_progress_1648(monkeypatch)
     monkeypatch.setattr(plugin_update, "update", _fake_update)
     monkeypatch.setattr(plugin_update, "write_receipt", lambda document: None)
     monkeypatch.setattr(plugin_update, "read_receipt", lambda: None)
-    assert plugin_update.main(["--root", "."]) == 0
+    assert plugin_update.main(["--root", ".", "--progress-fd", "3"]) == 0
     assert capture["kwargs"]["progress"] is not None
     assert writer.lines == []
     assert writer.closed
 
 
-def test_fd_3_not_open_is_the_ordinary_case_and_passes_no_progress(monkeypatch):
-    """Must-fire control for the case above: every caller except the launcher --
-    the async SessionStart hook, a bare CLI invocation, every OTHER test in this
-    suite -- never opened fd 3, and `os.fdopen(3, ...)` answers with the real
-    `OSError` (`errno.EBADF`) that produces. `update()` must then be called with
+def test_a_progress_fd_that_will_not_open_passes_no_progress(monkeypatch):
+    """`--progress-fd 3` named, but `os.fdopen(3, ...)` answers with the real
+    `OSError` (`errno.EBADF`) a closed slot produces -- the launcher asked for
+    a channel it did not actually open. `update()` must then be called with
     `progress=None`, exactly as it always was, never a callback nobody can use."""
 
     def _raise(fd, mode, closefd=True):
@@ -131,8 +130,61 @@ def test_fd_3_not_open_is_the_ordinary_case_and_passes_no_progress(monkeypatch):
     monkeypatch.setattr(plugin_update.os, "fdopen", _raise)
     capture = {}
     _stub_update(monkeypatch, capture)
-    assert plugin_update.main(["--root", "."]) == 0
+    assert plugin_update.main(["--root", ".", "--progress-fd", "3"]) == 0
     assert capture["kwargs"]["progress"] is None
+
+
+def test_without_progress_fd_the_descriptor_is_never_touched_1673(monkeypatch):
+    """#1673, the actual cause: `main()` used to PROBE fd 3 blindly, on every
+    caller, and let `OSError` mean "nobody opened one". Under a pytest-xdist
+    worker on `windows-latest` slot 3 is not closed -- it is one of execnet's
+    own live descriptors -- and `os.fdopen(3, "w")` on it BLOCKED forever:
+    two workers sat inside `<frozen os>:1066 fdopen` from
+    `test_plugin_update_debounce_753.py:240` and
+    `test_doctor_launcher_caller_1154.py:139` (both call `main()` in-process
+    with no fd-3 stub) until the job's own 30-minute cap cancelled the leg,
+    named by `-o faulthandler_timeout=180` on run 35363849336, job
+    105661393528, after four issues (#1658, #1660, #1671, #1673) had read
+    the same cancellation as a post-session hang.
+
+    An inherited descriptor cannot be detected -- a slot that happens to be
+    open is indistinguishable from one the caller opened on purpose -- so the
+    channel is opt-in: without `--progress-fd`, `os.fdopen` is never called at
+    all, whatever is or is not in slot 3. Must-fire control: the same stub
+    records the call when the flag IS passed."""
+    calls = []
+
+    def _record(fd, mode, closefd=True):
+        calls.append(fd)
+        return _FakeWriter()
+
+    monkeypatch.setattr(plugin_update.os, "fdopen", _record)
+    capture = {}
+    _stub_update(monkeypatch, capture)
+    assert plugin_update.main(["--root", "."]) == 0
+    assert calls == []
+    assert capture["kwargs"]["progress"] is None
+
+    assert plugin_update.main(["--root", ".", "--progress-fd", "3"]) == 0
+    assert calls == [3]
+    assert capture["kwargs"]["progress"] is not None
+
+
+def test_a_non_integer_progress_fd_is_refused_1673(monkeypatch, capsys):
+    """`--progress-fd` names a descriptor number and nothing else: a value
+    `int()` refuses is reported, not silently read as "no channel" -- an
+    absence the caller asked for and one produced by a typo must not render
+    the same. Must-fire control: `3` on the same path is accepted."""
+    monkeypatch.setattr(
+        plugin_update.os, "fdopen", lambda fd, mode, closefd=True: _FakeWriter()
+    )
+    capture = {}
+    _stub_update(monkeypatch, capture)
+    assert plugin_update.main(["--root", ".", "--progress-fd", "three"]) == 2
+    assert "--progress-fd" in capsys.readouterr().err
+    assert "kwargs" not in capture
+    assert plugin_update.main(["--root", ".", "--progress-fd", "3"]) == 0
+    assert capture["kwargs"]["progress"] is not None
 
 
 # #1673 self-review (a spawned reviewer, not this lane's own first pass): the
@@ -143,10 +195,9 @@ def test_fd_3_not_open_is_the_ordinary_case_and_passes_no_progress(monkeypatch):
 # holds its own worker-communication file descriptors somewhere near the low
 # end of the table too, and clobbering slot 3 process-wide, even briefly and
 # even restored afterwards, collided with whatever xdist itself had there.
-# `plugin_update.py`'s own contract hardcodes literal fd 3
-# (`os.fdopen(3, ...)` in `main()`, matching `bin/oss-workspace`'s own
-# `exec 3>&1`), so the number itself cannot move to a safer slot without
-# changing what is under test. What CAN move is which process's fd table pays
+# `bin/oss-workspace`'s own contract is literal fd 3 (`exec 3>&1` then
+# `--progress-fd 3`), so the number itself cannot move to a safer slot
+# without changing what is under test. What CAN move is which process's fd table pays
 # for the exercise: a real child process, spawned fresh for exactly this, has
 # its own fd table from the OS's own fork/exec -- nothing it does to its own
 # slot 3 can reach back into the pytest worker that spawned it, crash or no
@@ -199,7 +250,7 @@ _FD3_CHILD_SCRIPT = textwrap.dedent(
     os.close(write_fd)
 
     before = os.get_inheritable(3)
-    rc = plugin_update.main(["--root", "."])
+    rc = plugin_update.main(["--root", ".", "--progress-fd", "3"])
     after = os.get_inheritable(3)
 
     os.close(3)

@@ -1063,18 +1063,36 @@ def main(argv=None):
     if isinstance(prior, ReceiptUnreadable):
         prior = None
     # #1648: `bin/oss-workspace`'s pre-`exec claude` call is otherwise silent for
-    # the whole ~46s this can take -- open fd 3 as a progress channel IF the
-    # caller opened one for us (`exec 3>&1` before this runs); write nothing at
-    # all when it did not, which is every other caller (the async SessionStart
-    # hook, a direct CLI invocation, every existing test). `closefd=False`: this
-    # process does not own descriptor 3 and must not close it out from under
-    # whatever the caller intends to do with it afterwards.
+    # the whole ~46s this can take -- it runs `exec 3>&1` and passes
+    # `--progress-fd 3`, and this streams one line per step there. Opt-in by
+    # flag, never by probing: a descriptor this process did not open cannot be
+    # told apart from one the caller opened on purpose, and probing slot 3
+    # blindly is what #1673 actually was -- under a pytest-xdist worker on
+    # `windows-latest` slot 3 is one of execnet's own live descriptors, and
+    # `os.fdopen(3, "w")` on it blocked forever, from every test that calls
+    # `main()` in-process, until the job's own 30-minute cap (run 35363849336).
+    # Without the flag nothing here touches any descriptor, which is every
+    # other caller (the async SessionStart hook, a direct CLI invocation, every
+    # test). `closefd=False`: this process does not own the descriptor and
+    # must not close it out from under whatever the caller does with it next.
+    progress_fd = _arg_value(argv, "--progress-fd", None)
+    if progress_fd is not None:
+        try:
+            progress_fd = int(progress_fd)
+        except ValueError:
+            sys.stderr.write(
+                "plugin_update: --progress-fd takes a descriptor number, got {!r}\n".format(
+                    progress_fd
+                )
+            )
+            return 2
     progress_writer = None
-    try:
-        progress_writer = os.fdopen(3, "w", closefd=False)
-    except OSError:
-        progress_writer = None
-    else:
+    if progress_fd is not None:
+        try:
+            progress_writer = os.fdopen(progress_fd, "w", closefd=False)
+        except OSError:
+            progress_writer = None
+    if progress_writer is not None:
         # #1673: `update()` below, once this succeeds, spawns several of its own
         # `subprocess.run()` calls (marketplace refresh, the loop plugin, each
         # declared dependency, all via `_run()`). fd 3 itself was never opened by
@@ -1095,7 +1113,7 @@ def main(argv=None):
         # is wrapped defensively because the fd could, in principle, already be
         # invalid by the time this runs.
         try:
-            os.set_inheritable(3, False)
+            os.set_inheritable(progress_fd, False)
         except OSError:
             pass
 

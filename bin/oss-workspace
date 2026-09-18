@@ -293,15 +293,18 @@ if [ -n "$python_bin" ]; then
     # subprocess started inside the substitution inherits it and
     # plugin_update.main() can stream one line per step there in real time.
     # Gated on oss_steps: with steps not shown at all, fd 3 stays closed and
-    # main()'s own os.fdopen(3) fails exactly as for every other caller, so
-    # this path is unchanged. See CLAUDE.md's own trap.d for the fuller
-    # reasoning and the in-flight-mark/lazy-newline detail (kept short here
-    # after #1654's Windows CI leg broke on this comment's own length).
+    # --progress-fd is not passed, so main() touches no descriptor at all
+    # (#1673: it must never probe one it was not told about). See trap.d for
+    # the in-flight-mark/lazy-newline detail (kept short here after #1654's
+    # Windows CI leg broke on this comment's own length).
+    progress_fd_args=""
     if [ "${oss_steps:-0}" -eq 1 ]; then
         exec 3>&1
+        progress_fd_args="--progress-fd 3"
     fi
+    # shellcheck disable=SC2086  # progress_fd_args is two words or empty, by construction
     auto_update_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
-        --root "$repo_root" --caller launcher --print-state 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
+        --root "$repo_root" --caller launcher --print-state $progress_fd_args 2>&1 </dev/null) && auto_update_status=0 || auto_update_status=$?
     if [ "${oss_steps:-0}" -eq 1 ]; then
         exec 3>&-
     fi

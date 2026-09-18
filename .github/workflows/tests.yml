@@ -336,6 +336,11 @@ jobs:
       # eleven of them -- #1177's own fix for the identical mistake on the coverage flag.
       - name: Run tests
         run: |
+          # #1673: any single test past 180s dumps its own stack and name to
+          # stderr (pytest's built-in faulthandler plugin), so a hung test is
+          # named in the log rather than showing as a bare KeyboardInterrupt
+          # at the job's own cap -- which four issues read as a post-session
+          # hang before this named the real one on its first run.
           pytest -n auto --dist loadfile -o faulthandler_timeout=180 ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '--no-cov' || '' }} ${{ (matrix.os != 'ubuntu-latest' || matrix.python-version != '3.12') && '-m "not invariant"' || '' }}
   shell:
     runs-on: ubuntu-latest
