@@ -61,6 +61,18 @@ def test_dump_delay_fits_inside_the_jobs_own_margin():
     itself used to pick 60): it is the one thing that actually matters for this
     diagnostic's own purpose -- that it gets scheduled to fire strictly before the
     job's own wall-clock cap can kill the process first.
+
+    What this does NOT do, so it is not mistaken for more than it is: it compares
+    two HAND-MAINTAINED constants (this delay, and
+    `OBSERVED_WORST_CASE_SUITE_MINUTES` above), neither of which is read from a
+    live CI measurement. It would have PASSED against the old 60s delay had
+    `OBSERVED_WORST_CASE_SUITE_MINUTES` still held its pre-this-issue value
+    (1176.55s -> margin 623.45s, comfortably clearing 60s) -- it only catches
+    THIS delay going stale relative to whatever the OTHER constant currently
+    says, which is exactly why that constant is updated in the same commit as
+    this test. A fourth recurrence still needs a human to transcribe the new
+    worst-case runtime into `OBSERVED_WORST_CASE_SUITE_MINUTES` before this test
+    can say anything about it.
     """
     job = _pytest_job()
     cap_minutes = job.get("timeout-minutes")

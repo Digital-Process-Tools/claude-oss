@@ -91,8 +91,11 @@ jobs:
     # 60 at the time, so the first dump was scheduled for 33s AFTER this cap
     # would already have killed the job. Fixed in
     # `tests/posthang_diagnostics_1660.py` (lowered to 15, with a coupling test
-    # in `tests/test_posthang_diagnostics_1660.py` that goes red if this margin
-    # ever gets too tight for it again). This cap is left at 30 rather than
+    # in `tests/test_posthang_diagnostics_1660.py` that catches THIS delay
+    # going stale against `tests/test_pytest_leg_timeout_1658.py`'s own
+    # hand-maintained runtime constant -- not a live measurement, so a FOURTH
+    # occurrence still needs that constant updated by hand before the coupling
+    # test can say anything about it). This cap is left at 30 rather than
     # raised a third time: the growth (873s -> 1176.55s -> 1773.10s) has tracked
     # each cap raise closely enough that raising it again is not expected to
     # hold either, and #1660's own issue text argues against repeating that fix

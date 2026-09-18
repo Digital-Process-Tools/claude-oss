@@ -25,11 +25,18 @@ this only makes the CI log say WHERE the process was stuck when that backstop
 Silent on every normal run, REASONED rather than observed: `pytest_sessionfinish`
 arms the timer but nothing here ever cancels it, so it only speaks if the process
 is still alive POST_SESSION_DUMP_AFTER_SECONDS after its own session finished.
-Every leg measured before #1660's own two cancellations exited well inside that
-window -- but this is reasoned from ordinary process-exit behaviour, not measured
-per-leg on every OS/interpreter combination this repository runs; a leg with
-genuinely slow (but not hung) teardown could still see a stray dump in its log,
-which is log noise, not a failure (nothing here reads or gates on stderr).
+Every leg measured before #1660's own two cancellations exited well inside the
+ORIGINAL 60s window -- but this is reasoned from ordinary process-exit behaviour,
+not measured per-leg on every OS/interpreter combination this repository runs;
+a leg with genuinely slow (but not hung) teardown could still see a stray dump
+in its log, which is log noise, not a failure (nothing here reads or gates on
+stderr). That reasoning has NOT been re-verified against the tighter 15s window
+this module now uses (a third occurrence, after this file first shipped, showed
+60s itself was too slow -- see the constant's own comment below): whether every
+leg's own post-summary teardown genuinely finishes inside 15s, on every
+OS/interpreter this repository runs, is unmeasured, so a stray dump becoming
+more common on a legitimately-just-slow leg is a real, accepted possibility
+here, not a claim that 15s carries the same margin 60s did.
 
 Runs once per pytest session -- once per `-n auto` worker AND once for the
 controller, since each loads `tests/conftest.py` (and therefore this plugin)
@@ -71,11 +78,16 @@ import sys
 #: ~24s, ~26.9s across three occurrences at two different cap values) while
 #: staying well above how long an ordinary session's own post-summary teardown
 #: is reasoned to take (not measured per-leg on every OS/interpreter this
-#: repository runs -- see the module docstring's own caveat on that). If the
-#: margin keeps shrinking as the underlying runtime growth continues,
-#: `tests/test_posthang_diagnostics_1660.py`'s
-#: `test_dump_delay_fits_inside_the_jobs_own_margin` is the guard that will go
-#: red before this constant is wrong again, rather than after.
+#: repository runs -- see the module docstring's own caveat on that). If a
+#: FOURTH occurrence is measured, `tests/test_pytest_leg_timeout_1658.py`'s
+#: `OBSERVED_WORST_CASE_SUITE_MINUTES` has to be updated to it by hand, same as
+#: the first three times -- this constant is not read from a live CI
+#: measurement. `test_dump_delay_fits_inside_the_jobs_own_margin` in
+#: `tests/test_posthang_diagnostics_1660.py` only catches THIS delay going
+#: stale against WHATEVER `OBSERVED_WORST_CASE_SUITE_MINUTES` says at the time
+#: -- it is a coupling check between two hand-maintained constants, not an
+#: independent measurement, and it cannot notice a real-world margin eroding
+#: further until that constant is updated to reflect it.
 POST_SESSION_DUMP_AFTER_SECONDS = 15
 
 
