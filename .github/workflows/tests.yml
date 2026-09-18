@@ -61,7 +61,21 @@ jobs:
     # back-to-back cancellations on the same green commit (jobs #105401634166,
     # #105406249723, #105410692355). 20 restores several minutes of real margin over
     # the slowest observed leg without removing the cap on a genuine hang.
-    timeout-minutes: 20
+    #
+    # #1660: 20 was itself cancelled again, twice, on PR #1654's own commit
+    # `fad72a25` (jobs #105421966394, #105427076121) -- the suite's own reported
+    # runtime had grown from ~873s to ~1176.55s (0:19:36), leaving only ~24s of
+    # margin against the 20-minute cap, and in both runs a `KeyboardInterrupt`
+    # lands in the MAIN THREAD, blocked in a `threading` wait/join, immediately
+    # AFTER pytest's own summary line already reports every test passing -- so the
+    # extra minutes are not more tests running, they are something not exiting once
+    # pytest itself is done (root cause not identified; #1660's own issue text asks
+    # for exactly the diagnostic `tests/posthang_diagnostics_1660.py` now adds:
+    # periodic thread-stack dumps once a session has finished but the process has
+    # not exited). 30 is deliberately generous rather than a repeat of the same
+    # narrow margin #1658 used, since the runtime has already grown once,
+    # unexplained, and may again before the diagnostic pins down why.
+    timeout-minutes: 30
     # #1246: the `os` x `python-version` product below is the full 3x4 release matrix,
     # unconditionally -- so `full_matrix: true` restores full coverage by excluding
     # nothing, rather than needing a second, separately-maintained matrix to drift out
