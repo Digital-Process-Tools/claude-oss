@@ -108,6 +108,12 @@ The rules that matter, all enforced by `scripts/oss_config.py`:
   promotion stayed off by default, everywhere, forever, in a way that reported clean rather than
   disabled (#1610). Written and visible in the maintainer's own `.oss.json` instead, it is a
   decision they can see and change, not a silent default nobody chose.
+- **`triage_route_threshold` is written for the same reason, and it is `0`, not 15 (#1676).** A
+  `trap.d/` fragment is inert while it waits, so curate batches them. An unlabelled issue is
+  invisible to dispatch for exactly as long as it stays unlabelled -- `select_issues_rank` refuses
+  to rank without a priority label -- so there is no backlog size at which waiting is correct, and
+  the route fires on `count > threshold`. Until #1651 gave doctor a line for it, an absent key
+  here read as `not-due` rather than as unconfigured, on every repo this plugin ever onboarded.
 
 ## Verify the test command before writing it
 
