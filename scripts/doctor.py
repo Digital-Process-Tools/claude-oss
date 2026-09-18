@@ -7833,6 +7833,7 @@ NOT_COMPARED_TOP_LEVEL = {
     "checkout, like pyproject.toml; installed by CI's own "
     "install step and by a contributor's own environment, "
     "never read at runtime by an installed plugin copy",
+    "outbound": "drafts of public acts an agent has written but not sent, plus the owned README naming them; the plugin never reads anything in here at runtime and, by that README's own terms, never replaces or deletes any draft beside it",
     "tests": "not shipped by every install and never read at runtime",
     "trap.d": "traps logged by a lane and not yet curated; a /oss:curate pass resolves promote, merge and decline outcomes and deletes those fragments, but a fragment it genuinely cannot decide is left as `defer` (#1425), so a copy holding only deferred fragments is also a healthy state, not only an empty one",
 }
