@@ -711,3 +711,103 @@ or filed from here -- filing is out of this pass's four-outcome scope.
   decision for `skills/manager/` (does a tick's own review step need to pick up a PR opened by a
   different spawn?), not a call this pass can make alone, and not a jit rule -- a future agent
   cannot fix a missing ownership seam by being reminded of one.
+## 2026-09-18 — 20 fragments, 6 promoted, 1 merged, 8 declined, 5 deferred
+
+**Promoted.**
+
+- `1638.curate-pr-grows-budgeted-jit-file-without-updating-remind-budgets` -> `paths/00-manual/
+  curate-pr-jit-file-needs-remind-budgets-check.md`, new rule firing on any edit under
+  `.claude/jit-context/`: run `remind_budgets.py --check` before committing.
+- `1649.releaser-spawn-still-bare-agent-call` -> `paths/00-manual/
+  agent-call-needs-run-in-background-pin.md`, new rule firing on `commands/*.md`/`agents/*.md`:
+  every `Agent(subagent_type: ...)` call must carry an explicit `run_in_background` token, after
+  #1586 and #1649 each fixed one bare instance of the same class piecemeal.
+- `1654.checks-failed-event-fires-on-a-cancelled-leg-not-a-failing-one` -> `vocabulary/00-manual/
+  checks-failed-can-mean-cancelled.md`, new vocabulary rule: a `checks_failed` channel event can
+  mean a cancelled leg, not a real failure -- read `gh-pr:N:status` before acting on the event name.
+- `1656.review-return-classifier-flags-fully-stated-findings-with-internal-back-references` ->
+  `paths/00-manual/findings-brief-bans-above-and-tallies.md`, new rule firing on the review-brief
+  agent files: ban the word above and closing tally lines in a `FINDINGS: <n>` brief, since
+  `scripts/review_return.py` cannot tell a fully-restated cross-reference from a genuinely missing one.
+- `1664.tick-filed-and-dispatched-a-lane-for-a-defect-the-maintainer-had-already-fixed-on-main` ->
+  `paths/00-manual/recheck-red-main-before-file-and-dispatch.md`, new rule firing on the
+  dispatch/sub-manager files: re-check a red-main sighting immediately before filing and dispatching
+  on it, rather than acting on an already-stale board read.
+- `1668.supertool-rename-refusal-exits-zero-so-a-fallback-never-fires` -> `tools/00-manual/
+  supertool-rename-exit-zero-on-refusal.md`, new tools rule firing on `rename:` calls: the op can
+  refuse and exit 0, so `||`/`&&` cannot be trusted after it -- verify the result directly.
+
+All six proven both directions with `jit-dry-run.sh` (a must-fire payload and a must-stay-silent
+payload each), plus a known-good control observed firing alongside each (`supertool-required.md`,
+`agent-call-needs-run-in-background-pin.md`, `supertool-answers-can-diverge-from-ground-truth.md`,
+`md018-issue-ref-at-line-start.md` and `tree-snapshot-compare.md` each fired correctly in the same
+runs, confirming the harness itself was live).
+
+**Merged.**
+
+- `1642.release-auditor-mutation-receipt-filename-is-fixed-not-picked` -> `tools/00-manual/
+  tree-snapshot-compare.md`, a new paragraph: name a mutation-receipt snapshot file from a unique
+  per-spawn token (issue/PR number or PID), never a fixed template even one that only varies by
+  round number -- the same collision the rest of that file already covers, applied to a sibling
+  agent's own near-miss.
+
+**Declined -- code-level defects, not rule content (an observation about one incident, not
+something a jit rule fixes by reminding a future reader).** Each names a concrete fix in its own
+fragment; none of them is curatable via a `.claude/jit-context/` rule, so none is promoted, merged
+or filed from here -- filing is out of this pass's four-outcome scope.
+
+- `1499.plugin-identity-detail-recorded-as-literal-unchanged` -- needs `scripts/oss_state.py`'s
+  `--plugin-identity` flag to refuse a value that looks like one of the check's own verdict words;
+  a code fix.
+- `1578.markdownlint-json-missing-from-claude-md-ownership-table` -- needs `.markdownlint.json`
+  added to `CLAUDE.md`'s own `defaults` row by hand, plus a comparison test mirroring
+  `test_claude_md_ownership_table_1348.py` against `scaffold.TEMPLATES`; a content and test fix,
+  and `CLAUDE.md` itself is hand-curated, outside this pass's authority to touch.
+- `1625.claude-md-size-threshold-as-float-reads-as-unconfigured` -- needs
+  `scripts/doctor_check_claude_md_size.py`'s `valid_threshold` to accept an integral float or
+  render a distinct message; a code fix.
+- `1636.first-fail-refresh-renders-as-not-asked-not-refresh-failed` -- needs
+  `scripts/doctor_check_statusline_unknowns.py`'s two consumers reordered to read the failure
+  marker before falling back to "not-asked", mirroring the board field's own correct shape; a code
+  fix.
+- `1642.tick-review-still-uses-tmp-for-its-mutation-receipt` -- the already-shipped
+  `tools/00-manual/tree-snapshot-compare.md` rule already says not to use `/tmp`; this fragment
+  names one file (`agents/tick-review.md`) that still does, which a new or merged rule cannot fix --
+  it needs the same three-part edit (worktree-local path, `-before-snapshot.json` suffix,
+  delete-after-compare) actually applied there.
+- `1651.triage-route-threshold-string-value-silently-dead-routes` -- needs
+  `scripts/doctor_check_triage_route.py` (and its sibling `doctor_check_trap_queue.py`) validated
+  with the same predicate `workspace_routes._valid_threshold` uses, not a bare `is not None`; a
+  code fix.
+- `1656.superseded-by-pr-tick-review-scope-not-updated-for-foreign-authored-prs` -- needs
+  `agents/tick-review.md`'s own scope statement widened for a `superseded_by_pr` pull request that
+  predates the loop's handback format or was opened by an external contributor; a prose fix to one
+  file, and the auditor that found it could not confirm the case is reachable today.
+- `1660.posthang-diagnostic-test-never-exercises-real-dump-traceback-later` -- needs
+  `tests/test_posthang_diagnostics_1660.py` to exercise the real `dump_traceback_later` call under
+  an actual `-n 2` xdist session; a test-coverage fix.
+
+**Deferred, left in `trap.d/` unchanged.** Five of twenty (25%) -- worth stating plainly per this
+command's own instruction, since it is above the usual small fraction: three are architecture or
+policy decisions this pass cannot make alone, and one is an incomplete investigation whose cause is
+not yet known well enough to write a rule from.
+
+- `1630.fifty-one-worktrees-accumulate-because-every-reap-gate-declines` -- needs a design decision
+  on a separate reap sweep (unconditional for `[merged, clean]`, dirt-classification for
+  `[merged, dirty]`) that this pass is not positioned to design; each individual per-tick decline is
+  already correct.
+- `1632.red-curate-pr-has-no-owner-after-its-spawn-dies` -- carried forward unchanged from the
+  2026-09-16 deferred entry above: the fragment's own text still states the open question plainly
+  (whether the scheduler should be doing ad hoc repairs at all, or whether curate's own PR belongs in
+  the next tick's review set), an architecture decision for `skills/manager/`, not a jit rule.
+- `1649.scheduler-direct-push-to-main-bypassed-six-required-checks` -- needs a policy decision
+  (drop the bypass privilege on the branch-protection ruleset, versus route `agents/doctor.md`
+  repairs through a pull request like every other change) that was not established from the
+  fragment's own reads.
+- `1666.cohort-35-label-accumulated-across-repeated-partial-freeze-attempts` -- needs a design
+  decision on cohort semantics (retire `cohort-35` and freeze a fresh `cohort-36` cleanly, versus
+  make `cohort_freeze_record.py`'s label write conditional on route agreement) that the fragment's
+  own author explicitly leaves open.
+- `1667.next-minor-pin-guard-failed-on-one-leg-and-passed-on-three` -- the fragment's own author
+  states the one read that would separate the two explanations (whether the passing legs even
+  collected the test) was not taken; nothing here can write a rule from an unconfirmed cause.
