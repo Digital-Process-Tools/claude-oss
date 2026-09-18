@@ -402,8 +402,16 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # #1532: 17922 B became 17924 B -- the release call now names the
         # assignee it releases rather than "the lane record AND the
         # assignee". Ceiling unchanged, 76 B of headroom left.
-        17924,
-        18000,
+        # Raised for #1656: 17924 B became 18944 B, past the 18000 B ceiling
+        # by 944 B. A report naming `superseded_by_pr` -- a lane's decline
+        # made actionable rather than ending in prose -- needs its own
+        # paragraph: release the issue as normal, then fold the named pull
+        # request into this tick's own review set so it gets a real review
+        # pass instead of aging unseen forever. Nothing already here argued
+        # a weaker case for its size, so nothing was cut to make room;
+        # ceiling moved to 20900 B, ~10% headroom over the new size.
+        18944,
+        20900,
         "a lane reported back: reading the report, pushing, opening the pull request",
     ),
     # Raised (#960): measured 13,992 B against the prior 12,800 B budget -- the

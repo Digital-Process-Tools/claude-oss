@@ -43,6 +43,8 @@ None of this is re-derivable from the diff. If your prompt is missing one of the
 - adjacent findings and tooling friction the lane hit along the way
 - any genuine disagreement with the brief
 - the incremental note the lane kept, if it kept one (see below)
+- if the lane declined its own issue because it found an already-open pull request that
+  supersedes it, that pull request's number (#1656) -- fold it into `superseded_by_pr`
 
 ## Notes: where the long half goes
 
@@ -130,7 +132,11 @@ whether the full suite ran -> `tests.full` (the expected value is `not-run`; a `
 for the manager to ask about rather than a receipt to credit), review -> `review`, platform claims
 -> `claims`, every
 `docs_targets` path with what happened to it -- updated, read and still true, or not opened -- ->
-`docs`, unfiled findings -> `adjacent`, the note path -> `note_path`.
+`docs`, unfiled findings -> `adjacent`, the note path -> `note_path`, an already-open pull
+request the lane declined in favour of -> `superseded_by_pr` (#1656). This is the difference
+between a decline that ends in prose the tick will never re-read and one the tick can act on:
+`skills/manager/phases/handback.md` folds a report carrying this field into the current tick's
+own review set instead of leaving the superseding pull request to age unreviewed forever.
 
 **`compliance` is a required top-level survey and a different axis from every other one here: not
 what you looked at, but whether the lane did what its own brief said** -- fold in what a spawned

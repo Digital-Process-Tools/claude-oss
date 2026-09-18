@@ -399,7 +399,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # became 24555 B, naming the same `CURATE:` fact in the itemized prompt
     # checklist `oss:tick-accounting` is spawned with, which a reviewer found
     # still silent about it. Ceiling unchanged; 145 B headroom remains.
-    "agents/sub-manager.md": (24555, 24700),
+    # Raised for #1656: 24555 B became 24757 B, past the 24700 B ceiling by
+    # 57 B. Step 2's own `oss:tick-review` spawn call now folds in any pull
+    # request `skills/manager/phases/handback.md` named from a lane's
+    # `superseded_by_pr` field this tick, so an orphaned pull request a
+    # declining lane found gets reviewed instead of aging unseen. Nothing
+    # already here argued a weaker case for its size, so nothing was cut to
+    # make room; ceiling moved to 25200 B, ~1.8% headroom -- narrower than
+    # the usual ~10% for the same reason every prior raise of this row gives.
+    "agents/sub-manager.md": (24757, 25200),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -690,7 +698,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # closing-keyword restoration. Ceiling unchanged; comfortably under it.
     # Re-baselined for #1616: 13561 B became 13649 B -- the same "## Trap"
     # trigger line. Ceiling unchanged; comfortably under it.
-    "agents/lane-report.md": (13649, 14300),
+    # Re-baselined for #1656: 13649 B became 14217 B -- "What only the lane
+    # knows" and the field-mapping paragraph both gained a sentence naming
+    # `superseded_by_pr`, the field that makes a declined-in-favour-of-an-
+    # existing-pull-request report actionable rather than ending in prose.
+    # Ceiling unchanged; comfortably under it.
+    "agents/lane-report.md": (14217, 14300),
 }
 
 

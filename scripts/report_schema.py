@@ -286,6 +286,12 @@ CONTRACT_FINGERPRINTS = {
     # else, back to the shape 5/7/8/10 had. ADDITIVE: no version-13 document
     # carries the key, so none is refused under 14.
     14: "e42ba0065e3bb281c3075305d4068c1c69254283dc176944fd99e8ceb032a925",
+    # 15 (#1656): one optional key, `superseded_by_pr` -- the number of an
+    # already-open pull request a declining lane found already implementing
+    # this issue, so the tick can act on it instead of the decline ending in
+    # prose alone. ADDITIVE, back to the shape 5/7/8/10/14 had: no version-14
+    # document carries the key, so none is refused under 15.
+    15: "21bb7443b0f94830325781a525dbc4d19e0c9fa70619164c0c17093291362465",
 }
 
 _TYPES = {

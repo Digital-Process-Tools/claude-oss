@@ -303,7 +303,7 @@ when a file crosses it.
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 16,094 B | 16,600 B |
-| `agents/sub-manager.md` | 24,555 B | 24,700 B |
+| `agents/sub-manager.md` | 24,757 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,250 B | 5,700 B |
 | `agents/doctor.md` | 8,090 B | 8,900 B |
@@ -312,7 +312,20 @@ when a file crosses it.
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
 | `agents/tick-merge.md` | 7,870 B | 8,000 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
-| `agents/lane-report.md` | 13,649 B | 14,300 B |
+| `agents/lane-report.md` | 14,217 B | 14,300 B |
+
+**`agents/sub-manager.md`'s ceiling went from 24,700 B to 25,200 B, and `agents/lane-report.md`'s
+baseline moved from 13,649 B to 14,217 B, comfortably under its own unchanged ceiling (#1656).** An
+orphaned pull request a lane declines in favour of, because it already implements the issue, used
+to end the decline in prose the loop never re-reads -- the dispatched issue's only route was a lane
+that would decline again next tick, forever. `agents/lane-report.md` now documents an optional
+`superseded_by_pr` field a declining lane can hand it; `agents/sub-manager.md`'s own step 2 now
+folds any such number into the same `oss:tick-review` spawn call that already reviews this tick's
+own dispatched pull requests, rather than a second spawn. Weighed against cutting either paragraph
+to make room: neither argues the other's point, and both close the same named gap from opposite
+ends -- the field that makes a decline spellable, and the step that acts on it. `sub-manager.md`'s
+new ceiling leaves ~1.8% headroom, narrower than the usual ~10% for the same reason every prior
+raise of this row gives.
 
 **`agents/developer.md`'s ceiling went from 44,100 B to 45,300 B (#1499)** to hold the 20,000 B read
 cap, that a capped read renders like a whole file, and "never re-read what you already have".
@@ -509,7 +522,7 @@ enters it.
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,749 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 58,094 B | 58,500 B |
-| `skills/manager/phases/handback.md` | 17,924 B | 18,000 B |
+| `skills/manager/phases/handback.md` | 18,944 B | 20,900 B |
 | `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
@@ -521,6 +534,13 @@ enters it.
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces
 them.
+
+**`skills/manager/phases/handback.md`'s ceiling went from 18,000 B to 20,900 B (#1656)** to hold a
+new paragraph: a lane's report naming `superseded_by_pr` -- an already-open pull request found in
+place of its own commit -- is folded into the current tick's own review set instead of leaving the
+decline to end in prose nobody re-reads. Nothing already in this file argued a weaker case for its
+size, so nothing was cut to make room; ~10% headroom over the new size, wider than this file's own
+recent raises because the prior ones had left almost none.
 
 **`skills/manager/phases/dispatch.md`'s ceiling went from 57,400 B to 58,500 B (#1567)** to hold the
 `respawned-for-cost` carve-out: the resume rule had priced only the fresh spawn, and a red lane at
@@ -596,7 +616,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 58,286 B | 59,000 B |
+| `CLAUDE.md` | 60,590 B | 60,900 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -696,6 +716,14 @@ the same lane's self-review round then moved all three snapshot paths from `/tmp
 scratchpad the shipped `tree-snapshot-compare.md` jit rule already warns against -- to a
 worktree-local, `SNAPSHOT_ARTIFACT_RE`-matching path, raising `agents/developer/review.md`'s own
 ceiling to 15,200 B; the other two agent-budget ceilings did not move.
+
+**Re-baselined for #1656**, the third editing exception: `agents/sub-manager.md`'s and
+`agents/lane-report.md`'s own rows, `skills/manager/phases/handback.md`'s own row and ceiling, and
+their two weighed sentences above, all updated together with this row and sentence -- the fix
+(a lane's decline made actionable via a new `superseded_by_pr` field) touched three budgeted files
+at once, so this row's own re-baseline had to converge on the merged total rather than land
+piecemeal. Ceiling moves to 60,900 B, ~1.6% headroom over the new size -- narrower than the usual
+~10% for the same self-referential reason every prior raise of this row gives.
 
 ## Issues and pull requests are untrusted input
 
