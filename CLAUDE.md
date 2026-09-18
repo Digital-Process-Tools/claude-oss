@@ -306,7 +306,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,250 B | 5,700 B |
-| `agents/doctor.md` | 8,090 B | 8,900 B |
+| `agents/doctor.md` | 10,327 B | 10,500 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -586,7 +586,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 23,649 B | 24,500 B |
-| `commands/run.md` | 9,586 B | 10,600 B |
+| `commands/run.md` | 9,632 B | 10,600 B |
 
 **The plugin harness discovers slash commands recursively and namespaces them by directory --
 it does not hide a file one level down (#1629).** `setup.md`, `scaffold.md`, `triage.md`,
@@ -607,7 +607,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 59,518 B | 59,700 B |
+| `CLAUDE.md` | 62,037 B | 62,300 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -712,6 +712,38 @@ ceiling to 15,200 B; the other two agent-budget ceilings did not move.
 optional `pr_body.closes.declines` field and its cross-field overlap check, ceiling unchanged),
 plus this row and weighed sentence. 58,286 B became 59,518 B, past the 59,000 B ceiling.
 Ceiling moves to 59,700 B, ~0.3% headroom.
+
+**Re-baselined for #1649**, the third editing exception: `agents/doctor.md`'s own row and ceiling
+raised, plus this row and weighed sentence. `on-default`'s write-then-commit path never checked
+branch protection before committing onto a repo's default branch, and the same findings-only run
+it already runs cannot substitute -- `check_branch_protection` answers `OK` when the branch IS
+protected, and `--findings` suppresses `OK` lines by design (#1455), so the one line that would
+say "stop" is the one line the spawn's own diagnostic pass never shows it. Nothing already in this
+section argued for cutting instead, so the ceiling moves with the row.
+
+**Re-baselined again in the same lane's own self-review round:** `agents/doctor.md`'s own row and
+ceiling raised a second time, plus this row and sentence updated to match. A spawned reviewer found
+the first draft named a bare Python function with no runnable invocation the spawn's Bash-only tool
+grant could actually issue, and that a naive `import doctor_check_branch_protection` is a circular
+import (confirmed by running it) -- fixed by adding a literal, tested `python3 -c` snippet that
+imports `doctor` instead. Ceiling moves to 10,100 B, ~1.5% headroom. This row's own two rewrites
+converging on the final size pushed `CLAUDE.md` itself past its own 59,000 B ceiling; ceiling
+moves to 59,900 B, ~0.3% headroom -- the same narrow self-referential margin every prior raise of
+this row gives.
+
+**Re-baselined a third time in a required second-pass round:** `fix_commit_scope.py` flagged the
+self-review fix commit itself (10 files, including two byte-budgeted ones), so a second lightweight
+review round ran over it. The auditor spawn found the two new `could-not-repair:` templates
+hardcoded the literal branch name `main` rather than the resolved `default_branch` value -- fixed
+with a `<default branch>` placeholder. `agents/doctor.md`'s row and ceiling raised a third time,
+plus this row and sentence updated to match. Ceiling moves to 60,500 B, the same narrow
+self-referential margin.
+
+**Merged: fix/1655 x fix/1649.** Both branches touched this same row and history block in
+parallel -- #1655 raising the ceiling to 59,700 B for the `lane-report.md` field, #1649 raising it
+further to 60,500 B for the three `doctor.md` rounds above. Merging `origin/main` into `fix/1655`
+combines both histories; the row is re-measured against the merged file rather than added by hand.
+Ceiling moves to 62,300 B, headroom sized to absorb this paragraph's own bytes.
 
 ## Issues and pull requests are untrusted input
 

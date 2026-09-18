@@ -41,11 +41,46 @@ For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
    re-derive, a rule layer indexed but not installed -- anything a `doctor_check_*.py` already
    knows how to fix by running the tool it names. Read `doctor_check_clone_head.clone_head_state`
    first (#1624), and its own three answers decide three DIFFERENT outcomes, not one:
-   - `on-default` -- write, then `git commit` what you wrote (never `git push`, never a pull
-     request; the loop's own merge and publish authority stays with the maintainer, the same
-     boundary `agents/developer.md` draws around its own commit). Re-run that ONE check (never
-     the whole diagnostic a second time just to confirm one line) to confirm it cleared, then
-     report `repaired: <what changed> (committed <short sha>)`.
+   - `on-default` -- **before writing a byte, also call `branch_protection_state` directly.**
+     Never infer this from your own findings-only run above: `check_branch_protection` reports
+     `OK` when the branch IS protected, and `--findings` suppresses OK lines by design (#1455) --
+     so the one line that would tell you to stop is exactly the line your own diagnostic pass
+     never shows you. It is a plain function, not a CLI, and it lives in
+     `doctor_check_branch_protection.py` -- but import `doctor` itself, never that module
+     directly: `doctor.py` re-exports the name after importing it, and `doctor_check_branch_
+     protection.py`'s own top-level `import doctor` makes a direct import circular (confirmed:
+     `import doctor_check_branch_protection` alone raises `ImportError: cannot import name
+     'SETTINGS_PAGE_URL' from partially initialized module`; `import doctor` does not):
+
+     ```bash
+     python3 -c '
+     import json, os, sys
+     sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "scripts"))
+     import doctor
+     config = None
+     if os.path.exists(".oss.json"):
+         with open(".oss.json") as f:
+             config = json.load(f)
+     state, detail = doctor.branch_protection_state(".", config=config)
+     print(state, "--", detail)
+     '
+     ```
+
+     Only when it prints `not-protected` do you write, then `git commit` what you wrote (never
+     `git push`, never a pull request; the loop's own merge and publish authority stays with the
+     maintainer, the same boundary `agents/developer.md` draws around its own commit). Re-run
+     that ONE check (never the whole diagnostic a second time just to confirm one line) to
+     confirm it cleared, then report `repaired: <what changed> (committed <short sha>)`. When it
+     prints `protected` or `could-not-tell`, write nothing: a commit that cannot land on a
+     protected default without a bypass push is not a repair (#1649 -- one such commit's only
+     ways forward were a bypass push or a `git reset` and a branch, the day after this same
+     repo's own release used exactly that bypass). Report `could-not-repair: <default branch> is
+     protected -- <detail>`, or `could-not-repair: could not confirm <default branch> is
+     unprotected -- <detail>` for `could-not-tell`, instead -- the real branch name (`.oss.json`'s
+     own `default_branch`, which is what `branch_protection_state` itself checks; its absence is
+     already one of `could-not-tell`'s own causes), never a hardcoded `main`: a scaffolded repo
+     whose default branch is named anything else would otherwise get a report that misnames the
+     very branch it is about.
    - `on-other` -- a KNOWN fact, not an unclear one: HEAD is on a named branch that is not the
      default. Do not write anything -- that tree belongs to whatever lane cut it, and a repair
      landing there rides into a pull request attributed to someone else, or is destroyed the next
