@@ -811,3 +811,63 @@ not yet known well enough to write a rule from.
 - `1667.next-minor-pin-guard-failed-on-one-leg-and-passed-on-three` -- the fragment's own author
   states the one read that would separate the two explanations (whether the passing legs even
   collected the test) was not taken; nothing here can write a rule from an unconfirmed cause.
+
+## 2026-09-18 — 10 fragments, 3 promoted, 2 merged, 1 declined, 2 deferred
+
+**Promoted.**
+
+- `1405.next-action-reads-stale-after-every-tracker-side-merge` -> `paths/00-manual/
+  fetch-before-you-rank.md`, new rule firing on `commands/run.md` / `agents/scheduler-step.md` /
+  `scripts/next_action.py`: every loop merge goes through the tracker, never the clone, so the
+  clone's own `main` is behind `origin/main` by construction after every ordinary tick -- fetch
+  and pull before trusting a ranking or count read.
+- `1666.cohort-35-label-accumulated-across-repeated-partial-freeze-attempts` and
+  `1666.cohort-35-partial-freeze-again-at-v0.40.0` -> `paths/00-manual/
+  cohort-freeze-label-before-agreement.md`, new rule firing on `scripts/cohort_freeze_record.py`:
+  a partial freeze still writes the label before discovering the two routes disagree, so repeated
+  partial attempts re-stamp a cohort onto successive open-board snapshots -- five recurrences on
+  the same cohort now recorded, cite the last cohort that fully agreed instead of retrying.
+- `1673.a-hung-test-renders-as-a-post-session-hang-under-xdist` -> `paths/00-manual/
+  xdist-hang-renders-as-post-session-hang.md`, new rule firing on `tests/` and
+  `.github/workflows/tests.yml`: a `[ 99%]` line with no `[100%]` after it means the suite did not
+  finish regardless of the summary line, `--durations` cannot see a hang because the stuck test
+  never reports, and `-o faulthandler_timeout=180` is what actually names the stuck test.
+
+**Merged.**
+
+- `1632.red-curate-pr-has-no-owner-after-its-spawn-dies` and
+  `1670.curate-worktree-fix-trades-a-stranded-clone-for-a-leaked-worktree` -> folded into the
+  already-shipped `paths/00-manual/run-step-worktree-and-pr-ownership.md`, which already carried
+  this exact gap as an open architecture question. Read together (the whole point of holding every
+  fragment at once), the pair adds real, reusable content beyond restating the open question: the
+  ad hoc recipe that resolved a real CI-red step-opened PR (read the failing leg, spawn a throwaway
+  repair, merge on green), the "return the clone to the default branch" obligation that recipe
+  itself needs, and the new leaked-worktree manifestation the worktree fix (#1670) introduced in
+  place of the stranded-clone one it closed. This revises the prior pass's 2026-09-17 defer of
+  `1632` (below) now that its sibling fragment is visible alongside it.
+- `1648.windows-fd3-inheritance-across-msys-python-boundary-unverified` -> folded into the
+  already-shipped `paths/00-manual/windows-subprocess-resolution.md` (already firing on
+  `scripts/plugin_update.py`), alongside the same file's own root-cause fix for the CI hang this
+  question turned out to share a cause with (`1673`, promoted above): the probe-vs-opt-in fd fix
+  closes the hang risk this fragment worried about, but the original "does it actually reach the
+  terminal on Windows" question is still unconfirmed and stated as such in the merged text.
+
+**Declined.**
+
+- `1649.scheduler-direct-push-to-main-bypassed-six-required-checks` -- the specific defect
+  (`agents/doctor.md`'s on-default repair path committing without checking branch protection first)
+  is already fixed: that file now calls `branch_protection_state` directly before writing a byte on
+  a default-branch clone, and writes only when it reports `not-protected`. The deferred policy
+  question this fragment raised (drop the bypass privilege vs. route repairs through a PR) is now
+  largely moot for the doctor-repair path specifically, since doctor no longer needs to bypass
+  anything to do its job; the scheduler's own sanctioned `trap.d/` direct-write exception is a
+  separate, already-documented case (`trap-fragments.md`), not this fragment's subject.
+
+**Deferred, left in `trap.d/` unchanged -- carried forward from 2026-09-17, no new information.**
+
+- `1630.fifty-one-worktrees-accumulate-because-every-reap-gate-declines` -- still needs the same
+  design decision on a separate reap sweep named in the 2026-09-17 entry below; nothing in this
+  pass changes that.
+- `1667.next-minor-pin-guard-failed-on-one-leg-and-passed-on-three` -- still needs the same read
+  (opening the three passing legs' own logs to see whether they collected the test at all) named in
+  the 2026-09-17 entry below; not taken here either.

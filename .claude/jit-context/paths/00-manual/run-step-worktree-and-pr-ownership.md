@@ -39,5 +39,28 @@ step that opens a pull request should wait on it and merge it before reporting b
 scheduler needs an explicit "merge what my own steps opened" obligation -- do not assume a step's
 own green PR will be picked up by anything else in the loop.
 
-Routed via /oss:curate from `trap.d/1389.run-step-in-the-main-clone-strands-it-on-a-feature-branch.md`
-and `trap.d/1389.run-step-pull-requests-have-no-owner-in-the-merge-path.md`.
+**A CI-red step-opened PR has the same no-owner gap, observed for real (#1632).** `/oss:run` step 2
+ranked curate due, a scheduler-step spawn drained the backlog into a PR and died -- correct, per this
+same rule -- and the PR went red six minutes later on one leg (a generated-file check tripping on a
+byte the curate pass's own tooling had rewritten). Nothing in the loop was positioned to notice: the
+spawn that opened it was gone, the live tick's own `oss:tick-review` only reads pull requests from its
+own dispatch, and the scheduler is told not to wait on what a step just opened. What worked, ad hoc:
+read the failing leg (`gh-pr:N:status`, then `gh-job:ID:fail`), spawn a throwaway repair with the
+quoted failure and an explicit "confirm this diagnosis by reading, do not assume" instruction, and
+merge on the re-run's green -- roughly 64k tokens for the repair against two cheap reads in the
+scheduler. A repair spawn that pushes a fix needs "return the clone to the default branch when you are
+done" in its brief (or its own worktree): the one used here left the clone checked out on the step's
+branch, which blocked `gh-pr-merge`'s own cleanup afterward (`cannot delete branch used by worktree`).
+
+**The worktree fix above trades a stranded clone for a leaked worktree, not a fixed root cause
+(#1670).** Before the worktree fix, an unmerged step PR left the *primary clone* itself stuck on
+`curate/<timestamp>` -- loud, and it blocked `gh-pr-merge`'s cleanup outright (#1575). After it, the
+same unmerged PR instead leaves an abandoned directory at `<worktree_root>/curate-<timestamp>` that
+nothing reaps, because nothing merges the PR that would make the worktree eligible for
+`worktree_reap.py`'s merged-and-clean gate. Quieter, easier to miss, same underlying gap: still
+nobody's job to merge what a step opened.
+
+Routed via /oss:curate from `trap.d/1389.run-step-in-the-main-clone-strands-it-on-a-feature-branch.md`,
+`trap.d/1389.run-step-pull-requests-have-no-owner-in-the-merge-path.md`,
+`trap.d/1632.red-curate-pr-has-no-owner-after-its-spawn-dies.md` and
+`trap.d/1670.curate-worktree-fix-trades-a-stranded-clone-for-a-leaked-worktree.md`.
