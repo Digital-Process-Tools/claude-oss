@@ -114,7 +114,7 @@ def test_every_declared_dependency_is_updated_alongside_the_loop_plugin(tmp_path
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
             "remember@dpt": _installed(tmp_path, "9.21.0"),
-            "supertool@dpt": _installed(tmp_path, "0.40.0"),
+            "supertool@dpt": _installed(tmp_path, "8.8.8"),
         },
     )
     runner = _Runner()
@@ -140,7 +140,7 @@ def test_the_marketplace_is_refreshed_exactly_once_for_the_whole_run(tmp_path):
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
             "remember@dpt": _installed(tmp_path, "9.21.0"),
-            "supertool@dpt": _installed(tmp_path, "0.40.0"),
+            "supertool@dpt": _installed(tmp_path, "8.8.8"),
         },
     )
     runner = _Runner()
@@ -517,8 +517,8 @@ def test_a_dependency_that_could_not_be_updated_reaches_the_doctor_row(
                 {
                     "name": "supertool",
                     "state": "current",
-                    "from": "0.40.0",
-                    "to": "0.40.0",
+                    "from": "8.8.8",
+                    "to": "8.8.8",
                 },
             ],
         ),
@@ -549,8 +549,8 @@ def test_every_dependency_current_is_the_ok_control(tmp_path, monkeypatch):
                 {
                     "name": "supertool",
                     "state": "current",
-                    "from": "0.40.0",
-                    "to": "0.40.0",
+                    "from": "8.8.8",
+                    "to": "8.8.8",
                 },
             ],
         ),
