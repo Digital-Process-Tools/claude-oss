@@ -72,12 +72,18 @@ def test_doctor_reading_is_none_when_the_subprocess_cannot_be_run(monkeypatch):
     assert statusline._doctor_reading(".") is None
 
 
-def test_doctor_reading_is_none_when_it_times_out(monkeypatch):
+def test_doctor_reading_returns_the_timeout_sentinel_when_it_times_out(monkeypatch):
+    """#1650: a timeout is a distinct outcome from every other absence -- real
+    work that ran out of time, not the same "nothing to report" a never-run or
+    never-configured doctor gets. Folding it into the same `None` as those
+    other cases is this repository's own defect class."""
+
     def _raise(*a, **k):
         raise subprocess.TimeoutExpired(cmd="doctor.py", timeout=60)
 
     monkeypatch.setattr(subprocess, "run", _raise)
-    assert statusline._doctor_reading(".") is None
+    assert statusline._doctor_reading(".") is statusline._DOCTOR_TIMED_OUT
+    assert statusline._doctor_reading(".") is not None
 
 
 def test_doctor_reading_is_none_on_a_nonzero_exit(monkeypatch):
@@ -182,10 +188,26 @@ def test_render_falls_back_to_unk_when_the_reading_is_absent():
     assert "dr" + statusline._symbols(True)["unk"] in line
 
 
+def test_render_shows_a_distinct_glyph_for_a_timed_out_refresh_1650():
+    """#1650: a timed-out refresh must render its OWN marker, never the same
+    `dr?` a never-taken reading gets."""
+    timeout_line = statusline.render(_facts("timeout"), ascii_only=True)
+    unk_line = statusline.render(_facts(None), ascii_only=True)
+    assert "dr" + statusline._symbols(True)["run"] in timeout_line
+    assert timeout_line != unk_line
+    assert "dr" + statusline._symbols(True)["unk"] not in timeout_line
+
+
 # --------------------------------------------------------------------- gather()
 
 
-def _cache(doctor_verdict, doctor_fetched_at, now, doctor_refresh_failed_at=None):
+def _cache(
+    doctor_verdict,
+    doctor_fetched_at,
+    now,
+    doctor_refresh_failed_at=None,
+    doctor_refresh_timed_out_at=None,
+):
     document = {
         "repo": "owner/repo",
         "fetched_at": now,
@@ -196,6 +218,8 @@ def _cache(doctor_verdict, doctor_fetched_at, now, doctor_refresh_failed_at=None
     }
     if doctor_refresh_failed_at is not None:
         document["doctor_refresh_failed_at"] = doctor_refresh_failed_at
+    if doctor_refresh_timed_out_at is not None:
+        document["doctor_refresh_timed_out_at"] = doctor_refresh_timed_out_at
     return document
 
 
@@ -258,6 +282,53 @@ def test_gather_is_none_when_no_reading_was_ever_taken(tmp_path, monkeypatch):
     assert facts["doctor_state"] is None
 
 
+def test_gather_reports_timeout_distinct_from_a_plain_failure_1650(
+    tmp_path, monkeypatch
+):
+    """#1650: a refresh that hit DOCTOR_TIMEOUT must render its own state --
+    never the same `None`/`dr?` a plain failure or a never-taken reading get."""
+    now = 1_000_000.0
+    cache = _cache(
+        None,
+        None,
+        now,
+        doctor_refresh_failed_at=now - 1,
+        doctor_refresh_timed_out_at=now - 1,
+    )
+    _stub_common(monkeypatch, tmp_path, cache)
+    facts = statusline.gather({}, ".", now=now)
+    assert facts["doctor_state"] == "timeout"
+
+
+def test_gather_does_not_report_timeout_for_a_plain_failure_1650(tmp_path, monkeypatch):
+    """Must-fire control for the case above: a recorded failure with no
+    matching timeout stamp folds to the plain `None` state, not `"timeout"`."""
+    now = 1_000_000.0
+    cache = _cache(None, None, now, doctor_refresh_failed_at=now - 1)
+    _stub_common(monkeypatch, tmp_path, cache)
+    facts = statusline.gather({}, ".", now=now)
+    assert facts["doctor_state"] is None
+
+
+def test_gather_does_not_report_timeout_from_a_stale_superseded_stamp_1650(
+    tmp_path, monkeypatch
+):
+    """A timeout stamp older than the LATEST recorded failure is a leftover
+    from a prior attempt, superseded by a more recent non-timeout failure --
+    must not still render `"timeout"`."""
+    now = 1_000_000.0
+    cache = _cache(
+        None,
+        None,
+        now,
+        doctor_refresh_failed_at=now - 1,
+        doctor_refresh_timed_out_at=now - 100,
+    )
+    _stub_common(monkeypatch, tmp_path, cache)
+    facts = statusline.gather({}, ".", now=now)
+    assert facts["doctor_state"] is None
+
+
 # ----------------------------------------------------------------------- refresh()
 
 
@@ -272,6 +343,47 @@ def test_refresh_fetches_a_new_reading_when_due(tmp_path, monkeypatch):
     document = statusline.refresh(str(tmp_path), now=now)
     assert document["doctor_verdict"] == "ok"
     assert document["doctor_fetched_at"] == now
+
+
+def test_refresh_records_a_timeout_distinctly_1650(tmp_path, monkeypatch):
+    """#1650: when `_doctor_reading` returns the timeout sentinel, `refresh()`
+    must record it under its own stamp (`doctor_refresh_timed_out_at`) rather
+    than folding it into the same plain-failure record a non-timeout absence
+    gets -- otherwise `gather()` has nothing to distinguish them by."""
+    now = 1_000_000.0
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(statusline, "read_cache", lambda path: {})
+    monkeypatch.setattr(statusline, "repo_config", lambda root: {"repo": None})
+    monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
+    monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
+    monkeypatch.setattr(
+        statusline, "_doctor_reading", lambda root: statusline._DOCTOR_TIMED_OUT
+    )
+    document = statusline.refresh(str(tmp_path), now=now)
+    assert document["doctor_refresh_failed_at"] == now
+    assert document["doctor_refresh_timed_out_at"] == now
+
+
+def test_refresh_clears_a_stale_timeout_marker_on_a_plain_failure_1650(
+    tmp_path, monkeypatch
+):
+    """Must-fire control: a NON-timeout failure that follows an earlier timeout
+    must clear the timeout marker, so a later render does not keep reporting
+    `timeout` for a failure that was not one this time."""
+    now = 1_000_000.0
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "read_cache",
+        lambda path: {"doctor_refresh_timed_out_at": now - 1000},
+    )
+    monkeypatch.setattr(statusline, "repo_config", lambda root: {"repo": None})
+    monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
+    monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
+    monkeypatch.setattr(statusline, "_doctor_reading", lambda root: None)
+    document = statusline.refresh(str(tmp_path), now=now)
+    assert document["doctor_refresh_failed_at"] == now
+    assert document["doctor_refresh_timed_out_at"] is None
 
 
 def test_refresh_carries_a_fresh_reading_forward_under_its_own_stamp(

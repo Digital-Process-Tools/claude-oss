@@ -412,6 +412,40 @@ def qualified_name(name, plugins_root=None):
     return name
 
 
+def _marketplace_refresh_command(name, dependencies, plugins_root=None):
+    """Narrow `claude plugin marketplace update` to the marketplaces the manifest's
+    own names actually resolve to (#1648), instead of refreshing every installed
+    marketplace regardless of relevance -- measured at 15.8s for all five against
+    3.5s for the one marketplace (`dpt-plugins`) this plugin and its declared
+    dependencies actually share.
+
+    Reuses `qualified_name` -- the identical `<name>@<marketplace>` lookup the
+    per-plugin update call already makes -- rather than a second derivation that
+    could drift from it. Returns `(command, narrowed)`: `narrowed` is `True` only
+    when every name resolved and the command was actually shortened.
+
+    Falls back to the bare, unnarrowed command the moment ANY name -- the loop
+    plugin or a dependency -- does not resolve to a marketplace (an unqualified
+    or local/dev install, or `installed_plugins.json` unreadable): never silently
+    dropped from the refresh just because its own marketplace could not be told,
+    per this repository's own three-state rule.
+    """
+    bare = ["claude", "plugin", "marketplace", "update"]
+    marketplaces = []
+    for plugin_name_ in [name] + list(dependencies):
+        qualified = qualified_name(plugin_name_, plugins_root)
+        if "@" not in qualified:
+            return bare, False
+        marketplace = qualified.split("@", 1)[1]
+        if not marketplace:
+            return bare, False
+        if marketplace not in marketplaces:
+            marketplaces.append(marketplace)
+    if not marketplaces:
+        return bare, False
+    return bare + marketplaces, True
+
+
 def installed_version(name, project_root, plugins_root=None):
     """The version recorded for ``name`` against THIS project, or ``None`` (#521).
 
@@ -674,8 +708,19 @@ def update(
     now=None,
     receipt=None,
     caller=None,
+    progress=None,
 ):
     """Refresh the marketplace, update this plugin and its declared dependencies (#605).
+
+    `progress` (#1648), optional and `None` by default so every existing test that
+    calls `update()` directly is unaffected: a callable invoked as
+    `progress(name, verdict)` -- `verdict=None` right before a step starts,
+    `verdict=<state string>` right after it ends -- once for the marketplace
+    refresh (`name="marketplace"`), once for the loop plugin, and once per
+    declared dependency, in the same order they are updated. A callback that
+    raises is never allowed to fail the update itself -- see the `try`/`except`
+    around every call site below -- because reporting progress is strictly
+    secondary to the update it is reporting on.
 
     `caller` (#1154) names who is asking -- `"launcher"` for `bin/oss-workspace`'s
     synchronous, pre-`exec claude` call, `None`/anything else for the async
@@ -776,7 +821,23 @@ def update(
 
     dependencies, dependencies_status = declared_dependencies(plugin_root)
 
-    ok, output = runner(["claude", "plugin", "marketplace", "update"])
+    def _report(step_name, verdict=None):
+        # Never allowed to fail the update it is reporting on (#1648) -- a
+        # closed pipe, a writer that raised, anything at all is swallowed here
+        # rather than propagated.
+        if progress is None:
+            return
+        try:
+            progress(step_name, verdict)
+        except Exception:  # pragma: no cover -- defensive, see docstring
+            pass
+
+    marketplace_command, _marketplace_narrowed = _marketplace_refresh_command(
+        name, dependencies, plugins_root
+    )
+    _report("marketplace")
+    ok, output = runner(marketplace_command)
+    _report("marketplace", "ok" if ok else "failed")
     if not ok:
         return {
             "state": "could-not-check",
@@ -789,7 +850,9 @@ def update(
 
     # The loop plugin keeps the `or ["user"]` scope fallback and the dependencies do not
     # -- see `_update_one`'s docstring for why the asymmetry is deliberate.
+    _report(name)
     document = _update_one(name, root, plugins_root, runner, scope_fallback=True)
+    _report(name, document.get("state"))
     document["at"] = stamp
     document["plugin"] = name
     # Who asked (#1154): `"launcher"` for bin/oss-workspace's synchronous, pre-`exec
@@ -803,13 +866,16 @@ def update(
     # alone, because every existing reader of this receipt asks them that question. The
     # dependencies are a sibling list, and `doctor.check_auto_update` reports it as its
     # own row -- a failure recorded in a receipt no row reads is #521 with an extra step.
-    document["dependencies"] = [
-        dict(
+    dependency_documents = []
+    for dependency in dependencies:
+        _report(dependency)
+        dep_document = dict(
             _update_one(dependency, root, plugins_root, runner, scope_fallback=False),
             name=dependency,
         )
-        for dependency in dependencies
-    ]
+        _report(dependency, dep_document.get("state"))
+        dependency_documents.append(dep_document)
+    document["dependencies"] = dependency_documents
     # Absent from an older receipt this key means "nothing looked"; `False` here means
     # the manifest was read and said what it declares. The two must stay distinguishable,
     # which is why this is written even when the list is empty.
@@ -996,7 +1062,103 @@ def main(argv=None):
     prior = read_receipt()
     if isinstance(prior, ReceiptUnreadable):
         prior = None
-    document = update(root=root, receipt=prior, caller=caller)
+    # #1648: `bin/oss-workspace`'s pre-`exec claude` call is otherwise silent for
+    # the whole ~46s this can take -- it runs `exec 3>&1` and passes
+    # `--progress-fd 3`, and this streams one line per step there. Opt-in by
+    # flag, never by probing: a descriptor this process did not open cannot be
+    # told apart from one the caller opened on purpose, and probing slot 3
+    # blindly is what #1673 actually was -- under a pytest-xdist worker on
+    # `windows-latest` slot 3 is one of execnet's own live descriptors, and
+    # `os.fdopen(3, "w")` on it blocked forever, from every test that calls
+    # `main()` in-process, until the job's own 30-minute cap (run 35363849336).
+    # Without the flag nothing here touches any descriptor, which is every
+    # other caller (the async SessionStart hook, a direct CLI invocation, every
+    # test). `closefd=False`: this process does not own the descriptor and
+    # must not close it out from under whatever the caller does with it next.
+    progress_fd = _arg_value(argv, "--progress-fd", None)
+    if progress_fd is not None:
+        try:
+            progress_fd = int(progress_fd)
+        except ValueError:
+            sys.stderr.write(
+                "plugin_update: --progress-fd takes a descriptor number, got {!r}\n".format(
+                    progress_fd
+                )
+            )
+            return 2
+    progress_writer = None
+    if progress_fd is not None:
+        try:
+            progress_writer = os.fdopen(progress_fd, "w", closefd=False)
+        except OSError:
+            progress_writer = None
+    if progress_writer is not None:
+        # #1673: `update()` below, once this succeeds, spawns several of its own
+        # `subprocess.run()` calls (marketplace refresh, the loop plugin, each
+        # declared dependency, all via `_run()`). fd 3 itself was never opened by
+        # THIS process -- it arrived already-open, inherited straight across the
+        # `exec 3>&1` in `bin/oss-workspace`'s own shell -- so PEP 446's
+        # non-inheritable-by-default only covers descriptors Python itself
+        # creates; it does not touch this one. Left alone, every child
+        # `subprocess.run()` call below would hand its own grandchild a live
+        # copy of the same handle. On Windows this is the documented cause of a
+        # runner step that will not end after the whole test process has
+        # already exited and every test has already passed -- exactly what
+        # PR #1654's own `windows-latest`/3.12 leg was observed doing, cancelled
+        # at ~29.5 minutes by the job's own `timeout-minutes` cap, on every run
+        # (#1673). `set_inheritable` is a POSIX+Windows primitive (PEP 446) and
+        # only narrows what THIS process's own children inherit; it does not
+        # affect this process's own ability to keep writing to fd 3, so a
+        # failure here changes nothing about the progress stream itself -- it
+        # is wrapped defensively because the fd could, in principle, already be
+        # invalid by the time this runs.
+        try:
+            os.set_inheritable(progress_fd, False)
+        except OSError:
+            pass
+
+    # `bin/oss-workspace`'s own `oss_step_begin plugin "checking"` call leaves a
+    # dangling, no-newline "checking..." mark on the terminal, normally
+    # overwritten in place by the paired `oss_step` once this whole check
+    # returns. Streaming into that gap breaks the pairing -- but only on runs
+    # that actually stream something: `update()` returns early, with ZERO
+    # calls to `progress`, on its debounce/opt-out/unreadable-manifest paths,
+    # which are the common case for a session opened shortly after another
+    # one. Terminating the in-flight mark unconditionally (in the shell, or
+    # here on every call) would leave a permanent, un-overwritten "checking..."
+    # line on exactly that common path -- found in self-review. So the
+    # newline is written here, lazily, on the FIRST real progress line only:
+    # a run that never streams anything leaves the mark untouched, and
+    # `bin/oss-workspace`'s own `oss_step` still overwrites it in place
+    # exactly as it did before this change.
+    progress_started = [False]
+
+    def _progress(step_name, verdict=None):
+        if progress_writer is None:
+            return
+        try:
+            if not progress_started[0]:
+                progress_writer.write("\n")
+                progress_started[0] = True
+            if verdict is None:
+                progress_writer.write("    checking {}...\n".format(step_name))
+            else:
+                progress_writer.write("    {}: {}\n".format(step_name, verdict))
+            progress_writer.flush()
+        except OSError:
+            pass
+
+    document = update(
+        root=root,
+        receipt=prior,
+        caller=caller,
+        progress=_progress if progress_writer is not None else None,
+    )
+    if progress_writer is not None:
+        try:
+            progress_writer.close()
+        except OSError:
+            pass
     write_receipt(document)
     if "--print" in argv:
         sys.stdout.write(json.dumps(document, indent=2))
