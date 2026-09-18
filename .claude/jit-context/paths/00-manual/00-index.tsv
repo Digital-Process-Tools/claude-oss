@@ -1,12 +1,14 @@
 (^|/)(commands/.*\.md|agents/.*\.md)$	agent-call-needs-run-in-background-pin.md
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
 (^|/)(CLAUDE\.md|scripts/lane_setup\.py|scripts/claude_md_budget\.py)$	claude-md-budget-guard-derivation.md
+(^|/)scripts/cohort_freeze_record\.py$	cohort-freeze-label-before-agreement.md
 (^|/)scripts/(oss_config|scaffold|fix_commit_scope)\.py$	config-value-validation.md
 (^|/)scripts/[^/]+\.py$	counter-scripts-silent-gaps.md
 (^|/)trap\.d/	curate-pass-git-add-before-delete.md
 (^|/)\.claude/jit-context/.*\.md$	curate-pr-jit-file-needs-remind-budgets-check.md
 (^|/)(scripts/doctor(_check_[a-z0-9_]+)?\.(py|sh)|commands/doctor\.md)$	doctor-check-contract.md
 (^|/)scripts/doctor_check_[^/]+\.py$	doctor-check-module-scope-import.md
+(^|/)(commands/run\.md|agents/scheduler-step\.md|scripts/next_action\.py)$	fetch-before-you-rank.md
 (^|/)scripts/[^/]+\.py$	filesystem-probe-states.md
 (^|/)agents/(developer/review-return|tick-review|tick-accounting)\.md$	findings-brief-bans-above-and-tallies.md
 (^|/)(agents|commands|skills)/.*\.md$	frontmatter-key-spelling-is-unverifiable-from-source.md
@@ -34,3 +36,4 @@
 (^|/)trap\.d/	trap-fragments.md
 (^|/)agents/triager\.md$	triage-merged-but-still-open-needs-reopen-check.md
 (^|/)scripts/plugin_update\.py$	windows-subprocess-resolution.md
+(^|/)tests/|(^|/)\.github/workflows/tests\.yml$	xdist-hang-renders-as-post-session-hang.md

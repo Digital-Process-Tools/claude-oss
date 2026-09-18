@@ -19,3 +19,18 @@ Windows CI is the only thing that exercises this and it cannot be reproduced on 
   mechanism shipped clean on the first try.
 - **The must-not-fire controls in `tests/test_workspace_auto_update_753.py` are what made the
   over-fire visible.** Three of the six failures were those controls. Keep them.
+- **Never probe a low-numbered fd to learn whether a caller set something up; have the caller say
+  so.** `main()` used to open `os.fdopen(3, "w")` unconditionally on every call to detect a
+  launcher-supplied progress channel, letting `OSError` mean "no caller opened one". Under an
+  execnet worker on Windows CI, fd 3 is one of execnet's own live descriptors, and `fdopen` on it
+  blocks forever rather than raising -- a hang, not a clean no-op (#1673). Fixed by making the
+  channel explicit: the caller passes `--progress-fd 3`, and `main()` touches no descriptor at all
+  when the flag is absent.
+- **A fix that closes the hang does not by itself confirm the feature streams (#1648).** The
+  opt-in flag above stops `main()` from blocking, but whether a subprocess launched from
+  `bin/oss-workspace`'s `exec 3>&1` actually reaches the real terminal through the MSYS/`python.exe`
+  boundary on Windows was never directly observed -- Win32 `CreateProcess` only propagates fds 0-2
+  by default, and whether MSYS's own fd-passing convention reaches a plain hosted `python.exe` is
+  reasoned, not measured, same as this file's own standing instruction. Settle it with a real
+  Windows CI run of the `plugin` branch checking whether streamed lines land in the log, not by
+  reading the source and predicting.
