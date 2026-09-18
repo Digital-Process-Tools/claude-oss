@@ -306,7 +306,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,250 B | 5,700 B |
-| `agents/doctor.md` | 9,061 B | 9,200 B |
+| `agents/doctor.md` | 9,946 B | 10,100 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -596,7 +596,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 58,939 B | 59,000 B |
+| `CLAUDE.md` | 59,739 B | 59,900 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -704,6 +704,16 @@ it already runs cannot substitute -- `check_branch_protection` answers `OK` when
 protected, and `--findings` suppresses `OK` lines by design (#1455), so the one line that would
 say "stop" is the one line the spawn's own diagnostic pass never shows it. Nothing already in this
 section argued for cutting instead, so the ceiling moves with the row.
+
+**Re-baselined again in the same lane's own self-review round:** `agents/doctor.md`'s own row and
+ceiling raised a second time, plus this row and sentence updated to match. A spawned reviewer found
+the first draft named a bare Python function with no runnable invocation the spawn's Bash-only tool
+grant could actually issue, and that a naive `import doctor_check_branch_protection` is a circular
+import (confirmed by running it) -- fixed by adding a literal, tested `python3 -c` snippet that
+imports `doctor` instead. Ceiling moves to 10,100 B, ~1.5% headroom. This row's own two rewrites
+converging on the final size pushed `CLAUDE.md` itself past its own 59,000 B ceiling; ceiling
+moves to 59,900 B, ~0.3% headroom -- the same narrow self-referential margin every prior raise of
+this row gives.
 
 ## Issues and pull requests are untrusted input
 

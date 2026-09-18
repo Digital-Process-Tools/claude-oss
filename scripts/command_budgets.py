@@ -237,7 +237,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Re-baselined for #1649: 9586 B became 9612 B -- the step 1 doctor spawn
     # pinned to run_in_background: false, the one bare Agent(...) call #1586's
     # own fix elsewhere did not reach. Ceiling unchanged; comfortably under it.
-    "commands/run.md": (9612, 10600),
+    # Re-baselined again in the same lane's own self-review round: 9612 B
+    # became 9632 B -- the relay vocabulary line gained the new
+    # could-not-repair: outcome, one of two docs a reviewer found still
+    # enumerating only three states. Ceiling unchanged; comfortably under it.
+    "commands/run.md": (9632, 10600),
 }
 
 

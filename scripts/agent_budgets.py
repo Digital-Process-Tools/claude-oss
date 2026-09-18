@@ -483,12 +483,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # when the branch IS protected, and `--findings` suppresses OK lines
     # (#1455), so the one line that would say "stop" is the one line the
     # spawn's own diagnostic pass never shows it. Fixed by calling
-    # `doctor_check_branch_protection.branch_protection_state` directly before
-    # writing, and adding a `could-not-repair:` outcome for `protected` /
-    # `could-not-tell` so a commit that cannot land without a bypass push is
-    # never reported as `repaired`. Nothing here argued for cutting instead;
-    # ceiling moves to 9200 B, ~1.5% headroom.
-    "agents/doctor.md": (9061, 9200),
+    # `branch_protection_state` directly before writing, and adding a
+    # `could-not-repair:` outcome for `protected` / `could-not-tell` so a
+    # commit that cannot land without a bypass push is never reported as
+    # `repaired`.
+    # Re-baselined again in the same lane's own self-review round: 9061 B
+    # became 9946 B. A spawned reviewer found the instruction named a bare
+    # Python function with no runnable invocation a Bash-only spawn could
+    # actually issue, and that a naive `import doctor_check_branch_protection`
+    # is circular (confirmed by running it) -- fixed by adding a literal,
+    # tested `python3 -c` snippet importing `doctor` instead (which
+    # re-exports the name after resolving the circularity). Nothing here
+    # argued for cutting instead; ceiling moves to 10100 B, ~1.5% headroom.
+    "agents/doctor.md": (9946, 10100),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the

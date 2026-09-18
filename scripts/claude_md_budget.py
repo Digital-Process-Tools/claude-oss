@@ -181,7 +181,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # row and ceiling raised for the on-default branch-protection gate, plus this
     # row's own rewrites converging on the new size. 58794 B became 58939 B.
     # Ceiling unchanged; comfortably under it.
-    "CLAUDE.md": (58939, 59000),
+    # Re-baselined again in the same lane's own self-review round: 58939 B became
+    # 59739 B, past the 59000 B ceiling. agents/doctor.md's row and ceiling raised
+    # a second time (a spawned reviewer found the branch-protection instruction
+    # named a function with no runnable invocation, and that a naive import of it
+    # is circular), plus this row's own rewrites converging on the final size.
+    # Ceiling moves to 59900 B, ~0.3% headroom -- the same narrow self-referential
+    # margin every prior raise of this row gives.
+    "CLAUDE.md": (59739, 59900),
 }
 
 
