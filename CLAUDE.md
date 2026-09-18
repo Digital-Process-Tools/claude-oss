@@ -596,7 +596,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 58,794 B | 59,000 B |
+| `CLAUDE.md` | 58,286 B | 59,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -707,58 +707,51 @@ maintainer's session with their credentials.
 
 ## What is not proven yet
 
-**The marker below names `v0.38.0`, and it was written inside the v0.38.0 release commit.**
+**The marker below names `v0.39.0`, and it was written inside the v0.39.0 release commit.**
 
-**Delta, taken two ways that agree once the exclusion is named.** The range is `v0.37.1..HEAD` at
-`78e99a4e`: `git rev-list --count v0.37.1..HEAD` returns **13**, and
-`gh-prs:merged-since=v0.37.1,state=merged` returns **12** merged pull requests, its own cross-check
-reporting `RAN and AGREED` -- 12 PR references found in the range, matching the 12 merged PRs
-exactly. The one-commit gap between 13 and 12 is named rather than papered over: one commit on the
-branch carries no trailing `(#N)` and is not attributable to a PR (a direct push or merge commit),
-which the tool's own output states as the reason the git-side and PR-side counts legitimately
-differ by exactly one. Gate 3 ran two rounds over the range, each on the full delta as it stood at
-the time. Round one returned `findings`: 3 findings, all class `misreports`, none in a blocking row
--- `scripts/worktree_reap.py`'s `_lsof_process_cwds` ignoring `lsof`'s non-zero exit code, so a
-partial process table is read as complete and an occupied tree can read as unoccupied
-(`trap.d/1637.lsof-nonzero-exit-partial-output-misread-as-unoccupied.md`); the jit-context
-`mode: once` flip in #1584 shipping with no minimum-version floor declared on the
-`claude-jit-context` dependency in `plugin.json`, so an install below 0.10.0 would dedupe per
-session rather than per reader and silently reach at most one agent per session
-(`trap.d/1584.jit-once-mode-flip-shipped-with-no-version-floor-on-jit-context-dependency.md`); and
-`scripts/remind_budgets.py`'s own stated premise (budgeting `remind`-mode bodies) now covering zero
-files, since the same #1584 flip moved every file it budgets to `once`
-(`trap.d/1584.remind-budgets-module-budgets-zero-remind-mode-files-after-once-flip.md`).
+**Delta, taken two ways that agree.** The range is `v0.38.0..HEAD` at `2034cc29`:
+`git rev-list --count v0.38.0..HEAD` returns **15**, and
+`gh-prs:merged-since=v0.38.0,state=merged` returns **10** merged pull requests, its own cross-check
+reporting `RAN and AGREED` -- 10 PR references found in the range, matching the 10 merged PRs
+exactly. The five-commit gap between 15 and 10 is named rather than papered over: five commits on
+the branch carry no trailing `(#N)` and are not attributable to a PR (direct pushes or merge
+commits), which the tool's own output states as the reason the git-side and PR-side counts
+legitimately differ. Gate 3 ran two rounds over the range, each on the full delta as it stood at
+the time. Round one returned `findings`: 2 findings, both class `misreports`, neither in a blocking
+row -- `scripts/statusline.py`'s `refresh()` writing a failure marker
+(`channel_refresh_failed_at`) that every consumer's `not-asked` early-return check runs ahead of,
+so a first-ever failed channel refresh renders as "nobody has looked yet" rather than "the last
+refresh failed" and withholds `check_statusline_unknowns`'s own self-healing fork
+(`trap.d/1636.first-fail-refresh-renders-as-not-asked-not-refresh-failed.md`); and
+`tests/test_posthang_diagnostics_1660.py`'s only test for the new hang-diagnostic hook
+monkeypatching `faulthandler.dump_traceback_later` away, so the xdist-forwarding behaviour it
+exists to cover has no control in either direction
+(`trap.d/1660.posthang-diagnostic-test-never-exercises-real-dump-traceback-later.md`).
 `gate3_disposition.py` returned `stop-tag` for round one regardless of the blocking answer, by
 design -- round one always stops to give a chance to route or fix before round two runs. Round two
-re-audited the full delta independently, re-found all three of round one's findings by its own
-reads (not carried forward from the report), and found 4 further non-blocking `misreports`: the
-same `mode: once` field copied by #1612 and #1632 into the `vocabulary` and `paths` jit-context
-dimensions, neither of which has a `mode` column at all, so those four entries are still
-session-keyed exactly as if the field were absent
-(`trap.d/1584.vocab-and-paths-rules-copied-mode-once-into-dimensions-with-no-mode-field.md`);
-`worktree_reap.py`'s `dirt_state` using a plain `git status --porcelain` scan that cannot see
-gitignored paths at all, so the artifact allowlist it is meant to check against never actually
-sees the paths it allows
-(`trap.d/1628.dirt-state-porcelain-scan-cannot-see-gitignored-artifact-allowlist-paths.md`);
-`doctor_check_worktree_reap.py` reporting `WARN` with no remedy on any machine lacking `lsof`, a
-shape this repo's own doctor-check contract reserves for `NOTICE`
-(`trap.d/1628.doctor-check-worktree-reap-warn-with-no-remedy-when-lsof-absent.md`); and
-`scaffold.py`'s `.gitignore` template still missing the three artifact-allowlist entries #1628's
-own changelog fragment claims it added, so newly scaffolded repos do not get the false-positive fix
-that fragment describes
-(`trap.d/1628.gitignore-scaffold-template-still-missing-artifact-allowlist-entries.md`).
-`gate3_disposition.py` returned `carry-forward-and-proceed` for round two. Seven distinct findings
-across both rounds (three found independently in both rounds, four new to round two); none sits in
-a blocking row. One judgement recorded rather than silently made: round two's own report flagged
-that its first and third findings compose -- a truncated `lsof` reading an occupied tree as
-unoccupied, paired with `dirt_state` being unable to see gitignored content -- and asked whether
-that pair should be read as `destroys` rather than two `misreports`. Read as `misreports`, on the
-grounds that the surviving guards (tracker merge state, the not-ahead-of-remote check, and the
-fragment harvest that runs before any reap) still stand between the pair and any committed or
-trackable loss, and the fix for both is a read seam rather than the destructive call itself.
+re-audited the full delta independently, re-found the first of round one's two findings by its own
+reads and widened it (the doctor-side consumer carries the identical ordering defect and is
+reachable; a fourth sibling fold, `default_branch_cause`, has the same ordering but is not
+reachable because `fetched_at` there is written unconditionally), examined round one's second
+finding and did not read it as a defect (the mocked call is a positive control with a docstring
+that already discloses the xdist-forwarding gap as reasoned-not-observed, which is the third state
+this checklist asks for rather than a silence), and found 3 further non-blocking `misreports`: a
+new doctor check (#1651) judging the triage-route threshold "configured" with a weaker predicate
+than the reader that actually arms the route uses, so a wrongly-shaped value (a string, a bool, a
+negative int) reports a healthy NOTICE for a route that can never fire
+(`trap.d/1651.triage-route-threshold-string-value-silently-dead-routes.md`); the release-auditor's
+own mutation-receipt instructions (#1642/#1643) saying "never a fixed shared name" and then
+supplying one that is fixed modulo the round number
+(`trap.d/1642.release-auditor-mutation-receipt-filename-is-fixed-not-picked.md`); and a new doctor
+check (`claude_md_size_threshold`) rejecting a configured-but-non-int value (e.g. a JSON float) and
+reporting it identically to "never configured"
+(`trap.d/1625.claude-md-size-threshold-as-float-reads-as-unconfigured.md`).
+`gate3_disposition.py` returned `carry-forward-and-proceed` for round two. Five distinct findings
+across both rounds (one found independently in both rounds, one round-one finding examined and not
+repeated in round two, three new to round two); none sits in a blocking row.
 
-**Gate 1 held cleanly.** At `78e99a4e`, the pre-release head, both the ordinary push-triggered run
-(6 legs, 2 workflows, all passed) and a dispatched full-matrix `workflow_dispatch` run against the
+**Gate 1 held cleanly.** At `2034cc29`, the pre-release head, both the ordinary push-triggered run
+(8 legs, 2 workflows, all passed) and a dispatched full-matrix `workflow_dispatch` run against the
 same commit (14 further legs, `full_matrix: true`) concluded GREEN -- 22 legs total across 3 runs,
 all passed, no CodeQL infrastructure failure. One declared workflow (`changelog`) produced no run
 on this commit -- it is `pull_request`-only, so this is the uncovered-but-non-blocking middle
@@ -767,14 +760,15 @@ run, waited on with `release_ci_wait.py --require-event workflow_dispatch`; read
 sentence, for whether it cleared.
 
 **Cohort freeze: cohort-34 at 22.** This marker cites a cohort that has already finished freezing,
-never this release's own, because the freeze runs after the tag. No cohort has finished freezing
-since `v0.36.0`, so the citation is unchanged from the prior release: `cohort-34` remains
-`measured` at 22, frozen at the `v0.36.0` tag, both routes it was taken from (`cutoff_scan` and
-`label_filter`) agreeing at 22.
-`cohort_citation_order.py --state .max/claude-oss-watch.json --at 2026-09-16T23:24:28Z` ran
+never this release's own, because the freeze runs after the tag. `cohort-35` was attempted at the `v0.37.0`,
+`v0.37.1` and `v0.38.0` tags and disagreed all three times (`cutoff_scan`/`label_filter` routes did
+not agree), so it has still not finished freezing; the citation therefore remains `cohort-34`,
+unchanged from the prior release: `measured` at 22, frozen at the `v0.36.0` tag, both routes it was
+taken from (`cutoff_scan` and `label_filter`) agreeing at 22.
+`cohort_citation_order.py --state .max/claude-oss-watch.json --at 2026-09-18T02:34:37Z` ran
 before committing and reported `ok -- cohort-34 was already frozen`.
 
-**The reach probe was NOT re-derived at `v0.38.0`.** It is still `v0.21.0`'s:
+**The reach probe was NOT re-derived at `v0.39.0`.** It is still `v0.21.0`'s:
 `gh repo list Digital-Process-Tools --limit 100`, run at `c565488`, returns eleven repositories in
 that one GitHub organisation, four carrying `.oss.json`, each confirmed by its own contents read. The count is
 scoped to the organisation the command names, never to "the field": a repository under a different

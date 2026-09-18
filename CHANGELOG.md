@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-18
+
+### Added
+
+- `doctor.py` now warns when a managed repo's own `CLAUDE.md` has outgrown a configured size ceiling: a new `check_claude_md_size` reads `.oss.json`'s own `claude_md_size_threshold` and reports `over`/`under`/`unconfigured`/`could-not-tell` (an absent or unreadable file never renders as a size of zero), with a remedy naming the three `.claude/jit-context/<paths|tools|vocabulary>/` dimensions and the `claude-jit-context:vocabulary` skill (#1631).
+
+- `doctor.py` now warns when a label-coverage triage backlog (open issues missing a `priority-*` or `lane-*` label) is waiting with no `triage_route_threshold` configured: a new `check_triage_route` reads the statusline's own cached unlabelled-issue counts and reports `OK`/`NOTICE`/`WARN`/could-not-read, keeping the two populations separate rather than summing them (#1651).
+
+### Fixed
+
+- The triager now knows what to do when a repo's tracker has zero milestones: say so and stop,
+  the same as the label-absence rule, instead of treating every open issue as unassignable on
+  every sweep. `.oss.json` records this repo's own decision (milestones declined, release grouping
+  tracked through labels instead) in `_milestones_note`, so a triage sweep reads the recorded
+  decision before re-filing the same empty-tracker finding (#1611).
+
+- `oss:tick-review` no longer relies on prose alone to prove it did not mutate the tree it
+  reviews: it now snapshots before its own procedure and compares after, reporting `clean` /
+  `mutated` / `could-not-compare` as a `TREE:` line beside its report. Observed once already --
+  an untracked `notes/`/`reports/` pair was deleted mid-review, judged as tidying rather than as
+  the mutation its own prose had not explicitly ruled out (#1622).
+
+- `doctor.py`'s channel checks no longer misreport when a `channel:health` reading exists but is not trusted enough to act on: `check_mcp_channel_connection`'s failed-transport WARN used to claim "no channel:health reading establishes a live consumer" even when a cross-session cached reading of `forwarding` did establish one; it now reports the failed transport and the untrusted forwarding reading as two separate facts. `check_channel_health_agreement`'s "could not compare" line used to render as a permanent, unclearable `WARN` for that same `cached-other-session` source (no manual op or `/oss:scaffold` run can turn a fresh cache write's `session` attribution into something doctor.py can confirm as its own); it now renders `NOTICE` (#1625).
+
+- The status line's default-branch marker (`?`), the `/oss:doctor` field (`dr?`), and the
+  plugin-version comparison folded to unknown the instant a cached reading became merely due for a
+  refresh, or (for the version comparison) once it passed a fixed age ceiling -- even though a
+  background refresh was already in flight and the reading was still correct. Age is now a trigger
+  to refresh, never a reason to distrust what is already known: `gather()` keeps rendering the
+  last-known state while a reading is merely due, and folds to unknown only when a refresh was
+  actually attempted and recorded as having failed (`board_refresh_failed_at`,
+  `doctor_refresh_failed_at`, mirroring the existing `latest_refresh_failed_at`), or when nothing
+  has ever been read at all (#1635).
+
+- The status line's watch-channel field (`ch?`) folded to `cannot_determine` the instant the cached
+  `channel:health` reading became merely due for its own refresh interval -- the same defect #1635
+  fixed for the default-branch marker, the `/oss:doctor` field, and the plugin-version comparison,
+  left as an open item there. Age is now a trigger to refresh, never a reason to distrust what is
+  already known: the last-known channel state keeps rendering while a reading is merely due, and
+  folds only when a refresh was actually attempted and recorded as having failed
+  (`channel_refresh_failed_at`, mirroring `board_refresh_failed_at`/`doctor_refresh_failed_at`/
+  `latest_refresh_failed_at`), or when nothing has ever been read at all (#1636).
+
+- `oss:auditor` and `oss:release-auditor` gained the same mutation-receipt guard #1622 added to
+  `oss:tick-review`: each now snapshots the worktree before its own run and compares right before
+  composing its report, reporting `clean` / `mutated` / `could-not-compare` as a `TREE:` line. The
+  shared explanation lives once in `agents/audit/shared.md`; each spine keeps only its own
+  file-naming convention (#1642).
+
+- `agents/developer/review.md`'s own mutation-receipt around the two reviewer spawns no longer
+  captures the before-snapshot into a shell variable (`BEFORE=$(...)`), which does not survive
+  this harness's separate Bash tool calls and silently degraded the compare step to
+  `could-not-compare` on every real run. It now writes the snapshot to a file named from the
+  lane's own issue number(s), the same fix #1622 applied to `agents/tick-review.md` (#1643).
+
+- `release_route_threshold` was computed by `workspace_routes.decide()` on every `next_action.py` `rank()` call and never read by `_release_candidate`, which decides whether a release is due entirely from `release_trigger.py`'s own richer signal. Removed rather than wired: the key now tombstones cleanly in `oss_config.LEGACY_KEYS`, and `workspace_routes.ROUTES` carries only `triage`/`curate` (#1652).
+
+- `outbound_route_threshold` validated cleanly in `.oss.json` from the day it was declared but had no reader anywhere -- no `workspace_routes.THRESHOLD_KEY` entry, no `next_action.py` branch, and no drain procedure for a route to point at. Removed rather than wired, tombstoned in `oss_config.LEGACY_KEYS` so a repo that already set it keeps validating clean (#1653).
+
+- Raised the `pytest` job's `timeout-minutes` from 15 to 20 in `.github/workflows/tests.yml`:
+  the `pytest (windows-latest, 3.12)` leg's suite consistently finishes green (~14.5 minutes)
+  right at the old ceiling, so checkout/setup/dependency-install overhead pushed the job's total
+  wall time past it and GitHub Actions cancelled the job even though every test had already
+  passed -- reported three times back to back on the same commit (#1658).
+
+- Raised the `pytest` job's `timeout-minutes` from 20 to 30 in `.github/workflows/tests.yml`:
+  the `pytest (windows-latest, 3.12)` leg was cancelled again after #1659's own raise, twice
+  back to back on the same commit, because the suite's own self-reported runtime had grown
+  from ~873s to ~1176.55s -- within 24 seconds of the 20-minute cap. Also adds
+  `tests/posthang_diagnostics_1660.py`, a periodic thread-stack dump armed once a session
+  finishes, since both cancellations show the process still alive, blocked in the main
+  thread, after pytest's own summary line already reported every test passing -- how long
+  it was alive for is unknown, since both runs were cut off by the cap itself before it
+  could be observed. Root cause is not yet identified, and this gives the next occurrence
+  a real answer instead of only a bare `KeyboardInterrupt` traceback (#1660).
+
 ## [0.38.0] - 2026-09-17
 
 ### Added
@@ -12039,7 +12115,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.39.0
 [0.38.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.38.0
 [0.37.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.37.1
 [0.37.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.37.0
