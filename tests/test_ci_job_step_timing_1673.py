@@ -232,6 +232,39 @@ def test_gh_failure_is_could_not_read_not_silently_empty():
     assert "404" in entry["detail"]
 
 
+# ------------------------------------------------------- read_job_timing: ambiguous-step
+
+
+def test_two_steps_with_the_same_name_is_its_own_state_not_a_silent_first_match():
+    """Self-review (#1673): taking the FIRST of two same-named steps would
+    silently fold the SECOND one's own duration into `post_step_seconds`
+    -- exactly the shape this module exists to tell apart from a real
+    teardown gap. A composite action reused twice, or a workflow that
+    reruns a step under the same name, is a real GitHub Actions shape,
+    not a hypothetical."""
+    payload = _job_payload(
+        steps=[
+            {
+                "name": "Run tests",
+                "started_at": "2026-09-18T07:41:31Z",
+                "completed_at": "2026-09-18T07:50:00Z",
+                "conclusion": "success",
+            },
+            {
+                "name": "Run tests",
+                "started_at": "2026-09-18T07:50:05Z",
+                "completed_at": "2026-09-18T08:11:08Z",
+                "conclusion": "cancelled",
+            },
+        ]
+    )
+    run = _run_once(0, json.dumps(payload))
+    entry = cjst.read_job_timing("1", "gh", run, repo="o/r")
+    assert entry["state"] == cjst.STATE_AMBIGUOUS_STEP
+    assert entry["state"] != cjst.STATE_OK
+    assert entry["step_count"] == 2
+
+
 def test_unparseable_json_is_could_not_read():
     run = _run_once(0, "not json at all")
     entry = cjst.read_job_timing("1", "gh", run, repo="o/r")
@@ -270,11 +303,43 @@ def test_main_ok_prints_breakdown_and_exits_zero(capsys):
 
 
 def test_main_could_not_read_is_nonzero_exit(capsys):
+    """Self-review (#1673): assert the EXACT documented code (3), not
+    merely nonzero -- a bare `!= 0` would still pass if this ever
+    regressed to collide with argparse's own reserved usage-error code
+    (2), which is precisely the collision the module's own comment next
+    to `EXIT_CODES` says must never happen."""
     run = _run_once(1, "", "boom")
     code = cjst.main(["--job", "1", "--repo", "o/r"], run=run)
     out = capsys.readouterr().out
-    assert code != 0
+    assert code == 3
+    assert code == cjst.EXIT_CODES[cjst.STATE_COULD_NOT_READ]
     assert "COULD-NOT-READ" in out
+
+
+def test_main_usage_error_exits_2_never_colliding_with_a_state(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        cjst.main(["--job", "1"], run=_run_once(0, "{}"))  # missing --repo
+    assert excinfo.value.code == 2
+    assert 2 not in cjst.EXIT_CODES.values()
+
+
+def test_main_baseline_read_failure_is_folded_into_the_exit_code(capsys):
+    """Self-review (#1673): a caller that scripts off `main()`'s return
+    code alone must see a failed baseline read too -- before this fix,
+    a failing --baseline-job left the exit code identical to a run where
+    no baseline was requested at all (exit 0 from a healthy primary
+    read), with the failure visible only in stdout text nobody checking
+    the exit code would read."""
+    responses = [(0, json.dumps(_job_payload()), ""), (1, "", "boom")]
+    it = iter(responses)
+
+    def run(cmd, **kwargs):
+        rc, out, err = next(it)
+        return subprocess.CompletedProcess(cmd, rc, stdout=out, stderr=err)
+
+    code = cjst.main(["--job", "1", "--baseline-job", "2", "--repo", "o/r"], run=run)
+    assert code == cjst.EXIT_CODES[cjst.STATE_COULD_NOT_READ]
+    assert code != 0
 
 
 def test_main_baseline_job_prints_a_ratio(capsys):

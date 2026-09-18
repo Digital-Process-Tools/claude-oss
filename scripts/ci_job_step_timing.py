@@ -58,6 +58,7 @@ import gh_which
 
 STATE_OK = "ok"
 STATE_NO_MATCHING_STEP = "no-matching-step"
+STATE_AMBIGUOUS_STEP = "ambiguous-step"
 STATE_COULD_NOT_READ = "could-not-read"
 
 # Not 2 -- argparse.ArgumentParser.error() always exits 2 for a usage
@@ -69,6 +70,7 @@ STATE_COULD_NOT_READ = "could-not-read"
 EXIT_CODES = {
     STATE_OK: 0,
     STATE_NO_MATCHING_STEP: 1,
+    STATE_AMBIGUOUS_STEP: 4,
     STATE_COULD_NOT_READ: 3,
 }
 
@@ -132,26 +134,34 @@ def read_job_timing(
     ``gh api repos/{repo}/actions/jobs/{id}`` needs the owner/name in the
     path itself.
 
-    Three states:
+    Four states:
 
-      ok                the named step was found and has a `started_at`;
-                         `step_seconds_approximate` is `True` when the
-                         step carried no `completed_at` of its own (still
-                         running, or the runner never recorded one before
-                         the job as a whole concluded) -- approximated
-                         using the JOB's own `completed_at` instead, so a
-                         step that never got to report its own end is
-                         never silently read as a step_seconds of zero.
+      ok                the named step was found, uniquely, and has a
+                         `started_at`; `step_seconds_approximate` is
+                         `True` when the step carried no `completed_at`
+                         of its own (still running, or the runner never
+                         recorded one before the job as a whole
+                         concluded) -- approximated using the JOB's own
+                         `completed_at` instead, so a step that never got
+                         to report its own end is never silently read as
+                         a step_seconds of zero.
       no-matching-step  the job was read successfully but has no step
                          named `test_step_name` -- a workflow rename or a
                          wrong argument, not a read failure. Carries
                          `step_names` (every step name this job actually
                          has) so a caller can see what to ask for instead.
+      ambiguous-step    the job has MORE than one step named
+                         `test_step_name` -- taking the first would
+                         silently misattribute a later matching step's
+                         own time as pre-step or post-step, which is
+                         exactly the mistake this module exists to avoid
+                         making elsewhere (#1673 self-review). Carries
+                         `step_count`. Never folded into `ok`.
       could-not-read    the `gh` call failed, the output was not JSON, the
                          JSON was not an object, or the job's own
                          `started_at`/`completed_at` were missing or
-                         unparseable. Never folded into either state
-                         above -- this repository's own defect class
+                         unparseable. Never folded into any state above
+                         -- this repository's own defect class
                          (CLAUDE.md), applied to one job read.
     """
     args = ["api", "repos/{0}/actions/jobs/{1}".format(repo, job_id)]
@@ -192,13 +202,9 @@ def read_job_timing(
         else []
     )
 
-    target = None
-    for step in steps:
-        if step.get("name") == test_step_name:
-            target = step
-            break
+    matches = [step for step in steps if step.get("name") == test_step_name]
 
-    if target is None:
+    if not matches:
         return {
             "job_id": job_id,
             "state": STATE_NO_MATCHING_STEP,
@@ -208,6 +214,28 @@ def read_job_timing(
             "total_seconds": total_seconds,
             "step_names": [step.get("name") for step in steps],
         }
+
+    if len(matches) > 1:
+        # Silently taking the first match here would misattribute the
+        # LATER matching step's own duration as "post-step" (teardown) --
+        # exactly the shape this module exists to tell apart from a real
+        # teardown gap. A repeated step name is a real GitHub Actions
+        # shape (a composite action reused twice, a workflow that reruns
+        # a step under the same name), so this is refused as its own
+        # state rather than guessed at (#1673 self-review).
+        return {
+            "job_id": job_id,
+            "state": STATE_AMBIGUOUS_STEP,
+            "detail": (
+                "{0} steps are named {1!r} in this job's own step list -- "
+                "picking one would silently misattribute another "
+                "matching step's own time as pre-step or post-step"
+            ).format(len(matches), test_step_name),
+            "total_seconds": total_seconds,
+            "step_count": len(matches),
+        }
+
+    target = matches[0]
 
     step_start = _parse_ts(target.get("started_at"))
     if step_start is None:
@@ -257,6 +285,10 @@ def _render(entry):
             ", ".join(_flatten(name) for name in entry.get("step_names", []))
             or "(none)",
         )
+    if entry["state"] == STATE_AMBIGUOUS_STEP:
+        return "AMBIGUOUS-STEP | job: {0} | {1}".format(
+            entry["job_id"], _flatten(entry.get("detail", "unknown"))
+        )
     approx = (
         " (approximate -- step never recorded its own completed_at)"
         if entry["step_seconds_approximate"]
@@ -283,8 +315,11 @@ def main(argv=None, run=None):
         description=(
             "Split one CI job's own wall clock into pre-step / step / "
             "post-step seconds, from GitHub's own per-step timestamps. "
-            "ok=0 no-matching-step=1 could-not-read=3 (2 is reserved for "
-            "a usage error)."
+            "ok=0 no-matching-step=1 could-not-read=3 ambiguous-step=4 "
+            "(2 is reserved for a usage error). With --baseline-job, the "
+            "exit code is the WORSE of the job's own and the baseline's "
+            "own state, so a caller checking only the exit code still "
+            "sees a failed baseline read."
         )
     )
     parser.add_argument("--job", required=True, help="the job id")
@@ -354,7 +389,14 @@ def main(argv=None, run=None):
             payload["baseline"] = baseline_entry
         sys.stdout.write(json.dumps(payload) + "\n")
 
-    return EXIT_CODES[entry["state"]]
+    exit_code = EXIT_CODES[entry["state"]]
+    if baseline_entry is not None:
+        # #1673 self-review: a caller that scripts off the exit code
+        # alone must see a failed baseline read too, not only a failed
+        # primary read -- folding it into the same int is what the
+        # module's own docstring already invites a caller to do.
+        exit_code = max(exit_code, EXIT_CODES[baseline_entry["state"]])
+    return exit_code
 
 
 if __name__ == "__main__":
