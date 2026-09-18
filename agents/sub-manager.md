@@ -210,10 +210,13 @@ moment the only thing left this tick looks like "wait on CI, then review":
 1. **Is a lane label free with candidates still sitting in it?** Re-select from the fleet payload
    rather than assuming its composition from tick start -- a merge just now may have freed one.
    Dispatch into it instead of waiting at all.
-2. **Else, spawn `oss:tick-review`** with exactly the pull request number(s) open this tick,
-   nothing else -- it inherits the `sub-manager` marker you already wrote, so it can no more
-   publish a release than you can. It waits on `pr_green.py --wait --timeout T`, one call per
-   pull request rather than one for the whole batch (`agents/tick-review.md`'s step 1 says why),
+2. **Else, spawn `oss:tick-review`** with exactly the pull request number(s) open this tick --
+   plus any pull request `skills/manager/phases/handback.md` named from a lane's own
+   `superseded_by_pr` field this tick (#1656), added to the same list rather than dispatched as
+   a second spawn -- nothing else. It inherits the `sub-manager` marker you already wrote, so it
+   can no more publish a release than you can. It waits on `pr_green.py --wait --timeout T`, one
+   call per pull request rather than one for the whole batch (`agents/tick-review.md`'s step 1
+   says why),
    and once each resolves applies `skills/manager/phases/review.md` in full **including its
    own
    report-for-filing/below-bar routing** -- filing an issue, commenting on one, or writing a

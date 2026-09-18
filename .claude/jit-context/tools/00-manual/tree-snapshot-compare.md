@@ -30,3 +30,10 @@ not surface.
 read it back to confirm bytes-on-disk right when the `compare` call actually runs, rather than
 trusting a write from several turns earlier to still be there. If this recurs with a second,
 independent instance, that is the point to pin the cause rather than keep guessing from one.
+
+**Name the snapshot file from a unique per-spawn token -- never a fixed template, even one that
+varies only by round number.** A round-templated name like `release-auditor-round<1|2>-before-
+snapshot.json` collides the same way a single fixed name does whenever two spawns of the same round
+can run concurrently over one worktree: each reads the other's before-snapshot and reports a
+mutation receipt about the wrong tree. Derive the filename from the issue/PR number(s) the spawn was
+given, or its own PID -- whichever is already unique per call (#1622, #1642).

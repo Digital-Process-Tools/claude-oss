@@ -43,6 +43,8 @@ None of this is re-derivable from the diff. If your prompt is missing one of the
 - adjacent findings and tooling friction the lane hit along the way
 - any genuine disagreement with the brief
 - the incremental note the lane kept, if it kept one (see below)
+- if the lane declined its own issue because it found an already-open pull request that
+  supersedes it, that pull request's number (#1656) -- fold it into `superseded_by_pr`
 
 ## Notes: where the long half goes
 
@@ -130,7 +132,11 @@ whether the full suite ran -> `tests.full` (the expected value is `not-run`; a `
 for the manager to ask about rather than a receipt to credit), review -> `review`, platform claims
 -> `claims`, every
 `docs_targets` path with what happened to it -- updated, read and still true, or not opened -- ->
-`docs`, unfiled findings -> `adjacent`, the note path -> `note_path`.
+`docs`, unfiled findings -> `adjacent`, the note path -> `note_path`, an already-open pull
+request the lane declined in favour of -> `superseded_by_pr` (#1656). This is the difference
+between a decline that ends in prose the tick will never re-read and one the tick can act on:
+`skills/manager/phases/handback.md` folds a report carrying this field into the current tick's
+own review set instead of leaving the superseding pull request to age unreviewed forever.
 
 **`compliance` is a required top-level survey and a different axis from every other one here: not
 what you looked at, but whether the lane did what its own brief said** -- fold in what a spawned
@@ -169,6 +175,12 @@ drift this repository keeps paying for.
   fenced.
 - **One `Closes` line per issue.** `Closes #A #B` links both numbers and **closes only `#A`**, so
   `#B` needs a keyword of its own. The validator refuses the second number for exactly that reason.
+- **A mixed multi-issue outcome names each side (#1655).** Argued that one carried issue is not
+  actually fixed while genuinely closing another in the same pull request? Name the unfixed one in
+  `closes.declines`, never prose alone -- a forge honours a keyword by its position next to the
+  number, not the sentence around it, so `**does not close #402**` four lines before `Closes #402`
+  still closes it (observed once, `jit-context` PR #412, reopened by hand). The validator refuses a
+  body binding a keyword to a number `declines` names.
 - **Write the line while you write the body.** The refusal names the remedy, but it arrives after
   the payload exists, and the repair is then an edit to the body *and* the report rather than one
   line composed once.

@@ -14,5 +14,6 @@ Bash	~gh-pr:[0-9]+:status|gh-branch|gh-job:	sub-manager-hand-polls-ci.md	once
 Bash	~supertool	supertool-answers-can-diverge-from-ground-truth.md	once			
 Bash	~git-diff|supertool[^|;&]*\|[[:space:]]*(head|tail)	supertool-op-discoverability-friction.md	once			
 Bash	~gh-issue-create|gh-pr-create|gh-issue-comment|gh-pr-edit|paste:@|edit:@	supertool-payload-forms.md	once			
+Bash	~rename:	supertool-rename-exit-zero-on-refusal.md	once			
 Bash	~tree_snapshot\.py	tree-snapshot-compare.md	once			
 Bash	~(until|while) |grep -q	waiting-on-a-status-line.md	once			

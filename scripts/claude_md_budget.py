@@ -177,7 +177,49 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # path, raising agents/developer/review.md's own ceiling and this row's
     # weighed sentence. 58495 B became 58794 B, past the 58600 B ceiling.
     # Ceiling moves to 59000 B, ~0.3% headroom.
-    "CLAUDE.md": (58286, 59000),
+    # Re-baselined for #1655: agents/lane-report.md's own row updated (a new
+    # optional pr_body.closes.declines field), plus this row and weighed
+    # sentence. 58286 B became 59518 B, past the 59000 B ceiling. Ceiling
+    # moves to 59700 B, ~0.3% headroom.
+    # Re-baselined for #1649, the third editing exception: agents/doctor.md's own
+    # row and ceiling raised for the on-default branch-protection gate, plus this
+    # row's own rewrites converging on the new size. 58794 B became 58939 B.
+    # Ceiling unchanged; comfortably under it.
+    # Re-baselined again in the same lane's own self-review round: 58939 B became
+    # 59739 B, past the 59000 B ceiling. agents/doctor.md's row and ceiling raised
+    # a second time (a spawned reviewer found the branch-protection instruction
+    # named a function with no runnable invocation, and that a naive import of it
+    # is circular), plus this row's own rewrites converging on the final size.
+    # Ceiling moves to 59900 B, ~0.3% headroom -- the same narrow self-referential
+    # margin every prior raise of this row gives.
+    # Re-baselined a third time in a required second-pass round (fix_commit_scope.py
+    # flagged the self-review fix commit itself): 59739 B became 60338 B, past the
+    # 59900 B ceiling. agents/doctor.md's row and ceiling raised a third time -- an
+    # auditor spawn found the on-default templates hardcoded the literal branch
+    # name `main` rather than the resolved default_branch value -- plus this row's
+    # own rewrites converging on the final size. Ceiling moves to 60500 B, the same
+    # narrow self-referential margin.
+    # Merged: fix/1655 x fix/1649 landed from the same 58794 B base in parallel
+    # lanes -- #1655 raising the ceiling to 59700 B for the lane-report.md field,
+    # #1649 raising it further to 60500 B across three doctor.md rounds. Merging
+    # origin/main into fix/1655 combines both histories; the row is re-measured
+    # against the merged CLAUDE.md rather than added by hand: 62037 B, past the
+    # 60500 B ceiling. Ceiling moves to 62300 B, headroom sized to absorb this
+    # paragraph's own bytes.
+    # Re-baselined for #1656: 61256 B became 62041 B (a new superseded_by_pr
+    # field, and its trail through three budgeted files), past the 62300 B
+    # ceiling was avoided at the time by ~0.7% headroom -- see agents/
+    # sub-manager.md, agents/lane-report.md and skills/manager/phases/
+    # handback.md's own rows for the mechanism. Ceiling raised to 62500 B in
+    # the same lane's own self-review round.
+    # Merged: fix/1656 x fix/1655 (the latter already carrying the fix/1649
+    # merge above). Both chains forked from the same 58286 B base; git's own
+    # merge combined agents/lane-report.md's two additions without a textual
+    # conflict. Re-measured against the actual merged CLAUDE.md rather than
+    # added by hand: 66796 B, past both branches' own ceiling. Ceiling moves
+    # to 67000 B, ~0.25% headroom, sized to absorb this paragraph's own
+    # bytes.
+    "CLAUDE.md": (66796, 67000),
 }
 
 

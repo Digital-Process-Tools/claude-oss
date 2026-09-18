@@ -399,7 +399,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # became 24555 B, naming the same `CURATE:` fact in the itemized prompt
     # checklist `oss:tick-accounting` is spawned with, which a reviewer found
     # still silent about it. Ceiling unchanged; 145 B headroom remains.
-    "agents/sub-manager.md": (24555, 24700),
+    # Raised for #1656: 24555 B became 24757 B, past the 24700 B ceiling by
+    # 57 B. Step 2's own `oss:tick-review` spawn call now folds in any pull
+    # request `skills/manager/phases/handback.md` named from a lane's
+    # `superseded_by_pr` field this tick, so an orphaned pull request a
+    # declining lane found gets reviewed instead of aging unseen. Nothing
+    # already here argued a weaker case for its size, so nothing was cut to
+    # make room; ceiling moved to 25200 B, ~1.8% headroom -- narrower than
+    # the usual ~10% for the same reason every prior raise of this row gives.
+    "agents/sub-manager.md": (24757, 25200),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
@@ -477,7 +485,33 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # reaches disposition 3's `could-not-tell:`). Nothing already in this
     # file argued a weaker case to cut in its place, so the ceiling moves to
     # 8900 B, ~10% headroom.
-    "agents/doctor.md": (8090, 8900),
+    # Re-baselined for #1649: 8090 B became 9061 B. `on-default`'s write-then-
+    # commit path never checked branch protection, and the findings-only run it
+    # already does cannot substitute -- `check_branch_protection` answers OK
+    # when the branch IS protected, and `--findings` suppresses OK lines
+    # (#1455), so the one line that would say "stop" is the one line the
+    # spawn's own diagnostic pass never shows it. Fixed by calling
+    # `branch_protection_state` directly before writing, and adding a
+    # `could-not-repair:` outcome for `protected` / `could-not-tell` so a
+    # commit that cannot land without a bypass push is never reported as
+    # `repaired`.
+    # Re-baselined again in the same lane's own self-review round: 9061 B
+    # became 9946 B. A spawned reviewer found the instruction named a bare
+    # Python function with no runnable invocation a Bash-only spawn could
+    # actually issue, and that a naive `import doctor_check_branch_protection`
+    # is circular (confirmed by running it) -- fixed by adding a literal,
+    # tested `python3 -c` snippet importing `doctor` instead (which
+    # re-exports the name after resolving the circularity). Nothing here
+    # argued for cutting instead; ceiling moves to 10100 B, ~1.5% headroom.
+    # Re-baselined again in a required second-pass round (fix_commit_scope.py
+    # flagged the fix commit itself, touching 3+ files including two
+    # byte-budgeted ones): 9946 B became 10327 B. The auditor spawn found the
+    # two new `could-not-repair:` templates hardcoded the literal branch name
+    # `main` rather than the resolved `default_branch` value, so a scaffolded
+    # repo with a different default branch would get a report misnaming its
+    # own branch -- fixed with a `<default branch>` placeholder and a note on
+    # where the real name comes from. Ceiling moves to 10500 B, ~1.7% headroom.
+    "agents/doctor.md": (10327, 10500),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the
@@ -690,7 +724,24 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # closing-keyword restoration. Ceiling unchanged; comfortably under it.
     # Re-baselined for #1616: 13561 B became 13649 B -- the same "## Trap"
     # trigger line. Ceiling unchanged; comfortably under it.
-    "agents/lane-report.md": (13649, 14300),
+    # Re-baselined for #1656: 13649 B became 14217 B -- "What only the lane
+    # knows" and the field-mapping paragraph both gained a sentence naming
+    # `superseded_by_pr`, the field that makes a declined-in-favour-of-an-
+    # existing-pull-request report actionable rather than ending in prose.
+    # Ceiling unchanged; 83 B headroom (~0.6%), razor-thin -- the next edit
+    # to this file, for any reason, pays for itself or raises the ceiling.
+    #
+    # Re-baselined for #1655: pr_body.closes gains an optional `declines`
+    # array (a lane carrying several issues can close one while genuinely
+    # declining another), plus the "declines" guidance paragraph. 13649 B
+    # became 14194 B. Ceiling unchanged; comfortably under it.
+    #
+    # Merged: fix/1656 x fix/1655 landed from the same 13649 B base in
+    # parallel lanes, each adding its own paragraph to agents/lane-report.md.
+    # Git's own merge combined both without a textual conflict; re-measured
+    # against the merged file rather than added by hand: 14762 B, past both
+    # lanes' own 14300 B ceiling. Ceiling moves to 14900 B, ~1% headroom.
+    "agents/lane-report.md": (14762, 14900),
 }
 
 
