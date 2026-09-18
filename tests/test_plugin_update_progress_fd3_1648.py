@@ -18,14 +18,16 @@ flow around whatever `os.fdopen(3, ...)` answers, not the OS-level fd
 mechanics themselves.
 """
 
-import os
 import sys
+import textwrap
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 import plugin_update  # noqa: E402
+import spawn_guard  # noqa: E402
 
 
 class _FakeWriter:
@@ -133,7 +135,83 @@ def test_fd_3_not_open_is_the_ordinary_case_and_passes_no_progress(monkeypatch):
     assert capture["kwargs"]["progress"] is None
 
 
-def test_fd_3_is_marked_non_inheritable_after_a_real_open_1673(monkeypatch):
+# #1673 self-review (a spawned reviewer, not this lane's own first pass): the
+# first draft of this test did the pipe/dup2-onto-slot-3 dance directly inside
+# the pytest WORKER's own process, restored in a `finally`. Under
+# pytest-xdist on macOS that crashed a worker outright
+# (`INTERNALERROR`/`AssertionError` on `<WorkerController gw0>`) -- xdist
+# holds its own worker-communication file descriptors somewhere near the low
+# end of the table too, and clobbering slot 3 process-wide, even briefly and
+# even restored afterwards, collided with whatever xdist itself had there.
+# `plugin_update.py`'s own contract hardcodes literal fd 3
+# (`os.fdopen(3, ...)` in `main()`, matching `bin/oss-workspace`'s own
+# `exec 3>&1`), so the number itself cannot move to a safer slot without
+# changing what is under test. What CAN move is which process's fd table pays
+# for the exercise: a real child process, spawned fresh for exactly this, has
+# its own fd table from the OS's own fork/exec -- nothing it does to its own
+# slot 3 can reach back into the pytest worker that spawned it, crash or no
+# crash. `spawn_guard.run` (this repo's own `subprocess.run` wrapper -- see
+# `tests/spawn_guard.py`) is used rather than a bare `subprocess.run`, per the
+# guard `tests/test_spawn_guard_716.py` enforces over every spawn under
+# `tests/` that carries a `timeout=`.
+_FD3_CHILD_SCRIPT = textwrap.dedent(
+    """
+    import os
+    import sys
+
+    sys.path.insert(0, sys.argv[1])
+    import plugin_update
+
+    def _fake_update(**kwargs):
+        progress = kwargs.get("progress")
+        if progress is not None:
+            progress("marketplace")
+            progress("marketplace", "ok")
+        return {"state": "current", "plugin": "oss"}
+
+    plugin_update.update = _fake_update
+    plugin_update.write_receipt = lambda document: None
+    plugin_update.read_receipt = lambda: None
+
+    read_fd, write_fd = os.pipe()
+
+    # A freshly spawned python -c child starts with only 0/1/2 open, so
+    # os.pipe() readily hands back (3, 4) as its own two ends -- and this
+    # script is about to force fd 3 to become a dup of write_fd. Left
+    # unguarded, that dup2 would destroy read_fd out from under itself
+    # whenever os.pipe() happened to pick 3 for it (found running this
+    # standalone: "OSError: Bad file descriptor" closing read_fd afterwards,
+    # because fd 3 -- read_fd's own number -- had already been overwritten
+    # and then closed once by the time read_fd's own close ran). Move
+    # either end off slot 3 first if os.pipe() landed there.
+    def _off_fd3(fd):
+        if fd != 3:
+            return fd
+        moved = os.dup(fd)
+        os.close(fd)
+        return moved
+
+    read_fd = _off_fd3(read_fd)
+    write_fd = _off_fd3(write_fd)
+
+    os.set_inheritable(write_fd, True)
+    os.dup2(write_fd, 3, inheritable=True)
+    os.close(write_fd)
+
+    before = os.get_inheritable(3)
+    rc = plugin_update.main(["--root", "."])
+    after = os.get_inheritable(3)
+
+    os.close(3)
+    os.close(read_fd)
+
+    print("RESULT before={} after={} rc={}".format(before, after, rc))
+    sys.exit(0 if (before is True and after is False and rc == 0) else 1)
+    """
+)
+
+
+def test_fd_3_is_marked_non_inheritable_after_a_real_open_1673():
     """#1673: `update()` below fd 3's own successful open spawns real
     `subprocess.run()` calls of its own (`_run()`, once for the marketplace
     refresh, once per plugin/dependency). fd 3 was never opened by THIS
@@ -144,53 +222,40 @@ def test_fd_3_is_marked_non_inheritable_after_a_real_open_1673(monkeypatch):
     `subprocess.run()` calls would hand its own grandchild a live copy of the
     same handle. On Windows this is the documented cause of a runner step
     that outlives the whole test process, cancelled only by the job's own
-    `timeout-minutes` cap -- exactly what PR #1654's `windows-latest`/3.12 leg
-    was observed doing on every run.
+    `timeout-minutes` cap.
 
-    This uses a REAL file descriptor at slot 3 -- a pipe, `dup2`'d on with
-    `inheritable=True` to mirror exactly what a shell's `exec 3>&1` hands a
-    child -- rather than the `os.fdopen` monkeypatch the sibling tests in this
-    file use, because inheritability is precisely the OS-level property a
-    mock cannot exercise. `os.set_inheritable`/`os.get_inheritable` are POSIX
-    *and* Windows primitives (PEP 446), so this is a real, portable assertion
-    about the fix -- not a Windows-only claim. What stays Windows-only and
-    unverified by this test is the actual failure mode itself (a runner step
-    outliving the process): that is a CI-only observation, not something a
-    local run on any one platform can reproduce or disprove; this test only
-    pins that the code takes the narrowing step it is supposed to."""
-    # pytest's own fd-level capture manager may already hold something at slot
-    # 3 (it saves the real stdout/stderr fds at whatever slot `os.dup()`
-    # happens to hand back, and that is frequently the next free low number).
-    # A blind `dup2(..., 3)` with no save/restore was tried first and left
-    # pytest's own teardown crashing with "Bad file descriptor" -- found
-    # running this test standalone, not from reading the pytest source. So
-    # whatever is at 3 before this test touches it is preserved and put back
-    # afterwards, exactly like any other fd this test does not own.
-    try:
-        saved_fd = os.dup(3)
-    except OSError:
-        saved_fd = None
-    read_fd, write_fd = os.pipe()
-    os.set_inheritable(write_fd, True)
-    os.dup2(write_fd, 3, inheritable=True)
-    os.close(write_fd)
-    try:
-        # Positive control: the fd genuinely starts inheritable, exactly as a
-        # shell-handed one would -- so a test that always saw False could not
-        # tell "the fix ran" from "this platform starts fds non-inheritable
-        # anyway".
-        assert os.get_inheritable(3) is True
-        capture = {}
-        _stub_update(monkeypatch, capture)
-        assert plugin_update.main(["--root", "."]) == 0
-        assert os.get_inheritable(3) is False
-    finally:
-        os.close(read_fd)
-        if saved_fd is not None:
-            os.dup2(saved_fd, 3)
-            os.close(saved_fd)
-        else:
-            try:
-                os.close(3)
-            except OSError:
-                pass
+    A CI run of this exact fix (PR #1654, commit 547b4b86) showed the
+    `windows-latest`/3.12 leg STILL cancelling at the same ~30min mark with
+    this fix in place -- so the fd-inheritance theory as the CAUSE of #1673 is
+    refuted, not confirmed, and this test (and the production change it pins)
+    makes no claim about resolving #1673. `os.set_inheritable(3, False)` is
+    still a correct, narrowly-scoped improvement on its own terms regardless:
+    a descriptor this process did not open and does not need its own children
+    to inherit should not be handed to them, independent of whether it turns
+    out to explain the CI hang.
+
+    This spawns a REAL child process (see `_FD3_CHILD_SCRIPT` above) that
+    opens a real pipe, `dup2`'s it onto its OWN fd slot 3 with
+    `inheritable=True` -- mirroring exactly what a shell's `exec 3>&1` hands a
+    child -- and reports what `os.get_inheritable(3)` read before and after
+    `plugin_update.main()` ran. `os.set_inheritable`/`os.get_inheritable` are
+    POSIX *and* Windows primitives (PEP 446), so the property under test is
+    portable even though this file only runs the check on whatever platform
+    collects it. What stays Windows-only and unverified by this test is the
+    actual failure mode #1673 was opened to explain (a runner step outliving
+    the process) -- see the CI result quoted above: that is a CI-only
+    observation nobody has reproduced, on any platform, by any local run."""
+    scripts_dir = str(REPO_ROOT / "scripts")
+    result = spawn_guard.run(
+        [sys.executable, "-c", _FD3_CHILD_SCRIPT, scripts_dir],
+        subject="plugin_update.py's real fd-3 non-inheritance (#1673)",
+        timeout=30,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert "before=True after=False rc=0" in result.stdout, (
+        result.stdout,
+        result.stderr,
+    )
