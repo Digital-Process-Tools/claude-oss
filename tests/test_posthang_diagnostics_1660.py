@@ -27,17 +27,11 @@ def test_pytest_sessionfinish_arms_a_repeating_stack_dump(monkeypatch):
 
     phd.pytest_sessionfinish(session=None, exitstatus=0)
 
+    # `exit=False` is asserted here, on the REAL call tuple, rather than by a
+    # separate source-text search for the substring "exit=False" -- a string
+    # match would also pass if that text sat in a comment or an unreachable
+    # branch, so it is not a substitute for checking what was actually called
+    # with what. `exit=True` would os._exit(1) after dumping -- a diagnostic
+    # that kills the job is worse than the hang it is meant to explain; the
+    # job's own `timeout-minutes` is still the real backstop.
     assert calls == [(phd.POST_SESSION_DUMP_AFTER_SECONDS, True, sys.stderr, False)]
-
-
-def test_it_never_asks_faulthandler_to_exit_the_process():
-    """`exit=True` would os._exit(1) after dumping -- a diagnostic that kills the
-    job is worse than the hang it is meant to explain; the job's own
-    `timeout-minutes` is still the real backstop."""
-    import inspect
-
-    source = inspect.getsource(phd.pytest_sessionfinish)
-    assert "exit=False" in source, (
-        "pytest_sessionfinish must pass exit=False to dump_traceback_later, or "
-        "the diagnostic itself would terminate the process"
-    )
