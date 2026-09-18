@@ -177,7 +177,25 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # path, raising agents/developer/review.md's own ceiling and this row's
     # weighed sentence. 58495 B became 58794 B, past the 58600 B ceiling.
     # Ceiling moves to 59000 B, ~0.3% headroom.
-    "CLAUDE.md": (58286, 59000),
+    # Re-baselined for #1649, the third editing exception: agents/doctor.md's own
+    # row and ceiling raised for the on-default branch-protection gate, plus this
+    # row's own rewrites converging on the new size. 58794 B became 58939 B.
+    # Ceiling unchanged; comfortably under it.
+    # Re-baselined again in the same lane's own self-review round: 58939 B became
+    # 59739 B, past the 59000 B ceiling. agents/doctor.md's row and ceiling raised
+    # a second time (a spawned reviewer found the branch-protection instruction
+    # named a function with no runnable invocation, and that a naive import of it
+    # is circular), plus this row's own rewrites converging on the final size.
+    # Ceiling moves to 59900 B, ~0.3% headroom -- the same narrow self-referential
+    # margin every prior raise of this row gives.
+    # Re-baselined a third time in a required second-pass round (fix_commit_scope.py
+    # flagged the self-review fix commit itself): 59739 B became 60338 B, past the
+    # 59900 B ceiling. agents/doctor.md's row and ceiling raised a third time -- an
+    # auditor spawn found the on-default templates hardcoded the literal branch
+    # name `main` rather than the resolved default_branch value -- plus this row's
+    # own rewrites converging on the final size. Ceiling moves to 60500 B, the same
+    # narrow self-referential margin.
+    "CLAUDE.md": (60338, 60500),
 }
 
 
