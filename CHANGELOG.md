@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-09-18
+
+### Added
+
+- Added `scripts/ci_job_step_timing.py` (#1673): given one CI job id, splits its wall clock
+  into pre-step / step / post-step seconds from GitHub's own per-step timestamps -- the "what
+  would actually settle it" diagnostic #1673 itself asked for, after four occurrences (#1658,
+  #1660, #1671, #1673) of the `pytest (windows-latest, 3.12)` leg being cancelled at its job
+  timeout with neither of this repo's two in-process stack-dump watchdogs ever firing. Walked
+  by hand against two real jobs before this tool existed: the cancelled job (#1654's own PR)
+  breaks down as pre-step 28s / `Run tests` 1777s / post-step 5s against a 1810s job total --
+  almost the entire gap sits inside pytest's own execution window, not before or after it -- and
+  that job's own `test-durations:` summary line (a separate, unrelated pytest-internal report)
+  showed almost identical summed per-test call time to a same-day green run of the same leg
+  (1120.68s vs 1168.75s) despite the `Run tests` step itself running about 5x longer. Neither
+  observation was previously reachable without hand-computing timestamps from a raw `gh api`
+  read.
+
+### Changed
+
+- A developer lane that declines its own issue because it finds an already-open pull request that
+  already implements it can now say so in a way the loop acts on: the report schema (contract 15)
+  gained an optional `superseded_by_pr` field naming that pull request. `skills/manager/phases/handback.md`
+  folds a report carrying this field into the current tick's own review set, so the superseding pull
+  request gets reviewed instead of aging unseen after every future tick declines the same issue
+  again (#1656).
+
+### Fixed
+
+- Fixed the scaffolded `changelog-fragments.md` jit-context rule mixing an indented
+  code block with a fenced one, which tripped markdownlint's MD046 ("consistent
+  code block style") in downstream repos that lint their own tracked markdown
+  (#1647). The removed-compatibility example now renders fenced, matching the
+  check-command block below it, so a fresh `/oss:scaffold --apply` no longer
+  reintroduces the finding.
+
+- `oss:doctor`'s `on-default` write-then-commit path never checked whether the default branch was
+  actually protected before committing onto it -- a repo requiring pull-request review can only
+  receive that commit through a branch-protection bypass push. Its own `--findings` run could not
+  have caught this either: the branch-protection check reports `OK` when a branch IS protected,
+  and `--findings` suppresses `OK` lines, so the one line saying "stop" was exactly the line the
+  spawn's own diagnostic pass never showed it. `on-default` now runs `branch_protection_state`
+  directly before writing anything (a literal, tested `python3 -c` invocation, since the function
+  has no CLI wrapper), and reports `could-not-repair: <default branch> is protected -- <detail>`
+  (or the `could-not-tell` equivalent) instead of writing then committing when the branch is
+  protected or its protection state cannot be confirmed (#1649).
+- `/oss:run`'s step 1 `oss:doctor` spawn and `/oss:doctor`'s own re-chase spawn now both pin
+  `run_in_background: false`, the two bare `Agent(...)` calls `#1586`'s own fix did not reach
+  (#1649).
+
+- A lane report's `pr_body.closes` gains an optional `declines` array (schema v15) so a lane
+  carrying several issues can close one while genuinely declining another in the same pull request.
+  Previously the contract had only one whole-body disposition, so a body that argued in bold it did
+  not close an issue and then bound a `Closes #N` keyword to it four lines later validated clean and
+  GitHub closed the issue anyway on merge -- reopened by hand. The validator now refuses a body that
+  binds a closing keyword to any number `declines` names, and refuses a report naming the same issue
+  in both `closes.issues` and `closes.declines` (#1655).
+
+- The CI pytest job's post-session hang diagnostic (`tests/posthang_diagnostics_1660.py`), added
+  after two prior cancellations of the `pytest (windows-latest, 3.12)` leg, was itself scheduled to
+  fire too late to ever run: a third cancellation (job #105442284149) printed its summary line only
+  ~26.9s before the job's own 30-minute cap, but the diagnostic's 60-second delay meant its first
+  dump was scheduled 33s AFTER that cap would already have killed the process -- explaining why no
+  `faulthandler` output ever appeared in that job's log. Lowered to 15 seconds, with a new test
+  (`tests/test_posthang_diagnostics_1660.py::test_dump_delay_fits_inside_the_jobs_own_margin`) that
+  ties the delay to the job's own measured margin so this cannot silently break again. The job's own
+  `timeout-minutes` is left at 30 rather than raised a third time, since the suite's own reported
+  runtime growth (873s -> 1176.55s -> 1773.10s) has tracked each prior raise closely enough that
+  another raise is not expected to hold either (#1660).
+
+- The CI pytest job's post-session hang diagnostic (`tests/posthang_diagnostics_1660.py`) only
+  ever armed its stack-dump timer relative to when a process finished ITS OWN session
+  (`pytest_sessionfinish`), which is process-agnostic and fires for every worker and the
+  controller alike -- but a controller stuck somewhere earlier (still dispatching work, still
+  collecting worker reports, or in its own shutdown sequence) never reaches that hook at all. A
+  2026-09-18 recurrence (job #105500444279) showed exactly that: both `-n auto` worker processes
+  dumping, idle, waiting on the controller, and no controller dump anywhere in the same log. Added
+  a second, controller-only watchdog armed at `pytest_configure` (process start, guarded off via a
+  `workerinput`-based `_is_xdist_worker` check so a worker does not get a redundant early timer on
+  top of its own sessionfinish-based one), calibrated against pytest's own self-reported worst-case
+  runtime rather than the job's wall clock -- since `pytest_configure` fires after the job's own
+  checkout/setup-python/install steps have already run, its real margin against the job's own
+  30-minute `timeout-minutes` cap is smaller and less certain than the worker-side timer's own, and
+  that gap is accepted and documented rather than hidden (see the constant's own comment in
+  `tests/posthang_diagnostics_1660.py`). The cap itself is left unraised: the maintainer's own
+  review of this issue's data showed reported suite runtime tracking the cap minus a near-constant
+  margin across four different cap values, which is the signature of a hang being killed by the
+  cap, not a suite that legitimately needs more time (#1671).
+
 ## [0.39.0] - 2026-09-18
 
 ### Added
@@ -12115,7 +12204,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.40.0
 [0.39.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.39.0
 [0.38.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.38.0
 [0.37.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.37.1

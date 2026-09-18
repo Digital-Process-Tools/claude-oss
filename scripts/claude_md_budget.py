@@ -219,7 +219,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # added by hand: 66796 B, past both branches' own ceiling. Ceiling moves
     # to 67000 B, ~0.25% headroom, sized to absorb this paragraph's own
     # bytes.
-    "CLAUDE.md": (66796, 67000),
+    # Re-baselined at the v0.40.0 release, the release session's own first
+    # exception: the "What is not proven yet" marker rewritten inside this
+    # release commit -- a new delta range whose cross-check disagreement was
+    # resolved and named, gate 3 needing only one round this time (0
+    # findings, versus seven across two rounds last release), a re-derived
+    # gate-1 leg count, and two new paragraphs (gate 2's parked-PR reading,
+    # re-derived rather than taken on trust; the checklist-skew annotation)
+    # -- plus this row's own rewrites converging on the final size.
+    "CLAUDE.md": (68784, 69000),
 }
 
 

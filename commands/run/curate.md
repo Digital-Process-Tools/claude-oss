@@ -3,6 +3,29 @@ description: Curate the traps logged in trap.d/ into jit-context rules — promo
 allowed-tools: Bash
 ---
 
+## Work in a worktree, never the primary clone
+
+**Cut and work inside your own worktree before reading anything.** A tick can be live in the
+primary clone at the same time this pass runs, and a pass that reads or writes there directly is
+indistinguishable, from that tick's own `tree_snapshot.py` before/after pair, from an unexplained
+mutation -- confirmed on #1670: this pass promoted a fragment into a jit-context rule and deleted
+it as part of that promotion while the clone sat checked out on this pass's own branch, and a
+concurrent tick's snapshot compare reported the change as a mutation it did not cause.
+
+Read `worktree_root` and `clone` the same way a developer lane does -- `.oss.json`'s tracked
+config plus the git-excluded `.oss.local.json` beside it -- then, with `<UTC timestamp>` in the
+same `YYYYMMDDTHHMMSSZ` form `agents/developer.md` and `agents/lane-report.md` already pin
+(a colon in the bare form is illegal in a git ref and in a Windows path):
+
+```bash
+cd <clone> && git fetch -q origin
+git worktree add <worktree_root>/curate-<UTC timestamp, YYYYMMDDTHHMMSSZ> -b curate/<UTC timestamp, YYYYMMDDTHHMMSSZ> origin/<default_branch>
+cd <worktree_root>/curate-<UTC timestamp, YYYYMMDDTHHMMSSZ>
+```
+
+Run every step below from inside that worktree. Never check out this pass's branch, and never
+write a jit-context file, a `00-README.md` line or anything else, in the primary clone.
+
 Read what is waiting:
 
 ```bash
