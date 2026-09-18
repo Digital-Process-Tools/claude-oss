@@ -1074,6 +1074,30 @@ def main(argv=None):
         progress_writer = os.fdopen(3, "w", closefd=False)
     except OSError:
         progress_writer = None
+    else:
+        # #1673: `update()` below, once this succeeds, spawns several of its own
+        # `subprocess.run()` calls (marketplace refresh, the loop plugin, each
+        # declared dependency, all via `_run()`). fd 3 itself was never opened by
+        # THIS process -- it arrived already-open, inherited straight across the
+        # `exec 3>&1` in `bin/oss-workspace`'s own shell -- so PEP 446's
+        # non-inheritable-by-default only covers descriptors Python itself
+        # creates; it does not touch this one. Left alone, every child
+        # `subprocess.run()` call below would hand its own grandchild a live
+        # copy of the same handle. On Windows this is the documented cause of a
+        # runner step that will not end after the whole test process has
+        # already exited and every test has already passed -- exactly what
+        # PR #1654's own `windows-latest`/3.12 leg was observed doing, cancelled
+        # at ~29.5 minutes by the job's own `timeout-minutes` cap, on every run
+        # (#1673). `set_inheritable` is a POSIX+Windows primitive (PEP 446) and
+        # only narrows what THIS process's own children inherit; it does not
+        # affect this process's own ability to keep writing to fd 3, so a
+        # failure here changes nothing about the progress stream itself -- it
+        # is wrapped defensively because the fd could, in principle, already be
+        # invalid by the time this runs.
+        try:
+            os.set_inheritable(3, False)
+        except OSError:
+            pass
 
     # `bin/oss-workspace`'s own `oss_step_begin plugin "checking"` call leaves a
     # dangling, no-newline "checking..." mark on the terminal, normally

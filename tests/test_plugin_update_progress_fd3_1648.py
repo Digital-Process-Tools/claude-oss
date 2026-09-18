@@ -18,6 +18,7 @@ flow around whatever `os.fdopen(3, ...)` answers, not the OS-level fd
 mechanics themselves.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -130,3 +131,66 @@ def test_fd_3_not_open_is_the_ordinary_case_and_passes_no_progress(monkeypatch):
     _stub_update(monkeypatch, capture)
     assert plugin_update.main(["--root", "."]) == 0
     assert capture["kwargs"]["progress"] is None
+
+
+def test_fd_3_is_marked_non_inheritable_after_a_real_open_1673(monkeypatch):
+    """#1673: `update()` below fd 3's own successful open spawns real
+    `subprocess.run()` calls of its own (`_run()`, once for the marketplace
+    refresh, once per plugin/dependency). fd 3 was never opened by THIS
+    process -- it arrives already-open, inherited straight across
+    `bin/oss-workspace`'s own `exec 3>&1` -- so PEP 446's
+    non-inheritable-by-default (which covers only descriptors Python itself
+    creates) does not apply to it, and left alone every one of those child
+    `subprocess.run()` calls would hand its own grandchild a live copy of the
+    same handle. On Windows this is the documented cause of a runner step
+    that outlives the whole test process, cancelled only by the job's own
+    `timeout-minutes` cap -- exactly what PR #1654's `windows-latest`/3.12 leg
+    was observed doing on every run.
+
+    This uses a REAL file descriptor at slot 3 -- a pipe, `dup2`'d on with
+    `inheritable=True` to mirror exactly what a shell's `exec 3>&1` hands a
+    child -- rather than the `os.fdopen` monkeypatch the sibling tests in this
+    file use, because inheritability is precisely the OS-level property a
+    mock cannot exercise. `os.set_inheritable`/`os.get_inheritable` are POSIX
+    *and* Windows primitives (PEP 446), so this is a real, portable assertion
+    about the fix -- not a Windows-only claim. What stays Windows-only and
+    unverified by this test is the actual failure mode itself (a runner step
+    outliving the process): that is a CI-only observation, not something a
+    local run on any one platform can reproduce or disprove; this test only
+    pins that the code takes the narrowing step it is supposed to."""
+    # pytest's own fd-level capture manager may already hold something at slot
+    # 3 (it saves the real stdout/stderr fds at whatever slot `os.dup()`
+    # happens to hand back, and that is frequently the next free low number).
+    # A blind `dup2(..., 3)` with no save/restore was tried first and left
+    # pytest's own teardown crashing with "Bad file descriptor" -- found
+    # running this test standalone, not from reading the pytest source. So
+    # whatever is at 3 before this test touches it is preserved and put back
+    # afterwards, exactly like any other fd this test does not own.
+    try:
+        saved_fd = os.dup(3)
+    except OSError:
+        saved_fd = None
+    read_fd, write_fd = os.pipe()
+    os.set_inheritable(write_fd, True)
+    os.dup2(write_fd, 3, inheritable=True)
+    os.close(write_fd)
+    try:
+        # Positive control: the fd genuinely starts inheritable, exactly as a
+        # shell-handed one would -- so a test that always saw False could not
+        # tell "the fix ran" from "this platform starts fds non-inheritable
+        # anyway".
+        assert os.get_inheritable(3) is True
+        capture = {}
+        _stub_update(monkeypatch, capture)
+        assert plugin_update.main(["--root", "."]) == 0
+        assert os.get_inheritable(3) is False
+    finally:
+        os.close(read_fd)
+        if saved_fd is not None:
+            os.dup2(saved_fd, 3)
+            os.close(saved_fd)
+        else:
+            try:
+                os.close(3)
+            except OSError:
+                pass
