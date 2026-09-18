@@ -716,7 +716,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # closing-keyword restoration. Ceiling unchanged; comfortably under it.
     # Re-baselined for #1616: 13561 B became 13649 B -- the same "## Trap"
     # trigger line. Ceiling unchanged; comfortably under it.
-    "agents/lane-report.md": (13649, 14300),
+    # Re-baselined for #1655: pr_body.closes gains an optional `declines`
+    # array (a lane carrying several issues can close one while genuinely
+    # declining another), plus the "declines" guidance paragraph. 13649 B
+    # became 14194 B. Ceiling unchanged; comfortably under it.
+    "agents/lane-report.md": (14194, 14300),
 }
 
 

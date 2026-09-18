@@ -177,6 +177,10 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # path, raising agents/developer/review.md's own ceiling and this row's
     # weighed sentence. 58495 B became 58794 B, past the 58600 B ceiling.
     # Ceiling moves to 59000 B, ~0.3% headroom.
+    # Re-baselined for #1655: agents/lane-report.md's own row updated (a new
+    # optional pr_body.closes.declines field), plus this row and weighed
+    # sentence. 58286 B became 59518 B, past the 59000 B ceiling. Ceiling
+    # moves to 59700 B, ~0.3% headroom.
     # Re-baselined for #1649, the third editing exception: agents/doctor.md's own
     # row and ceiling raised for the on-default branch-protection gate, plus this
     # row's own rewrites converging on the new size. 58794 B became 58939 B.
@@ -195,7 +199,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # name `main` rather than the resolved default_branch value -- plus this row's
     # own rewrites converging on the final size. Ceiling moves to 60500 B, the same
     # narrow self-referential margin.
-    "CLAUDE.md": (60338, 60500),
+    # Merged: fix/1655 x fix/1649 landed from the same 58794 B base in parallel
+    # lanes -- #1655 raising the ceiling to 59700 B for the lane-report.md field,
+    # #1649 raising it further to 60500 B across three doctor.md rounds. Merging
+    # origin/main into fix/1655 combines both histories; the row is re-measured
+    # against the merged CLAUDE.md rather than added by hand: 62037 B, past the
+    # 60500 B ceiling. Ceiling moves to 62300 B, headroom sized to absorb this
+    # paragraph's own bytes.
+    "CLAUDE.md": (62037, 62300),
 }
 
 
