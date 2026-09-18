@@ -77,6 +77,16 @@ than only its post-summary teardown -- REASONED to close the gap the
 controller-side hang, since no recurrence has been measured since this
 was added.
 
+Caught in this same diff's own self-review, so recorded rather than left
+implicit: `pytest_configure` fires when the pytest PROCESS starts, which
+is not the same point in the JOB's own wall clock as the job's own start
+-- `timeout-minutes` counts from there, and checkout/setup-python/install
+all happen, as separate steps, before pytest ever runs. This timer's own
+constant (`CONTROLLER_DUMP_AFTER_SECONDS` below) is calibrated against
+pytest's OWN internal clock, not the job's, so its real margin against the
+job's cap is NOT the comfortable one an earlier draft of this docstring
+claimed -- see that constant's own comment for the honest accounting.
+
 Python 3.9 compatible (`faulthandler.dump_traceback_later` has shipped since 3.3).
 """
 
@@ -127,22 +137,43 @@ def pytest_sessionfinish(session, exitstatus):
 #: `pytest_sessionfinish`) before its own first stack dump fires, repeating
 #: at the same interval until the process actually exits.
 #:
-#: Chosen to land at roughly the same ABSOLUTE point in the job's wall clock
-#: that the worker-side POST_SESSION_DUMP_AFTER_SECONDS timer targets:
-#: OBSERVED_WORST_CASE_SUITE_MINUTES (1773.10s, `tests/test_pytest_leg_timeout_1658.py`)
-#: plus POST_SESSION_DUMP_AFTER_SECONDS (15s) is ~1788s, comfortably above
-#: how long an ordinary green run's controller process is reasoned to stay
-#: alive (so a normal run does not spuriously dump) and comfortably below
-#: the job's own 30-minute (1800s) `timeout-minutes` cap (so the timer gets
-#: a real chance to fire before that cap kills the process, the exact
-#: failure #1660's own original 60s choice suffered). Hand-maintained, same
-#: as POST_SESSION_DUMP_AFTER_SECONDS above and for the same reason: this is
-#: not read from a live CI measurement, and
+#: NOT the same absolute point in the job's wall clock that the worker-side
+#: POST_SESSION_DUMP_AFTER_SECONDS timer targets -- an earlier draft of this
+#: comment claimed that and was wrong, caught in this diff's own self-review.
+#: `pytest_configure` fires when the `pytest` PROCESS starts, which is
+#: already some way into the JOB's own wall clock: `timeout-minutes` counts
+#: from job start, and `actions/checkout` / `actions/setup-python` / the
+#: dependency install all run, as separate steps, BEFORE the "Run tests"
+#: step ever invokes pytest. OBSERVED_WORST_CASE_SUITE_MINUTES (1773.10s,
+#: `tests/test_pytest_leg_timeout_1658.py`) is pytest's OWN self-reported
+#: elapsed time -- i.e. measured from close to this same `pytest_configure`
+#: to `pytest_sessionfinish` -- so the ~26.9s gap between that figure and the
+#: job's 1800s cap is the TOTAL slack left over for everything pytest's own
+#: clock does not cover: checkout/setup/install BEFORE pytest starts, and
+#: teardown/cancellation-handling AFTER it finishes, combined. How that ~27s
+#: splits between the two halves is NOT measured. This constant therefore
+#: carries a real, unquantified risk this diagnostic accepts rather than
+#: hides: if checkout+setup+install alone take longer than
+#: `1800 - CONTROLLER_DUMP_AFTER_SECONDS` seconds, this timer fires AFTER
+#: the job's own cap has already killed the process, reproducing -- for the
+#: controller specifically -- the exact "diagnostic mathematically incapable
+#: of firing" failure #1660's own original 60s choice suffered for the
+#: worker-side timer. Set close to OBSERVED_WORST_CASE_SUITE_MINUTES*60
+#: (only +7s, deliberately smaller than POST_SESSION_DUMP_AFTER_SECONDS's
+#: own +15s) specifically to leave as much of that ~27s of total slack as
+#: possible for the unmeasured pre-pytest half, at the cost of a smaller
+#: buffer above a normal green run's own worst-case duration (so a stray
+#: controller dump on an ordinary run is a somewhat more real possibility
+#: here than on the worker-side timer -- the same class of accepted
+#: tradeoff POST_SESSION_DUMP_AFTER_SECONDS's own comment already names for
+#: itself). Hand-maintained, same as POST_SESSION_DUMP_AFTER_SECONDS above
+#: and for the same reason: not read from a live CI measurement, and
 #: `test_controller_dump_delay_fits_inside_the_jobs_own_margin` in
 #: `tests/test_posthang_diagnostics_1660.py` only catches this value going
 #: stale against whatever the two constants it is derived from currently
-#: say, not an independent measurement of the controller's own real margin.
-CONTROLLER_DUMP_AFTER_SECONDS = 1788
+#: say -- it cannot measure, and does not claim to measure, the real
+#: pre-pytest overhead this constant is silent about.
+CONTROLLER_DUMP_AFTER_SECONDS = 1780
 
 
 def _is_xdist_worker(config):

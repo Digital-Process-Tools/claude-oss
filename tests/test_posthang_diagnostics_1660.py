@@ -112,6 +112,16 @@ def test_controller_dump_delay_fits_inside_the_jobs_own_margin():
     either never gets a chance to dump (killed by the cap first, #1660's own
     original bug) or fires spuriously on every green run (armed tighter than
     the suite itself normally takes).
+
+    What this does NOT do, matching `test_dump_delay_fits_inside_the_jobs_own_margin`'s
+    own caveat above: it compares CONTROLLER_DUMP_AFTER_SECONDS against pytest's OWN
+    self-reported worst-case runtime and the job's stated cap, both HAND-MAINTAINED
+    constants read from source rather than measured live. It does not call
+    `phd.pytest_configure` (the two tests above this one already exercise that
+    directly) and it cannot see the one thing this timer's own margin actually depends
+    on and this file's docstring is explicit about being unmeasured: how much of the
+    job's own wall clock is spent on checkout/setup-python/install BEFORE pytest ever
+    starts, which is time `pytest_configure`'s own clock never sees at all.
     """
     job = _pytest_job()
     cap_minutes = job.get("timeout-minutes")
