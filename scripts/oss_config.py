@@ -2731,6 +2731,23 @@ def build(probe):
         # traps from one tick does not fire the route on every launch, small enough
         # that a backlog cannot silently regrow to 49+ before something notices.
         "curate_route_threshold": 15,
+        # #1676: the triage twin of the line above, on the same precedent and for the
+        # same reason -- `OPTIONAL_KEYS` recognised this key since #1155, nothing wrote
+        # it, and the label-coverage triage route was off by default in every repo this
+        # plugin onboarded, reporting `not-due` rather than `unconfigured` until #1651
+        # gave doctor a line for it. The number is NOT 15, and the difference is the
+        # whole argument: a trap.d/ fragment is inert while it waits, so curate batches
+        # them; an unlabelled issue is invisible to dispatch for exactly as long as it
+        # stays unlabelled (`select_issues_rank.rank` refuses to rank without a
+        # priority label), so there is no backlog size at which waiting is correct.
+        # `workspace_routes._count_state` fires on `count > threshold`, so 0 means the
+        # first unlabelled issue makes a sweep due. Cost is bounded by how often
+        # `/oss:run` polls, not by issue count: one triager spawn labels the whole
+        # backlog, `next_action.py`'s signature receipt stops the same count from
+        # re-firing, and `DEFAULT_ORDER` ranks triage last so it never displaces
+        # inbound, release or curate. `tests/test_triage_route_default_1676.py` pins
+        # the 0 and says why, so a raise has to argue against that docstring.
+        "triage_route_threshold": 0,
     }
 
 

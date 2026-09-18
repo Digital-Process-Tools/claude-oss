@@ -83,6 +83,14 @@ def test_written_threshold_actually_arms_the_curate_route(monkeypatch):
     own OVER state), and a count at the threshold must not (`UNDER`)."""
     config = oss_config.build(_probe())
     threshold = config["curate_route_threshold"]
+    # #1676: build() now writes triage_route_threshold too, so decide() would
+    # otherwise call the real triage_count against a fake repo slug. Pin it
+    # UNDER so this test stays about curate and makes no forge call.
+    monkeypatch.setattr(
+        workspace_routes,
+        "triage_count",
+        lambda repo, gh, run, timeout=25: (0, "fixture: triage pinned under"),
+    )
 
     monkeypatch.setattr(
         workspace_routes,
