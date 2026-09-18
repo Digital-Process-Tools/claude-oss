@@ -170,7 +170,7 @@ def test_the_marketplace_refresh_is_narrowed_to_the_manifests_own_marketplace_16
         {
             "oss@dpt": _installed(tmp_path, "9.9.9"),
             "remember@dpt": _installed(tmp_path, "9.21.0"),
-            "supertool@dpt": _installed(tmp_path, "0.40.0"),
+            "supertool@dpt": _installed(tmp_path, "8.8.8"),
         },
     )
     runner = _Runner()
