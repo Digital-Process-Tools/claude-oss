@@ -188,7 +188,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # is circular), plus this row's own rewrites converging on the final size.
     # Ceiling moves to 59900 B, ~0.3% headroom -- the same narrow self-referential
     # margin every prior raise of this row gives.
-    "CLAUDE.md": (59739, 59900),
+    # Re-baselined a third time in a required second-pass round (fix_commit_scope.py
+    # flagged the self-review fix commit itself): 59739 B became 60338 B, past the
+    # 59900 B ceiling. agents/doctor.md's row and ceiling raised a third time -- an
+    # auditor spawn found the on-default templates hardcoded the literal branch
+    # name `main` rather than the resolved default_branch value -- plus this row's
+    # own rewrites converging on the final size. Ceiling moves to 60500 B, the same
+    # narrow self-referential margin.
+    "CLAUDE.md": (60338, 60500),
 }
 
 

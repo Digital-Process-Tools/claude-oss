@@ -495,7 +495,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # tested `python3 -c` snippet importing `doctor` instead (which
     # re-exports the name after resolving the circularity). Nothing here
     # argued for cutting instead; ceiling moves to 10100 B, ~1.5% headroom.
-    "agents/doctor.md": (9946, 10100),
+    # Re-baselined again in a required second-pass round (fix_commit_scope.py
+    # flagged the fix commit itself, touching 3+ files including two
+    # byte-budgeted ones): 9946 B became 10327 B. The auditor spawn found the
+    # two new `could-not-repair:` templates hardcoded the literal branch name
+    # `main` rather than the resolved `default_branch` value, so a scaffolded
+    # repo with a different default branch would get a report misnaming its
+    # own branch -- fixed with a `<default branch>` placeholder and a note on
+    # where the real name comes from. Ceiling moves to 10500 B, ~1.7% headroom.
+    "agents/doctor.md": (10327, 10500),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the

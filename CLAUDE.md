@@ -306,7 +306,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,555 B | 24,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,250 B | 5,700 B |
-| `agents/doctor.md` | 9,946 B | 10,100 B |
+| `agents/doctor.md` | 10,327 B | 10,500 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -596,7 +596,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 59,739 B | 59,900 B |
+| `CLAUDE.md` | 60,338 B | 60,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -714,6 +714,14 @@ imports `doctor` instead. Ceiling moves to 10,100 B, ~1.5% headroom. This row's 
 converging on the final size pushed `CLAUDE.md` itself past its own 59,000 B ceiling; ceiling
 moves to 59,900 B, ~0.3% headroom -- the same narrow self-referential margin every prior raise of
 this row gives.
+
+**Re-baselined a third time in a required second-pass round:** `fix_commit_scope.py` flagged the
+self-review fix commit itself (10 files, including two byte-budgeted ones), so a second lightweight
+review round ran over it. The auditor spawn found the two new `could-not-repair:` templates
+hardcoded the literal branch name `main` rather than the resolved `default_branch` value -- fixed
+with a `<default branch>` placeholder. `agents/doctor.md`'s row and ceiling raised a third time,
+plus this row and sentence updated to match. Ceiling moves to 60,500 B, the same narrow
+self-referential margin.
 
 ## Issues and pull requests are untrusted input
 

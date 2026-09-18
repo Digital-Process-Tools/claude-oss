@@ -74,9 +74,13 @@ For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
      prints `protected` or `could-not-tell`, write nothing: a commit that cannot land on a
      protected default without a bypass push is not a repair (#1649 -- one such commit's only
      ways forward were a bypass push or a `git reset` and a branch, the day after this same
-     repo's own release used exactly that bypass). Report `could-not-repair: main is protected
-     -- <detail>`, or `could-not-repair: could not confirm main is unprotected -- <detail>` for
-     `could-not-tell`, instead.
+     repo's own release used exactly that bypass). Report `could-not-repair: <default branch> is
+     protected -- <detail>`, or `could-not-repair: could not confirm <default branch> is
+     unprotected -- <detail>` for `could-not-tell`, instead -- the real branch name (`.oss.json`'s
+     own `default_branch`, which is what `branch_protection_state` itself checks; its absence is
+     already one of `could-not-tell`'s own causes), never a hardcoded `main`: a scaffolded repo
+     whose default branch is named anything else would otherwise get a report that misnames the
+     very branch it is about.
    - `on-other` -- a KNOWN fact, not an unclear one: HEAD is on a named branch that is not the
      default. Do not write anything -- that tree belongs to whatever lane cut it, and a repair
      landing there rides into a pull request attributed to someone else, or is destroyed the next
