@@ -44,6 +44,14 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="#1673 diagnostic: temporarily deselecting a test file PR #1654 "
+    "added, to test whether it leaks a process holding the windows-latest/3.12 "
+    "job's output handle open. Revert before merge."
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
