@@ -28,12 +28,6 @@ sys.path.insert(0, str(REPO_ROOT / "tests"))
 
 import shell_probe  # noqa: E402
 
-pytestmark = pytest.mark.skip(
-    reason="#1673 diagnostic: temporarily deselecting a test file PR #1654 "
-    "added, to test whether it leaks a process holding the windows-latest/3.12 "
-    "job's output handle open. Revert before merge."
-)
-
 LAUNCHER = REPO_ROOT / "bin" / "oss-workspace"
 
 _ATTEMPTS = shell_probe.attempts([LAUNCHER, Path(sys.executable)])
