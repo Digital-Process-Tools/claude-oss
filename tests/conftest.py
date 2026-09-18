@@ -18,6 +18,10 @@ Registers pytest plugins for the whole suite:
   docstring for the two design decisions (read-only, controller-only) and
   why it is scoped narrower than the issue's own harder "any shared path"
   ask.
+- `posthang_diagnostics_1660`, a periodic thread-stack dump armed once a
+  session finishes -- #1660. See that module's docstring for why the
+  `pytest (windows-latest, 3.12)` leg needed one and why it is silent on
+  every normal run.
 
 `collect_ignore_glob` excludes the throwaway scratch directories
 `tests/test_durations_recorded_881.py` and `tests/test_duration_report_
@@ -51,6 +55,7 @@ pytest_plugins = [
     "must_assert_plugin",
     "duration_report_plugin",
     "root_scratch_guard",
+    "posthang_diagnostics_1660",
 ]
 
 collect_ignore_glob = ["_durprobe_*"]
