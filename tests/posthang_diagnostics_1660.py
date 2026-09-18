@@ -54,6 +54,29 @@ Registered as a pytest plugin via `pytest_plugins` in the top-level
 `tests/conftest.py`, matching `must_assert_plugin`/`duration_report_plugin`/
 `root_scratch_guard`'s own registration shape in that same file.
 
+#1671's own addition: `pytest_sessionfinish` above fires in every process
+that loads this plugin, worker and controller alike, but a worker's dump
+only ever reaches the job's own captured log via xdist's own forwarding of
+that worker's `stderr` over its execnet channel, while the controller
+writes to that log directly. The 2026-09-18 recurrence (job
+#105500444279) showed both `-n auto` WORKER processes dumping identically
+and repeatedly, idle in `gateway_base.py:534 read`, waiting on the
+controller to send them either a test or a shutdown -- and NO controller
+dump anywhere in that same 1414-line log. If the controller is what is
+actually stuck, and stuck somewhere OTHER than its own post-summary
+`pytest_sessionfinish` teardown -- e.g. still dispatching work, still
+collecting worker reports, or in its own shutdown sequence -- the
+sessionfinish-armed timer above never gets a chance to run there at all:
+it only arms once the controller itself reaches that hook, and a
+controller wedged before reaching it leaves no diagnostic of its own in
+the log, exactly what was observed. `pytest_configure` below arms a
+SECOND, controller-only timer at process start instead of at session
+finish, so the watchdog covers the controller's entire lifetime rather
+than only its post-summary teardown -- REASONED to close the gap the
+2026-09-18 recurrence's log showed, NOT yet observed to actually catch a
+controller-side hang, since no recurrence has been measured since this
+was added.
+
 Python 3.9 compatible (`faulthandler.dump_traceback_later` has shipped since 3.3).
 """
 
@@ -97,4 +120,70 @@ def pytest_sessionfinish(session, exitstatus):
     lets it fire, so an ordinary run is untouched."""
     faulthandler.dump_traceback_later(
         POST_SESSION_DUMP_AFTER_SECONDS, repeat=True, file=sys.stderr, exit=False
+    )
+
+
+#: Seconds after the CONTROLLER process starts (`pytest_configure`, not
+#: `pytest_sessionfinish`) before its own first stack dump fires, repeating
+#: at the same interval until the process actually exits.
+#:
+#: Chosen to land at roughly the same ABSOLUTE point in the job's wall clock
+#: that the worker-side POST_SESSION_DUMP_AFTER_SECONDS timer targets:
+#: OBSERVED_WORST_CASE_SUITE_MINUTES (1773.10s, `tests/test_pytest_leg_timeout_1658.py`)
+#: plus POST_SESSION_DUMP_AFTER_SECONDS (15s) is ~1788s, comfortably above
+#: how long an ordinary green run's controller process is reasoned to stay
+#: alive (so a normal run does not spuriously dump) and comfortably below
+#: the job's own 30-minute (1800s) `timeout-minutes` cap (so the timer gets
+#: a real chance to fire before that cap kills the process, the exact
+#: failure #1660's own original 60s choice suffered). Hand-maintained, same
+#: as POST_SESSION_DUMP_AFTER_SECONDS above and for the same reason: this is
+#: not read from a live CI measurement, and
+#: `test_controller_dump_delay_fits_inside_the_jobs_own_margin` in
+#: `tests/test_posthang_diagnostics_1660.py` only catches this value going
+#: stale against whatever the two constants it is derived from currently
+#: say, not an independent measurement of the controller's own real margin.
+CONTROLLER_DUMP_AFTER_SECONDS = 1788
+
+
+def _is_xdist_worker(config):
+    """True inside a worker's own process config, never inside the controller's.
+
+    Mirrors `tests/root_scratch_guard.py`'s own `_is_xdist_worker` (there
+    keyed off `session.config`; here off `config` directly, since
+    `pytest_configure` receives the config itself, not a session) -- xdist
+    sets `workerinput` only on a worker's own `Config`, never on the
+    controller's and never on a plain non-xdist run's, so this needs no
+    import of `xdist` itself (which may not even be installed when this
+    suite runs without `-n auto`, e.g. a contributor's own
+    `python3 -m pytest tests/ -q`).
+    """
+    return getattr(config, "workerinput", None) is not None
+
+
+def pytest_configure(config):
+    """Arm a second, controller-only watchdog at process start (#1671).
+
+    `pytest_sessionfinish` above fires in every process that loads this
+    plugin, but it only ARMS once that process reaches its own session
+    finish -- a controller wedged somewhere earlier (still dispatching
+    work, still collecting worker reports, or its own shutdown sequence)
+    never reaches that hook at all, so the sessionfinish-based timer alone
+    would leave that controller with no diagnostic of its own in the log,
+    which is exactly what the 2026-09-18 recurrence's log showed: both
+    workers dumping, idle, waiting on the controller; no controller dump
+    anywhere. Arming here instead starts the clock at process start,
+    covering the controller's entire lifetime rather than only its
+    post-summary teardown.
+
+    Controller-only, deliberately: a worker already gets its own watchdog
+    from `pytest_sessionfinish`, armed relative to when IT finishes, which
+    is what matters for a worker since a worker's whole life is running
+    tests. Arming this same early, coarse timer in every worker too would
+    add CONTROLLER_DUMP_AFTER_SECONDS-scale redundant timers there for no
+    diagnostic gain the sessionfinish-based one does not already give.
+    """
+    if _is_xdist_worker(config):
+        return
+    faulthandler.dump_traceback_later(
+        CONTROLLER_DUMP_AFTER_SECONDS, repeat=True, file=sys.stderr, exit=False
     )
