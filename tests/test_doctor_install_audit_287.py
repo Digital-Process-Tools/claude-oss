@@ -173,14 +173,14 @@ def test_dependency_resolution_state_shape_is_stable_across_machines(tmp_path):
 def test_an_active_dependency_with_no_readable_manifest_is_contract_unknown(tmp_path):
     record = tmp_path / "installed_plugins.json"
     record.write_text(
-        json.dumps({"plugins": {"supertool@dpt-plugins": [{"version": "0.40.0"}]}}),
+        json.dumps({"plugins": {"supertool@dpt-plugins": [{"version": "8.8.8"}]}}),
         encoding="utf-8",
     )
     findings = doctor.dependency_resolution_state(
         ["supertool"], record=record, repos={}
     )
     assert findings == [
-        {"name": "supertool", "state": "contract-unknown", "version": "0.40.0"}
+        {"name": "supertool", "state": "contract-unknown", "version": "8.8.8"}
     ]
 
 
@@ -196,7 +196,7 @@ def test_a_missing_dependency_is_reported_separately_from_contract_unknown(tmp_p
 def test_a_resolving_dependency_with_a_readable_manifest_is_resolves(tmp_path):
     record = tmp_path / "installed_plugins.json"
     record.write_text(
-        json.dumps({"plugins": {"supertool@dpt-plugins": [{"version": "0.40.0"}]}}),
+        json.dumps({"plugins": {"supertool@dpt-plugins": [{"version": "8.8.8"}]}}),
         encoding="utf-8",
     )
     findings = doctor.dependency_resolution_state(
@@ -204,13 +204,13 @@ def test_a_resolving_dependency_with_a_readable_manifest_is_resolves(tmp_path):
         record=record,
         repos={"supertool": "dpt-plugins/claude-supertool"},
     )
-    assert findings == [{"name": "supertool", "state": "resolves", "version": "0.40.0"}]
+    assert findings == [{"name": "supertool", "state": "resolves", "version": "8.8.8"}]
 
 
 def test_check_dependency_resolution_reports_each_state(tmp_path, monkeypatch):
     record = tmp_path / "installed_plugins.json"
     record.write_text(
-        json.dumps({"plugins": {"supertool@dpt-plugins": [{"version": "0.40.0"}]}}),
+        json.dumps({"plugins": {"supertool@dpt-plugins": [{"version": "8.8.8"}]}}),
         encoding="utf-8",
     )
     monkeypatch.setattr(
