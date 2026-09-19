@@ -89,7 +89,16 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    the workflow's current job names whenever a matrix shrinks or renames a leg, and update it in the
    same change; this is a GitHub Settings fact, not a tracked file, so nothing here can check it for
    you.
-2. **Nothing in flight is mid-review.**
+2. **Nothing in flight is mid-review.** Decide this with `scripts/release_gate2.py`, never by
+   arguing it from the same facts twice (#1681) -- two releaser runs on the same open, unreviewed
+   pull request reached opposite verdicts four hours apart with nothing about the PR itself having
+   changed. Three states, the same shape gate 3 gives: `clear` / `blocked-by:N` / `could-not-tell`.
+   Feed it each open PR's `review_decision`, whether a lane is still alive in its own worktree
+   (`git-worktrees`), and its latest review comment's age. `CHANGES_REQUESTED`/`REVIEW_REQUIRED`, an
+   active lane, or a comment inside the 30-minute default window are in-flight; `NONE` with none of
+   those is ordinary backlog and clears -- whether or not `tick-merge` already declined it for scope,
+   since waiting on the maintainer is not the same fact as a review round in progress. A signal that
+   could not be read is `could-not-tell`, never folded into clear.
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean, findings, or
    **could not run**. An audit that did not execute must never render as an audit that found nothing.
    **Two rounds, hard cap** — a competent audit of any non-trivial delta always finds something, so

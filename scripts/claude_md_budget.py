@@ -227,7 +227,21 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # gate-1 leg count, and two new paragraphs (gate 2's parked-PR reading,
     # re-derived rather than taken on trust; the checklist-skew annotation)
     # -- plus this row's own rewrites converging on the final size.
-    "CLAUDE.md": (70751, 71000),
+    # Re-baselined for #1682/#1683: skills/manager/phases/review.md's and
+    # agents/lane-report.md's own rows raised. 69200 B became 70751 B, past
+    # the 69500 B ceiling. Ceiling moves to 71000 B, ~0.35% headroom.
+    # Re-baselined for #1681, the third editing exception:
+    # skills/manager/phases/release.md's own row and ceiling raised for gate
+    # 2's own disposition rule (scripts/release_gate2.py), plus this row and
+    # weighed sentence and the Layout row for the new script. 69200 B became
+    # 70017 B, past the 69500 B ceiling. Ceiling moves to 70300 B, ~0.4%
+    # headroom -- the same narrow self-referential margin every prior raise
+    # of this row gives.
+    # Merged: fix/1681 x fix/1682/1683 landed from the same 69200 B base;
+    # rebasing fix/1681 onto the already-merged #1682/#1683 combines both
+    # histories. Re-measured against the actual merged CLAUDE.md rather than
+    # added by hand.
+    "CLAUDE.md": (72547, 72800),
 }
 
 

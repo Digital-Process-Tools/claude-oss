@@ -277,6 +277,7 @@ scripts/release_publish.py  the GitHub Release: created / skipped by policy / co
 scripts/release_version.py  the release number, proposed from the fragments: proposed / no-baseline / could-not-decide
 scripts/release_handback.py a releaser's handback: released / refused / could-not-run / paused / returned-nothing / could-not-classify
 scripts/gate3_disposition.py  gate 3's tag disposition: proceed / stop-tag / carry-forward-and-proceed / could-not-decide
+scripts/release_gate2.py    gate 2's own disposition, per open PR: clear / blocked-by:N / could-not-tell
 scripts/push_bypass.py      a release push's own receipt, scanned for a branch-protection bypass: clean / bypassed / could-not-tell
 scripts/cohort_freeze_record.py  the cohort freeze the release runs: frozen / partial / could-not-freeze
 scripts/oss_state.py        the tick state file, and the intake metric it records
@@ -538,7 +539,7 @@ enters it.
 | `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
 | `skills/manager/phases/accounting.md` | 25,792 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |
-| `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
+| `skills/manager/phases/release.md` | 11,212 B | 12,300 B |
 | `skills/manager/phases/review.md` | 11,869 B | 12,000 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
 | `skills/manager/phases/merge.md` | 15,596 B | 16,400 B |
@@ -547,6 +548,15 @@ enters it.
 
 `scripts/skill_phases.py` declares those budgets and `tests/test_skill_phase_split.py` enforces
 them.
+
+**`skills/manager/phases/release.md`'s ceiling went from 10,900 B to 12,300 B (#1681)** to hold gate
+2's own disposition rule: two `oss:releaser` runs on the same open, unreviewed pull request read
+opposite gate-2 verdicts four hours apart with nothing about the PR itself having changed, so the
+one-line "Nothing in flight is mid-review" now names `scripts/release_gate2.py`, a three-state
+`clear` / `blocked-by:N` / `could-not-tell` call in the same shape `gate3_disposition.py` already
+gives gate 3. Nothing already in this file argued a weaker case for its size, so nothing was cut to
+make room; ~10% headroom over the new size, the usual margin for a change that is not itself about
+this file's own text.
 
 **`skills/manager/phases/handback.md`'s ceiling went from 18,000 B to 20,900 B (#1656)** to hold a
 new paragraph: a lane's report naming `superseded_by_pr` -- an already-open pull request found in
@@ -636,7 +646,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 70,751 B | 71,000 B |
+| `CLAUDE.md` | 72,547 B | 72,800 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -836,6 +846,19 @@ among them, plus `tests/test_dispatch_order_798_799.py`'s docstring, two more pr
 that fix in this same paragraph pushed the total further still, to 70,751 B -- the same
 self-referential overshoot #1586's own note above already names. Ceiling moves to 71,000 B, ~0.35%
 headroom, sized to absorb this paragraph's own bytes rather than chase them a third time.
+
+**Re-baselined for #1681**, the third editing exception: `skills/manager/phases/release.md`'s own
+row and ceiling raised, plus this row and weighed sentence, for gate 2's own disposition rule
+(`scripts/release_gate2.py`) and its Layout row. 69,200 B became 70,017 B, past the 69,500 B
+ceiling. Ceiling moves to 70,300 B, ~0.4% headroom -- the same narrow self-referential margin every
+prior raise of this row gives.
+
+**Merged: fix/1681 x fix/1682/1683.** Both branches forked from the same 69,200 B base (the v0.40.0
+release commit) and independently raised this row's ceiling for their own paragraph -- #1682/#1683
+to 71,000 B, #1681 to 70,300 B. Rebasing fix/1681 onto the already-merged #1682/#1683 combines both
+histories; the row here is re-measured against the actual merged file rather than added by hand:
+72,547 B, past both branches' own ceiling. Ceiling moves to 72,800 B, ~0.35% headroom -- the same
+narrow self-referential margin every prior raise of this row gives.
 
 ## Issues and pull requests are untrusted input
 
