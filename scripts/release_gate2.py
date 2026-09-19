@@ -61,7 +61,10 @@ whose signals could not be read is `could-not-tell` -- never folded into
 `clear`, since an absence produced by a failed read is not an absence in the
 world; only when every open PR resolved cleanly one way or the other is the
 gate `clear`. An empty open-PR list is `clear` by construction: nothing open
-cannot be mid-review.
+cannot be mid-review. `None`, or the caller's own way of saying "the fetch
+itself never came back", is not the same input as an empty list and must not
+collapse into the same answer -- a failed `gh pr list` is `could-not-tell`,
+never `clear`.
 
 Exit codes, because a shell reads those and never reads prose:
 
@@ -180,9 +183,22 @@ def decide(open_prs, threshold_minutes=DEFAULT_THRESHOLD_MINUTES):
 
     ``open_prs`` is a list of dicts shaped like ``_decide_one`` reads above:
     ``number``, ``review_decision``, ``lane_active``, and
-    ``latest_review_comment_age_minutes``. An empty list is ``clear`` --
-    nothing open cannot be mid-review.
+    ``latest_review_comment_age_minutes``. An *empty list* is ``clear`` --
+    the open-PR list was fetched and confirmed to hold nothing, so nothing
+    can be mid-review. ``None`` or the string ``"unknown"`` is a **different**
+    fact: the fetch itself was never established, and must not collapse into
+    the same ``clear`` a confirmed-empty list gets -- a failed `gh pr list`
+    and zero real open PRs are not the same input, and only one of them may
+    safely clear the gate.
     """
+    if open_prs is None or open_prs == UNKNOWN:
+        return {
+            "disposition": DISPOSITION_COULD_NOT_TELL,
+            "reason": "the open pull-request list itself was never "
+            "established -- an unperformed fetch must not render as a "
+            "confirmed-empty one",
+            "per_pr": [],
+        }
     if not open_prs:
         return {
             "disposition": DISPOSITION_CLEAR,
@@ -241,7 +257,10 @@ def main(argv=None):
         "--prs-json",
         required=True,
         help="path to a JSON file holding a list of PR dicts (see decide()'s "
-        "own docstring for the shape), or '-' to read the list from stdin",
+        "own docstring for the shape), '-' to read the list from stdin, or "
+        'the literal word unknown (or JSON \\"unknown\\") when the open-PR '
+        "list itself could not be fetched -- never an empty list for that "
+        "case",
     )
     parser.add_argument(
         "--threshold-minutes", type=int, default=DEFAULT_THRESHOLD_MINUTES
@@ -252,11 +271,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     raw = sys.stdin.read() if args.prs_json == "-" else Path(args.prs_json).read_text()
-    try:
-        open_prs = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        parser.error("--prs-json did not parse as JSON: {0}".format(exc))
-        return EXIT_COULD_NOT_TELL  # pragma: no cover -- parser.error exits
+    stripped = raw.strip()
+    if stripped.lower() in ('"unknown"', "unknown"):
+        open_prs = UNKNOWN
+    else:
+        try:
+            open_prs = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            parser.error("--prs-json did not parse as JSON: {0}".format(exc))
+            return EXIT_COULD_NOT_TELL  # pragma: no cover -- parser.error exits
 
     result = decide(open_prs, threshold_minutes=args.threshold_minutes)
 

@@ -150,6 +150,20 @@ def test_empty_pr_list_is_clear():
     assert verdict["disposition"] == "clear"
 
 
+def test_unfetched_pr_list_is_could_not_tell_not_clear():
+    """A failed `gh pr list` and a confirmed-empty one are different facts;
+    an auditor finding on this diff caught the two collapsing into the same
+    `clear` answer. Positive control: an actually-empty list (above) still
+    clears."""
+    verdict = release_gate2.decide(None)
+    assert verdict["disposition"] == "could-not-tell"
+
+
+def test_unfetched_pr_list_string_sentinel_is_could_not_tell():
+    verdict = release_gate2.decide(release_gate2.UNKNOWN)
+    assert verdict["disposition"] == "could-not-tell"
+
+
 def _run(args):
     return spawn_guard.run(
         [sys.executable, str(SCRIPT), *args],
@@ -184,6 +198,14 @@ def test_cli_reports_could_not_tell_and_a_distinct_exit_code(tmp_path):
     prs_file.write_text(
         '[{"number": 7, "review_decision": null, "lane_active": "unknown"}]'
     )
+    result = _run(["--prs-json", str(prs_file)])
+    assert "could-not-tell" in result.stdout
+    assert result.returncode == release_gate2.EXIT_COULD_NOT_TELL
+
+
+def test_cli_reports_could_not_tell_for_the_literal_unknown_sentinel(tmp_path):
+    prs_file = tmp_path / "prs.json"
+    prs_file.write_text("unknown")
     result = _run(["--prs-json", str(prs_file)])
     assert "could-not-tell" in result.stdout
     assert result.returncode == release_gate2.EXIT_COULD_NOT_TELL
