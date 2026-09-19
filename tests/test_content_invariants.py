@@ -5581,6 +5581,71 @@ def test_developer_md_says_which_schema_version_to_write():
     )
 
 
+def test_lane_report_reports_paragraph_disambiguates_worktree_root():
+    """#1683: the notes/ paragraph in agents/lane-report.md spells out that
+    `<worktree_root>` is a sibling of the numbered worktree directories,
+    never one of them -- `<worktree_root>/NNN` is a lane's own checkout
+    (agents/developer.md). The reports/ step names the identical
+    `<worktree_root>/reports/...` path but, before this fix, never repeated
+    that disambiguation on its own -- so a lane reading the reports/ step in
+    isolation could read `<worktree_root>` as its own numbered checkout and
+    write `reports/` inside the worktree it is about to hand back. Observed
+    live: nine merged lanes on claude-supertool each left `reports/` (and
+    `notes/`) untracked inside their own numbered worktree, refusing
+    tick-merge's own cleanup (#1683).
+    """
+    lane_report = (REPO_ROOT / "agents" / "lane-report.md").read_text(encoding="utf-8")
+    reports_unit = next(
+        (
+            unit
+            for unit in _prose_units(lane_report)
+            if "<worktree_root>/reports/" in unit and "Write it at" in unit
+        ),
+        None,
+    )
+    assert reports_unit is not None, (
+        "agents/lane-report.md's reports/ step ('Write it at "
+        "<worktree_root>/reports/...') was not found -- update this test's anchor"
+    )
+    assert re.search(
+        r"sibling of the numbered worktree",
+        reports_unit,
+        re.IGNORECASE,
+    ), (
+        "agents/lane-report.md's reports/ step never disambiguates "
+        "<worktree_root> from a lane's own numbered checkout: {!r}".format(reports_unit)
+    )
+
+    # The commit fixing #1683 touched two spots, not one: the reports/ step
+    # above, and the pull-request-payload paragraph, which names the
+    # identical <worktree_root>/reports/... path under its own heading and
+    # is a distinct prose unit (it opens "Write it **to**", not "Write it
+    # **at**"). Checking only the first would leave the second free to lose
+    # its clause on a later edit with nothing going red.
+    pr_payload_unit = next(
+        (
+            unit
+            for unit in _prose_units(lane_report)
+            if "<worktree_root>/reports/" in unit and "Write it to" in unit
+        ),
+        None,
+    )
+    assert pr_payload_unit is not None, (
+        "agents/lane-report.md's pull-request-payload paragraph ('Write it "
+        "to <worktree_root>/reports/...') was not found -- update this "
+        "test's anchor"
+    )
+    assert re.search(
+        r"worktree-root sibling",
+        pr_payload_unit,
+        re.IGNORECASE,
+    ), (
+        "agents/lane-report.md's pull-request-payload paragraph never "
+        "disambiguates <worktree_root> from a lane's own numbered "
+        "checkout: {!r}".format(pr_payload_unit)
+    )
+
+
 def test_a_neighbouring_list_item_cannot_cover_for_this_one(monkeypatch):
     """A reviewer on #776 found this exact gap: `handback.md`'s numbered steps
     1-4 carry no blank line between them, so before `_LIST_ITEM_RE` they merged

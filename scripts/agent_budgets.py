@@ -741,7 +741,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Git's own merge combined both without a textual conflict; re-measured
     # against the merged file rather than added by hand: 14762 B, past both
     # lanes' own 14300 B ceiling. Ceiling moves to 14900 B, ~1% headroom.
-    "agents/lane-report.md": (14762, 14900),
+    #
+    # Re-baselined for #1683: the notes/ paragraph already disambiguates
+    # <worktree_root> from a lane's own numbered checkout; the reports/ step
+    # and the pull-request-payload paragraph named the same <worktree_root>
+    # path without repeating that disambiguation, and nine merged lanes on
+    # claude-supertool each wrote reports/ (and notes/) inside their own
+    # worktree instead, refusing tick-merge's own cleanup. Both paragraphs
+    # now carry the same clause. 14762 B became 14946 B, past the 14900 B
+    # ceiling. Ceiling moves to 15100 B, ~1% headroom.
+    "agents/lane-report.md": (14946, 15100),
 }
 
 

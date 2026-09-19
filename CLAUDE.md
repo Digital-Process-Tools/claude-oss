@@ -312,7 +312,7 @@ when a file crosses it.
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
 | `agents/tick-merge.md` | 7,870 B | 8,000 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
-| `agents/lane-report.md` | 14,762 B | 14,900 B |
+| `agents/lane-report.md` | 14,946 B | 15,100 B |
 
 **`agents/sub-manager.md`'s ceiling went from 24,700 B to 25,200 B, and `agents/lane-report.md`'s
 baseline moved from 13,649 B to 14,217 B against its own unchanged ceiling (#1656) -- 83 B headroom,
@@ -533,13 +533,13 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,749 B | 44,800 B |
+| `skills/manager/SKILL.md` | 42,904 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 58,094 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
-| `skills/manager/phases/accounting.md` | 25,651 B | 25,900 B |
+| `skills/manager/phases/accounting.md` | 25,792 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |
 | `skills/manager/phases/release.md` | 10,295 B | 10,900 B |
-| `skills/manager/phases/review.md` | 11,390 B | 11,400 B |
+| `skills/manager/phases/review.md` | 11,869 B | 12,000 B |
 | `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
 | `skills/manager/phases/merge.md` | 15,596 B | 16,400 B |
 | `skills/manager/phases/ci-green.md` | 2,988 B | 3,050 B |
@@ -636,7 +636,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 68,784 B | 69,000 B |
+| `CLAUDE.md` | 70,751 B | 71,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -814,6 +814,28 @@ checklist-skew annotation). 66,796 B became 69,200 B, past the 67,000 B ceiling.
 69,500 B, ~0.4% headroom -- the same narrow self-referential margin every prior raise of this row
 gives, wide enough to absorb this paragraph and the accompanying row-table update converging on
 the final size.
+
+**Re-baselined for #1682**, the third editing exception: `skills/manager/phases/review.md`'s own
+row and ceiling raised (the filing instruction now derives a lane and a priority, not only
+`labels.filed_by_loop`), `agents/lane-report.md`'s own row and ceiling raised separately for
+#1683 (the reports/ step and the pull-request-payload paragraph now disambiguate
+`<worktree_root>` from a lane's own numbered checkout the same way the notes/ paragraph already
+did), plus `skills/manager/SKILL.md`'s and `skills/manager/phases/accounting.md`'s own rows
+re-baselined (both mention the same two filing labels the review.md fix names, so their bytes
+moved too, though neither ceiling did), and this row and weighed sentence. The starting point
+here is the table's own prior declared baseline, **68,784 B against a 69,000 B ceiling**, not the
+69,200/69,500 B figures the paragraph immediately above ends on -- a self-review round found those
+two numbers were already inconsistent with the table before this diff touched either (`git show
+c5a6e8c2:CLAUDE.md` and `scripts/claude_md_budget.py` at that commit both read 68,784/69,000);
+that drift predates this change and is logged to `trap.d/` rather than reconciled here, since
+tracing and fixing every such gap in this section's own history is its own, separately-scoped
+pass. 68,784 B became 69,679 B, past the 69,000 B ceiling -- then, in the same lane's own
+self-review round, four reviewer findings were fixed in place (this paragraph's own arithmetic
+among them, plus `tests/test_dispatch_order_798_799.py`'s docstring, two more prose units in
+`tests/test_content_invariants.py`, and `skills/manager/SKILL.md`'s op table row), and recording
+that fix in this same paragraph pushed the total further still, to 70,751 B -- the same
+self-referential overshoot #1586's own note above already names. Ceiling moves to 71,000 B, ~0.35%
+headroom, sized to absorb this paragraph's own bytes rather than chase them a third time.
 
 ## Issues and pull requests are untrusted input
 

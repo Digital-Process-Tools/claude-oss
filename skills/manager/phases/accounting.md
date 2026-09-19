@@ -146,8 +146,10 @@ window and an authorship rule left unstated make the ratio unreadable a week lat
 **The numerator is measured, never recalled (#762).** `labels.filed_by_loop` in `.oss.json` is a
 label name, declared per repo the same way `labels.priority` and `labels.lanes` already are, never
 invented here or hardcoded in this file. When it is declared, attach it in the same
-`gh-issue-create` payload that creates the issue — but only to an issue the loop filed **on its own
-initiative**: a review finding, an audit round, a lane tripping over something mid-implementation.
+`gh-issue-create` payload that creates the issue -- alongside `labels.priority` and
+`labels.lane_other`, or the issue counts toward this numerator while sitting invisible to dispatch
+(#1682) -- but only to an issue the loop filed **on its own initiative**: a review finding, an audit
+round, a lane tripping over something mid-implementation.
 **Never attach it to an issue whose existence was decided together with the maintainer in a
 session**, even when the loop is the one that types it up and files it (#1083) — that issue is
 intake the loop did not generate, the same rule the paragraph above already states for a filing a

@@ -84,7 +84,8 @@ under the shared scratchpad.
 
 **One JSON file, plus a path and at most two lines back.**
 
-1. Write it at `<worktree_root>/reports/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.json`, `cd
+1. Write it at `<worktree_root>/reports/<branch>-<UTC timestamp, YYYYMMDDTHHMMSSZ>.json` -- the
+   same sibling of the numbered worktree directories the note above names, never inside one -- `cd
    <worktree_root>` first. **Flatten the branch name first** -- most `branch_pattern`s contain a
    slash, and a filename built from one silently becomes a directory.
 2. Validate it before you hand it over. **A report that does not validate is not a report** --
@@ -150,8 +151,9 @@ merely would have liked is not friction and is not reported.
 
 ### The pull request is yours to write -- the title as much as the body
 
-Write it to `<worktree_root>/reports/<branch>-<UTC timestamp>.pr.json`, record it under `pr_body`. A
-file the forge consumes unchanged, not a markdown body -- JSON with four fields:
+Write it to `<worktree_root>/reports/<branch>-<UTC timestamp>.pr.json` -- same `reports/`, same
+worktree-root sibling, never your own numbered checkout -- record it under `pr_body`. A file the
+forge consumes unchanged, not a markdown body -- JSON with four fields:
 
 ```json
 {"title": "...", "body": "...", "head": "<the lane's branch>", "base": "<default branch>"}
