@@ -560,6 +560,27 @@ def test_every_filing_instruction_names_the_label():
     )
 
 
+def test_every_filing_instruction_names_lane_and_priority_too():
+    """#1682: an issue filed with only `labels.filed_by_loop` carries no
+    priority, so `select_issues_rank` refuses to rank it, and no lane, so a
+    companion sweep never sees it -- it sits unpicked until the next triage
+    sweep is due, which cannot happen while the finding it carries blocks a
+    release. Observed live: claude-supertool#2636, filed by `oss:tick-review`
+    with `filed-by-loop` alone, labelled by hand the next tick. Every filing
+    instruction has to derive a lane and a priority, not only the intake
+    label."""
+    silent = [
+        str(path.relative_to(repo_root()))
+        for path, text in _filing_instructions()
+        if "labels.priority" not in text
+        or ("labels.lane_other" not in text and "labels.lane_patterns" not in text)
+    ]
+    assert not silent, (
+        "these documents instruct filing without deriving a lane and a "
+        "priority label: {}".format(silent)
+    )
+
+
 #: One markdown table row: a rank digit, then `human` or `loop`, then a
 #: priority cell. Anchored per-line rather than across the whole table, so it
 #: finds a row wherever one sits rather than assuming a fixed block shape.
@@ -745,15 +766,15 @@ def _fake_gh_bin(tmp_path, label):
     if os.name == "nt":
         gh_path = bin_dir / "gh.cmd"
         gh_path.write_text(
-            "@echo off\r\n"
-            "chcp 65001 > nul\r\n"
-            "echo {0}\r\n".format(payload.replace("%", "%%")),
+            "@echo off\r\nchcp 65001 > nul\r\necho {0}\r\n".format(
+                payload.replace("%", "%%")
+            ),
             encoding="utf-8",
         )
     else:
         gh_path = bin_dir / "gh"
         gh_path.write_text(
-            "#!/bin/sh\n" "cat <<'BOARD_EOF'\n{0}\nBOARD_EOF\n".format(payload),
+            "#!/bin/sh\ncat <<'BOARD_EOF'\n{0}\nBOARD_EOF\n".format(payload),
             encoding="utf-8",
         )
         gh_path.chmod(0o755)

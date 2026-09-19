@@ -227,7 +227,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # gate-1 leg count, and two new paragraphs (gate 2's parked-PR reading,
     # re-derived rather than taken on trust; the checklist-skew annotation)
     # -- plus this row's own rewrites converging on the final size.
-    "CLAUDE.md": (68784, 69000),
+    "CLAUDE.md": (69679, 69900),
 }
 
 

@@ -166,7 +166,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # became 42749 B -- the "AND registers the lane" claim in *Run a
         # fleet, not a queue* was stale since #1532; `--claim` writes only
         # the GitHub assignee now. Budget unchanged.
-        42749,
+        # Re-baselined for #1682: 42749 B became 42875 B -- the filing op
+        # table row now also names deriving `labels.priority`/
+        # `labels.lane_other`. Comfortably under the 44800 B ceiling; ceiling
+        # unchanged.
+        42875,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -436,8 +440,16 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # defaulted a non-blocking finding to a new issue, so the receipt
         # list gained a fourth entry (a trap.d/ fragment) and a rank-first
         # instruction. Ceiling unchanged; comfortably under it.
-        11390,
-        11400,
+        # Re-baselined for #1682: 11390 B became 11869 B. The filing
+        # instruction attached `labels.filed_by_loop` alone -- a loop-filed
+        # blocking finding landed with no lane and no priority, invisible to
+        # dispatch until the next triage sweep, which cannot run while the
+        # finding it carries blocks a release. Now derives priority from
+        # `labels.priority`'s first entry and lane from `labels.lane_other`
+        # (this repo declares no `labels.lane_patterns` to derive one from
+        # the finding's own files). Ceiling moves to 12000, ~1.1% headroom.
+        11869,
+        12000,
         "reviewing a returned diff, and what an issue body filed out of one looks like, when a fix-for-a-finding needs its own pass",
     ),
     # Raised for #1374: 12570 B on disk against the prior 12400 B ceiling, a
@@ -718,7 +730,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # review finding fixed a second, stale "maintainer's own act, by
         # hand" sentence in the Cadence section. Comfortably under the
         # 25900 B ceiling; ceiling unchanged.
-        25651,
+        # Re-baselined for #1682: 25651 B became 25792 B -- the numerator
+        # paragraph now names `labels.priority`/`labels.lane_other` beside
+        # `labels.filed_by_loop`. Comfortably under the 25900 B ceiling;
+        # ceiling unchanged.
+        25792,
         25900,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),

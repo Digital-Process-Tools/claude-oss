@@ -98,9 +98,14 @@ non-blocking row goes to the fourth.
   This is the ordinary receipt now; a non-blocking finding does not default to the first two.
 
 **When the receipt is a new issue, attach `labels.filed_by_loop`'s label in the same
-`gh-issue-create` payload, if `.oss.json` declares one (#762).** That single write is the whole
-mechanism the intake metric's numerator depends on. A repo that has not declared the label is not a
-reason to invent a spelling; file the issue exactly as before and leave it unlabelled.
+`gh-issue-create` payload, if `.oss.json` declares one (#762) -- and a lane and a priority too, or
+the issue is invisible to dispatch until the next triage sweep, which cannot run while the finding
+it carries blocks a release (#1682).** Priority is `labels.priority`'s first entry: everything
+reaching this receipt already cleared the blocking-or-unranked bar, so it is the next thing a
+release needs. Lane is `labels.lane_other`'s label -- this repo declares no `labels.lane_patterns`
+to derive one from the finding's own files, so do not invent that derivation; a repo that does
+declare one may use it instead. A repo declaring none of these three is not a reason to invent a
+spelling; omit whichever key is missing and file the rest of the payload as before.
 
 The `reason` beside the item is the agent's argument for why it is yours rather than theirs, and
 the receipt -- whichever of the three -- is what keeps #254 closed: an item with no receipt is
