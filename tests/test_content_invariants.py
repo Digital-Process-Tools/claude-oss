@@ -5616,6 +5616,35 @@ def test_lane_report_reports_paragraph_disambiguates_worktree_root():
         "<worktree_root> from a lane's own numbered checkout: {!r}".format(reports_unit)
     )
 
+    # The commit fixing #1683 touched two spots, not one: the reports/ step
+    # above, and the pull-request-payload paragraph, which names the
+    # identical <worktree_root>/reports/... path under its own heading and
+    # is a distinct prose unit (it opens "Write it **to**", not "Write it
+    # **at**"). Checking only the first would leave the second free to lose
+    # its clause on a later edit with nothing going red.
+    pr_payload_unit = next(
+        (
+            unit
+            for unit in _prose_units(lane_report)
+            if "<worktree_root>/reports/" in unit and "Write it to" in unit
+        ),
+        None,
+    )
+    assert pr_payload_unit is not None, (
+        "agents/lane-report.md's pull-request-payload paragraph ('Write it "
+        "to <worktree_root>/reports/...') was not found -- update this "
+        "test's anchor"
+    )
+    assert re.search(
+        r"worktree-root sibling",
+        pr_payload_unit,
+        re.IGNORECASE,
+    ), (
+        "agents/lane-report.md's pull-request-payload paragraph never "
+        "disambiguates <worktree_root> from a lane's own numbered "
+        "checkout: {!r}".format(pr_payload_unit)
+    )
+
 
 def test_a_neighbouring_list_item_cannot_cover_for_this_one(monkeypatch):
     """A reviewer on #776 found this exact gap: `handback.md`'s numbered steps

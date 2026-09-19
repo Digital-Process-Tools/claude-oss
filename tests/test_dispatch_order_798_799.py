@@ -562,13 +562,20 @@ def test_every_filing_instruction_names_the_label():
 
 def test_every_filing_instruction_names_lane_and_priority_too():
     """#1682: an issue filed with only `labels.filed_by_loop` carries no
-    priority, so `select_issues_rank` refuses to rank it, and no lane, so a
-    companion sweep never sees it -- it sits unpicked until the next triage
-    sweep is due, which cannot happen while the finding it carries blocks a
-    release. Observed live: claude-supertool#2636, filed by `oss:tick-review`
-    with `filed-by-loop` alone, labelled by hand the next tick. Every filing
-    instruction has to derive a lane and a priority, not only the intake
-    label."""
+    lane label, so `select_issues.py`'s own fleet-wide `no-lane-label`
+    disposition drops it from every lane's candidate set -- untagged, it
+    never enters a `select()` call at all, not even at the worst rank
+    (`scripts/select_issues.py`, the "Maintainer correction #1146, #1130"
+    block). It also carries no priority label, which `select_issues_rank.
+    _band` does not refuse -- an issue with no priority label still ranks,
+    in the worst ("low") band -- but still leaves it silently deprioritised
+    behind every other open issue rather than reflecting that it is, by
+    construction, the next thing a release needs. Either gap sits unpicked
+    until the next triage sweep is due, which cannot happen while the
+    finding it carries blocks a release. Observed live: claude-supertool#2636,
+    filed by `oss:tick-review` with `filed-by-loop` alone, labelled by hand
+    the next tick. Every filing instruction has to derive a lane and a
+    priority, not only the intake label."""
     silent = [
         str(path.relative_to(repo_root()))
         for path, text in _filing_instructions()

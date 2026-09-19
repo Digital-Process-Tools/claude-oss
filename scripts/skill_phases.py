@@ -166,11 +166,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # became 42749 B -- the "AND registers the lane" claim in *Run a
         # fleet, not a queue* was stale since #1532; `--claim` writes only
         # the GitHub assignee now. Budget unchanged.
-        # Re-baselined for #1682: 42749 B became 42875 B -- the filing op
+        # Re-baselined for #1682: 42749 B became 42904 B -- the filing op
         # table row now also names deriving `labels.priority`/
-        # `labels.lane_other`. Comfortably under the 44800 B ceiling; ceiling
-        # unchanged.
-        42875,
+        # `labels.lane_other`, restructured in the same lane's own
+        # self-review round to stop "plus labels.priority and
+        # labels.lane_other" reading as scoped to the same "own initiative
+        # only" clause as `labels.filed_by_loop`. Comfortably under the
+        # 44800 B ceiling; ceiling unchanged.
+        42904,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
