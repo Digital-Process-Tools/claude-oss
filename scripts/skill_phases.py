@@ -647,9 +647,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # Re-measured after merging #1246 and #1266 together (both landed the
     # same tick, each adding independent prose to this file): 10035 B became
     # 10295 B. Ceiling unchanged at 10900 B; still comfortably under it.
+    # Raised (#1681): gate 2's one-line "Nothing in flight is mid-review" now
+    # names scripts/release_gate2.py -- a three-state clear/blocked-by:N/
+    # could-not-tell call, mirroring gate3_disposition.py -- after two
+    # releaser runs on the same open PR reached opposite gate-2 verdicts four
+    # hours apart with nothing about the PR itself changed. 10295 B became
+    # 11212 B; ceiling moves to 12300 B, ~10% headroom.
     "skills/manager/phases/release.md": (
-        10295,
-        10900,
+        11212,
+        12300,
         "cutting a release: the six gates and what the tag does and does not deliver",
     ),
     # Raised (#960): measured 22,237 B against the prior 16,600 B budget. Two

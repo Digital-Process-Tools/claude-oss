@@ -43,7 +43,16 @@ Gates, each a call and not a feeling:
    0 from `gh run list --commit`, while the full **40-character** sha returns the runs on that same
    commit. `git log --oneline` hands you the short form, so the empty list is the default result —
    and an empty run list is indistinguishable from a commit no workflow ran on.
-2. **Nothing in flight is mid-review.**
+2. **Nothing in flight is mid-review.** Decide this with `scripts/release_gate2.py`, never by
+   arguing it from the same facts twice (#1681) -- two releaser runs on the same open, unreviewed
+   pull request reached opposite verdicts four hours apart with nothing about the PR itself having
+   changed. Three states, the same shape gate 3 gives: `clear` / `blocked-by:N` / `could-not-tell`.
+   Feed it each open PR's `review_decision`, whether a lane is still alive in its own worktree
+   (`git-worktrees`), and its latest review comment's age. `CHANGES_REQUESTED`/`REVIEW_REQUIRED`, an
+   active lane, or a comment inside the 30-minute default window are in-flight; `NONE` with none of
+   those is ordinary backlog and clears -- whether or not `tick-merge` already declined it for scope,
+   since waiting on the maintainer is not the same fact as a review round in progress. A signal that
+   could not be read is `could-not-tell`, never folded into clear.
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean → proceed;
    findings → **stop the tag** and file, **in round one**; **could not run → stop the tag and say
    so.** Neither one stops the loop; the continuation for each is below. Round two is
