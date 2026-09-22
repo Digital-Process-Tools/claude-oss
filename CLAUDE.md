@@ -995,88 +995,92 @@ maintainer's session with their credentials.
 
 ## What is not proven yet
 
-**The marker below names `v0.41.0`, and it was written inside the v0.41.0 release commit.**
+**The marker below names `v0.41.1`, and it was written inside the v0.41.1 release commit.**
 
-**Delta, taken two ways that disagree until the mismatch is named.** The range is `v0.40.0..HEAD`
-at `ef0a3f13`: `git rev-list --count v0.40.0..HEAD` returns **10**, and
-`gh-prs:merged-since=v0.40.0,state=merged` returns **8** merged pull requests via the search index,
-while that same op's own commit-message cross-check counts **9** trailing `(#N)` references in the
-range and reports `RAN and DISAGREED`. The gap is resolved rather than picked: one of those nine
-references is not a PR number at all -- `3484dd2d`'s `(#1673)` is an issue citation inside a
-direct-push `trap.d/` chore commit, matched by the same trailing-parenthetical shape a squash-merge
-PR reference uses but naming an issue, not a merge. Excluding it leaves 8 pattern-matched PR
-references, agreeing with the search index's 8. Combined with the 1 commit carrying no trailing
-`(#N)` at all (`567a2aca`), all 10 commits are accounted for: 8 merged PRs, 2 commits attributable
-to neither (1 with no reference at all, 1 whose reference names an issue rather than a PR).
+**Delta, taken two ways that agree.** The range is `v0.41.0..HEAD` at `4792322d`:
+`git rev-list --count v0.41.0..HEAD` returns **13**, and
+`gh-prs:merged-since=v0.41.0,state=merged` returns **13** merged pull requests via the search
+index, and that same op's own commit-message cross-check reports `RAN and AGREED` -- 13
+trailing `(#N)` references in the range, one per commit, each naming a real merged pull
+request. No commit in the range is attributable to neither route.
 
-Gate 3 ran **two** rounds over the range -- the hard cap, both consumed. Round one (dispatch token
-`9230a81691d1`, over `v0.40.0..9a4af447`) returned `findings`: 6 findings, none in a blocking row --
-5 ranked `misreports` and routed to `trap.d/` fragments, 1 ranked `unranked` (a curate-created
-worktree with no teardown route anywhere in `commands/run/curate.md`) and filed as issue #1693 per
-the routing rule for an unranked finding. `gate3_disposition.py --round 1 --verdict findings
---blocking no` returned `DISPOSITION: stop-tag` -- round-one findings always stop the tag regardless
-of blocking, by design. The 5 non-blocking fragments (plus 2 pre-existing untracked ones, issues
-#1660 and #1679) were landed via pull request #1694 (merge commit `ef0a3f13`) rather than a direct
-push, since
-`## Who decides` above states no content exception for `trap.d/` fragments on the default branch.
-Round two (dispatch token `831fb5269c44`, over the resulting `v0.40.0..ef0a3f13`) returned
-`findings` again: 8 findings total (2 new -- a newline in `release_gate2.py`'s rendered PR number
-reaching column 0 of its own receipt, and `commands/run/setup.md`'s tracked-config table omitting
-`triage_route_threshold` -- plus the 6 from round one, re-verified still correctly routed at this
-HEAD), 0 in a blocking row. `gate3_disposition.py --round 2 --verdict findings --blocking no`
-returned `DISPOSITION: carry-forward-and-proceed`. The 2 new fragments are folded into this release
-commit itself alongside the version bumps, per the same routing rule. No finding, of any class or
-either round, sits in a row the ranking table marks blocking.
+Gate 3 ran **two** rounds over the range -- the hard cap, both consumed. Round one (dispatch
+token `n72ahj9z16lc`, over `v0.41.0..5a5541a8`) returned `findings`: 10 findings, none in a
+blocking row -- 9 ranked into rows that can ship behind a `trap.d/` fragment and 2 ranked
+`unranked` (a doctor-role-marker overwrite that can silently disable a live tick's release
+refusal, and `doctor.py`'s label-vocabulary check writing to GitHub from a read-only
+diagnostic path) and filed as issues #1716 and #1717 per the routing rule for an unranked
+finding. `gate3_disposition.py --round 1 --verdict findings --blocking unknown` returned
+`DISPOSITION: stop-tag` -- round-one findings always stop the tag regardless of blocking, by
+design. The 9 non-blocking fragments were landed via pull request #1718 (merge commit
+`4792322d`) rather than a direct push, since `## Who decides` above states no content
+exception for `trap.d/` fragments on the default branch. Round two (dispatch token
+`ktrug9uhmwtt`, over the resulting `v0.41.0..4792322d`) returned `findings` again: 2 findings
+-- 1 ranked `unranked` (the doctor's own brief always passes `--i-was-asked`, so the #1690
+scaffold.py --apply refusal can never actually refuse the doctor; filed as issue #1719) and 1
+ranked `misreports` (a changelog fragment overclaiming a push/commit guard that was never
+built; folded into this release commit's own `trap.d/` addition, alongside the version
+bumps) -- 0 in a blocking row. `gate3_disposition.py --round 2 --verdict findings --blocking
+no` returned `DISPOSITION: carry-forward-and-proceed`. No finding, of any class or either
+round, sits in a row the ranking table marks blocking. The round-one auditor also flagged
+that the ranking table pasted into its own dispatch payload had not been shell-expanded and
+arrived as literal `$(cat ...)` text; it ranked from `findings.md` directly instead, so
+nothing was `could not rank`, and the round-two auditor was told to read the table itself
+from `skills/manager/phases/findings.md` rather than trust a second paste.
 
-**Gate 1 held cleanly, checked twice.** At `9a4af447` (before the trap.d/ PR merged) both the
-ordinary push-triggered run (8 legs, 2 workflows) and a dispatched full-matrix `workflow_dispatch`
-run (14 further legs) concluded GREEN -- 22 legs across 3 runs. After PR #1694 merged and fast-
-forwarded `main` to `ef0a3f13`, gate 1 was re-run in full against the new head for the same reason:
-a merge moves the tip gate 1 is about. Both the push-triggered run and a freshly dispatched
-full-matrix run on `ef0a3f13` again concluded GREEN -- 22 legs across 3 runs, all passed, no CodeQL
-infrastructure failure. One declared workflow (`changelog`) produced no run on either commit -- it
-is `pull_request`-only, so this is the uncovered-but-non-blocking middle state, not a finding. The
-verdict that actually gates the tag is still this release commit's own run, waited on with
+**Gate 1 held cleanly, checked twice.** At `5a5541a8` (before the trap.d/ PR merged) both the
+ordinary push-triggered run (8 legs, 2 workflows) and a dispatched full-matrix
+`workflow_dispatch` run concluded GREEN. After PR #1718 merged and fast-forwarded `main` to
+`4792322d`, gate 1 was re-run in full against the new head for the same reason: a merge moves
+the tip gate 1 is about. Both the push-triggered run and a freshly dispatched full-matrix run
+on `4792322d` again concluded GREEN, all legs passed, no CodeQL infrastructure failure. One
+declared workflow (`changelog`) produced no run on either commit -- it is `pull_request`-only,
+so this is the uncovered-but-non-blocking middle state, not a finding. The verdict that
+actually gates the tag is still this release commit's own run, waited on with
 `release_ci_wait.py --require-event workflow_dispatch`; read that run, not this sentence, for
 whether it cleared.
 
-**Gate 2 held on the spine's default reading, no re-derivation needed.** `release_gate2.py` was run
-twice across the gating window, once before dispatching the round-1 audit and once immediately
-before writing this marker: `gh pr list --state open` returned `[]` both times, and
-`echo '[]' | release_gate2.py --prs-json -` reported `DISPOSITION: clear -- no open pull requests --
-nothing can be mid-review` both times. Unlike the prior release, nothing was parked mid-review this
-cycle.
+**Gate 2 held on the spine's own `release_gate2.py`, re-derived rather than reasoned from
+memory.** Run three times across the gating window (before round-1 dispatch, immediately
+before round-2 dispatch, and immediately before writing this marker): `gh pr list --state
+open` returned `[]` every time, and `echo '[]' | release_gate2.py --prs-json -` reported
+`DISPOSITION: clear -- no open pull requests -- nothing can be mid-review` every time. Nothing
+was parked mid-review this cycle.
 
-**Checklist skew: `matches`, both rounds.** This repository ships the definitions being audited, so
-the comparison applies to itself: at both gate-3 audit calls the installed checklist and this
-repository's own version were both `0.40.0`, and all compared definition files read `identical`
-(round 1: 15 files; round 2: 5 files re-checked by `shasum`, all `SAME`). Since neither audit ran
-after the version-site bump below, this reading is `matches` at `0.40.0` throughout gating; a
-`checklist_skew.py` run against this commit's own `0.41.0` manifest would legitimately read
-`differs` until the installed copy updates, which is expected and not a fresh finding.
+**Checklist skew: `matches` at the version level, `differs` on 5 of 15 files, both rounds.**
+This repository ships the definitions being audited, so the comparison applies to itself: at
+both gate-3 audit calls the installed checklist and this repository's own manifest both read
+`0.41.0` (the version-site bump to `0.41.1` had not happened yet), so the version-level state
+is `matches`. The byte comparison underneath it is not: `skills/manager/SKILL.md`,
+`agents/sub-manager.md`, `skills/manager/phases/accounting.md`,
+`skills/manager/phases/dispatch.md` and `skills/manager/phases/findings.md` all read `differs`
+against the installed 0.41.0 copy in both rounds -- ordinary mid-cycle drift within the same
+version, ahead of this release's own version bump, per the round-two auditor's own
+cross-check of the same five files. Reported here as the config finding `differs`-under-
+`matches` is, per release.md, rather than left silent; not blocking on its own.
 
-**Cohort freeze: cohort-34 at 22.** This marker cites a cohort that has already finished freezing,
-never this release's own, because the freeze runs after the tag. `cohort-35` remains stuck at
-`partial`, unchanged since the last release: `cohort_citation_order.py --state
-.max/claude-oss-watch.json --at <now>` ran before committing and reported `ok -- cohort-34 was
-already frozen`, so the citation is unchanged rather than re-argued: `measured` at 22, frozen at the
-`v0.36.0` tag, both routes it was taken from (`cutoff_scan` and `label_filter`) agreeing at 22.
+**Cohort freeze: cohort-34 at 22.** This marker cites a cohort that has already finished
+freezing, never this release's own, because the freeze runs after the tag.
+`cohort_citation_order.py --state .max/claude-oss-watch.json --at <now>` ran before committing
+and reported `ok -- cohort-34 was already frozen`, so the citation is unchanged from the prior
+release: `measured` at 22, frozen at the `v0.36.0` tag.
 
-**The reach probe was NOT re-derived at `v0.41.0`.** It is still `v0.21.0`'s:
-`gh repo list Digital-Process-Tools --limit 100`, run at `c565488`, returns eleven repositories in
-that one GitHub organisation, four carrying `.oss.json`, each confirmed by its own contents read. The count is
-scoped to the organisation the command names, never to "the field": a repository under a different
-account renders identically to one that does not exist. The owned-files table, the two installs and
-the `doctor` run are still `v0.17.0`'s, carried through twenty-one tags; `#1127` tracks re-deriving
-them. The readings live in `docs/release-currency.md`; re-derive them inside the release commit
-rather than editing this section.
+**The reach probe was NOT re-derived at `v0.41.1`.** It is still `v0.21.0`'s:
+`gh repo list Digital-Process-Tools --limit 100`, run at `c565488`, returns eleven
+repositories in that one GitHub organisation, four carrying `.oss.json`, each confirmed by its
+own contents read. The count is scoped to the organisation the command names, never to "the
+field": a repository under a different account renders identically to one that does not
+exist. The owned-files table, the two installs and the `doctor` run are still `v0.17.0`'s,
+carried through twenty-two tags; `#1127` tracks re-deriving them. The readings live in
+`docs/release-currency.md`; re-derive them inside the release commit rather than editing this
+section.
 
-What has not been observed, across every round inside the one organisation this probe can see: any
-repository scaffolded by a maintainer who is not this plugin's author. That qualifier is #711's
-whole subject, and "not observed" here means "not observed by a probe that could not have seen it",
-never "does not exist".
+What has not been observed, across every round inside the one organisation this probe can
+see: any repository scaffolded by a maintainer who is not this plugin's author. That
+qualifier is #711's whole subject, and "not observed" here means "not observed by a probe
+that could not have seen it", never "does not exist".
 
-Most of what this plugin claims about a scaffolded repository rests on tests and scratch runs rather
-than on a repository somebody maintains through it. `tests/test_claude_md_currency.py` checks that
-this section carries a current marker, not that any claim in it is true. Treat this as tested, not
-proven.
+Most of what this plugin claims about a scaffolded repository rests on tests and scratch runs
+rather than on a repository somebody maintains through it. `tests/test_claude_md_currency.py`
+checks that this section carries a current marker, not that any claim in it is true. Treat
+this as tested, not proven.

@@ -7,6 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.1] - 2026-09-23
+
+### Fixed
+
+- `oss:doctor` now creates the `priority-high`/`priority-medium`/`priority-low` label family on a
+  repo's forge when none of it exists at all, instead of only WARNing and naming a manual `gh label
+  create` command. A repo with any existing priority-labeled spelling is left untouched; a create
+  that fails is reported as `could-not-create`, never silently folded into a clean pass (#1686).
+
+- `oss:doctor` no longer writes an owned-file repair straight onto the default branch, whether or
+  not it is protected. It now checks whether the path being repaired is tracked by git first: an
+  untracked or gitignored owned file is written in place with no branch or commit (git never sees
+  it, so nothing is left to push); a tracked file is written and committed in a fresh worktree on a
+  deterministic `doctor/<check-slug>` branch cut from the default branch's tip, and
+  `branch_protection_state` is now informational rather than a write gate, since the branch always
+  needs a pull request to land regardless. `/oss:run` step 1 pushes a named `repaired:` branch and
+  opens a pull request for it, the same way it already does for a `curate/` branch, rather than
+  leaving the commit stranded on a branch nobody pushes (#1687).
+
+- `oss:doctor`'s merge/supertool/worktree-reap permission checks no longer count a settings rule the
+  harness itself skips as invalid (a `:*` prefix marker not at the end of the rule, most often a
+  trailing quote such as `Bash(supertool 'gh-pr-merge:*')`) as `present`. Such a rule now reports a
+  new `invalid` state naming the offending entry and its corrected spelling, and the invalid spelling
+  itself was corrected everywhere it was documented (#1688).
+
+- `setup.md` and the `scheduler-step` wrapper it and `run.md` both spawn now assert
+  `${CLAUDE_PLUGIN_ROOT}` resolves to a real plugin checkout before trusting it, stopping instead
+  of silently probing the wrong tree under `--plugin-dir` or a project-scoped install run from
+  another directory. `setup.md`'s own assert reports `SETUP: could-not-run`; the shared
+  `scheduler-step` wrapper, which serves five other procedures besides setup, reports
+  `PLUGIN-ROOT: could-not-run` naming the file it was given (#1689).
+
+- `oss:doctor` now writes a "doctor" role marker at the start of its run, and `scripts/scaffold.py
+  --apply` refuses to run under that marker unless `--i-was-asked` is passed -- a code-level guard
+  against a doctor spawn applying, committing and pushing unbidden, replacing a prose-only
+  instruction that was observed not to hold. `oss:doctor` also snapshots
+  `.claude/settings.local.json`'s digest before and after its run and reports an unexplained change
+  as a finding rather than silently (#1690).
+
+- Removed two dead dispatch-phase rules (#1691): the "triager is the board" agent-definition sentence and the `Agent(subagent_type: "oss:triager", ...)` demonstration in `skills/manager/phases/dispatch.md`, plus the matching mention in `agents/sub-manager.md`, since `oss:tick-dispatch` has been the only dispatch-render path since #1544 and renders developer lanes only. Also removed the dead "One dispatcher-side use survives" `oss:recon` spawn paragraph in the same file, since `oss:tick-dispatch` is granted no `Agent` tool and could never run it.
+
+- The status line's `rel` field no longer hides a measured numerator behind `?` on a repository
+  with no version tag: every commit is banked toward a first release, rendered as `rel 5/?` when
+  the history window reached the root commit, or `rel 500+/?` when the count is a floor rather
+  than a measurement. When `.oss.json` declares `release.triggers.merged_prs`, the denominator
+  renders that configured trigger instead of the historical median, with a unit marker on each
+  half (`rel 5c/8pr`) so a commit count and a merged-PR count never look like one bare ratio
+  (#1692).
+
+- `curate` no longer strands an unreapable worktree. A pass that finds nothing waiting now
+  removes the worktree and branch it just cut, before stopping, since nothing was ever written to
+  it; and `worktree_reap.py`'s own gate now treats a branch whose pull request was explicitly
+  closed without merging the same way it already treats a merged one -- reapable, once unoccupied
+  and clean -- instead of keeping it forever the way an undecided (open, or never-opened) branch
+  still is (#1693).
+
+- `agents/triager.md` now states the same floor for priority that it already states for lane
+  (#1310): apply `priority-low` rather than leaving an issue that fits none of the ranking
+  table's rows permanently unlabelled, and report the class gap as a finding for filing so the
+  fallback stays distinguishable from a genuine low-priority judgment (#1695).
+
+- `doctor.py`'s `check_mcp_channel_connection` no longer reports a WARN it can never resolve on its
+  own: when a cached `channel:health` reading of `forwarding` is attributed to a session this check
+  has no way to verify as its own (#1437), it now reports `NOTICE` rather than `WARN` -- the same
+  level its sibling `check_channel_delivery` already gives the identical condition, and the correct
+  one per this repo's own doctor-warning-lifecycle rule, since nothing about that attribution
+  settles with time. A standing WARN here used to pin `bin/oss-workspace`'s launcher route to
+  `/oss:doctor` for a fact the check was structurally incapable of ever answering. Separately, "every
+  MCP server resolving to the claude-channel consumer reports a failed transport" -- true only of the
+  servers that resolve to the consumer, which can be exactly one -- now states the count explicitly
+  so a single failing server is never misread as a claim about every configured MCP server (#1696).
+
+- `commands/run/setup.md`'s tracked-config table (the "Two files, two scopes" section) now lists
+  `triage_route_threshold` beside its sibling `curate_route_threshold`, matching the prose two
+  bullets above it that already documents the key and the behaviour (`--build` writes it
+  unconditionally) that has been correct since #1676/#1677 (#1704).
+
+- A cross-repo or dependency filing (`loop_repository()`, or a same-maintainer dependency's own
+  tracker) never carried `labels.filed_by_loop`, even when it landed correctly labelled with the
+  destination's own `lane-*`/`priority-*` vocabulary -- confirmed four for four (#1679, #1681,
+  #1682, #1683). The dependency-filing section in `skills/manager/phases/findings.md` never named
+  the label at all, unlike the same-repo instructions elsewhere in the loop's own prose.
+  `labels.filed_by_loop` on such a filing now reads from the *destination* repository's own
+  declaration, never the filing session's own `.oss.json` (#1705).
+
+- `scripts/release_gate2.py` no longer clears gate 2 on an unread signal: a PR dict that never
+  sends `latest_review_comment_age_minutes` at all now reports `could-not-tell`, distinct from a
+  caller that checked and confirmed no comment exists (which still clears). An unreadable or
+  malformed `--prs-json` file now exits a code distinct from `blocked-by:N` instead of crashing
+  with the same exit code a real in-flight review uses. A PR number carrying a newline no longer
+  reaches column 0 of the rendered `DISPOSITION:` receipt (#1706).
+
+- `skills/manager/SKILL.md`'s Filing op-table row and `skills/manager/phases/accounting.md`'s
+  numerator paragraph no longer state `labels.priority`/`labels.lane_other` attachment
+  unconditionally -- both now carry the same omit-if-missing rule `skills/manager/phases/
+  review.md` already stated for a repo that declares none of the three, so a manager reading
+  either row in isolation no longer attaches a label a scaffolded repo has not declared (#1707).
+
+- `oss:doctor`'s priority-label family check no longer reads a doctor-created
+  family that was interrupted mid-write (a `gh label create` failure after
+  one or two of `priority-high`/`priority-medium`/`priority-low` already
+  landed) as permanently `satisfied`. It now compares the priority-shaped
+  labels already on the forge against doctor's own three exact names: only
+  when every one of them is drawn from that known set AND the set is
+  incomplete does it retry and finish the family. A label outside that set
+  -- any spelling a maintainer chose themselves -- still satisfies
+  immediately and is left alone, unchanged from #1686's own behaviour. Its
+  own report lines are corrected too: the `created` line now names only the
+  labels that this call actually created rather than always claiming all
+  three, and the `WARN` lines no longer claim "no priority-* labels exist"
+  when a partial family is what is actually there (#1708).
+
+- `next_action.py`'s triage candidate no longer lets a repeat-suppression receipt render as
+  though nothing were wrong: when a standing `over`-threshold label-coverage reading is
+  suppressed because the receipt already recorded it, the reason string now says so explicitly
+  ("still over threshold ... but suppressed"), instead of a bare "unchanged since the last time
+  this reading was routed" that reads identically to a genuinely-clear board unless the nested
+  `evidence` is read separately (#1709). The suppression mechanism itself is unchanged -- it still
+  exists to stop an unlabelled backlog from re-firing `due` on every single tick.
+
 ## [0.41.0] - 2026-09-22
 
 ### Changed
@@ -12274,7 +12394,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.41.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.41.1...HEAD
+[0.41.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.41.1
 [0.41.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.41.0
 [0.40.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.40.0
 [0.39.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.39.0
