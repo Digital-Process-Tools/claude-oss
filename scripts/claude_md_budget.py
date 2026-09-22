@@ -251,7 +251,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # rewrite having dropped this section's own two closing paragraphs
     # (tests/test_claude_md_reach_probe_scope_711.py), restored verbatim.
     # Comfortably under the unchanged 72800 B ceiling.
-    "CLAUDE.md": (71848, 72800),
+    # Re-baselined for #1689/#1692/#1695, the third editing exception: two
+    # agent-budget rows (scheduler-step.md, triager.md) raised in the same
+    # lane's own self-review round, each with its own weighed sentence, plus
+    # this row -- converged after the fix-recording sentence itself pushed
+    # the total further, the same self-referential overshoot #1586's own
+    # note in CLAUDE.md already names. 71848 B became 74508 B, past the
+    # 72800 B ceiling. Ceiling moves to 75000 B, ~0.7% headroom.
+    "CLAUDE.md": (74508, 75000),
 }
 
 

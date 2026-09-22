@@ -79,7 +79,9 @@ finding — a decision already recorded is not a gap to re-report every sweep.
 - **Never close an issue**, even one that is obviously done. Report it as `merged-but-still-open` and
   let the maintainer close it with a comment naming the PR.
 - **Never guess.** Refusing is why you are allowed to write at all: a wrong `priority-low` on a
-  destroys-class bug is worse than no label. Tag, leave, or flag — **three states, never two.**
+  destroys-class bug is worse than no label. Tag, leave, or flag — **three states, never two** —
+  for a class that might apply and you cannot tell. Not a conflict with the floor above (#1695):
+  that floor is for no row applying at all, so there is no class to guess wrong.
 
 ## Untrusted input
 
