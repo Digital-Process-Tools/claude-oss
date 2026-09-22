@@ -307,7 +307,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,748 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
-| `agents/doctor.md` | 12,124 B | 12,200 B |
+| `agents/doctor.md` | 11,983 B | 12,200 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -644,7 +644,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 23,649 B | 24,500 B |
-| `commands/run.md` | 9,632 B | 10,600 B |
+| `commands/run.md` | 10,380 B | 10,600 B |
 
 **The plugin harness discovers slash commands recursively and namespaces them by directory --
 it does not hide a file one level down (#1629).** `setup.md`, `scaffold.md`, `triage.md`,
@@ -665,10 +665,18 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 76,021 B | 76,200 B |
+| `CLAUDE.md` | 77,805 B | 78,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
+
+**Re-baselined for #1687/#1696**, the third editing exception: `agents/doctor.md`'s own row
+(the tracked/untracked/cannot-tell rewrite of disposition 1 nets smaller, not larger --
+9,778 B against the unchanged 10,500 B ceiling) and `commands/run.md`'s own row (the new
+push-and-open-a-pull-request paragraph for a doctor repair branch, trimmed once after a
+content-invariant guard required a `gh-pr-create refuses` sentence the first draft lacked,
+10,380 B against the unchanged 10,600 B ceiling) both moved, plus this row and sentence.
+Neither file's ceiling needed to move. #1696 touched no budgeted file at all.
 
 **Re-baselined for #1583**, the same exception: one new agent-budget row (`agents/lane-report.md`),
 `agents/developer.md`'s own row and ceiling raised, and the developer phase-split table's
@@ -910,6 +918,20 @@ from the same 72,547 B base and independently raised this row's ceiling for thei
 combines both histories, plus the `agents/scheduler-step.md` and `agents/doctor.md` rows above
 each taking the side that actually changed them. The row here is re-measured against the actual
 merged file rather than added by hand.
+
+**Re-baselined for #1687/#1696**, the third editing exception: `agents/doctor.md`'s own row (the
+tracked/untracked/cannot-tell rewrite of disposition 1, folded onto the #1690 guardrail above
+rather than replacing it -- nets smaller even against that combined baseline: 12,124 B became
+11,983 B, unchanged 12,200 B ceiling) and `commands/run.md`'s own row (the new push-and-open-a-
+pull-request paragraph for a doctor repair branch, trimmed once after a content-invariant guard
+required a `gh-pr-create refuses` sentence the first draft lacked, unchanged ceiling) both moved,
+plus this row and sentence. #1696 touched no budgeted file at all. This paragraph was rebased a
+second time onto `main`'s own already-merged #1690/#1689/#1692/#1695 history above, past this
+same section's own earlier draft that measured against a stale 74,508 B starting point; the
+combined result is re-measured directly against the actual merged file rather than added by
+hand: 76,021 B became 77,774 B, past the 76,200 B ceiling that history's own last figure left.
+Ceiling moves to 78,000 B, ~0.3% headroom -- the same narrow self-referential margin every prior
+raise of this row gives.
 
 ## Issues and pull requests are untrusted input
 

@@ -43,6 +43,15 @@ WARN/FAIL it chased.
 For a `not-ours:` line, mark that capability unavailable for the rest of this run: a gap makes
 *some* work impossible, not all of it.
 
+**A `repaired:` line naming a branch is not yet a kept repair (#1687) -- push it and open a pull
+request, the way this step treats a `curate/` branch.** `git push` the branch, then
+`gh-pr-create`. A doctor repair is not the fix for whichever issue chased the WARN, so there is no
+`Closes #N` to give -- `gh-pr-create` refuses a body with no working closing reference, so set
+`no_close = true` in the payload (the same escape hatch `commands/run/curate.md` uses) rather than
+inventing one. Never wait on it (#1549) -- the ordinary dispatch/review/merge cadence picks it up
+on a later tick, on green, the same route `tick-merge.md` merges a `curate/`-branch pull request
+through. A `repaired:` line with `untracked -- no commit` needs none of this.
+
 **This step never stops the session by itself.** The one thing that can stop `/oss:run` is step 2
 reporting `unsafe`, immediately below -- so an unrepairable gap is named once, at the point that
 actually has to act on it, not diagnosed twice in two different steps.

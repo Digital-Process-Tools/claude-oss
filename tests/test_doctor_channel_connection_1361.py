@@ -162,25 +162,54 @@ def test_a_failed_transport_warns_rather_than_passing():
 def test_a_failed_transport_beside_an_untrusted_forwarding_reading_reports_both_facts_1625():
     """#1625 defect 1: `source == "cached-other-session"` is deliberately
     excluded from the OK-suppression guard (#1437 -- doctor cannot verify a
-    cross-session reading is its own), but that must not make the WARN below
-    it claim "no channel:health reading establishes a live consumer" when one
+    cross-session reading is its own), but that must not make the report
+    claim "no channel:health reading establishes a live consumer" when one
     plainly does. The two facts -- a failed `claude mcp list` transport, and a
     `channel:health` reading of `forwarding` this check does not trust enough
     to suppress on -- are reported as separate facts, never joined into one
-    false claim."""
+    false claim.
+
+    #1696: this is NOTICE, not WARN, as of this test. `check_channel_delivery`
+    below already treats this identical `source == "cached-other-session"`
+    condition as a NOTICE (`test_a_forwarding_reading_from_another_session_is_
+    not_reported_as_delivering`); #1437's own reasoning -- doctor.py has no
+    session identity of its own to compare against -- applies exactly the same
+    way here, and nothing about it settles with a clock (#1440 tried a WAIT
+    for a neighbouring branch of the same function on that premise and #1523
+    found it false and reverted it), so this can never be a WARN with a real
+    remedy either. A standing WARN here pins `bin/oss-workspace`'s route to
+    `/oss:doctor` (#1064) over a fact this check was already incapable of ever
+    resolving on its own."""
     conn.check_mcp_channel_connection(
         run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
         which=lambda _name: "/usr/bin/claude",
         env=LAUNCHED,
         resolve=lambda _d: ("forwarding", "cached-other-session", 33.0),
     )
-    assert _levels() == ["WARN"]
+    assert _levels() == ["NOTICE"]
     text = _text()
     assert "no channel:health reading establishes a live consumer" not in text, text
     assert "forwarding" in text, text
     assert (
         "cannot verify" in text or "cannot trust" in text or "cannot confirm" in text
     ), text
+
+
+def test_a_single_failing_server_is_not_reported_as_every_server_1696():
+    """#1696: 'every MCP server resolving to the claude-channel consumer
+    reports a failed transport' reads as a universal claim about every MCP
+    server configured, when only the ones that resolve to the consumer are
+    ever counted, and there can be exactly one of those. The count is folded
+    into the report so a single-row census cannot be misread as a blanket
+    failure."""
+    conn.check_mcp_channel_connection(
+        run=lambda *_a, **_k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _n: "/usr/bin/claude",
+        env=LAUNCHED,
+    )
+    text = _text()
+    assert "every MCP server" not in text, text
+    assert "1 server(s)" in text, text
 
 
 def test_a_live_transport_passes_and_says_what_it_does_not_prove():
@@ -443,16 +472,22 @@ def test_a_failed_row_beside_a_forwarding_consumer_is_not_a_fault():
 def test_a_failed_row_beside_a_forwarding_reading_from_another_session_still_warns():
     """#1437: `resolve_channel_health_reading` reports `cached-other-session`
     when the cached reading carries a `session` doctor cannot verify as its
-    own -- this must NOT suppress the WARN the same way a plain `cached`
+    own -- this must NOT suppress the report the same way a plain `cached`
     reading does, because doctor has no session identity to compare against
-    and would otherwise trust every session's reading unconditionally."""
+    and would otherwise trust every session's reading unconditionally.
+
+    #1696: NOTICE, not WARN, as of this test -- see the sibling assertion in
+    `test_a_failed_transport_beside_an_untrusted_forwarding_reading_reports_
+    both_facts_1625` for the full reasoning. The name kept its own "warns"
+    wording because the underlying claim it guards -- this must not read as
+    an OK -- is unchanged; only the level moved."""
     conn.check_mcp_channel_connection(
         run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
         which=lambda _name: "/usr/bin/claude",
         env=LAUNCHED,
         resolve=lambda _root: ("forwarding", "cached-other-session", 4),
     )
-    assert _levels() == ["WARN"]
+    assert _levels() == ["NOTICE"]
 
 
 def test_a_failed_row_with_no_usable_health_reading_still_warns():

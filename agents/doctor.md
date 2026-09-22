@@ -58,79 +58,77 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --root . --plugin-root "${CLAUDE_
 
 For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
 
-1. **Ours to repair -- but check HEAD before you write a byte.** An owned file missing or stale
-   (`scripts/scaffold.py --apply --i-was-asked` -- the flag is required now that the role marker
-   you wrote above is live, #1690), a config gap `scripts/oss_config.py --probe`/`--build` can
-   re-derive, a rule layer indexed but not installed -- anything a `doctor_check_*.py` already
-   knows how to fix by running the tool it names. Read `doctor_check_clone_head.clone_head_state`
-   first (#1624), and its own three answers decide three DIFFERENT outcomes, not one:
-   - `on-default` -- **before writing a byte, also call `branch_protection_state` directly.**
-     Never infer this from your own findings-only run above: `check_branch_protection` reports
-     `OK` when the branch IS protected, and `--findings` suppresses OK lines by design (#1455) --
-     so the one line that would tell you to stop is exactly the line your own diagnostic pass
-     never shows you. It is a plain function, not a CLI, and it lives in
-     `doctor_check_branch_protection.py` -- but import `doctor` itself, never that module
-     directly: `doctor.py` re-exports the name after importing it, and `doctor_check_branch_
-     protection.py`'s own top-level `import doctor` makes a direct import circular (confirmed:
-     `import doctor_check_branch_protection` alone raises `ImportError: cannot import name
-     'SETTINGS_PAGE_URL' from partially initialized module`; `import doctor` does not):
+1. **Ours to repair -- but first find out whether the write needs a commit at all.** An owned
+   file missing or stale (`scripts/scaffold.py --apply --i-was-asked` -- the flag is required now
+   that the role marker you wrote above is live, #1690), a config gap `scripts/oss_config.py
+   --probe`/`--build` can re-derive, a rule layer indexed but not installed -- anything a
+   `doctor_check_*.py` already knows how to fix by running the tool it names. **Before writing a
+   byte, check whether the path(s) the repair would write are tracked by git** -- an untracked or
+   gitignored owned file (`.oss/` is gitignored on this repo, and so are a couple of the other
+   `CLAUDE.md`-owned READMEs; check per-repo, never assume) needs no branch and no commit, and
+   cutting one for it produces an empty diff and a pull request with nothing in it (#1687):
 
-     ```bash
-     python3 -c '
-     import json, os, sys
-     sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "scripts"))
-     import doctor
-     config = None
-     if os.path.exists(".oss.json"):
-         with open(".oss.json") as f:
-             config = json.load(f)
-     state, detail = doctor.branch_protection_state(".", config=config)
-     print(state, "--", detail)
-     '
-     ```
+   ```bash
+   git check-ignore -q -- "<path>"; echo "ignore-exit:$?"
+   git ls-files --error-unmatch -- "<path>" >/dev/null 2>&1; echo "tracked-exit:$?"
+   ```
 
-     Only when it prints `not-protected` do you write, then `git commit` what you wrote (never
-     `git push`, never a pull request; the loop's own merge and publish authority stays with the
-     maintainer, the same boundary `agents/developer.md` draws around its own commit). Re-run
-     that ONE check (never the whole diagnostic a second time just to confirm one line) to
-     confirm it cleared, then report `repaired: <what changed> (committed <short sha>)`. When it
-     prints `protected` or `could-not-tell`, write nothing: a commit that cannot land on a
-     protected default without a bypass push is not a repair (#1649 -- one such commit's only
-     ways forward were a bypass push or a `git reset` and a branch, the day after this same
-     repo's own release used exactly that bypass). Report `could-not-repair: <default branch> is
-     protected -- <detail>`, or `could-not-repair: could not confirm <default branch> is
-     unprotected -- <detail>` for `could-not-tell`, instead -- the real branch name (`.oss.json`'s
-     own `default_branch`, which is what `branch_protection_state` itself checks; its absence is
-     already one of `could-not-tell`'s own causes), never a hardcoded `main`: a scaffolded repo
-     whose default branch is named anything else would otherwise get a report that misnames the
-     very branch it is about.
-   - `on-other` -- a KNOWN fact, not an unclear one: HEAD is on a named branch that is not the
-     default. Do not write anything -- that tree belongs to whatever lane cut it, and a repair
-     landing there rides into a pull request attributed to someone else, or is destroyed the next
-     time that lane resets its branch. This is still disposition 1's own outcome, reported in
-     disposition 1's own vocabulary: `deferred: HEAD is <branch> -- not written, not this tree's
-     to touch`. Never route a known branch name through disposition 3's `could-not-tell:` -- that
-     bucket exists specifically to keep "unclear" separate from everything else, including this.
-   - `could-not-tell` (HEAD state itself unreadable -- a detached HEAD, a corrupted `.git`, `git`
-     itself failing to answer) -- genuinely unclear, so THIS is disposition 3's case. Report
-     `could-not-tell: HEAD state unreadable -- <what clone_head_state said>`.
-   **`repaired` means committed on the default branch. A write left uncommitted, a write onto any
-   other branch, or a write attempted without checking HEAD first, is never `repaired`** -- this
-   is the same absence-as-clean-result class named below, one level over: a repair nobody kept
-   renders identically to a repair that worked.
+   Three outcomes, three routes -- **never write on the assumption of "probably untracked"**:
+
+   - **Untracked or ignored** (`ignore-exit:0`, or `tracked-exit:1` with no unreadable error) --
+     run the repair tool in the clone, now. No worktree, no branch, no commit;
+     `branch_protection_state` is not consulted, because git never sees this write. Re-run
+     the ONE relevant check
+     (never the whole diagnostic a second time just to confirm one line) to confirm it cleared,
+     then report `repaired: <what changed> (untracked -- no commit)`. Never cite a sha for a write
+     with none to cite.
+   - **Tracked** (`tracked-exit:0`) -- cut a worktree under `.oss.json`'s `worktree_root` (the
+     clone's own HEAD is not this spawn's to move -- a shared checkout is not the place to write,
+     the same reasoning `agents/developer.md` gives its own lanes), on a deterministic branch,
+     `doctor/<check-slug>`, cut from the default branch's current tip. A branch that already
+     exists (a prior run chasing the same finding) is reused, never duplicated. Write there, `git
+     commit` there -- never in the clone. Call `branch_protection_state` directly (a plain
+     function, not a CLI, living in `doctor_check_branch_protection.py` -- but import `doctor`
+     itself, never that module directly: `doctor.py` re-exports the name after importing it, and
+     `doctor_check_branch_protection.py`'s own top-level `import doctor` makes a direct import
+     circular; confirmed: `import doctor_check_branch_protection` alone raises `ImportError:
+     cannot import name 'SETTINGS_PAGE_URL' from partially initialized module`, `import doctor`
+     does not) and fold the answer into
+     the report as information, never as a reason to skip the write: a protected default only
+     means the branch needs a pull request to land, which is the only route a doctor branch ever
+     takes anyway. Report `repaired: <what changed> (branch doctor/<check-slug>, committed <short
+     sha>)`. **A branch cut and never pushed is not a kept repair** -- naming it is as far as you
+     go (never `git push`, never a pull request yourself: the same boundary `agents/developer.md`
+     draws around its own commit); your caller pushes it and opens the pull request once it reads
+     this line.
+   - **Cannot tell** (`git check-ignore`/`git ls-files` themselves fail to run, not merely answer
+     "no match") -- report `could-not-repair: could not determine whether <path> is tracked by git
+     -- <what the commands said>`.
+
+   `clone_head_state` (#1624) no longer gates this decision -- the tracked write never happens in
+   the clone's own checkout, so whichever branch the clone's HEAD is on does not matter. It still
+   answers one question: is the clone itself in a state a worktree can be cut from at all (a
+   corrupted `.git`, a detached HEAD mid-operation)? When it says no, report `could-not-repair:
+   could not confirm this clone is in a state a worktree can be cut from -- <what clone_head_state
+   said>`.
+
+   **`repaired` means committed on a doctor branch (tracked case) or written with nothing to
+   commit (untracked case) -- never a write left uncommitted, never a write onto a branch nobody
+   names, and never a write attempted before checking whether the path is tracked.** A repair
+   nobody can trace back to a change renders identically to a repair that never happened -- the
+   same absence-as-clean-result class named below, one level over.
 2. **Not this repo's to fix.** A missing binary, a permission this session lacks, a repository
    setting nobody here can flip, or a defect in a declared dependency (file it per the
    untrusted-input and upstream-dependency rules below rather than patching around it). Report
    `not-ours: <who> -- <one line of evidence>`, naming the upstream issue number when one already
    exists.
 3. **Genuinely unclear, after you tried.** Investigation that ran and did not resolve -- a
-   rate-limit mystery, a clone whose HEAD state itself could not be read (disposition 1's own
-   `could-not-tell` case above), something else you tried and could not settle. Report
-   `could-not-tell: <what you tried>`. Never fold this into either of the other two: this repo is
-   named after the defect of an absence read as a clean result, and folding "I could not tell"
-   into "not ours" or "repaired" is exactly that class, one level down -- and folding a KNOWN
-   `on-other` into "unclear" is the same class from the other direction: a known fact reported as
-   an absence of one.
+   rate-limit mystery, something else you tried and could not settle that is not disposition
+   1's own `could-not-repair` (which covers everything a repair itself could not determine, so
+   it never reaches here). Report `could-not-tell: <what you tried>`. Never fold this into
+   either of the other two: this repo is named after the defect of an absence read as a clean
+   result, and folding "I could not tell" into "not ours" or "repaired" is exactly that class,
+   one level down.
 
 These three map onto this repo's own `ok` / finding / `skipped`-`unknown` convention --
 `repaired` is the `ok` arm actually taken, `not-ours` is the finding, `could-not-tell` is the

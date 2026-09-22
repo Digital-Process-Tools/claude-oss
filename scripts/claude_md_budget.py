@@ -270,7 +270,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 75000 B and 73400 B respectively. Rebasing fix/1688 onto the already-
     # merged main combines both histories; the row here is re-measured
     # against the actual merged CLAUDE.md rather than added by hand.
-    "CLAUDE.md": (76021, 76200),
+    # Re-baselined for #1687/#1696, the third editing exception: agents/
+    # doctor.md's and commands/run.md's own rows moved (see their own
+    # BUDGETS entries), plus this row and one weighed sentence in CLAUDE.md
+    # itself. Rebased a second time onto main's own already-merged
+    # #1690/#1689/#1692/#1695 history above (76021/76200), past this PR's
+    # own earlier draft that had measured against a stale 74508 B starting
+    # point. 76021 B became 77774 B, then 77805 B once recording the fix in
+    # this same paragraph pushed the total further -- the same
+    # self-referential overshoot this row's own history already names.
+    # Ceiling moves to 78000 B, ~0.25% headroom, sized to absorb this
+    # paragraph's own bytes rather than chase them a third time. Re-measured
+    # against the actual merged CLAUDE.md at 77805 B.
+    "CLAUDE.md": (77805, 78000),
 }
 
 
