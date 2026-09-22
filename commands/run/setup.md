@@ -175,7 +175,7 @@ maintainer's:
 
 | File | Scope | Keys | Git |
 | --- | --- | --- | --- |
-| `.oss.json` | the project | `repo`, `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`, `docs_targets`, `labels`, `ci`, `milestones`, `release`, `curate_route_threshold` | **tracked** — `git add` it and commit it in review |
+| `.oss.json` | the project | `repo`, `default_branch`, `branch_pattern`, `test_command`, `version_sites`, `changelog_dir`, `docs_targets`, `labels`, `ci`, `milestones`, `release`, `curate_route_threshold`, `triage_route_threshold` | **tracked** — `git add` it and commit it in review |
 | `.oss.local.json` | this machine | `clone`, `worktree_root`, `state_file` | git-excluded, never shared |
 
 The release block cannot stay local (#34): `/oss:release` reads `tag_pattern`, `merge_method`,
