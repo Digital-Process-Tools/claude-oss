@@ -150,6 +150,15 @@ def _decide_one(pr, threshold_minutes):
             "against it",
         }
 
+    if "latest_review_comment_age_minutes" not in pr:
+        return {
+            "number": number,
+            "status": DISPOSITION_COULD_NOT_TELL,
+            "reason": "review_decision is NONE, no active lane, but "
+            "latest_review_comment_age_minutes is entirely absent from the "
+            "caller's own payload -- a key never sent must not render the "
+            "same as a confirmed 'no comment exists' (an explicit null)",
+        }
     age = pr.get("latest_review_comment_age_minutes")
     if age == UNKNOWN:
         return {
@@ -212,7 +221,7 @@ def decide(open_prs, threshold_minutes=DEFAULT_THRESHOLD_MINUTES):
     if in_flight:
         first = in_flight[0]
         return {
-            "disposition": "{0}:{1}".format(
+            "disposition": "{0}:{1!r}".format(
                 DISPOSITION_BLOCKED_PREFIX, first["number"]
             ),
             "reason": first["reason"],
@@ -224,7 +233,7 @@ def decide(open_prs, threshold_minutes=DEFAULT_THRESHOLD_MINUTES):
         first = unresolved[0]
         return {
             "disposition": DISPOSITION_COULD_NOT_TELL,
-            "reason": "PR #{0}: {1}".format(first["number"], first["reason"]),
+            "reason": "PR #{0!r}: {1}".format(first["number"], first["reason"]),
             "per_pr": per_pr,
         }
 
@@ -270,7 +279,16 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
 
-    raw = sys.stdin.read() if args.prs_json == "-" else Path(args.prs_json).read_text()
+    try:
+        raw = (
+            sys.stdin.read()
+            if args.prs_json == "-"
+            else Path(args.prs_json).read_text()
+        )
+    except OSError as exc:
+        parser.error("--prs-json could not be read: {0}".format(exc))
+        return EXIT_COULD_NOT_TELL  # pragma: no cover -- parser.error exits
+
     stripped = raw.strip()
     if stripped.lower() in ('"unknown"', "unknown"):
         open_prs = UNKNOWN
@@ -279,6 +297,14 @@ def main(argv=None):
             open_prs = json.loads(raw)
         except json.JSONDecodeError as exc:
             parser.error("--prs-json did not parse as JSON: {0}".format(exc))
+            return EXIT_COULD_NOT_TELL  # pragma: no cover -- parser.error exits
+        if not isinstance(open_prs, list) or not all(
+            isinstance(pr, dict) for pr in open_prs
+        ):
+            parser.error(
+                "--prs-json must hold a JSON list of PR objects (dicts), or "
+                "the literal word unknown -- got {0!r}".format(open_prs)
+            )
             return EXIT_COULD_NOT_TELL  # pragma: no cover -- parser.error exits
 
     result = decide(open_prs, threshold_minutes=args.threshold_minutes)
