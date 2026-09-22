@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-09-22
+
+### Changed
+
+- The launcher's plugin-currency check (`bin/oss-workspace`) no longer sits silently for up to
+  ~46s: per-plugin progress now streams to the terminal as each marketplace refresh and plugin
+  update completes, and the marketplace refresh is narrowed to the marketplace(s) the manifest's
+  own plugins actually resolve to, instead of refreshing every installed marketplace (#1648).
+
+- `scripts/plugin_update.py` no longer probes file descriptor 3 on every call to find
+  out whether the launcher opened a progress channel: `bin/oss-workspace` now says so with
+  `--progress-fd 3`, and without that flag `main()` touches no descriptor at all. The blind
+  probe was #1673's actual cause -- under a pytest-xdist worker on `windows-latest`, slot 3
+  is one of execnet's own live descriptors and `os.fdopen(3, "w")` on it blocked forever,
+  from every test that calls `main()` in-process, until the job's own 30-minute cap
+  cancelled the leg; `-o faulthandler_timeout=180` named the two stuck tests on the first
+  run carrying it, after four issues (#1658, #1660, #1671, #1673) had read the same
+  cancellation as a post-session hang. That flag stays on the CI invocation: a test past
+  three minutes now dumps its own stack and name into the log instead of leaving a bare
+  `KeyboardInterrupt` at the cap.
+- `bin/oss-workspace`'s fd-3 progress channel (#1648) was also leaking a live, inheritable
+  file descriptor to every subprocess `scripts/plugin_update.py` spawns on the way to
+  answering the plugin-currency check (marketplace refresh, the loop plugin, each
+  declared dependency). fd 3 arrives already open, inherited straight across the
+  launcher's own `exec 3>&1`, so PEP 446's non-inheritable-by-default -- which covers
+  only descriptors Python itself creates -- never applied to it. `plugin_update.main()`
+  now calls `os.set_inheritable(3, False)` immediately after opening the progress
+  writer, so no subprocess it spawns can inherit fd 3 any further -- a correct,
+  narrowly-scoped hardening fix on its own terms, investigated as a candidate cause of
+  #1673 (a `pytest (windows-latest, 3.12)` leg on PR #1654's branch cancelling at the
+  job's own 30-minute `timeout-minutes` cap with every test already green). A CI run of
+  this exact change showed the SAME leg STILL cancelling at the same mark with the fix
+  in place, so it does not explain #1673 -- #1673 stays open and tracks that separately.
+
+### Fixed
+
+- The statusline's doctor marker no longer renders a timed-out `doctor.py` refresh the same
+  `dr?` a never-configured doctor gets: a refresh that hits `DOCTOR_TIMEOUT` now records and
+  renders its own distinct state instead of folding into the same "nothing to report" absence
+  (#1650).
+
+- The curate step of `/oss:run` (`commands/run/curate.md`) worked directly in the primary clone
+  instead of its own worktree. A tick running concurrently in the same clone could observe curate's
+  own writes -- a trap.d/ fragment promoted into a jit-context rule and deleted as part of that
+  promotion -- as an unexplained mutation it did not cause (#1670). Curate now cuts and works inside
+  its own worktree, branched `curate/<UTC timestamp>` off the default branch, the same isolation a
+  developer lane already uses.
+
+- `oss_config --build` now writes `triage_route_threshold` into a freshly derived `.oss.json`, the same way it already writes `curate_route_threshold` (#1616). It is `0`: an unlabelled issue is invisible to dispatch for as long as it stays unlabelled, so the first one makes a triage sweep due. Every repository onboarded before this had the label-coverage triage route off by default, reporting `not-due` rather than unconfigured until #1651 gave doctor a line for it (#1676).
+
+- #1679: `select_issues` no longer reads a backticked key-value fragment
+  (e.g. `` `paths=[...]` ``, quoted from a CLI error message) as a lane's
+  own declared glob -- a candidate whose issue body quoted such a fragment
+  was reported could-not-tell and skipped on every tick, even when the
+  lane's own configured `lane_patterns` resolved real files.
+
+- `oss:release`'s gate 2 ("Nothing in flight is mid-review") now decides with `scripts/release_gate2.py` instead of prose argued fresh each run -- two `oss:releaser` runs on the same open, unreviewed pull request had reached opposite verdicts four hours apart with nothing about the PR itself having changed. Three states, the same shape `gate3_disposition.py` already gives gate 3: `clear` / `blocked-by:N` / `could-not-tell`, driven by each open PR's review decision, whether a lane is still alive in its worktree, and its latest review comment's age (#1681).
+
+- #1682: a blocking finding filed by `oss:tick-review` (or any other filing
+  instruction) now carries a lane and a priority, not only `labels.filed_by_loop`
+  -- an issue filed without them sat invisible to dispatch until the next
+  triage sweep, which cannot run while the finding it carries blocks a release.
+
+- #1683: `agents/lane-report.md`'s `reports/` step and pull-request-payload
+  paragraph now disambiguate `<worktree_root>` from a lane's own numbered
+  checkout, the same clause the `notes/` paragraph already carried -- without
+  it, a lane could read `<worktree_root>` as its own worktree and write
+  `reports/` (and `notes/`) inside the tree it was about to hand back,
+  refusing tick-merge's own cleanup.
+
 ## [0.40.0] - 2026-09-18
 
 ### Added
@@ -12204,7 +12274,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.41.0...HEAD
+[0.41.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.41.0
 [0.40.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.40.0
 [0.39.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.39.0
 [0.38.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.38.0

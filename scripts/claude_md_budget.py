@@ -241,7 +241,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # rebasing fix/1681 onto the already-merged #1682/#1683 combines both
     # histories. Re-measured against the actual merged CLAUDE.md rather than
     # added by hand.
-    "CLAUDE.md": (72547, 72800),
+    # Re-baselined at the v0.41.0 release, the release session's own first
+    # exception: the "What is not proven yet" marker was rewritten inside
+    # this release commit, per that exception's own terms -- a new delta
+    # range (v0.40.0..HEAD), two gate-3 rounds this time against one last
+    # release, and a re-derived gate-1 leg count checked twice (once before
+    # and once after a trap.d/ pull request moved the tip). 72547 B became
+    # 71220 B, comfortably under the unchanged 72800 B ceiling.
+    "CLAUDE.md": (71220, 72800),
 }
 
 
