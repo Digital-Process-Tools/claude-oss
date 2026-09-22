@@ -173,7 +173,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # labels.lane_other" reading as scoped to the same "own initiative
         # only" clause as `labels.filed_by_loop`. Comfortably under the
         # 44800 B ceiling; ceiling unchanged.
-        42904,
+        # Re-baselined for #1691: 42904 B became 42777 B -- a third,
+        # word-for-word copy of the dead "triager is the board" sentence
+        # (found by a spawned reviewer during self-review) removed from the
+        # "Delegating" paragraph, keeping the still-live sentence beside it
+        # about an unresolved `subagent_type`. Ceiling unchanged.
+        42777,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
