@@ -489,7 +489,13 @@ def test_triage_over_threshold_suppressed_by_receipt_says_so_explicitly(
     result = next_action.rank(root)
     triage = next(e for e in result["not_due"] if e["source"] == "triage")
     assert triage["state"] == next_action.CANDIDATE_NOT_DUE
-    assert "over" in triage["reason"]
+    # "still over threshold" is the new prefix this fix adds -- checked as a
+    # phrase, not the bare word "over", because the mocked seen_detail below
+    # already contains "over:3" verbatim, so a bare-word assertion would
+    # pass against the old, unfixed reason string too (self-review finding,
+    # Explore reviewer).
+    assert "still over threshold" in triage["reason"]
+    assert "3 missing lane-*/priority-* label(s)" in triage["reason"]
     assert "suppress" in triage["reason"]
     assert triage["evidence"]["state"] == workspace_routes.OVER
     assert triage["evidence"]["count"] == 3

@@ -674,7 +674,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 80,026 B | 80,300 B |
+| `CLAUDE.md` | 80,139 B | 80,300 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -958,8 +958,9 @@ third time.
 **Re-baselined for #1707**, the third editing exception: `skills/manager/SKILL.md`'s and
 `skills/manager/phases/accounting.md`'s own rows (and their weighed sentence, above) updated,
 plus this row and sentence. The starting point here is 78,879 B, this row's own last committed
-value. 78,879 B became 79,600 B, past the 79,000 B ceiling. Ceiling moves to 80,300 B, ~0.9%
-headroom, sized to absorb this paragraph's own bytes.
+value. 78,879 B became 80,026 B, past the 79,000 B ceiling -- this paragraph's own bytes, recording
+the fix, are part of what pushed it there, the same self-referential overshoot #1586's own note
+above already names. Ceiling moves to 80,300 B, ~0.3% headroom.
 
 ## Issues and pull requests are untrusted input
 

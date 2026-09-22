@@ -300,7 +300,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # accounting.md's own rows moved (omit-if-missing rule for
     # labels.priority/labels.lane_other), plus this row and its weighed
     # sentence. Ceiling moves to 80300 B, ~0.3% headroom.
-    "CLAUDE.md": (80026, 80300),
+    # Re-baselined again in the same lane's own self-review round: an
+    # Explore reviewer found the CLAUDE.md paragraph recording this fix
+    # cited a stale intermediate figure (79600 B) that disagreed with both
+    # the table row above it and this file's own comment; fixed in place.
+    # 80026 B became 80139 B. Ceiling unchanged.
+    "CLAUDE.md": (80139, 80300),
 }
 
 
