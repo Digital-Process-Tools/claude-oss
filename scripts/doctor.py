@@ -9045,8 +9045,24 @@ def label_vocabulary_state(project_dir, config=None, run=None):
         row.get("name") for row in rows if isinstance(row, dict) and row.get("name")
     ]
     classified = oss_config.classify_labels(names)
-    if classified["priority"]:
-        return "satisfied", (slug, classified["priority"], classified["lanes"])
+    priority = classified["priority"]
+    if priority:
+        # #1708: a doctor-created family interrupted mid-write (one or two
+        # of the three names landed, then a `gh label create` call failed)
+        # must not read the same as a maintainer's own deliberate spelling
+        # choice (#1686's own acceptance criterion). The two are told apart
+        # by comparing against doctor's own exact names, `_PRIORITY_LABEL_
+        # SPECS` -- no local marker file, no new storage: the forge's own
+        # label list is already the truth this function reads. Only when
+        # every present priority-shaped label is drawn from that known set
+        # AND the set is incomplete is this doctor's own interrupted write;
+        # any label outside that set (any spelling a human might have
+        # picked) still satisfies immediately and is left alone, exactly as
+        # before.
+        canonical = {name for name, _color, _description in _PRIORITY_LABEL_SPECS}
+        if set(priority) < canonical:
+            return "missing", slug
+        return "satisfied", (slug, priority, classified["lanes"])
     return "missing", slug
 
 
