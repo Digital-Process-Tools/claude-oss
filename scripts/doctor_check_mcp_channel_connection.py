@@ -200,8 +200,18 @@ def _classify_listing(text):
         connected = [name for name, state, _ in rows if state == "connected"]
         return "connected", ", ".join(connected)
     if all(state == "failed" for _, state, _ in rows):
-        return "failed", "; ".join(
-            "{} -- {}".format(name, detail) for name, _, detail in rows
+        # #1696: the count is folded into `detail` itself, not left to a caller's
+        # own "every server" phrasing -- a census of ONE server failing must never
+        # render like a claim about every MCP server this session has configured.
+        # Only the servers that resolve to the claude-channel consumer are rows
+        # here at all; naming how many of THOSE failed keeps the claim scoped to
+        # what was actually measured.
+        return (
+            "failed",
+            "{} server(s) resolving to the claude-channel consumer, all reporting a failed transport: {}".format(
+                len(rows),
+                "; ".join("{} -- {}".format(name, detail) for name, _, detail in rows),
+            ),
         )
     return "could-not-read", "; ".join(
         "{} [{}] {}".format(name, state, detail) for name, state, detail in rows
@@ -327,17 +337,15 @@ def check_mcp_channel_connection(
             )
             doctor.report(
                 "OK",
-                "channel MCP connection: `claude mcp list` reports a failed "
-                "transport for every server resolving to the claude-channel "
-                "consumer ({}), and that is the EXPECTED reading here rather "
-                "than a fault: channel:health reports a live consumer "
-                "forwarding{}. `claude mcp list` forks its own consumer to "
-                "produce a status, and the consumer binds an exclusive socket, "
-                "so the fork cannot bind one a live consumer already holds and "
-                "exits -- for the working server too. What is NOT established "
-                "either way: whether a registration that never starts is "
-                "hiding behind the same reading, since both render "
-                "alike.".format(detail, aged),
+                "channel MCP connection: {}, and that is the EXPECTED reading "
+                "here rather than a fault: channel:health reports a live "
+                "consumer forwarding{}. `claude mcp list` forks its own "
+                "consumer to produce a status, and the consumer binds an "
+                "exclusive socket, so the fork cannot bind one a live consumer "
+                "already holds and exits -- for the working server too. What "
+                "is NOT established either way: whether a registration that "
+                "never starts is hiding behind the same reading, since both "
+                "render alike.".format(detail, aged),
             )
             return
         # #1440 introduced a WAIT here, gated on `OSS_WORKSPACE_MCP_LIST_
@@ -374,18 +382,34 @@ def check_mcp_channel_connection(
                 if isinstance(age, (int, float)) and age
                 else ""
             )
+            # #1696: NOTICE, not WARN -- `check_channel_delivery` below already
+            # treats this exact `source == "cached-other-session"` condition as
+            # a #764 NOTICE ("no usable channel:health reading ... was not
+            # established"), and #1437's own reasoning is the same in both
+            # places: doctor.py has no session identity of its own to compare
+            # against, so this attribution can never be confirmed from here, no
+            # matter how many times the check re-runs or how much time passes.
+            # That is "the check has declared it can never answer" (the NOTICE
+            # row in doctor-warning-lifecycle.md), not "the answer settles on
+            # its own" (WAIT) -- #1440 tried a WAIT for a neighbouring branch
+            # of this same function on exactly that reasoning and #1523 found
+            # it false and reverted it (see the comment block above): there is
+            # no real clock here either. Leaving this a WARN pinned
+            # `bin/oss-workspace`'s route to `/oss:doctor` (#1064) for the
+            # whole of a release cycle over a fact this check was already
+            # incapable of ever resolving on its own.
             doctor.report(
-                "WARN",
-                "channel MCP connection: every MCP server resolving to the "
-                "claude-channel consumer reports a failed transport ({}). "
-                "Separately: a channel:health reading of forwarding{} does "
-                "exist, but this check cannot verify it is this session's own "
-                "(#1437 -- the reading carries a `session` attribution nothing "
-                "here can confirm or deny), so it does not explain the failed "
-                "transport away. The two facts may describe the SAME socket or "
-                "two different ones -- `claude mcp list` forks a probe against "
-                "whatever socket this consumer would bind, which is not "
-                "necessarily the one a live consumer already holds. "
+                "NOTICE",
+                "channel MCP connection: {}. Separately: a channel:health "
+                "reading of forwarding{} does exist, but this check cannot "
+                "verify it is this session's own (#1437 -- the reading "
+                "carries a `session` attribution nothing here can confirm or "
+                "deny), so it does not explain the failed transport away. Not "
+                "answered as connected and not answered as broken: this is "
+                "the third state. The two facts may describe the SAME socket "
+                "or two different ones -- `claude mcp list` forks a probe "
+                "against whatever socket this consumer would bind, which is "
+                "not necessarily the one a live consumer already holds. "
                 "`./supertool channel:health` names the live consumer's own "
                 "socket in its `socket:` row; `lsof /tmp/supertool-watch.sock` "
                 "names whatever process holds the default one this transport "
@@ -394,17 +418,16 @@ def check_mcp_channel_connection(
             return
         doctor.report(
             "WARN",
-            "channel MCP connection: every MCP server resolving to the "
-            "claude-channel consumer reports a failed transport ({}), and no "
-            "channel:health reading establishes a live consumer to explain it. "
-            "The registration and the consumer file can both be fine and "
-            "nothing still be delivered -- the usual cause is another "
-            "claude-channel consumer already holding the socket this one would "
-            "bind, which makes it exit without binding. Ask supertool which: "
-            "`./supertool channel:health` names the holding pid in its "
-            "`refused:` row, and `lsof /tmp/supertool-watch.sock` names the "
-            "process. A consumer whose own session is gone is safe to kill; "
-            "one belonging to another live tool is not this diagnostic's call "
+            "channel MCP connection: {}, and no channel:health reading "
+            "establishes a live consumer to explain it. The registration and "
+            "the consumer file can both be fine and nothing still be "
+            "delivered -- the usual cause is another claude-channel consumer "
+            "already holding the socket this one would bind, which makes it "
+            "exit without binding. Ask supertool which: `./supertool "
+            "channel:health` names the holding pid in its `refused:` row, "
+            "and `lsof /tmp/supertool-watch.sock` names the process. A "
+            "consumer whose own session is gone is safe to kill; one "
+            "belonging to another live tool is not this diagnostic's call "
             "to make.".format(detail),
         )
         return

@@ -241,7 +241,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # became 9632 B -- the relay vocabulary line gained the new
     # could-not-repair: outcome, one of two docs a reviewer found still
     # enumerating only three states. Ceiling unchanged; comfortably under it.
-    "commands/run.md": (9632, 10600),
+    # Re-baselined for #1687: step 1 now names how a `repaired:` line naming
+    # a branch gets pushed and turned into a pull request (never waited on --
+    # the ordinary dispatch/review/merge cadence picks it up). 9632 B became
+    # 10380 B. Ceiling unchanged, ~2% headroom.
+    "commands/run.md": (10380, 10600),
 }
 
 

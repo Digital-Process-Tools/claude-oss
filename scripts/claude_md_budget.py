@@ -270,7 +270,33 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 75000 B and 73400 B respectively. Rebasing fix/1688 onto the already-
     # merged main combines both histories; the row here is re-measured
     # against the actual merged CLAUDE.md rather than added by hand.
-    "CLAUDE.md": (76021, 76200),
+    # Re-baselined for #1687/#1696, the third editing exception: agents/
+    # doctor.md's and commands/run.md's own rows moved (see their own
+    # BUDGETS entries), plus this row and one weighed sentence in CLAUDE.md
+    # itself. Rebased a second time onto main's own already-merged
+    # #1690/#1689/#1692/#1695 history above (76021/76200), past this PR's
+    # own earlier draft that had measured against a stale 74508 B starting
+    # point. 76021 B became 77774 B, then 77805 B once recording the fix in
+    # this same paragraph pushed the total further -- the same
+    # self-referential overshoot this row's own history already names.
+    # Ceiling moved to 78000 B, ~0.25% headroom.
+    # Re-baselined again in the same rebase's self-review round: two
+    # reviewers found this row's own citation had drifted, plus the doctor.md
+    # worktree_root fix and git exit-code clarification moved
+    # agents/doctor.md's own size to 12331 B (past its own 12200 B ceiling;
+    # moved to 12500 B -- see agent_budgets.py). Resolving those same
+    # conflicts also surfaced a pre-existing duplication bug carried in
+    # from the source branch itself: an entire stale first draft of the
+    # #1687/#1696 re-baseline paragraph (plus its own self-review addendum)
+    # had survived, undeleted, directly under the table -- both copies had
+    # been merging cleanly across three separate rebases because neither
+    # ever conflicted on its own. Deleted the stale pair. 78041 B once the
+    # duplicate was removed (past the 78000 B ceiling that duplicate's own
+    # history had left), then 78879 B once the edits recording this fix
+    # landed. Ceiling moves to 79000 B, ~0.15% headroom, sized to absorb
+    # this paragraph's own bytes rather than chase them a third time.
+    # Re-measured against the actual merged CLAUDE.md at 78879 B.
+    "CLAUDE.md": (78879, 79000),
 }
 
 

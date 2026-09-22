@@ -531,8 +531,25 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # prose, not shown as a literal, runnable invocation the way the first
     # one is -- fixed by adding the same literal python3 -c snippet a
     # second time, in the Report back section. 11521 B became 12124 B.
-    # Ceiling moves to 12200 B, ~0.6% headroom.
-    "agents/doctor.md": (12124, 12200),
+    # Ceiling moved to 12200 B, ~0.6% headroom.
+    # Re-baselined for #1687 (rebased onto the #1690 commit above): disposition
+    # 1 rewritten with a tracked/untracked/cannot-tell split (git check-ignore/
+    # git ls-files before writing, a worktree+branch for a tracked path,
+    # branch_protection_state folded in -- with its own circular-import note
+    # preserved from #1690's paragraph -- as information rather than a write
+    # gate), plus a fix to disposition 3's own stale "on-other" cross-reference
+    # the rewrite left behind. Nets smaller even against the #1690 baseline:
+    # 12124 B became 11983 B. Ceiling unchanged at 12200 B, comfortably under.
+    # Re-baselined again in the same lane's own self-review round: 11983 B
+    # became 12331 B. Two spawned reviewers found the tracked-case bullet
+    # named `.oss.json` as the home of `worktree_root`, which is actually
+    # `.oss.local.json`-only (confirmed against LOCAL_KEYS in
+    # scripts/oss_config.py and agents/developer.md's own config table) --
+    # fixed. The auditor separately flagged the "Cannot tell" bullet as
+    # underspecifying which git exit codes mean "could not tell" versus "no
+    # match" -- fixed by stating the {0, 1} convention explicitly. Past the
+    # 12200 B ceiling; ceiling moves to 12500 B, ~1.4% headroom.
+    "agents/doctor.md": (12331, 12500),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the
