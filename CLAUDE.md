@@ -307,7 +307,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,748 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
-| `agents/doctor.md` | 11,983 B | 12,200 B |
+| `agents/doctor.md` | 12,331 B | 12,500 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -665,18 +665,10 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 77,805 B | 78,000 B |
+| `CLAUDE.md` | 78,879 B | 79,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
-
-**Re-baselined for #1687/#1696**, the third editing exception: `agents/doctor.md`'s own row
-(the tracked/untracked/cannot-tell rewrite of disposition 1 nets smaller, not larger --
-9,778 B against the unchanged 10,500 B ceiling) and `commands/run.md`'s own row (the new
-push-and-open-a-pull-request paragraph for a doctor repair branch, trimmed once after a
-content-invariant guard required a `gh-pr-create refuses` sentence the first draft lacked,
-10,380 B against the unchanged 10,600 B ceiling) both moved, plus this row and sentence.
-Neither file's ceiling needed to move. #1696 touched no budgeted file at all.
 
 **Re-baselined for #1583**, the same exception: one new agent-budget row (`agents/lane-report.md`),
 `agents/developer.md`'s own row and ceiling raised, and the developer phase-split table's
@@ -932,6 +924,27 @@ combined result is re-measured directly against the actual merged file rather th
 hand: 76,021 B became 77,774 B, past the 76,200 B ceiling that history's own last figure left.
 Ceiling moves to 78,000 B, ~0.3% headroom -- the same narrow self-referential margin every prior
 raise of this row gives.
+
+**Re-baselined again, same self-review round**: reviewers found this paragraph's own citation
+had drifted from the table row above it, `agent_budgets.py` and disk -- fixed above. A third
+finding, `worktree_root` misattributed to `.oss.json` (it is `.oss.local.json`'s), is fixed in
+`agents/doctor.md` directly. The subsequent worktree_root/exit-code edits moved `agents/
+doctor.md`'s real size again to 12,331 B, past its own 12,200 B ceiling; ceiling moves to
+12,500 B, reflected in the table row and `agent_budgets.py`'s own entry above.
+
+**Re-baselined a second time during this same rebase, fixing a duplication bug carried in from
+the source branch itself:** the `Re-baselined for #1687/#1696` paragraph above and this file's
+own table row conflicted against `main`'s independently-merged history on every rebase this PR
+went through; resolving those conflicts also surfaced that the source branch had left an entire
+stale first draft of the `#1687/#1696` paragraph (plus its own self-review addendum) sitting
+directly under the table, never deleted when the real, later version was written further down --
+both copies survived three separate merges because neither conflicted on its own. Deleted the
+stale pair rather than merging them a fourth time. `CLAUDE.md`'s own row is re-measured against
+disk at 78,041 B once the duplicate was removed, past the 78,000 B ceiling the (now-deleted)
+duplicate's own history had left; then further edits recording this fix pushed it to 78,777 B --
+the same self-referential overshoot #1586's own note above already names. Ceiling moves to
+79,000 B, ~0.3% headroom, sized to absorb this paragraph's own bytes rather than chase them a
+third time.
 
 ## Issues and pull requests are untrusted input
 

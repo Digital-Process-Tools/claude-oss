@@ -82,7 +82,8 @@ For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
      (never the whole diagnostic a second time just to confirm one line) to confirm it cleared,
      then report `repaired: <what changed> (untracked -- no commit)`. Never cite a sha for a write
      with none to cite.
-   - **Tracked** (`tracked-exit:0`) -- cut a worktree under `.oss.json`'s `worktree_root` (the
+   - **Tracked** (`tracked-exit:0`) -- cut a worktree under `.oss.local.json`'s `worktree_root`
+     (a per-machine path, unlike `.oss.json`'s own tracked keys -- the
      clone's own HEAD is not this spawn's to move -- a shared checkout is not the place to write,
      the same reasoning `agents/developer.md` gives its own lanes), on a deterministic branch,
      `doctor/<check-slug>`, cut from the default branch's current tip. A branch that already
@@ -101,9 +102,12 @@ For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
      go (never `git push`, never a pull request yourself: the same boundary `agents/developer.md`
      draws around its own commit); your caller pushes it and opens the pull request once it reads
      this line.
-   - **Cannot tell** (`git check-ignore`/`git ls-files` themselves fail to run, not merely answer
-     "no match") -- report `could-not-repair: could not determine whether <path> is tracked by git
-     -- <what the commands said>`.
+   - **Cannot tell** -- either command itself failing to run, not merely answering "no match":
+     `git check-ignore`'s exit status is `0`/`1` for a real ignored/not-ignored answer and `128` (or
+     any other nonzero-and-not-1) for a genuine error; `git ls-files --error-unmatch`'s is `0`/`1`
+     the same way. Only an exit code outside `{0, 1}` from either command is "cannot tell" -- report
+     `could-not-repair: could not determine whether <path> is tracked by git -- <what the commands
+     said>`.
 
    `clone_head_state` (#1624) no longer gates this decision -- the tracked write never happens in
    the clone's own checkout, so whichever branch the clone's HEAD is on does not matter. It still
