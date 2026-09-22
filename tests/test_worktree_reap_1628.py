@@ -249,6 +249,19 @@ def test_branch_merge_state_no_pr_on_record_is_not_merged(monkeypatch):
     assert "no pull request on record" in reason
 
 
+def test_branch_merge_state_closed_pr_is_its_own_state(monkeypatch):
+    """#1693: a PR explicitly CLOSED without merging is a final, recorded
+    decision not to merge -- distinct from `not-merged`, which covers both
+    a branch with no PR at all and one still OPEN, neither of which is a
+    decision yet."""
+    fake = _FakeGhRun({"fix/1": "CLOSED"})
+    state, reason = worktree_reap.branch_merge_state(
+        "o/r", "fix/1", run=fake, gh_bin=fake.GH_BIN
+    )
+    assert state == "closed"
+    assert "CLOSED" in reason
+
+
 # --------------------------------------------------------------------- plan_reap
 
 
@@ -317,6 +330,51 @@ def test_not_merged_branch_is_kept(tmp_path):
     wt = tmp_path / "wt1"
     _add_worktree(clone, wt, "fix/1")
     fake = _FakeGhRun({"fix/1": "OPEN"})
+    state, plan = worktree_reap.plan_reap(
+        clone,
+        _config(clone),
+        gh_bin=fake.GH_BIN,
+        run=fake,
+        list_processes=_unoccupied,
+    )
+    assert state == "planned"
+    assert plan[0]["decision"] == "kept", plan[0]
+    assert "not merged" in plan[0]["reason"]
+
+
+def test_closed_pr_branch_is_reapable_like_merged(tmp_path):
+    """#1693: a branch whose only PR was explicitly CLOSED (never merged) is
+    a final decision not to merge -- same finality as MERGED, just the
+    opposite outcome -- and unoccupied/clean is reapable the same way, not
+    kept forever the way `test_not_merged_branch_is_kept` above (an OPEN PR,
+    still undecided) must be."""
+    clone = tmp_path / "clone"
+    _init_repo(clone)
+    wt = tmp_path / "wt1"
+    _add_worktree(clone, wt, "fix/1")
+    fake = _FakeGhRun({"fix/1": "CLOSED"})
+    state, plan = worktree_reap.plan_reap(
+        clone,
+        _config(clone),
+        gh_bin=fake.GH_BIN,
+        run=fake,
+        list_processes=_unoccupied,
+    )
+    assert state == "planned"
+    assert plan[0]["decision"] == "reapable", plan[0]
+    assert "closed" in plan[0]["reason"]
+
+
+def test_no_pr_on_record_branch_is_kept_not_reaped(tmp_path):
+    """Positive-control pairing for the closed-PR case above: a branch with
+    NO pull request on record at all is NOT a decision either way, so it
+    must stay kept -- never swept into the same reapable path a CLOSED PR
+    now takes."""
+    clone = tmp_path / "clone"
+    _init_repo(clone)
+    wt = tmp_path / "wt1"
+    _add_worktree(clone, wt, "fix/1")
+    fake = _FakeGhRun({})
     state, plan = worktree_reap.plan_reap(
         clone,
         _config(clone),

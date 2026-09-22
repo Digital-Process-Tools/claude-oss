@@ -60,6 +60,14 @@ nothing reaps, because nothing merges the PR that would make the worktree eligib
 `worktree_reap.py`'s merged-and-clean gate. Quieter, easier to miss, same underlying gap: still
 nobody's job to merge what a step opened.
 
+**Partially closed as of #1693.** Two of the three ways a curate worktree could end up
+unreapable are now handled: a pass that finds nothing waiting removes its own worktree and branch
+immediately, before stopping (nothing was ever written to it), and `worktree_reap.py`'s gate now
+treats a branch whose PR was explicitly CLOSED without merging as reapable, the same way it already
+treats a merged one. **Still open:** a PR left OPEN and simply never merged or closed -- undecided
+forever is still not a decision, so that branch is still kept by the gate with no route to remove
+it at all.
+
 Routed via /oss:curate from `trap.d/1389.run-step-in-the-main-clone-strands-it-on-a-feature-branch.md`,
 `trap.d/1389.run-step-pull-requests-have-no-owner-in-the-merge-path.md`,
 `trap.d/1632.red-curate-pr-has-no-owner-after-its-spawn-dies.md` and
