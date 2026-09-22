@@ -560,7 +560,7 @@ enters it.
 | `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |
 | `skills/manager/phases/release.md` | 11,212 B | 12,300 B |
 | `skills/manager/phases/review.md` | 11,869 B | 12,000 B |
-| `skills/manager/phases/findings.md` | 13,093 B | 13,800 B |
+| `skills/manager/phases/findings.md` | 14,195 B | 14,400 B |
 | `skills/manager/phases/merge.md` | 15,596 B | 16,400 B |
 | `skills/manager/phases/ci-green.md` | 2,988 B | 3,050 B |
 | `skills/manager/phases/inbound.md` | 6,799 B | 6,900 B |
@@ -674,7 +674,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 80,581 B | 80,700 B |
+| `CLAUDE.md` | 82,208 B | 82,800 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -966,6 +966,24 @@ included) pushed the true size past 80,300 B -- the same self-referential oversh
 note names, met the same way: rather than chase it a further time, ceiling moves to 80,700 B, sized
 to absorb this paragraph's own final bytes, reflected in the table row and `scripts/
 claude_md_budget.py`'s tuple.
+
+**Re-baselined for #1705**, the third editing exception: `skills/manager/phases/findings.md`'s own
+row and ceiling raised (13,093 B became 14,195 B, past the old 13,800 B ceiling to 14,400 B), for a
+new paragraph stating that `labels.filed_by_loop` on a cross-repo or dependency filing is read from
+the *destination* repository's own declaration, never the filing session's own `.oss.json` --
+confirmed missing four for four (#1679, #1681, #1682, #1683) despite each landing on its
+destination's own `lane-*`/`priority-*` vocabulary correctly. Nothing already in this section
+argued a weaker case for its size, so nothing was cut to make room. This paragraph landed on top of
+`main` after PR #1713 (#1707/#1709) merged first and raised this row and both #1707's own rows
+above independently -- rebased onto that result rather than picked from either side, per the
+"lanes cannot be file-disjoint for prose" rule this file already states. The starting point here is
+80,581 B, this row's own value after that merge. Two self-review rounds in this lane's own history
+(fixing a stale byte-arithmetic claim, twice, the same self-referential-overshoot pattern #1586's
+note above already names) taught the same lesson each time: write the final number with
+deliberately wide headroom rather than a tight margin, so re-measuring this paragraph's own bytes
+does not itself trigger a further chase. The real final size, measured directly against the file on
+disk after this paragraph's own final wording and after updating the table row below to match, is
+82,208 B; the ceiling moves to 82,800 B, headroom sized generously to absorb it.
 
 ## Issues and pull requests are untrusted input
 

@@ -162,6 +162,19 @@ about what we may ship; embargo is about whether *their* users are exposed while
 and one row is blocking and not embargo for the reason given under the table. **Read the column off
 the table when you route** — a restated copy has already drifted.
 
+**A filed issue still carries `labels.filed_by_loop`'s label, read from the *destination*
+repository's own declaration, never the filing session's own `.oss.json` (#1705).** The two are the
+same file only for a same-repo filing; the moment filing crosses a boundary — `loop_repository()`,
+or a same-maintainer dependency's own tracker — this session never read the destination's
+`.oss.json` at all. Confirmed missing four for four (#1679, #1681, #1682, #1683): each carried the
+destination's own `lane-*`/`priority-*` labels correctly and none carried `filed-by-loop`, because
+this section never named it. `gh-labels:repo:OWNER/NAME` reads that destination's live label
+vocabulary without cloning it; match it the way `scripts/oss_config.py`'s own
+`_infer_filed_by_loop_label` already does for a same-repo setup — the first label shaped like
+`filed[-_:/ ]?by[-_:/ ]?loop`, never an invented spelling. Nothing matches: omit the label, the same
+"omit whichever key is missing" precedent `skills/manager/phases/review.md` already sets for a
+same-repo filing that declares none of the three labels.
+
 Three outcomes:
 
 | Outcome | What it means |
