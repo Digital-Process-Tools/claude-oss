@@ -488,10 +488,23 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
     # that embargo is a subset of blocking; plus a precision sentence
     # distinguishing this row from ships-local-state's own disagreement.
     # Ceiling unchanged; still comfortably under the 13800 B budget.
+    #
+    # Raised for #1705: 13093 B became 14195 B, past the old 13800 B ceiling.
+    # The dependency-filing section named the destination repository as the
+    # scope for `labels.priority`/`labels.lane_other` but never for
+    # `labels.filed_by_loop`, unlike the same-repo instructions in
+    # SKILL.md/review.md/accounting.md -- confirmed four for four (#1679,
+    # #1681, #1682, #1683) landing on their destination board correctly
+    # labelled except for that one. The new paragraph states the label comes
+    # from the *destination*'s own declaration, never the filing session's
+    # own `.oss.json`, and names the existing `_infer_filed_by_loop_label`
+    # matching convention and `gh-labels:repo:OWNER/NAME` as the route to it
+    # rather than inventing a new mechanism. Nothing already in this section
+    # argued a weaker case for its size, so the ceiling moves with it.
     "skills/manager/phases/findings.md": (
-        13093,
-        13800,
-        "ranking a finding: the twelve classes, the blocking and embargo columns, routing by row (#1275) including a conditional row (#1374), and filing on a dependency's own board",
+        14195,
+        14400,
+        "ranking a finding: the twelve classes, the blocking and embargo columns, routing by row (#1275) including a conditional row (#1374), and filing on a dependency's own board -- and, since #1705, which repository's own label declarations govern that filing",
     ),
     # Raised for #1275: 9326 B became 11222 B, past the old 10300 B ceiling by
     # 922 B. The new "Routing a finding" section states where a ranked finding

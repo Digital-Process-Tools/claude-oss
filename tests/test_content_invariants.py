@@ -2647,6 +2647,34 @@ def test_the_manager_can_receive_a_tooling_item_it_cannot_derive():
         )
 
 
+def test_dependency_filing_section_names_the_label():
+    """#1705: four for four cross-repo/dependency filings (#1679, #1681, #1682,
+    #1683) landed on the destination's own board with lane and priority labels
+    correct and `filed-by-loop` never attached. The section governing a filing
+    that crosses a repository boundary never named the label at all, distinct
+    from the same-repo instructions in SKILL.md/review.md/accounting.md, which
+    do name it. `test_every_filing_instruction_names_the_label` in
+    `tests/test_dispatch_order_798_799.py` cannot see this gap: its extractor
+    only matches a document containing the literal string `gh-issue-create`,
+    and this section never contains it -- the actual filing is done by
+    whichever agent processes a `report-for-filing` item, not stated as a
+    direct op call in this file.
+    """
+    findings_path = REPO_ROOT / "skills" / "manager" / "phases" / "findings.md"
+    findings = _flatten(findings_path.read_text(encoding="utf-8"))
+    marker = "a defect in a declared dependency is filed on that dependency"
+    assert marker in findings, (
+        "the dependency-filing section heading is gone; this guard is measuring nothing"
+    )
+    dependency_section = findings.split(marker, 1)[1]
+    assert (
+        "filed_by_loop" in dependency_section or "filed-by-loop" in dependency_section
+    ), (
+        "the dependency/cross-repo filing section still never names "
+        "labels.filed_by_loop, so a cross-repo filing keeps landing unlabelled"
+    )
+
+
 def test_the_developer_says_the_tooling_has_no_manifest_name():
     """The seam the new routing prose opens, and the reason it is not cosmetic.
 

@@ -312,7 +312,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # the paragraph pushed the real size to 80581 B, past the 80300 B
     # ceiling. Ceiling moves to 80700 B, sized to absorb this paragraph's
     # own final bytes rather than chase them a further time.
-    "CLAUDE.md": (80581, 80700),
+    # Re-baselined for #1705, rebased onto #1707 (PR #1713) after it merged
+    # first and touched this same row: findings.md's own row raised
+    # (13093 B became 14195 B) for the filed_by_loop-destination-label
+    # paragraph, plus this row and its own weighed sentence, appended after
+    # #1707's rather than replacing it. Starting point 80581 B (this row's
+    # value after #1707 landed). Two rounds in this lane's own prior
+    # self-review history each caught the identical self-referential
+    # overshoot #1586's note names, so this time the final figure was
+    # measured directly against disk after every edit including the table
+    # row, rather than guessed ahead of it: 82208 B. Ceiling moves to
+    # 82800 B, headroom deliberately wide (~0.7%) to stop the chase rather
+    # than needing a further round to catch it again.
+    "CLAUDE.md": (82208, 82800),
 }
 
 
