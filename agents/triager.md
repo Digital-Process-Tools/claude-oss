@@ -40,9 +40,14 @@ blocking outranks everything, including a loud external report** — no count is
 purpose, because the blocking set has changed size once and a number beside it would not have.
 
 **Say so if an issue fits none of them** rather than forcing it into the nearest row — the class that
-does not exist yet is where the worst finding lands. And if the table did not reach you, say that
-instead of labelling from memory: an issue triaged against a taxonomy you could not read is not a
-triaged issue, and it is indistinguishable from one that was.
+does not exist yet is where the worst finding lands. **Priority still gets the same floor lane has
+below (#1310, #1695):** apply `priority-low` so no issue is left unlabelled — `select_issues_rank`'s
+own `_band()` already treats a missing label this way (#826). Report the unranked class as a finding
+for filing rather than letting the fallback speak for itself: a `priority-low` applied because nothing
+fit must stay **distinguishable in your report** from one applied because the issue really is low, or
+the fallback quietly becomes a judgment. And if the table did not reach you, say that instead of
+labelling from memory: an issue triaged against a taxonomy you could not read is not a triaged issue,
+and it is indistinguishable from one that was.
 
 **Lane**, by which files the work owns, because the expensive thing is context, not the fix. Read the
 lane labels off the repo; assign the one whose files the issue actually touches. **When `.oss.json`

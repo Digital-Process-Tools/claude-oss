@@ -576,7 +576,7 @@ def board_from_cache(cache, now=None):
 # ------------------------------------------------------------------ release progress
 
 
-def release_progress(commits, tags_by_hash):
+def release_progress(commits, tags_by_hash, window=RELEASE_WINDOW):
     """How far into the next release this clone is: commits banked, over the usual size.
 
     Both halves come from the same two facts -- the log window and where the version tags
@@ -586,6 +586,13 @@ def release_progress(commits, tags_by_hash):
     renders as `0`, which is a measurement this repository takes seriously enough to name
     itself after: zero commits since the tag is a real and common state, and it has to stay
     distinguishable from never having looked.
+
+    A repository with NO version tag at all is a third case, distinct from "never looked"
+    (#1692): every commit in the window is banked toward a first release, and that count is
+    known exactly as long as the window reached the root commit (`len(commits) < window`).
+    When the window is exactly `window` commits long, whether more history exists beyond it
+    is unmeasured -- the count is a floor, not a measurement, and `since_floor` says so
+    rather than letting a truncated count render as if it were exact.
 
     `commits` is newest-first, as `git rev-list` prints it. `tags_by_hash` maps a commit to
     the tag names on it; anything `_version_tuple` cannot parse is not a release boundary
@@ -604,7 +611,12 @@ def release_progress(commits, tags_by_hash):
             if version is not None:
                 found.append((version, index))
     if not found:
-        return unknown
+        return {
+            "state": "no-tag",
+            "since": len(commits),
+            "typical": None,
+            "since_floor": len(commits) >= window,
+        }
     found.sort(key=lambda pair: pair[0], reverse=True)
     since = found[0][1]
     gaps = []
@@ -638,6 +650,11 @@ def git_release_progress(root, window=RELEASE_WINDOW):
     ``for-each-ref`` rather than ``show-ref`` because an annotated tag's own object hash is
     not the commit's: ``*objectname`` dereferences it, and is empty for a lightweight tag,
     so one format string covers both without a second call to tell them apart.
+
+    Callers that have `.oss.json`'s `release.triggers.merged_prs` in hand fold it onto the
+    returned dict themselves (`dict(progress, trigger=...)`), rather than this function
+    taking it as a parameter -- several tests monkeypatch this whole function with a
+    single-argument stand-in, and this keeps that call shape unchanged (#1692).
     """
     refs = _run(
         [
@@ -661,7 +678,7 @@ def git_release_progress(root, window=RELEASE_WINDOW):
             continue
         direct, dereferenced, name = parts
         tags.setdefault(dereferenced or direct, []).append(name)
-    return release_progress(log.split(), tags)
+    return release_progress(log.split(), tags, window=window)
 
 
 #: The rollup states GitHub reports that mean the checks passed, and the ones that mean
@@ -1202,18 +1219,47 @@ def _group(count, symbol, shade, color):
     return (shade if count else DIM) + text + RESET
 
 
+def _with_release_trigger(progress, config):
+    """Fold `.oss.json`'s `release.triggers.merged_prs` onto a release-progress dict.
+
+    A merged-PR count is a different unit from `since`'s commit count (#1692), so this
+    never rewrites `since` or `typical` -- it only adds `trigger`, which `_release_field`
+    renders with its own unit marker rather than ever presenting the two as one ratio.
+    """
+    trigger = ((config or {}).get("release") or {}).get("triggers") or {}
+    trigger = trigger.get("merged_prs")
+    if not isinstance(trigger, int):
+        return progress
+    return dict(progress or {}, trigger=trigger)
+
+
 def _release_field(progress):
     """`rel 4/17` -- banked since the last release, over what a release here usually costs.
 
     Each half carries its own `?`, because they fail separately: a clone with one tag knows
     exactly how much is banked and nothing about the usual size, and `rel 4/?` says that
     where a single `?` would throw away the half that was measured.
+
+    A repository with no version tag at all still has a measured numerator -- every commit
+    in the window is banked toward a first release (#1692) -- rendered plain (`rel 5/?`) when
+    the window reached the root commit, or with a trailing `+` (`rel 500+/?`) when
+    `since_floor` says the count is a truncation rather than the whole history.
+
+    `trigger` is a merged-PR count, a different unit from `since`'s commits, so whenever it
+    is present both halves carry a unit marker (`rel 5c/8pr`) rather than ever rendering as
+    one bare ratio that looks like a single unit.
     """
     progress = progress or {}
     since = progress.get("since")
     typical = progress.get("typical")
+    trigger = progress.get("trigger")
+    since_text = "?" if not isinstance(since, int) else str(since)
+    if isinstance(since, int) and progress.get("since_floor"):
+        since_text += "+"
+    if isinstance(trigger, int):
+        return "rel {}c/{}pr".format(since_text, trigger)
     return "rel {}/{}".format(
-        "?" if not isinstance(since, int) else since,
+        since_text,
         "?" if not isinstance(typical, int) else typical,
     )
 
@@ -3547,7 +3593,7 @@ def gather(payload, root, now=None):
         "default_branch": config.get("default_branch"),
         "version": repo_version(root),
         "board": board,
-        "release": git_release_progress(root),
+        "release": _with_release_trigger(git_release_progress(root), config),
         "traps": _trap_count(root),
         "outbound": _outbound_count(root),
         "last": _render_stamp(now),

@@ -32,11 +32,35 @@ def _commits(count):
 # ------------------------------------------------------------------ the two halves
 
 
-def test_no_tag_at_all_is_unknown_on_both_halves_and_never_zero():
+def test_no_tag_at_all_still_measures_the_numerator_from_root():
+    """#1692: `?` used to hide a measured numerator -- every commit in a repository
+    that has never released is banked toward the first one, and that count is known
+    exactly once the window reaches the root commit."""
     progress = statusline.release_progress(_commits(20), {})
-    assert progress["state"] == "unknown"
-    assert progress["since"] is None
+    assert progress["state"] == "no-tag"
+    assert progress["since"] == 20
+    assert progress["since_floor"] is False
     assert progress["typical"] is None
+
+
+def test_no_tag_and_window_exactly_full_is_a_floor_not_a_measurement():
+    """The window did not necessarily reach the root -- the count is a lower bound,
+    and must not render as if it were exact (#1692)."""
+    commits = _commits(statusline.RELEASE_WINDOW)
+    progress = statusline.release_progress(commits, {})
+    assert progress["state"] == "no-tag"
+    assert progress["since"] == statusline.RELEASE_WINDOW
+    assert progress["since_floor"] is True
+
+
+def test_not_a_git_repo_is_still_unknown_on_both_halves():
+    """The genuinely unmeasured case -- distinct from no-tag, which did look and
+    found none -- is unaffected by #1692."""
+    assert statusline.git_release_progress(Path("/does/not/exist")) == {
+        "state": "unknown",
+        "since": None,
+        "typical": None,
+    }
 
 
 def test_a_tag_on_head_reports_zero_commits_since_it():
@@ -131,6 +155,25 @@ def test_no_commits_at_all_is_unknown():
     assert statusline.release_progress([], {})["state"] == "unknown"
 
 
+def test_with_release_trigger_folds_the_configured_denominator_in():
+    """The fact-gathering call site has `.oss.json` in hand; this is where the
+    trigger flows into the dict `_release_field` renders (#1692)."""
+    progress = statusline.release_progress(_commits(5), {})
+    config = {"release": {"triggers": {"merged_prs": 8}}}
+    folded = statusline._with_release_trigger(progress, config)
+    assert folded["trigger"] == 8
+    assert folded["since"] == progress["since"]  # unit not rewritten
+
+
+def test_with_release_trigger_leaves_the_dict_alone_when_no_trigger_is_declared():
+    """The positive-control fallback: no `release.triggers.merged_prs` key at all,
+    or a config that fails to load, both fall back to the original rendering."""
+    progress = statusline.release_progress(_commits(5), {})
+    assert statusline._with_release_trigger(progress, {}) == progress
+    assert statusline._with_release_trigger(progress, None) == progress
+    assert statusline._with_release_trigger(progress, {"release": {}}) == progress
+
+
 # ------------------------------------------------------------------------ rendering
 
 
@@ -149,6 +192,38 @@ def test_the_field_marks_each_unknown_half_separately():
         == "rel ?/?"
     )
     assert statusline._release_field(None) == "rel ?/?"
+
+
+def test_the_field_renders_the_no_tag_numerator_plain_when_root_was_reached():
+    field = statusline._release_field(
+        {"state": "no-tag", "since": 5, "typical": None, "since_floor": False}
+    )
+    assert field == "rel 5/?"
+
+
+def test_the_field_marks_a_floored_no_tag_numerator_with_a_plus():
+    """#1692: a truncated count must never read as an exact one."""
+    field = statusline._release_field(
+        {"state": "no-tag", "since": 500, "typical": None, "since_floor": True}
+    )
+    assert field == "rel 500+/?"
+
+
+def test_the_field_marks_both_halves_when_a_trigger_denominator_is_present():
+    """The configured `release.triggers.merged_prs` renders as the denominator when
+    declared, with a unit marker on each half so a commit count and a merged-PR count
+    never look like one bare ratio (#1692)."""
+    field = statusline._release_field(
+        {"state": "no-tag", "since": 5, "typical": None, "trigger": 8}
+    )
+    assert field == "rel 5c/8pr"
+
+
+def test_removing_the_trigger_key_falls_back_to_the_original_rendering():
+    """Same fixture, trigger key absent: behaves exactly as the original issue
+    describes, the positive control for the fallback."""
+    field = statusline._release_field({"state": "no-tag", "since": 5, "typical": None})
+    assert field == "rel 5/?"
 
 
 def test_the_whole_line_carries_the_field_and_the_unknown_shape_of_it():
