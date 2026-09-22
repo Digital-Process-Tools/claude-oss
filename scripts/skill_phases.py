@@ -385,7 +385,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # disposition dropped from #970/#1036's own directive paragraph (retired
         # by #1528/#1530, never recomputed since), replaced with a one-sentence
         # pointer to how an overlap is judged instead. Ceiling unchanged.
-        58094,
+        # Re-baselined for #1691: 58094 B became 56845 B -- two dead rules
+        # deleted: the "triager is the board" agent-definition sentence and
+        # the "One dispatcher-side use survives" oss:recon spawn paragraph,
+        # both prose for a dispatch step #1544 already moved to
+        # oss:tick-dispatch, which is granted no Agent tool and so could
+        # never run either. Ceiling unchanged.
+        56845,
         58500,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),

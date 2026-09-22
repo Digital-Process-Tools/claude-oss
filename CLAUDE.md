@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 16,771 B | 16,900 B |
-| `agents/sub-manager.md` | 24,757 B | 25,200 B |
+| `agents/sub-manager.md` | 24,748 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 10,327 B | 10,500 B |
@@ -554,7 +554,7 @@ enters it.
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `skills/manager/SKILL.md` | 42,904 B | 44,800 B |
-| `skills/manager/phases/dispatch.md` | 58,094 B | 58,500 B |
+| `skills/manager/phases/dispatch.md` | 56,845 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
 | `skills/manager/phases/accounting.md` | 25,792 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |

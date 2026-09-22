@@ -407,7 +407,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # already here argued a weaker case for its size, so nothing was cut to
     # make room; ceiling moved to 25200 B, ~1.8% headroom -- narrower than
     # the usual ~10% for the same reason every prior raise of this row gives.
-    "agents/sub-manager.md": (24757, 25200),
+    # Re-baselined for #1691: 24757 B became 24748 B -- the stale "triager"
+    # mention in the "Spawn depth" section corrected to "developer and
+    # reviewer agents" (sub-manager no longer dispatches triager lanes since
+    # #1544 moved rendering to oss:tick-dispatch). Ceiling unchanged.
+    "agents/sub-manager.md": (24748, 25200),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

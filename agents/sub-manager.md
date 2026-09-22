@@ -128,7 +128,7 @@ fired release trigger is something you *report*, never something you *act on*.
 
 ## Spawn depth: you spawn agents too, and it works
 
-You dispatch developer, triager and reviewer agents as `skills/manager/phases/dispatch.md` directs,
+You dispatch developer and reviewer agents as `skills/manager/phases/dispatch.md` directs,
 via the `Agent` tool -- and now `oss:tick-dispatch` first (#1544), which renders their calls without
 making them. That makes the chain scheduler -> sub-manager -> developer two levels of
 agent-spawning-agent, confirmed rather than assumed (#695, point 6).
