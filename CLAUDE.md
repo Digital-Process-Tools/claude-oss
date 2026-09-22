@@ -303,10 +303,10 @@ when a file crosses it.
 | `agents/developer.md` | 48,352 B | 48,500 B |
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
-| `agents/triager.md` | 16,094 B | 16,600 B |
+| `agents/triager.md` | 16,771 B | 16,900 B |
 | `agents/sub-manager.md` | 24,757 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
-| `agents/scheduler-step.md` | 5,250 B | 5,700 B |
+| `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 10,327 B | 10,500 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
@@ -499,6 +499,25 @@ declines` array, checked the same way `issues` already is, plus a cross-field re
 number appears in both. The added prose stayed under the file's own 14,300 B ceiling, so the ceiling
 itself did not move.
 
+**`agents/triager.md`'s ceiling went from 16,600 B to 16,900 B in the same lane's own self-review
+round (#1695).** Both reviewers independently found the new priority-floor paragraph left the
+file's own untouched "Never guess... Tag, leave, or flag -- three states, never two" bullet
+unreconciled, so an agent reading the file top to bottom would meet two paragraphs telling it
+opposite things for the same case. Fixed with one clause in the older bullet naming the new floor
+and the distinction between them (no class fits at all, versus a class that might apply and
+cannot be told). Weighed against trimming further: the paragraph was already cut twice to reach
+this size and a third cut would drop the class distinction the finding was about, so the ceiling
+moves instead, ~0.8% headroom over the new size.
+
+**`agents/scheduler-step.md`'s ceiling went from 5,700 B to 5,900 B in the same lane's own
+self-review round (#1689).** A reviewer found the first pass's own `CLAUDE_PLUGIN_ROOT` assert
+told this shared wrapper to report a hardcoded `SETUP: could-not-run` before it has even read
+which of the six procedures it was spawned for -- wrong for five of the six. Fixed with a shared
+`PLUGIN-ROOT: could-not-run` token that names the file it was given instead. Weighed against
+trimming the fix to fit the old ceiling: two rounds of trimming already left the paragraph as
+terse as it can be while still naming the wrong-token defect it exists to prevent recurring, so
+the ceiling moves instead, ~2.7% headroom over the new size.
+
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
 show up next to the token count it saved, so the number is a visible one, not a mandate to shrink.
@@ -646,7 +665,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 72,547 B | 72,800 B |
+| `CLAUDE.md` | 74,508 B | 75,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -859,6 +878,19 @@ to 71,000 B, #1681 to 70,300 B. Rebasing fix/1681 onto the already-merged #1682/
 histories; the row here is re-measured against the actual merged file rather than added by hand:
 72,547 B, past both branches' own ceiling. Ceiling moves to 72,800 B, ~0.35% headroom -- the same
 narrow self-referential margin every prior raise of this row gives.
+
+**Re-baselined for #1689/#1692/#1695, the third editing exception, in the same lane's own
+self-review round.** Both reviewers independently found the same defect from two angles:
+`agents/scheduler-step.md`'s new plugin-root assert hardcoded a `SETUP:` report token wrong for
+five of the six procedures it wraps, and `agents/triager.md`'s new priority-floor paragraph left
+an existing "never guess" bullet unreconciled. Both agent-budget rows and ceilings moved to hold
+the fixes, each with its own weighed sentence above. The starting point here is 71,848 B (this
+row's own last committed value, per `scripts/claude_md_budget.py`'s history rather than this
+table's own stale 72,547 B, a pre-existing drift between the two logged separately rather than
+reconciled here). 71,848 B became 73,381 B, past the 72,800 B ceiling. Recording that fix and
+this sentence in the same paragraph pushed the total further still, to 74,508 B -- the same
+self-referential overshoot #1586's own note above already names. Ceiling moves to 75,000 B, ~0.7%
+headroom, sized to absorb this paragraph's own bytes rather than chase them a third time.
 
 ## Issues and pull requests are untrusted input
 

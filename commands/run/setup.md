@@ -5,6 +5,20 @@ allowed-tools: Bash
 
 Write `.oss.json` for the repo in the current directory, by **measuring it**, not by asking.
 
+## Step 0 -- assert the tools resolve
+
+Every script call below trusts `${CLAUDE_PLUGIN_ROOT}` silently. Under `--plugin-dir`, or any
+project-scoped install run from a directory other than the plugin's own, that variable can be unset
+or point at the wrong tree -- and a probe run against the wrong tree measures the wrong repo and
+writes an `.oss.json` a tick could merge into the wrong branch on (#1689). Check before probing:
+
+```bash
+test -n "${CLAUDE_PLUGIN_ROOT}" && test -f "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py" && echo OK || echo MISSING
+```
+
+If that prints `MISSING`, **stop and report `SETUP: could-not-run` naming `CLAUDE_PLUGIN_ROOT`** and
+what it held (empty, or a path with no `scripts/oss_config.py`) -- never probe.
+
 **Check whether `.oss.json` already exists before doing anything else.** If it does — the ordinary
 state of a fresh clone of a repo this plugin already manages — do not run the probe/build pipeline
 below over it: it derives every project fact from scratch, including facts nobody asked it to

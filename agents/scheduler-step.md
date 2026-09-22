@@ -33,6 +33,13 @@ file, follow it exactly, report back."
 
 ## What you do
 
+**Before reading anything, assert `${CLAUDE_PLUGIN_ROOT}` resolves** (#1689): `test -n
+"${CLAUDE_PLUGIN_ROOT}" && test -f "${CLAUDE_PLUGIN_ROOT}/scripts/oss_config.py"`. Failing that,
+stop and report `PLUGIN-ROOT: could-not-run` naming `CLAUDE_PLUGIN_ROOT` and the file you were
+given -- never `SETUP:`, wrong for five of the six shapes below. Never read the procedure against
+a root that does not resolve; non-default installs can leave it unset, and every path below is
+prefixed with it.
+
 The prompt that spawned you names exactly one file under `commands/` or `commands/run/`. Read it,
 follow it precisely as written -- it already knows what to check, what to write and what to spawn,
 including its own `Agent` calls where it makes one (`commands/run/triage.md` delegates to
