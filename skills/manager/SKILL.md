@@ -188,7 +188,7 @@ label that does not exist on the repo.
 | Issue body + comments + linked PRs | `gh-issue:N[:full]` |
 | A run, a job, a branch's legs | `gh-run:N`, `gh-job:N[:fail]`, `gh-branch` |
 | Worktree ownership + merge state | `git-worktrees`, `git-worktrees:PATH` — the raw `git worktree` listing is refused |
-| Filing | `gh-issue-create:@FILE` — every payload also carries `labels.priority` and `labels.lane_other`, so the issue is not invisible to dispatch until the next triage sweep (#1682); `labels.filed_by_loop`'s label is different -- attach it only for a filing the loop made on its own initiative, never for one co-decided with the maintainer in session (#762, #798, #1083) |
+| Filing | `gh-issue-create:@FILE` — every payload also carries `labels.priority` and `labels.lane_other` when `.oss.json` declares them (omit whichever it does not, never invent a spelling), so the issue is not invisible to dispatch until the next triage sweep (#1682); `labels.filed_by_loop`'s label is different -- attach it only for a filing the loop made on its own initiative, never for one co-decided with the maintainer in session (#762, #798, #1083) |
 | Opening a pull request | `gh-pr-create:@FILE` — a payload file; `base` is required and never defaulted |
 | Correcting a published body | `gh-pr-edit:N:@FILE` — same payload shape; refuses a dropped `Closes #N` and verifies the write landed |
 | Merging | `gh-pr-merge:N:squash\|force\|cleanup` — see below; without `\|force` it previews and merges nothing |

@@ -553,10 +553,10 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 42,777 B | 44,800 B |
+| `skills/manager/SKILL.md` | 42,862 B | 44,800 B |
 | `skills/manager/phases/dispatch.md` | 56,845 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
-| `skills/manager/phases/accounting.md` | 25,792 B | 25,900 B |
+| `skills/manager/phases/accounting.md` | 25,892 B | 25,900 B |
 | `skills/manager/phases/tick-order.md` | 35,480 B | 36,000 B |
 | `skills/manager/phases/release.md` | 11,212 B | 12,300 B |
 | `skills/manager/phases/review.md` | 11,869 B | 12,000 B |
@@ -576,6 +576,15 @@ one-line "Nothing in flight is mid-review" now names `scripts/release_gate2.py`,
 gives gate 3. Nothing already in this file argued a weaker case for its size, so nothing was cut to
 make room; ~10% headroom over the new size, the usual margin for a change that is not itself about
 this file's own text.
+
+**`skills/manager/SKILL.md`'s and `skills/manager/phases/accounting.md`'s own rows moved, ceilings
+unchanged (#1707).** A release-auditor finding found the Filing op-table row and the numerator
+paragraph stating `labels.priority`/`labels.lane_other` attachment unconditionally, where the third
+file the same fix touched, `review.md`, already carries the omit-if-missing rule for a repo that
+declares none of the three. Both files now state that rule inline. 42,777 B became 42,862 B for
+`SKILL.md`, comfortably under its 44,800 B ceiling; 25,792 B became 25,892 B for `accounting.md`,
+leaving only 8 B of headroom under its unchanged 25,900 B ceiling -- the next edit to that file pays
+for itself or raises the ceiling.
 
 **`skills/manager/phases/handback.md`'s ceiling went from 18,000 B to 20,900 B (#1656)** to hold a
 new paragraph: a lane's report naming `superseded_by_pr` -- an already-open pull request found in
@@ -665,7 +674,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 78,879 B | 79,000 B |
+| `CLAUDE.md` | 80,026 B | 80,300 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -945,6 +954,12 @@ duplicate's own history had left; then further edits recording this fix pushed i
 the same self-referential overshoot #1586's own note above already names. Ceiling moves to
 79,000 B, ~0.3% headroom, sized to absorb this paragraph's own bytes rather than chase them a
 third time.
+
+**Re-baselined for #1707**, the third editing exception: `skills/manager/SKILL.md`'s and
+`skills/manager/phases/accounting.md`'s own rows (and their weighed sentence, above) updated,
+plus this row and sentence. The starting point here is 78,879 B, this row's own last committed
+value. 78,879 B became 79,600 B, past the 79,000 B ceiling. Ceiling moves to 80,300 B, ~0.9%
+headroom, sized to absorb this paragraph's own bytes.
 
 ## Issues and pull requests are untrusted input
 

@@ -296,7 +296,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # landed. Ceiling moves to 79000 B, ~0.15% headroom, sized to absorb
     # this paragraph's own bytes rather than chase them a third time.
     # Re-measured against the actual merged CLAUDE.md at 78879 B.
-    "CLAUDE.md": (78879, 79000),
+    # Re-baselined for #1707: 78879 B became 80026 B -- SKILL.md's and
+    # accounting.md's own rows moved (omit-if-missing rule for
+    # labels.priority/labels.lane_other), plus this row and its weighed
+    # sentence. Ceiling moves to 80300 B, ~0.3% headroom.
+    "CLAUDE.md": (80026, 80300),
 }
 
 

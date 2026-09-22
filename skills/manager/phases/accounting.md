@@ -147,7 +147,8 @@ window and an authorship rule left unstated make the ratio unreadable a week lat
 label name, declared per repo the same way `labels.priority` and `labels.lanes` already are, never
 invented here or hardcoded in this file. When it is declared, attach it in the same
 `gh-issue-create` payload that creates the issue -- alongside `labels.priority` and
-`labels.lane_other`, or the issue counts toward this numerator while sitting invisible to dispatch
+`labels.lane_other` when `.oss.json` declares them too (omit whichever key is missing rather than
+inventing a spelling), or the issue counts toward this numerator while sitting invisible to dispatch
 (#1682) -- but only to an issue the loop filed **on its own initiative**: a review finding, an audit
 round, a lane tripping over something mid-implementation.
 **Never attach it to an issue whose existence was decided together with the maintainer in a

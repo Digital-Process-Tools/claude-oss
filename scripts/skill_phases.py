@@ -178,7 +178,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # (found by a spawned reviewer during self-review) removed from the
         # "Delegating" paragraph, keeping the still-live sentence beside it
         # about an unresolved `subagent_type`. Ceiling unchanged.
-        42777,
+        # Re-baselined for #1707: 42777 B became 42862 B -- the Filing op
+        # table row now states the omit-if-missing rule for
+        # `labels.priority`/`labels.lane_other` inline, matching what
+        # review.md already says, instead of stating attachment
+        # unconditionally. Ceiling unchanged.
+        42862,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -754,7 +759,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # paragraph now names `labels.priority`/`labels.lane_other` beside
         # `labels.filed_by_loop`. Comfortably under the 25900 B ceiling;
         # ceiling unchanged.
-        25792,
+        # Re-baselined for #1707: 25792 B became 25892 B -- the same
+        # paragraph now states the omit-if-missing rule for those two keys,
+        # matching review.md. 8 B of headroom left under the 25900 B
+        # ceiling; the next edit to this file pays for itself or raises the
+        # ceiling.
+        25892,
         25900,
         "closing a tick: the cohort freeze, the intake ratio, and what a tick costs to carry",
     ),
