@@ -307,7 +307,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,757 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
-| `agents/doctor.md` | 10,327 B | 10,500 B |
+| `agents/doctor.md` | 12,124 B | 12,200 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -665,7 +665,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 74,508 B | 75,000 B |
+| `CLAUDE.md` | 76,021 B | 76,200 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -891,6 +891,25 @@ reconciled here). 71,848 B became 73,381 B, past the 72,800 B ceiling. Recording
 this sentence in the same paragraph pushed the total further still, to 74,508 B -- the same
 self-referential overshoot #1586's own note above already names. Ceiling moves to 75,000 B, ~0.7%
 headroom, sized to absorb this paragraph's own bytes rather than chase them a third time.
+
+**Re-baselined for #1690**, the third editing exception: `agents/doctor.md`'s own row and ceiling
+raised, plus this row and weighed sentence, for the role-marker-and-settings-digest guardrail
+(`scripts/agent_role.py`'s new `scaffold_apply_refusal`/`settings_local_digest`, and
+`scaffold.py`'s new `--i-was-asked` gate). Nothing already in this section argued a weaker case
+for its size, so nothing was cut to make room. A content-pin test then found the report-time
+digest call was only described in prose rather than shown as a literal, runnable invocation --
+fixed by adding the same `python3 -c` snippet a second time, and `agents/doctor.md`'s own row and
+ceiling raised again to match. Ceiling moves to 73,400 B, ~0.4% headroom -- the same narrow
+self-referential margin every prior raise of this row gives. This paragraph's own row-value
+(72,547/72,800) never carried through into the table row above, a pre-existing gap in this PR's
+own history left uncorrected until the merge below.
+
+**Merged: fix/1688 x fix/1698/fix/1700/fix/1702 (the tick's other lanes).** Both sides forked
+from the same 72,547 B base and independently raised this row's ceiling for their own paragraph --
+#1689/#1692/#1695 to 75,000 B, #1690 to 73,400 B. Rebasing fix/1688 onto the already-merged main
+combines both histories, plus the `agents/scheduler-step.md` and `agents/doctor.md` rows above
+each taking the side that actually changed them. The row here is re-measured against the actual
+merged file rather than added by hand.
 
 ## Issues and pull requests are untrusted input
 

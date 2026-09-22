@@ -28,7 +28,29 @@ prompt.
 
 ## What you do
 
-Run the diagnostic in findings-only mode, from the repo you were spawned into:
+**First, declare your role and snapshot the one file a run here must never silently change**
+(#1690: a doctor spawn was observed running `scaffold.py --apply`, committing to the default
+branch and pushing, in a run whose own prompt said not to -- both now have a code-level check,
+not only this sentence):
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write doctor
+python3 -c '
+import json, os, sys
+sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "scripts"))
+import agent_role
+print(json.dumps(agent_role.settings_local_digest(".")))
+'
+```
+
+The marker makes `scaffold.py --apply` refuse without `--i-was-asked`: your own scripted repair
+below passes that flag, since you are the reviewed, sanctioned caller for it; any other run of
+`--apply` while this marker is live is refused rather than writing silently. Re-run the digest
+line at the end of your run: if it changed and nothing you did in step 1 below was writing that
+file on purpose, that is a `could-not-tell` finding to report, never a silent pass -- and you
+never write to it yourself, `--apply` or otherwise, and never `git push`.
+
+Then run the diagnostic in findings-only mode:
 
 ```bash
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --root . --plugin-root "${CLAUDE_PLUGIN_ROOT}" --findings
@@ -37,7 +59,8 @@ bash "${CLAUDE_PLUGIN_ROOT}/scripts/doctor.sh" --root . --plugin-root "${CLAUDE_
 For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
 
 1. **Ours to repair -- but check HEAD before you write a byte.** An owned file missing or stale
-   (`scripts/scaffold.py --apply`), a config gap `scripts/oss_config.py --probe`/`--build` can
+   (`scripts/scaffold.py --apply --i-was-asked` -- the flag is required now that the role marker
+   you wrote above is live, #1690), a config gap `scripts/oss_config.py --probe`/`--build` can
    re-derive, a rule layer indexed but not installed -- anything a `doctor_check_*.py` already
    knows how to fix by running the tool it names. Read `doctor_check_clone_head.clone_head_state`
    first (#1624), and its own three answers decide three DIFFERENT outcomes, not one:
@@ -140,6 +163,22 @@ Ask `ops:roster` for which ops are acting rather than working from a list copied
 chase what the diagnostic actually named, never reach past it on your own authority.
 
 ## Report back
+
+**Before you write your final message, re-take the settings digest and compare it to the one you
+took at the start:**
+
+```bash
+python3 -c '
+import json, os, sys
+sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "scripts"))
+import agent_role
+print(json.dumps(agent_role.settings_local_digest(".")))
+'
+```
+
+If the digest changed and nothing in your own `repaired` lines above was a scripted, reported
+write to that file, add one more line: `could-not-tell: .claude/settings.local.json changed
+during this run and nothing above explains why`. Never fold that silently into a clean report.
 
 One line per `WARN`/`FAIL` you chased, in the vocabulary above, plus a one-line summary count.
 Put it in your final message **in full** -- the caller reads only that message, never your

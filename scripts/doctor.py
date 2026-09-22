@@ -9122,6 +9122,75 @@ def lane_label_state(project_dir, config=None, run=None):
     return "none-declared", slug
 
 
+_PRIORITY_LABEL_SPECS = (
+    ("priority-high", "d93f0b", "High priority (created by oss:doctor, #1686)."),
+    ("priority-medium", "fbca04", "Medium priority (created by oss:doctor, #1686)."),
+    ("priority-low", "0e8a16", "Low priority (created by oss:doctor, #1686)."),
+)
+
+
+def create_priority_label_family(slug, run=None):
+    """Create priority-high/-medium/-low on `slug`'s forge (#1686), called
+    only once `label_vocabulary_state` has already classified the family as
+    `missing` -- entirely absent, no maintainer spelling to collide with.
+
+    Same shape as `cohort_freeze.create_label` (#1515's own precedent for
+    the loop writing a label itself rather than naming the command), not
+    reused directly: that helper's `--color` is a single fixed
+    `cohort_freeze.LABEL_COLOR`, and the three priority labels each want
+    their own colour.
+
+    Three states: "created" (all three now exist -- whether this call made
+    them or a `label create` raced and found one already there, which is
+    not a failure, only a mild surprise given `label_vocabulary_state` saw
+    none a moment ago), "could-not-create" (gh failed for a real reason --
+    no auth, no `issues: write`, network -- payload is the reason),
+    "could-not-tell" (gh is not on PATH, mirrors every other gh-dependent
+    check in this file). Never overwrites or recolours an existing label:
+    each call names one label that does not exist yet.
+    """
+    run = subprocess.run if run is None else run
+    gh_bin = gh_which.safe_which("gh")
+    if gh_bin is None:
+        return "could-not-tell", "gh is not on PATH"
+    for name, color, description in _PRIORITY_LABEL_SPECS:
+        command = [
+            gh_bin,
+            "label",
+            "create",
+            name,
+            "--repo",
+            slug,
+            "--color",
+            color,
+            "--description",
+            description,
+        ]
+        try:
+            done = run(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                timeout=25,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return (
+                "could-not-create",
+                "{} did not run ({})".format(" ".join(command), exc),
+            )
+        if done.returncode == 0:
+            continue
+        message = (done.stderr or done.stdout or "").strip()
+        if "already exists" in message.lower():
+            continue
+        return (
+            "could-not-create",
+            "{} failed: {}".format(" ".join(command), message),
+        )
+    return "created", None
+
+
 def check_label_vocabulary(project_dir, config=None, run=None):
     if oss_config is None:
         report(
@@ -9141,13 +9210,36 @@ def check_label_vocabulary(project_dir, config=None, run=None):
             ),
         )
     elif state == "missing":
-        report(
-            "WARN",
-            "label vocabulary on {}: no priority-* labels exist, so the triager "
-            "correctly refuses to invent one rather than guessing. Create at least "
-            "priority-high/-medium/-low, e.g. `gh label create priority-high --repo "
-            "{} --color d93f0b`.".format(payload, payload),
-        )
+        create_state, create_reason = create_priority_label_family(payload, run=run)
+        if create_state == "created":
+            report(
+                "OK",
+                "label vocabulary on {}: created priority-high/priority-medium/"
+                "priority-low -- the triager can tag priority from this "
+                "today.".format(payload),
+            )
+        elif create_state == "could-not-create":
+            report(
+                "WARN",
+                "label vocabulary on {}: no priority-* labels exist, so the "
+                "triager correctly refuses to invent one rather than guessing, "
+                "and creating them failed ({}). Create at least "
+                "priority-high/-medium/-low by hand, e.g. `gh label create "
+                "priority-high --repo {} --color d93f0b`.".format(
+                    payload, create_reason, payload
+                ),
+            )
+        else:
+            report(
+                "WARN",
+                "label vocabulary on {}: no priority-* labels exist, so the "
+                "triager correctly refuses to invent one rather than guessing, "
+                "and could not tell whether they could be created -- {}. Create "
+                "at least priority-high/-medium/-low by hand, e.g. `gh label "
+                "create priority-high --repo {} --color d93f0b`.".format(
+                    payload, create_reason, payload
+                ),
+            )
     else:
         report("WARN", "label vocabulary: could not tell -- {}".format(payload))
 

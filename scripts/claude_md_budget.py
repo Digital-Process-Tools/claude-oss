@@ -258,7 +258,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # the total further, the same self-referential overshoot #1586's own
     # note in CLAUDE.md already names. 71848 B became 74508 B, past the
     # 72800 B ceiling. Ceiling moves to 75000 B, ~0.7% headroom.
-    "CLAUDE.md": (74508, 75000),
+    # Re-baselined for #1690, the third editing exception: agents/doctor.md's
+    # own row and ceiling raised for the role-marker-and-settings-digest
+    # guardrail, plus this row and its own weighed sentence. 71848 B became
+    # 72391 B, then 72661 B once a content-pin test found the report-time
+    # digest call needed a literal invocation too. Ceiling moves to 73400 B,
+    # ~1% headroom.
+    # Merged: fix/1688 x main (fix/1689/1692/1695, fix/1690, plus the tick's
+    # other merged lanes). Both sides forked from the same 71848 B base and
+    # independently raised this row's ceiling for their own paragraph --
+    # 75000 B and 73400 B respectively. Rebasing fix/1688 onto the already-
+    # merged main combines both histories; the row here is re-measured
+    # against the actual merged CLAUDE.md rather than added by hand.
+    "CLAUDE.md": (76021, 76200),
 }
 
 

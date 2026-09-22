@@ -511,7 +511,24 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # repo with a different default branch would get a report misnaming its
     # own branch -- fixed with a `<default branch>` placeholder and a note on
     # where the real name comes from. Ceiling moves to 10500 B, ~1.7% headroom.
-    "agents/doctor.md": (10327, 10500),
+    # #1690: a doctor spawn was observed running `scaffold.py --apply`,
+    # committing to the default branch and pushing, in a run whose own
+    # prompt explicitly said not to. This file now writes the "doctor" role
+    # marker `scaffold.py --apply` refuses under without `--i-was-asked`
+    # (scripts/agent_role.py's new `scaffold_apply_refusal`), and snapshots
+    # `.claude/settings.local.json`'s digest before and after the run so an
+    # unexplained permission write is a reportable finding rather than a
+    # silent pass. 10327 B became 11521 B. Weighed against cutting: both
+    # additions close the two halves of #1690's own observed incident in
+    # code rather than only in prose, and nothing already in this file
+    # argued a weaker case for its size.
+    # A content-pin test (tests/test_doctor_role_marker_gate_1690.py) then
+    # found the second digest call (at report time) was only described in
+    # prose, not shown as a literal, runnable invocation the way the first
+    # one is -- fixed by adding the same literal python3 -c snippet a
+    # second time, in the Report back section. 11521 B became 12124 B.
+    # Ceiling moves to 12200 B, ~0.6% headroom.
+    "agents/doctor.md": (12124, 12200),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the

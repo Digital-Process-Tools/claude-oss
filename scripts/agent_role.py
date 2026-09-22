@@ -110,6 +110,7 @@ maintainer wants it gone immediately rather than waiting:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -129,13 +130,22 @@ import gh_which  # noqa: E402 -- #1175: `gh_which.safe_which`, not a bare
 #: for why this alone is not relied on.
 ROLE_ENV = "OSS_AGENT_ROLE"
 
-#: The one role this module knows to forbid. Everything else -- absent,
-#: `maintainer`, an unrecognised string -- passes through unforbidden: this
-#: is a denylist of exactly one entry, not an allowlist, because the set of
-#: roles legitimately entitled to release authority is `.oss.json`'s own
-#: `release.authority` question (`oss_config.release_authority`) and this
-#: module does not duplicate that answer.
+#: The one role this module knows to forbid for release. Everything else --
+#: absent, `maintainer`, an unrecognised string -- passes through
+#: unforbidden: this is a denylist of exactly one entry, not an allowlist,
+#: because the set of roles legitimately entitled to release authority is
+#: `.oss.json`'s own `release.authority` question
+#: (`oss_config.release_authority`) and this module does not duplicate that
+#: answer.
 SUB_MANAGER = "sub-manager"
+
+#: #1690: a second, independent role this module knows to forbid, for a
+#: second, independent action -- `scaffold.py --apply` -- never folded into
+#: `role_forbids_release`'s own `SUB_MANAGER`-only check: the two are
+#: different roles forbidden from different actions for different reasons,
+#: and a shared denylist would let a fix to one silently widen the other.
+#: `agents/doctor.md` is the one caller expected to declare this role.
+DOCTOR = "doctor"
 
 #: The marker's filename inside the resolved git directory.
 MARKER_NAME = "oss-agent-role"
@@ -456,6 +466,92 @@ def release_refusal(action: str, role: str | None = None, root: str = ".") -> di
         ),
         "marker_state": marker_state,
     }
+
+
+def role_forbids_scaffold_apply(role: str | None = None, root: str = ".") -> bool:
+    """Does this role forbid running `scaffold.py --apply` without the
+    `--i-was-asked` escape hatch? #1690: a `doctor` spawn was observed
+    running `--apply`, committing the result to the default branch and
+    pushing it, in a run whose own prompt explicitly said not to -- the
+    same "sentence is not a mechanism" shape #695 closed for release
+    authority, applied to a second role and a second action.
+
+    `role` defaults to `current_role(root=root)`; pass it explicitly to
+    check a role other than the one resolved for `root`.
+    """
+    resolved = role if role is not None else current_role(root=root)
+    if resolved is None:
+        return False
+    return resolved.strip().lower() == DOCTOR
+
+
+def scaffold_apply_refusal(
+    role: str | None = None, root: str = ".", i_was_asked: bool = False
+) -> dict:
+    """A structured refusal for `scaffold.py --apply`, mirroring
+    `release_refusal`'s own shape.
+
+    `i_was_asked` is the one escape hatch, and it wins outright: #1690 is
+    about an UNBIDDEN apply, not about `--apply` itself, which is the
+    doctor's own documented, scripted repair path for an owned-file gap
+    (`agents/doctor.md`'s "Ours to repair" step). A caller that was
+    genuinely told to run this passes the flag; a caller running on its
+    own initiative, or under an instruction that says NOT to, does not.
+
+    Always returns a dict with a `forbidden` key, the same shape
+    `release_refusal` uses, so a caller can act on it the same way:
+    `if scaffold_apply_refusal(...)["forbidden"]:`.
+    """
+    resolved_role = role if role is not None else current_role(root=root)
+    if i_was_asked:
+        return {"forbidden": False, "role": resolved_role, "reason": None}
+    forbidden = role_forbids_scaffold_apply(resolved_role, root=root)
+    if not forbidden:
+        return {"forbidden": False, "role": resolved_role, "reason": None}
+    return {
+        "forbidden": True,
+        "role": resolved_role,
+        "reason": (
+            "role {0!r} may not run scaffold.py --apply without "
+            "--i-was-asked (#1690): a doctor spawn's own repair path is "
+            "scripted and legitimate, but an apply nobody explicitly asked "
+            "for -- or one an instruction explicitly declined -- is exactly "
+            "the shape this refuses.".format(resolved_role)
+        ),
+    }
+
+
+#: #1690's third ask: a receipt that the one file a doctor run must never
+#: silently gain a rule in did not change out from under it. `sha256`
+#: rather than a full diff -- the ask is "did this change at all", not
+#: "what changed", and a hash never risks echoing a credential a rule's
+#: own comment might carry (this repository's own no-echo-a-credential
+#: rule, applied to a settings file instead of a diagnostic finding).
+def settings_local_digest(root: str = ".") -> dict:
+    """The state of `.claude/settings.local.json` for `root`, for a
+    before/after comparison around one doctor run.
+
+    Three states: `present` (payload is the sha256 hex digest of the
+    file's bytes), `absent` (payload is `None` -- the file genuinely does
+    not exist, a legitimate state on a fresh clone), `unreadable`
+    (payload is the reason -- exists but could not be read). `absent` and
+    `unreadable` must never collapse into each other: a caller comparing
+    two digests needs to know whether "nothing to compare" means "there
+    was never a file" or "something is wrong reading it", the same
+    three-state shape every other check in this project uses.
+    """
+    path = Path(root) / ".claude" / "settings.local.json"
+    try:
+        exists = path.is_file()
+    except OSError as exc:
+        return {"state": "unreadable", "digest": str(exc)}
+    if not exists:
+        return {"state": "absent", "digest": None}
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return {"state": "unreadable", "digest": str(exc)}
+    return {"state": "present", "digest": hashlib.sha256(data).hexdigest()}
 
 
 def main(argv=None) -> int:

@@ -34,8 +34,11 @@ import doctor
 
 # The op the maintainer loop merges with. Matching is on the literal command
 # string, so this substring is what an allow rule has to contain in some form --
-# `Bash(./supertool 'gh-pr-merge:*')`, an absolute-path spelling of the same, or
-# a per-call entry naming one exact merge.
+# `Bash(./supertool 'gh-pr-merge:*)`, an absolute-path spelling of the same, or
+# a per-call entry naming one exact merge. #1688: no trailing quote after the
+# `:*` -- the harness requires `:*` to be the final two characters of the
+# rule's `Bash(...)` content, and a quote after it makes the rule invalid, so
+# the harness skips it at session start without telling doctor.
 MERGE_OP = "gh-pr-merge"
 MERGE_RULE_FILE = ".claude/settings.local.json"
 
@@ -253,32 +256,97 @@ def _entry_count(count, key, path):
     )
 
 
-def _permission_rule_state(project_dir, matches_entry, home=None):
-    """Is there a settings rule matching ``matches_entry``? Four answers, not two.
+def _entry_pattern_content(entry):
+    """The text inside a `Bash(...)` rule's parentheses, or `None` if
+    `entry` is not shaped like one. Structural parsing only -- shared by
+    the existing `_entry_command_head`/`_entry_prefix_wildcard_head` shape
+    checks below and by the new validity check this function adds."""
+    if not entry.startswith("Bash(") or not entry.endswith(")"):
+        return None
+    return entry[len("Bash(") : -1]
 
-    `present` / `denied` / `absent` / `unknown`, and the last one is the reason
-    this is not a boolean. A settings file that could not be parsed produces no
-    matching entry, which looks exactly like a file that was read and had none --
-    and the two send a maintainer to opposite places.
+
+def _entry_prefix_marker_misplaced(entry):
+    """#1688: true when `entry` contains the harness's `:*` prefix-match
+    marker somewhere other than at the very end of its `Bash(...)`
+    content -- the one shape Claude Code's own permission matcher refuses
+    to load and skips entirely at session start ("The :* pattern must be
+    at the end"), most often a trailing quote left over from wrapping an
+    op name in single quotes: `Bash(supertool 'gh-pr-merge:` followed by
+    the marker and then a stray `'` before the closing paren, so the
+    harness drops it, where `Bash(./supertool 'gh-pr-merge:` followed by
+    the bare marker and the closing paren, with nothing after it, does
+    not, and loads. An entry with no marker at all, or one where it
+    genuinely is the last two characters, is not this shape and returns
+    `False`. (Deliberately not spelling the invalid form as one
+    contiguous literal here -- #1688's own acceptance check greps this
+    tree for it.)"""
+    content = _entry_pattern_content(entry)
+    if content is None or PREFIX_SUFFIX not in content:
+        return False
+    return not content.endswith(PREFIX_SUFFIX)
+
+
+def _entry_prefix_marker_rewrite(entry):
+    """The harness-valid spelling of a `entry` flagged by
+    `_entry_prefix_marker_misplaced` -- everything in its `Bash(...)`
+    content up to and including the first `:*`, with whatever followed it
+    (the stray quote, typically) dropped. `None` when `entry` is not a
+    `Bash(...)` rule containing `:*` at all; callers only reach this once
+    `_entry_prefix_marker_misplaced` has already confirmed both."""
+    content = _entry_pattern_content(entry)
+    if content is None:
+        return None
+    idx = content.find(PREFIX_SUFFIX)
+    if idx == -1:
+        return None
+    return "Bash({})".format(content[: idx + len(PREFIX_SUFFIX)])
+
+
+def _permission_rule_state(project_dir, matches_entry, home=None):
+    """Is there a settings rule matching ``matches_entry``? Five answers, not
+    two.
+
+    `present` / `denied` / `invalid` / `absent` / `unknown`, and `unknown` is
+    the reason this is not a boolean. A settings file that could not be
+    parsed produces no matching entry, which looks exactly like a file that
+    was read and had none -- and the two send a maintainer to opposite
+    places.
 
     A rule that WAS read settles the question, so an unreadable neighbour does not
     drag a found rule back to `unknown`.
 
-    The detail names how many entries matched and which file they are in, never
-    the entry text. The text was never needed -- the question is "is there a rule,
-    and where do I go to change it" -- and printing it handed a tracked,
-    contributor-writable file the ability to write this script's own output
-    lines. Counts and paths answer the question and carry nothing chosen by the
-    tree being diagnosed except a path it already had to be told about.
+    #1688: `invalid` is the fifth -- an entry that matches `matches_entry` but
+    whose `:*` prefix marker is not at the end of its `Bash(...)` content is
+    exactly the shape the harness itself skips as unparseable at session
+    start (see `_entry_prefix_marker_misplaced`). Counting it toward
+    `present`/`denied` would be this project's own named defect: a check
+    that cannot tell it is looking at a dead rule, rendering identically to
+    one looking at a live one. `invalid` only wins when NOTHING valid
+    matched -- a mix of one valid and one invalid entry is still `present`
+    (or `denied`), since the valid one alone answers the question.
+
+    The detail for `present`/`denied`/`unknown` still names only how many
+    entries matched and which file they are in, never the entry text -- the
+    question there is "is there a rule, and where do I go to change it", and
+    printing text handed a tracked, contributor-writable file the ability to
+    write this script's own output lines. `invalid`'s detail is the one
+    exception: the whole point of that state is telling a maintainer which
+    entry the harness is silently dropping and how to fix it, which is not
+    answerable without the entry's own text -- safe here because every
+    detail this function returns is only ever read by `report()`, which
+    folds arbitrary text to one printable ASCII line before it is ever
+    printed (see that function's own docstring).
 
     Shared by `merge_permission_state` (substring match on `MERGE_OP`) and
     `supertool_permission_state` (a spelling-anchored regex) -- #609. The only
     thing that varies between the two checks is which entries count, never how
-    the settings files are read or how the four states are decided.
+    the settings files are read or how the five states are decided.
     """
     unreadable = []
     allowed = []
     denied = []
+    invalid = []
     for path in settings_candidates(project_dir, home=home):
         try:
             found_here = path.exists()
@@ -300,8 +368,17 @@ def _permission_rule_state(project_dir, matches_entry, home=None):
             continue
         for key, found in (("allow", allowed), ("deny", denied)):
             matches = [e for e in _permission_entries(data, key) if matches_entry(e)]
-            if matches:
-                found.append(_entry_count(len(matches), key, path))
+            good = [e for e in matches if not _entry_prefix_marker_misplaced(e)]
+            bad = [e for e in matches if _entry_prefix_marker_misplaced(e)]
+            if good:
+                found.append(_entry_count(len(good), key, path))
+            for entry in bad:
+                rewrite = _entry_prefix_marker_rewrite(entry)
+                invalid.append(
+                    "{} entry in {} names it but the harness skips it as invalid "
+                    '(":*" must end the rule -- "{}" has a trailing quote). '
+                    "Rewrite as {}.".format(key, path, entry, rewrite or entry)
+                )
     # Every candidate is read before anything is decided, and deny wins. Returning
     # on the first allow would report `present` while holding, already parsed, a deny
     # rule for the same op -- an OK built on evidence the function had in hand and
@@ -310,6 +387,8 @@ def _permission_rule_state(project_dir, matches_entry, home=None):
         return "denied", "; ".join(denied)
     if allowed:
         return "present", "; ".join(allowed)
+    if invalid:
+        return "invalid", "; ".join(invalid)
     if unreadable:
         return "unknown", "; ".join(unreadable)
     return "absent", ""
@@ -366,6 +445,14 @@ def check_merge_permission(project_dir, home=None):
             "WARN",
             "the only settings rule naming {} is a deny rule ({}). The merge step will "
             "stop there.".format(MERGE_OP, detail),
+        )
+        return
+    if state == "invalid":
+        doctor.report(
+            "WARN",
+            "settings rule(s) name {} but the harness skips them as invalid: {}".format(
+                MERGE_OP, detail
+            ),
         )
         return
     if state == "unknown":
@@ -482,6 +569,14 @@ def check_supertool_permission(project_dir, home=None):
             "the only settings rule naming {} is a deny rule ({}). Every read this "
             "loop makes goes through supertool via Bash, so the very first tool call "
             "of a session will stop there.".format(SUPERTOOL_OP, detail),
+        )
+        return
+    if state == "invalid":
+        doctor.report(
+            "WARN",
+            "settings rule(s) name {} but the harness skips them as invalid: {}".format(
+                SUPERTOOL_OP, detail
+            ),
         )
         return
     if state == "unknown":

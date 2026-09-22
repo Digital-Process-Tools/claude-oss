@@ -137,6 +137,14 @@ def check_worktree_remove_permission(project_dir, home=None):
             "and it will stop there too.".format(WORKTREE_REMOVE_OP, detail),
         )
         return
+    if state == "invalid":
+        doctor.report(
+            "WARN",
+            "settings rule(s) name {} but the harness skips them as invalid: {}".format(
+                WORKTREE_REMOVE_OP, detail
+            ),
+        )
+        return
     if state == "unknown":
         doctor.report(
             "WARN",
@@ -201,6 +209,14 @@ def check_branch_delete_permission(project_dir, home=None):
             "the only settings rule naming {} is a deny rule ({}). gh-pr-merge's "
             "own cleanup falls back to this command by hand on a refused reap, "
             "and it will stop there too.".format(BRANCH_DELETE_OP, detail),
+        )
+        return
+    if state == "invalid":
+        doctor.report(
+            "WARN",
+            "settings rule(s) name {} but the harness skips them as invalid: {}".format(
+                BRANCH_DELETE_OP, detail
+            ),
         )
         return
     if state == "unknown":
