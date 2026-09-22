@@ -247,8 +247,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # range (v0.40.0..HEAD), two gate-3 rounds this time against one last
     # release, and a re-derived gate-1 leg count checked twice (once before
     # and once after a trap.d/ pull request moved the tip). 72547 B became
-    # 71220 B, comfortably under the unchanged 72800 B ceiling.
-    "CLAUDE.md": (71220, 72800),
+    # 71220 B, then 71848 B once a first release-commit CI run caught the
+    # rewrite having dropped this section's own two closing paragraphs
+    # (tests/test_claude_md_reach_probe_scope_711.py), restored verbatim.
+    # Comfortably under the unchanged 72800 B ceiling.
+    "CLAUDE.md": (71848, 72800),
 }
 
 

@@ -945,3 +945,13 @@ account renders identically to one that does not exist. The owned-files table, t
 the `doctor` run are still `v0.17.0`'s, carried through twenty-one tags; `#1127` tracks re-deriving
 them. The readings live in `docs/release-currency.md`; re-derive them inside the release commit
 rather than editing this section.
+
+What has not been observed, across every round inside the one organisation this probe can see: any
+repository scaffolded by a maintainer who is not this plugin's author. That qualifier is #711's
+whole subject, and "not observed" here means "not observed by a probe that could not have seen it",
+never "does not exist".
+
+Most of what this plugin claims about a scaffolded repository rests on tests and scratch runs rather
+than on a repository somebody maintains through it. `tests/test_claude_md_currency.py` checks that
+this section carries a current marker, not that any claim in it is true. Treat this as tested, not
+proven.
