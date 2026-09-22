@@ -674,7 +674,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 82,208 B | 82,800 B |
+| `CLAUDE.md` | 82,144 B | 82,800 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.

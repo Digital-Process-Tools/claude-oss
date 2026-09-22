@@ -324,7 +324,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # row, rather than guessed ahead of it: 82208 B. Ceiling moves to
     # 82800 B, headroom deliberately wide (~0.7%) to stop the chase rather
     # than needing a further round to catch it again.
-    "CLAUDE.md": (82208, 82800),
+    "CLAUDE.md": (82144, 82800),
 }
 
 
