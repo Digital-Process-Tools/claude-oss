@@ -9,13 +9,20 @@ kind recon exists to replace. It paid for both: recon's own reads, and the ones 
 was sent to save. Nothing in the brief contradicted that reading, because "spawn it
 first" is satisfied by having issued the call, backgrounded or not.
 
-The fix mirrors the one place a literal call shape already exists --
+The fix mirrors the one place a literal call shape already existed at the time --
 ``skills/manager/phases/dispatch.md:62`` -- into ``agents/developer.md``, pinning
 ``run_in_background: false``. A test on the file's own text cannot prove a lane
 obeys it (the same limit ``tests/test_agent_grant_is_total.py`` already documents
 about itself); what it can do is make sure the literal, correct call shape is still
-there to copy, and that an edit cannot satisfy it by deleting one side and leaving
-only dispatch.md's own copy.
+there in ``agents/developer.md`` to copy.
+
+dispatch.md's own copy was retired by #1691: it lived in a paragraph ("One
+dispatcher-side use survives") gating a spawn no live dispatcher can make since
+#1544 moved dispatch rendering into ``agents/tick-dispatch.md``, which is granted
+no ``Agent`` tool at all. The negative control that used to require dispatch.md's
+own copy to persist forever is gone with it -- ``agents/developer.md``'s own copy,
+the one an actual lane reads and copies from, is the only one this file still
+checks.
 """
 
 import re
@@ -23,7 +30,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEVELOPER = REPO_ROOT / "agents" / "developer.md"
-DISPATCH = REPO_ROOT / "skills" / "manager" / "phases" / "dispatch.md"
 
 RECON_CALL_RE = re.compile(
     r'Agent\(subagent_type:\s*"oss:recon"[^\n]*?run_in_background:\s*false'
@@ -35,7 +41,7 @@ def _recon_calls(text):
 
 
 def test_developer_md_documents_a_blocking_recon_call():
-    """Positive control for the fix itself: without this, the guard below would
+    """Positive control for the fix itself: without this, the checks below would
     have nothing to check and the lane would still have no call shape to copy."""
     text = DEVELOPER.read_text(encoding="utf-8")
     calls = _recon_calls(text)
@@ -43,20 +49,6 @@ def test_developer_md_documents_a_blocking_recon_call():
         "agents/developer.md documents no oss:recon Agent(...) call carrying "
         "run_in_background: false -- a lane reading only this file has no call "
         "shape to copy, and nothing stops it from backgrounding the spawn (#1586)"
-    )
-
-
-def test_dispatch_md_still_documents_its_own_blocking_recon_call():
-    """Negative control: dispatch.md's own call (the one this fix was copied
-    from) must still be there -- an edit satisfying the check above by moving
-    or deleting dispatch.md's copy instead of adding developer.md's own would
-    pass a narrower guard silently."""
-    text = DISPATCH.read_text(encoding="utf-8")
-    calls = _recon_calls(text)
-    assert calls, (
-        "skills/manager/phases/dispatch.md's own recon call shape went missing "
-        "-- the fix for #1586 must add developer.md's own call, not repurpose "
-        "dispatch.md's"
     )
 
 
