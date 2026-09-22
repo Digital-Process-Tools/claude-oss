@@ -444,6 +444,63 @@ def test_triage_over_threshold_is_ranked_due(tmp_path, monkeypatch):
     assert triage["state"] == next_action.CANDIDATE_DUE
 
 
+def test_triage_over_threshold_suppressed_by_receipt_says_so_explicitly(
+    tmp_path, monkeypatch
+):
+    """#1709: a standing `over` reading that the repeat-suppression receipt
+    has already routed still resolves to `CANDIDATE_NOT_DUE` -- the receipt
+    mechanism itself is unchanged, same as `_curate_candidate`'s own shape
+    (#1389's own docstring: without it, an unchanged backlog would report
+    `due` on every single tick). What must change is the reason string: a
+    caller reading only `state` (not the nested `evidence`) must not see a
+    `not-due` verdict that reads identically to "genuinely nothing to do" --
+    the reason must say the underlying reading is still `over` and that it
+    is being suppressed, not just "unchanged"."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"triage_route_threshold": 0})
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        lambda *a, **k: (
+            None,
+            {
+                "release": {"configured": False},
+                "curate": {"configured": False},
+                "triage": {
+                    "configured": True,
+                    "state": workspace_routes.OVER,
+                    "count": 3,
+                    "threshold": 0,
+                    "why": "3 of 5 open issue(s) missing lane-* or priority-*",
+                },
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        next_action,
+        "_route_already_seen",
+        lambda *a, **k: (
+            True,
+            "unchanged since the receipt already recorded (over:3)",
+        ),
+    )
+    result = next_action.rank(root)
+    triage = next(e for e in result["not_due"] if e["source"] == "triage")
+    assert triage["state"] == next_action.CANDIDATE_NOT_DUE
+    # "still over threshold" is the new prefix this fix adds -- checked as a
+    # phrase, not the bare word "over", because the mocked seen_detail below
+    # already contains "over:3" verbatim, so a bare-word assertion would
+    # pass against the old, unfixed reason string too (self-review finding,
+    # Explore reviewer).
+    assert "still over threshold" in triage["reason"]
+    assert "3 missing lane-*/priority-* label(s)" in triage["reason"]
+    assert "suppress" in triage["reason"]
+    assert triage["evidence"]["state"] == workspace_routes.OVER
+    assert triage["evidence"]["count"] == 3
+
+
 def test_nothing_configured_and_nothing_fired_is_nothing_due(tmp_path, monkeypatch):
     root = _git_repo(tmp_path)
     _write_config(root)

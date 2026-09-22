@@ -593,8 +593,10 @@ def _triage_candidate(repo_root, config, routes, arm=False):
         return {
             "source": "triage",
             "state": CANDIDATE_NOT_DUE,
-            "reason": "unchanged since the last time this reading was routed ({0})".format(
-                seen_detail
+            "reason": (
+                "still over threshold ({0} missing lane-*/priority-* label(s)) but "
+                "suppressed: unchanged since the last time this reading was routed "
+                "({1})".format(triage.get("count"), seen_detail)
             ),
             "evidence": dict(triage, receipt=seen_detail),
         }

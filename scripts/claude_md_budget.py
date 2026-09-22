@@ -296,7 +296,23 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # landed. Ceiling moves to 79000 B, ~0.15% headroom, sized to absorb
     # this paragraph's own bytes rather than chase them a third time.
     # Re-measured against the actual merged CLAUDE.md at 78879 B.
-    "CLAUDE.md": (78879, 79000),
+    # Re-baselined for #1707: 78879 B became 80026 B -- SKILL.md's and
+    # accounting.md's own rows moved (omit-if-missing rule for
+    # labels.priority/labels.lane_other), plus this row and its weighed
+    # sentence. Ceiling moves to 80300 B, ~0.3% headroom.
+    # Re-baselined again in the same lane's own self-review round: an
+    # Explore reviewer found the CLAUDE.md paragraph recording this fix
+    # cited a stale intermediate figure (79600 B) that disagreed with both
+    # the table row above it and this file's own comment; fixed in place.
+    # 80026 B became 80139 B. Ceiling unchanged.
+    # Re-baselined a third time, same round: a second-pass auditor (required
+    # by fix_commit_scope.py) found the paragraph recording THAT fix was
+    # itself one edit behind again (80026 quoted, disk at 80139) -- the same
+    # self-referential overshoot #1586's own note names. Acknowledging it in
+    # the paragraph pushed the real size to 80581 B, past the 80300 B
+    # ceiling. Ceiling moves to 80700 B, sized to absorb this paragraph's
+    # own final bytes rather than chase them a further time.
+    "CLAUDE.md": (80581, 80700),
 }
 
 
