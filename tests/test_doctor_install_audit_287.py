@@ -307,14 +307,110 @@ def test_a_non_string_repo_value_is_could_not_tell_not_a_crash(tmp_path):
     assert "repo" in payload
 
 
-def test_check_label_vocabulary_reports_all_three_states(tmp_path):
+def _list_then(create_result):
+    """A `run` fake that answers `gh label list` with an empty vocabulary
+    (#1686's `missing` state) and then routes any later `gh label create`
+    call through `create_result`, a callable taking the argv list and
+    returning a `subprocess.CompletedProcess`."""
+
+    def run(cmd, **kwargs):
+        if "list" in cmd:
+            return subprocess.CompletedProcess(cmd, 0, stdout="[]", stderr="")
+        return create_result(cmd)
+
+    return run
+
+
+def test_missing_family_is_created_and_reported_as_created(tmp_path):
+    """#1686: the whole family is absent on the forge -- doctor creates it
+    itself and reports the create, not the old hand-a-command WARN.
+    """
+    created = []
+
+    def create_result(cmd):
+        created.append(cmd[3])  # gh label create <name> ...
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
     doctor.check_label_vocabulary(
-        tmp_path, config={"repo": "owner/name"}, run=_fake_run(stdout=json.dumps([]))
+        tmp_path, config={"repo": "owner/name"}, run=_list_then(create_result)
     )
+    assert created == ["priority-high", "priority-medium", "priority-low"]
     assert any(
-        state == "WARN" and "correctly refuses to invent one" in msg
+        state == "OK" and "created priority-high" in msg
         for state, msg in doctor.FINDINGS
     )
+    assert not any(
+        "correctly refuses to invent one" in msg for _, msg in doctor.FINDINGS
+    )
+
+
+def test_satisfied_family_is_never_touched_by_create(tmp_path):
+    """Positive control's sibling: a repo that already has a priority
+    label (any one spelling) must not have anything created or recoloured
+    -- `create_priority_label_family` must not even be reached.
+    """
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        rows = json.dumps([{"name": "priority:high"}])
+        return subprocess.CompletedProcess(cmd, 0, stdout=rows, stderr="")
+
+    doctor.check_label_vocabulary(tmp_path, config={"repo": "owner/name"}, run=run)
+    assert not any(c[:3] == [calls[0][0], "label", "create"] for c in calls)
+    assert any(
+        state == "OK" and "priority label(s)" in msg for state, msg in doctor.FINDINGS
+    )
+
+
+def test_create_failure_is_could_not_create_never_ok(tmp_path):
+    """A create that was refused must not render like a create that
+    succeeded (#1686's own three-state contract)."""
+
+    def create_result(cmd):
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="", stderr="HTTP 403: Resource not accessible"
+        )
+
+    doctor.check_label_vocabulary(
+        tmp_path, config={"repo": "owner/name"}, run=_list_then(create_result)
+    )
+    assert any(
+        state == "WARN" and "creating them failed" in msg and "403" in msg
+        for state, msg in doctor.FINDINGS
+    )
+    assert not any(
+        state == "OK" and "created priority" in msg for state, msg in doctor.FINDINGS
+    )
+
+
+def test_create_priority_label_family_treats_a_race_as_created(tmp_path):
+    """A `label create` that fails because the label already exists (a
+    race between the list call and the create call) is not a real
+    failure -- the family ends up present either way."""
+
+    def create_result(cmd):
+        return subprocess.CompletedProcess(
+            cmd,
+            1,
+            stdout="",
+            stderr="could not create label: 'priority-high' already exists",
+        )
+
+    state, payload = doctor.create_priority_label_family(
+        "owner/name", run=_list_then(create_result)
+    )
+    assert state == "created"
+    assert payload is None
+
+
+def test_create_priority_label_family_gh_unavailable_is_could_not_tell(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(doctor.gh_which, "safe_which", lambda name, path=None: None)
+    state, payload = doctor.create_priority_label_family("owner/name")
+    assert state == "could-not-tell"
+    assert "gh is not on PATH" in payload
 
 
 # --------------------------------------------------------------- origin slug

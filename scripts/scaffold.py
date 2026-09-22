@@ -37,6 +37,7 @@ import gh_which  # noqa: E402 -- #1175: `gh_which.safe_which`, not a bare
 # `shutil.which("gh")` gating a spawn of the literal, unresolved `"gh"` --
 # see `gh_which`'s own docstring for the Windows curdir-execution
 # mechanism this closes.
+import agent_role  # noqa: E402 -- #1690: scaffold_apply_refusal() gates --apply
 import oss_config  # noqa: E402
 import oss_rules  # noqa: E402
 
@@ -4075,6 +4076,14 @@ def _main(argv=None):
         ),
     )
     parser.add_argument(
+        "--i-was-asked",
+        action="store_true",
+        help=(
+            "confirm this --apply was explicitly requested -- required when the "
+            "declared agent role is 'doctor' (#1690); refused without it"
+        ),
+    )
+    parser.add_argument(
         "--show",
         nargs="?",
         const="",
@@ -4182,6 +4191,13 @@ def _main(argv=None):
         summary += rules_summary_clause(rules_plan)
         print(summary)
         return 0
+
+    refusal = agent_role.scaffold_apply_refusal(
+        root=args.root, i_was_asked=args.i_was_asked
+    )
+    if refusal["forbidden"]:
+        print("FAIL {}".format(refusal["reason"]))
+        return 1
 
     result = apply(args.root, config, force_owned=args.force_owned)
     for path in result["created"]:

@@ -914,7 +914,7 @@ def _fully_configured(root):
             {
                 "permissions": {
                     "allow": [
-                        "Bash(./supertool 'gh-pr-merge:*')",
+                        "Bash(./supertool 'gh-pr-merge:*)",
                         "Bash(./supertool:*)",
                         # #787: gh-pr-merge's own |cleanup falls back to these two
                         # hand commands on a refused reap -- a fully-configured
@@ -1430,7 +1430,7 @@ def test_settings_candidates_survive_an_unresolvable_home(tmp_path, monkeypatch)
 def test_merge_permission_state_present(tmp_path):
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+        allow=["Bash(./supertool 'gh-pr-merge:*)"],
     )
     state, _detail = doctor.merge_permission_state(
         tmp_path, home=_isolated_home(tmp_path)
@@ -1488,7 +1488,7 @@ def test_a_readable_rule_beats_an_unreadable_neighbour(tmp_path):
     (tmp_path / ".claude" / "settings.json").write_text("{not json", encoding="utf-8")
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+        allow=["Bash(./supertool 'gh-pr-merge:*)"],
     )
     state, _detail = doctor.merge_permission_state(
         tmp_path, home=_isolated_home(tmp_path)
@@ -1499,7 +1499,7 @@ def test_a_readable_rule_beats_an_unreadable_neighbour(tmp_path):
 def test_a_deny_rule_is_not_read_as_permission(tmp_path):
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        deny=["Bash(./supertool 'gh-pr-merge:*')"],
+        deny=["Bash(./supertool 'gh-pr-merge:*)"],
     )
     state, detail = doctor.merge_permission_state(
         tmp_path, home=_isolated_home(tmp_path)
@@ -1514,7 +1514,7 @@ def test_a_deny_beside_an_allow_is_still_denied(tmp_path):
     same op -- an OK built on evidence the check dropped."""
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+        allow=["Bash(./supertool 'gh-pr-merge:*)"],
         deny=["Bash(./supertool 'gh-pr-merge:42:squash|force')"],
     )
     state, _detail = doctor.merge_permission_state(
@@ -1528,7 +1528,7 @@ def test_check_merge_permission_reports_a_deny_rule(tmp_path, capsys):
     a mistake in this branch's severity or wording would have shipped."""
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        deny=["Bash(./supertool 'gh-pr-merge:*')"],
+        deny=["Bash(./supertool 'gh-pr-merge:*)"],
     )
     doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
     out = capsys.readouterr().out
@@ -1544,7 +1544,7 @@ def test_a_rule_in_the_home_settings_counts(tmp_path):
     who already arranged it -- and the fix they would then apply is a duplicate."""
     home = _isolated_home(tmp_path)
     _settings(
-        home / ".claude" / "settings.json", allow=["Bash(./supertool 'gh-pr-merge:*')"]
+        home / ".claude" / "settings.json", allow=["Bash(./supertool 'gh-pr-merge:*)"]
     )
     state, _detail = doctor.merge_permission_state(tmp_path, home=home)
     assert state == "present"
@@ -1558,7 +1558,7 @@ def test_check_merge_permission_ok_does_not_promise_the_merge_will_run(
     this plugin is named after, one layer out."""
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+        allow=["Bash(./supertool 'gh-pr-merge:*)"],
     )
     doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
     out = capsys.readouterr().out
@@ -1626,7 +1626,7 @@ def test_a_settings_entry_cannot_write_doctors_own_lines(tmp_path, capsys):
     hostile = _settings(tmp_path / ".claude" / "settings.json", allow=[HOSTILE_ENTRY])
     benign = _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+        allow=["Bash(./supertool 'gh-pr-merge:*)"],
     )
     doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
     out = capsys.readouterr().out
@@ -1667,7 +1667,7 @@ def test_the_report_does_not_quote_the_entry_text_back(tmp_path, capsys):
     did. Not printing it is what makes this safe rather than merely escaped."""
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(./supertool 'gh-pr-merge:*')"],
+        allow=["Bash(./supertool 'gh-pr-merge:*)"],
     )
     doctor.check_merge_permission(tmp_path, home=_isolated_home(tmp_path))
     out = capsys.readouterr().out

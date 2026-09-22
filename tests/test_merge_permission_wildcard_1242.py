@@ -50,10 +50,18 @@ def _isolated_home(tmp_path):
 
 def test_exact_spelling_still_reads_present_for_merge(tmp_path):
     """Positive control: the literal substring test already handles the
-    documented spelling, and this fix must not disturb it."""
+    documented spelling, and this fix must not disturb it.
+
+    #1688: the fixture used to carry a trailing `'` after `:*`
+    (`Bash(supertool:'gh-pr-merge:*')`) -- exactly the shape the harness
+    itself now refuses to load ("The :* pattern must be at the end"), so
+    keeping it here would have made this "positive control" assert
+    `present` for a rule that is actually dead. Dropped the trailing
+    quote so the fixture is a rule the harness would genuinely load.
+    """
     _settings(
         tmp_path / ".claude" / "settings.local.json",
-        allow=["Bash(supertool:'gh-pr-merge:*')"],
+        allow=["Bash(supertool:'gh-pr-merge:*)"],
     )
     state, _detail = doctor.merge_permission_state(
         tmp_path, home=_isolated_home(tmp_path)

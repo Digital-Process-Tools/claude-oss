@@ -12,11 +12,13 @@ over-report whichever half it carried no state for.
 
 Reuses `doctor_check_merge_permission`'s `_permission_rule_state` and
 `settings_candidates` rather than re-implementing the settings-file scan a
-third time -- same four states (`present` / `denied` / `absent` / `unknown`),
-same two-scope read (project then user), same "count and file, never the
-entry text" convention that check already established for exactly this reason
-(a tracked, contributor-writable settings file must never gain the ability to
-write this script's own output lines).
+third time -- same five states (`present` / `denied` / `invalid` / `absent` /
+`unknown`, #1688 added `invalid`), same two-scope read (project then user),
+same "count and file, never the entry text" convention that check already
+established for exactly this reason (a tracked, contributor-writable settings
+file must never gain the ability to write this script's own output lines) --
+`invalid` is the one exception to that convention, per `_permission_rule_
+state`'s own docstring.
 
 `doctor.py` imports the four public names below back out of this module
 immediately after this docstring's own code is defined, the same pattern
@@ -58,19 +60,21 @@ _GIT_COMMAND_HEADS = frozenset({"git"})
 
 def worktree_remove_permission_state(project_dir, home=None):
     """Is there a settings rule naming `git worktree remove`? See
-    `doctor_check_merge_permission._permission_rule_state` for the four answers
-    and why an unreadable neighbour never wins over a rule that was actually
-    read. A fifth answer, `cannot-tell-whether-covered`, replaces `absent` when
-    a Bash allow entry whose command head is `git` also contains a bare
-    wildcard, or is a command-name-level `name:*` prefix (#895), that this
-    substring test cannot resolve -- see the module docstring above
-    `_bash_wildcard_allow_detail`. A sixth, `cannot-tell-whether-forbidden`
-    (#892), replaces `absent` the same way when the ambiguous bare wildcard is
-    on the `deny` side instead -- see `_bash_wildcard_deny_detail`. The two
-    are kept as separate state names rather than folded into one, deliberately:
-    an allow-side ambiguity means "might already be covered" and a deny-side
-    one means "might already be forbidden", and collapsing them loses exactly
-    the direction that makes the deny-side case the more dangerous of the two
+    `doctor_check_merge_permission._permission_rule_state` for the five
+    answers (#1688 added `invalid` to the original four) and why an
+    unreadable neighbour never wins over a rule that was actually read. A
+    sixth answer, `cannot-tell-whether-covered`, replaces `absent` OR
+    `invalid` (#1688 self-review) when a Bash allow entry whose command head
+    is `git` also contains a bare wildcard, or is a command-name-level
+    `name:*` prefix (#895), that this substring test cannot resolve -- see
+    the module docstring above `_bash_wildcard_allow_detail`. A seventh,
+    `cannot-tell-whether-forbidden` (#892), replaces `absent` OR `invalid`
+    the same way when the ambiguous bare wildcard is on the `deny` side
+    instead -- see `_bash_wildcard_deny_detail`. The two are kept as separate
+    state names rather than folded into one, deliberately: an allow-side
+    ambiguity means "might already be covered" and a deny-side one means
+    "might already be forbidden", and collapsing them loses exactly the
+    direction that makes the deny-side case the more dangerous of the two
     (#892's own argument for why it is worse than the gap #886 fixed). Deny is
     checked before allow here, mirroring `_permission_rule_state`'s own "deny
     wins" precedent for the case (nothing in the fixtures currently produces
@@ -79,7 +83,10 @@ def worktree_remove_permission_state(project_dir, home=None):
     state, detail = _permission_rule_state(
         project_dir, lambda e: WORKTREE_REMOVE_OP in e, home=home
     )
-    if state == "absent":
+    # #1688 self-review: `invalid` joins `absent` here, same reasoning as
+    # doctor_check_merge_permission.py's two checks -- a misspelled literal
+    # entry must not hide a separate covering wildcard's own signal.
+    if state in ("absent", "invalid"):
         deny_wildcard_detail = _bash_wildcard_deny_detail(
             project_dir, _GIT_COMMAND_HEADS, home=home
         )
@@ -94,13 +101,16 @@ def worktree_remove_permission_state(project_dir, home=None):
 
 
 def branch_delete_permission_state(project_dir, home=None):
-    """Is there a settings rule naming `git branch -D`? Same six answers, same
-    caveats, as `worktree_remove_permission_state` above -- independent of it,
-    per the issue: a rule granting one command says nothing about the other."""
+    """Is there a settings rule naming `git branch -D`? Same seven answers,
+    same caveats, as `worktree_remove_permission_state` above -- independent
+    of it, per the issue: a rule granting one command says nothing about the
+    other."""
     state, detail = _permission_rule_state(
         project_dir, lambda e: BRANCH_DELETE_OP in e, home=home
     )
-    if state == "absent":
+    # #1688 self-review: same reasoning as `worktree_remove_permission_state`
+    # above -- `invalid` joins `absent` here too.
+    if state in ("absent", "invalid"):
         deny_wildcard_detail = _bash_wildcard_deny_detail(
             project_dir, _GIT_COMMAND_HEADS, home=home
         )
@@ -135,6 +145,14 @@ def check_worktree_remove_permission(project_dir, home=None):
             "the only settings rule naming {} is a deny rule ({}). gh-pr-merge's "
             "own cleanup falls back to this command by hand on a refused reap, "
             "and it will stop there too.".format(WORKTREE_REMOVE_OP, detail),
+        )
+        return
+    if state == "invalid":
+        doctor.report(
+            "WARN",
+            "settings rule(s) name {} but the harness skips them as invalid: {}".format(
+                WORKTREE_REMOVE_OP, detail
+            ),
         )
         return
     if state == "unknown":
@@ -201,6 +219,14 @@ def check_branch_delete_permission(project_dir, home=None):
             "the only settings rule naming {} is a deny rule ({}). gh-pr-merge's "
             "own cleanup falls back to this command by hand on a refused reap, "
             "and it will stop there too.".format(BRANCH_DELETE_OP, detail),
+        )
+        return
+    if state == "invalid":
+        doctor.report(
+            "WARN",
+            "settings rule(s) name {} but the harness skips them as invalid: {}".format(
+                BRANCH_DELETE_OP, detail
+            ),
         )
         return
     if state == "unknown":
