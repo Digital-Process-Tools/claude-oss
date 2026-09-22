@@ -69,7 +69,15 @@ _FAKE_GH_CMD = r"C:\fake\bin\gh.cmd"
 
 
 def test_label_vocabulary_state_resolves_gh_via_which(monkeypatch, tmp_path):
-    run = _recording_run(returncode=0, stdout=json.dumps([{"name": "priority-high"}]))
+    # #1708: a non-canonical spelling, not one of doctor's own three
+    # `priority-high`/`-medium`/`-low` names -- a lone doctor-owned name is
+    # a proper subset of that family and now reads `missing` (so the
+    # family gets finished on retry) rather than `satisfied`. This test is
+    # about gh resolution via `safe_which`, not about the family's own
+    # completeness, so the fixture only needs *some* priority label to
+    # exist -- a spelling doctor would never itself create keeps that
+    # intent without colliding with the #1708 fix.
+    run = _recording_run(returncode=0, stdout=json.dumps([{"name": "priority:high"}]))
     monkeypatch.setattr(
         doctor.gh_which, "safe_which", lambda name, path=None: _FAKE_GH_CMD
     )

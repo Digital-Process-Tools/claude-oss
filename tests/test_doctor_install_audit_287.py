@@ -252,8 +252,22 @@ def test_an_unreadable_manifest_is_could_not_tell_not_zero(tmp_path, monkeypatch
 
 
 def test_a_repo_with_priority_labels_is_satisfied(tmp_path):
+    """The full doctor-created family plus an unrelated label reads
+    `satisfied`, unaffected by #1708's partial-family fix below -- that
+    fix only changes the verdict when the set of priority-shaped labels is
+    a PROPER subset of doctor's own three names (see
+    `test_partial_doctor_family_reads_as_missing_not_satisfied`). A
+    two-of-three subset used to be asserted `satisfied` here, which was
+    exactly #1708's bug: an interrupted `create_priority_label_family`
+    write reading as done forever.
+    """
     rows = json.dumps(
-        [{"name": "priority-high"}, {"name": "priority-low"}, {"name": "bug"}]
+        [
+            {"name": "priority-high"},
+            {"name": "priority-medium"},
+            {"name": "priority-low"},
+            {"name": "bug"},
+        ]
     )
     state, payload = doctor.label_vocabulary_state(
         tmp_path, config={"repo": "owner/name"}, run=_fake_run(stdout=rows)
@@ -261,7 +275,7 @@ def test_a_repo_with_priority_labels_is_satisfied(tmp_path):
     assert state == "satisfied"
     slug, priority, lanes = payload
     assert slug == "owner/name"
-    assert set(priority) == {"priority-high", "priority-low"}
+    assert set(priority) == {"priority-high", "priority-medium", "priority-low"}
 
 
 def test_a_repo_with_no_priority_labels_is_a_named_gap(tmp_path):
@@ -376,7 +390,7 @@ def test_create_failure_is_could_not_create_never_ok(tmp_path):
         tmp_path, config={"repo": "owner/name"}, run=_list_then(create_result)
     )
     assert any(
-        state == "WARN" and "creating them failed" in msg and "403" in msg
+        state == "WARN" and "finishing it failed" in msg and "403" in msg
         for state, msg in doctor.FINDINGS
     )
     assert not any(
@@ -401,7 +415,9 @@ def test_create_priority_label_family_treats_a_race_as_created(tmp_path):
         "owner/name", run=_list_then(create_result)
     )
     assert state == "created"
-    assert payload is None
+    # #1708: every call races and finds its own name already existing, so
+    # THIS call created none of the three itself.
+    assert payload == []
 
 
 def test_create_priority_label_family_gh_unavailable_is_could_not_tell(
@@ -411,6 +427,102 @@ def test_create_priority_label_family_gh_unavailable_is_could_not_tell(
     state, payload = doctor.create_priority_label_family("owner/name")
     assert state == "could-not-tell"
     assert "gh is not on PATH" in payload
+
+
+def test_create_priority_label_family_second_call_fails_is_could_not_create(tmp_path):
+    """#1708: the first `gh label create` call can succeed and a LATER one
+    fail (rate limit, transient network, an auth hiccup) -- not covered by
+    `test_create_failure_is_could_not_create_never_ok`, which only fails the
+    first call. The overall state must still be `could-not-create`, never a
+    silent partial success reported as anything resembling `created`.
+    """
+    calls = []
+
+    def create_result(cmd):
+        calls.append(cmd[3])
+        if len(calls) == 1:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="", stderr="HTTP 403: Resource not accessible"
+        )
+
+    state, payload = doctor.create_priority_label_family(
+        "owner/name", run=_list_then(create_result)
+    )
+    assert state == "could-not-create"
+    assert calls == ["priority-high", "priority-medium"]
+    assert "403" in payload
+
+
+def test_partial_doctor_family_reads_as_missing_not_satisfied(tmp_path):
+    """#1708: a repo with only ONE of the three doctor-spelled priority
+    labels -- the state an interrupted `create_priority_label_family` call
+    leaves behind -- must read `missing`, so the next doctor run can finish
+    the family, not `satisfied` forever because classify_labels' truthy
+    check on `classified["priority"]` cannot tell a doctor-created partial
+    write from a maintainer's own deliberate spelling.
+    """
+
+    def run(cmd, **kwargs):
+        rows = json.dumps([{"name": "priority-high"}])
+        return subprocess.CompletedProcess(cmd, 0, stdout=rows, stderr="")
+
+    state, payload = doctor.label_vocabulary_state(
+        tmp_path, config={"repo": "owner/name"}, run=run
+    )
+    assert state == "missing"
+    assert payload == "owner/name"
+
+
+def test_a_non_canonical_priority_label_is_still_satisfied(tmp_path):
+    """The other half of #1708's own guard rail: a label that matches the
+    priority pattern but is NOT one of doctor's own three exact names (a
+    maintainer's deliberate spelling, #1686's own acceptance criterion)
+    must still read `satisfied` and must never be treated as a partial
+    doctor write.
+    """
+
+    def run(cmd, **kwargs):
+        rows = json.dumps([{"name": "priority:high"}])
+        return subprocess.CompletedProcess(cmd, 0, stdout=rows, stderr="")
+
+    state, payload = doctor.label_vocabulary_state(
+        tmp_path, config={"repo": "owner/name"}, run=run
+    )
+    assert state == "satisfied"
+
+
+def test_check_label_vocabulary_finishes_a_partial_doctor_family(tmp_path):
+    """End to end: `check_label_vocabulary` on a repo carrying only
+    priority-high (the interrupted-write state) creates the two missing
+    labels and reports `created`, rather than treating the family as
+    already satisfied and reporting nothing.
+
+    #1708 self-review: the OK message must name only the labels THIS call
+    actually created -- priority-high already existed, so a message
+    claiming it was created (the pre-fix wording, which was a fixed
+    string regardless of what actually happened) would be a false claim a
+    maintainer could act on.
+    """
+    created = []
+
+    def run(cmd, **kwargs):
+        if "list" in cmd:
+            rows = json.dumps([{"name": "priority-high"}])
+            return subprocess.CompletedProcess(cmd, 0, stdout=rows, stderr="")
+        name = cmd[3]
+        if name == "priority-high":
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="", stderr="already exists"
+            )
+        created.append(name)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    doctor.check_label_vocabulary(tmp_path, config={"repo": "owner/name"}, run=run)
+    assert created == ["priority-medium", "priority-low"]
+    ok_messages = [msg for state, msg in doctor.FINDINGS if state == "OK"]
+    assert any("created priority-medium, priority-low" in msg for msg in ok_messages)
+    assert not any("priority-high" in msg for msg in ok_messages)
 
 
 # --------------------------------------------------------------- origin slug

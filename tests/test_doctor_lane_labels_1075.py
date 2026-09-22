@@ -37,7 +37,14 @@ def _fake_run(stdout="", returncode=0):
 def test_zero_lane_labels_is_not_ok_it_is_a_named_gap(tmp_path):
     """The must-fire half: a vocabulary with priority labels but zero lane
     labels must never render as `OK ... 0 lane label(s)` again."""
-    rows = json.dumps([{"name": "priority-high"}, {"name": "priority-low"}])
+    # #1708: a non-canonical spelling, not two of the three doctor-owned
+    # names -- this fixture's job is "some priority label already exists",
+    # and a proper subset of doctor's own three names now reads `missing`
+    # (retried) rather than `satisfied`, which would route this run through
+    # `create_priority_label_family`'s own `gh label create` calls instead
+    # of the plain `gh label list` this fixture's single-response `run`
+    # fake is built for.
+    rows = json.dumps([{"name": "priority:high"}, {"name": "priority:low"}])
     doctor.FINDINGS[:] = []
     doctor.check_label_vocabulary(
         tmp_path, config={"repo": "owner/name"}, run=_fake_run(stdout=rows)
@@ -61,9 +68,12 @@ def test_zero_lane_labels_is_not_ok_it_is_a_named_gap(tmp_path):
 def test_a_populated_lane_vocabulary_is_satisfied_the_positive_control(tmp_path):
     """The must-not-fire half: a real vocabulary must report the lanes as
     satisfied, not as the gap the test above checks for."""
+    # #1708: a non-canonical spelling -- see the sibling test above for why
+    # a lone doctor-owned canonical name (a proper subset of the family)
+    # would route this through `create_priority_label_family` instead.
     rows = json.dumps(
         [
-            {"name": "priority-high"},
+            {"name": "priority:high"},
             {"name": "lane-doctor"},
             {"name": "lane-dispatch"},
         ]
