@@ -34,3 +34,12 @@ Windows CI is the only thing that exercises this and it cannot be reproduced on 
   reasoned, not measured, same as this file's own standing instruction. Settle it with a real
   Windows CI run of the `plugin` branch checking whether streamed lines land in the log, not by
   reading the source and predicting.
+- **A failed fd-3 open and a debounced-nothing run render identically (#1654).** `plugin_update.py`
+  (`update()`'s caller) does `os.fdopen(progress_fd, "w", closefd=False)` inside a `try`/`except`
+  that sets `progress_writer = None` on any failure and proceeds with `progress=None` -- the same
+  state a healthy run reaches when there is simply nothing to report yet. "The descriptor could not
+  be opened" and "the run streamed nothing because there was nothing to stream" are two different
+  facts sharing one code path. No CI leg exercises this arm (only the `shell` job touches
+  `bin/oss-workspace`, and it only shellchecks). Not fixed by writing this rule -- the third state a
+  caller would need (`could-not-open-progress-fd` distinct from `nothing-to-report`) does not exist
+  yet; this is a known, unclosed gap, not settled knowledge.

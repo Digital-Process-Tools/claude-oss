@@ -46,6 +46,11 @@ wall clock	measuring-ci-cost.md
 runner concurrency	measuring-ci-cost.md	
 queue time	measuring-ci-cost.md	
 flaky rerun	measuring-ci-cost.md	
+self-review	red-green-check-needs-its-own-clone.md	
+red green	red-green-check-needs-its-own-clone.md	
+red-green check	red-green-check-needs-its-own-clone.md	
+scratchpad copy	red-green-check-needs-its-own-clone.md	
+review spawn	red-green-check-needs-its-own-clone.md	
 claude plugin root	self-hosted-plugin-resolution.md	
 plugin root	self-hosted-plugin-resolution.md	
 pinned root	self-hosted-plugin-resolution.md	

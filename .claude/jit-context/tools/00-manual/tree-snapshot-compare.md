@@ -37,3 +37,14 @@ snapshot.json` collides the same way a single fixed name does whenever two spawn
 can run concurrently over one worktree: each reads the other's before-snapshot and reports a
 mutation receipt about the wrong tree. Derive the filename from the issue/PR number(s) the spawn was
 given, or its own PID -- whichever is already unique per call (#1622, #1642).
+
+**Never delete a file matching the snapshot-artifact naming convention that you did not personally
+create, even when it looks like leftover debris (#1687).** A required second-pass `oss:auditor`
+round `rm -f`'d another spawn's `-before-snapshot.json`, written moments earlier by the developer
+lane that spawned it and still needed for that round's own `compare` -- reasoning that it was
+stray scratch from an earlier round, because an earlier, unrelated round in the same lane really had
+left one behind. A spawn that did not write a `SNAPSHOT_ARTIFACT_RE`-matching file has no way to
+tell "abandoned debris" from "another agent's still-live snapshot, created seconds ago". Report it
+as an anomaly in your own findings instead of clearing it -- the same discipline this whole
+mechanism exists to enforce: do not mutate the tree you are reviewing, full stop, not even a file
+that looks disposable.

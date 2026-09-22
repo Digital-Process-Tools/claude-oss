@@ -871,3 +871,83 @@ not yet known well enough to write a rule from.
 - `1667.next-minor-pin-guard-failed-on-one-leg-and-passed-on-three` -- still needs the same read
   (opening the three passing legs' own logs to see whether they collected the test at all) named in
   the 2026-09-17 entry below; not taken here either.
+
+## 2026-09-22 — 18 fragments: 4 promoted, 2 merged, 6 filed, 2 declined, 3 deferred
+
+**Promoted.**
+
+- `1693.explore-reviewer-red-green-check-staged-a-revert-in-the-shared-worktree` ->
+  `vocabulary/00-manual/red-green-check-needs-its-own-clone.md`, new vocabulary rule firing on
+  "self-review"/"red/green": a spawned reviewer that reverts tracked files in place to replay a
+  red/green check, even calling it a "scratchpad copy", leaves the change in the real shared
+  worktree's git index, not an isolated copy -- confirmed by a concurrent auditor's
+  `tree_snapshot.py compare` reporting `mutated`. Use a genuinely separate worktree or clone instead.
+- `1682.claude-md-history-narrative-drifts-from-its-own-table` and
+  `1689.claude-md-own-row-drifted-from-release-marker-history` -> one new rule,
+  `paths/00-manual/claude-md-budget-row-cross-check.md`, firing on `CLAUDE.md` and
+  `scripts/claude_md_budget.py`: two independent lanes, four days apart, each found the "Re-baselined
+  for #NNNN" narrative claiming a different byte count than the real committed table/code state.
+  Read together, this is a recurring failure mode (trusting the prior paragraph's claimed ending
+  number instead of measuring), not two one-off drifts -- worth a rule on its own even though neither
+  fragment alone met the "not on volume" bar.
+
+**Merged.**
+
+- `1654.oss-workspace-progress-fd-windows-unverified-silent-fallback` -> folded into the
+  already-shipped `paths/00-manual/windows-subprocess-resolution.md`: a failed `os.fdopen` on the
+  progress fd and a healthy run with nothing yet to stream both set `progress_writer = None` and
+  proceed identically -- the same defect class this whole plugin is named after, applied to a file
+  this rule already governs.
+- `1687.round2-auditor-deleted-a-sibling-snapshot-file` -> folded into the already-shipped
+  `tools/00-manual/tree-snapshot-compare.md`: a required second-pass `oss:auditor` round deleted
+  another spawn's still-live `-before-snapshot.json`, reasoning it was leftover debris from an
+  earlier round in the same lane that really had left one behind. Never delete a file matching that
+  naming convention that you did not personally create -- report it as an anomaly instead.
+
+**Filed, as defect reports rather than rules.**
+
+- `1651.setup-md-tracked-table-omits-triage-route-threshold` -> #1704. A one-off documentation gap
+  (a table missing one key its own sibling row precedent already covers), not a recurring pattern a
+  rule could catch.
+- `1679.cross-repo-loop-filed-issue-missing-filed-by-loop-label` -> #1705. A code-path question
+  (does cross-repo issue filing set the label at all) that needs reading the filing implementation,
+  not an agent-behaviour pattern.
+- `1681.release-gate2-absent-review-comment-age-clears-silently`,
+  `1681.release-gate2-malformed-prs-json-exits-same-code-as-blocked` and
+  `1681.release-gate2-newline-in-pr-number-reaches-column-0` -> #1706 (filed together, same script,
+  same introducing PR). Three code-level absence/format defects in `release_gate2.py`, not rules.
+- `1682.label-attachment-stated-unconditionally-in-two-of-three-touched-files` -> #1707. A
+  documentation-consistency gap between three sibling files, mechanical fix, not a rule.
+- `1686.partial-priority-label-creation-reads-satisfied-forever` -> #1708. A genuine design decision
+  (doctor would need to record which labels it created itself) already named as such by both
+  reviewers who found it; not a rule this pass can write.
+- `1725.triage-signature-receipt-suppresses-a-standing-over-threshold-reading` -> #1709. A real
+  question about `next_action.py`'s own suppression-receipt semantics, needing a decision about
+  intended behaviour, not knowledge a rule could carry.
+
+**Declined outright.**
+
+- `1678.declined-trap-fragment-survives-curate-decline` -- actioned directly rather than turned into
+  a rule: `1649` (see below) had already been declined with its trace recorded in this file on
+  2026-09-18, but the fragment itself was never deleted, so it resurfaced in this pass's own
+  backlog. Deleting it now closes the procedural gap this fragment reported; no fourth disposition
+  ("declined but retained") is needed, `commands/run/curate.md`'s existing three deletion outcomes
+  already cover it once the delete step is actually taken.
+
+**Already declined; completing an interrupted decline.**
+
+- `1649.scheduler-direct-push-to-main-bypassed-six-required-checks` -- declined and traced on
+  2026-09-18 (see that section above); deleted now per `1678`'s own finding and remedy.
+
+**Deferred, left in `trap.d/` unchanged -- carried forward, no new information.**
+
+- `1630.fifty-one-worktrees-accumulate-because-every-reap-gate-declines` -- still needs the same
+  design decision on a separate reap sweep named in the 2026-09-17 entry; nothing in this pass
+  changes that.
+- `1660.pytest-leg-margin-arithmetic-ignores-pre-run-tests-step-overhead` -- needs an instrumented
+  CI run timing each step of a real job separately (checkout, setup-python, `pip install`) to know
+  whether the existing margin tests already understate the true headroom; not something a single
+  lane can produce locally.
+- `1667.next-minor-pin-guard-failed-on-one-leg-and-passed-on-three` -- still needs the same read
+  (opening the three passing legs' own logs to see whether they collected the test at all) named in
+  the 2026-09-17 entry; not taken here either.
