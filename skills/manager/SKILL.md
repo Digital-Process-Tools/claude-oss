@@ -306,10 +306,9 @@ implements has destroyed the only independent read the change will ever get. Wha
 record: state entries, issue and pull request bodies, its own appended verification. Two things are
 genuinely its own to type -- a one-command probe run to establish a fact for a brief, and a revert.
 
-**Two agent definitions: `developer` is the hands, `triager` is the board.** Pick by whether the
-deliverable is a diff or a label. A spawn whose `subagent_type` does not resolve is `could not run`:
-quote the error, report it as a finding rather than only routing around it, and fall back to briefing
-`general-purpose` with a pointer to the definition file.
+**A spawn whose `subagent_type` does not resolve is `could not run`:** quote the error, report it
+as a finding rather than only routing around it, and fall back to briefing `general-purpose` with a
+pointer to the definition file.
 
 **Run a fleet, not a queue.** One developer per file-disjoint lane the board offers, **and** each
 lane's brief carrying every further open issue whose files land inside its already-claimed set.

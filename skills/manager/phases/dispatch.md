@@ -42,9 +42,6 @@ When the fleet is exhausted, the honest move is to say the work is queued behind
 pick it up. A repository where the maintainer implements is a repository with one contributor and a
 review that only looks like one.
 
-Two agent definitions: **`developer` is the hands, `triager` is the board.** Pick by whether
-the deliverable is a diff or a label.
-
 **Recon is the lane's own spawn (#1535), not yours.** The lane spawns `oss:recon` over its own
 issues and keeps the summary in the one context that uses it. Returning it here and writing it back
 into a brief paid for it twice and left the second copy in your context for the rest of the tick.
@@ -52,25 +49,10 @@ Measured on one lane (three issues): the recon cost 0.7M context tokens and the 
 134.4M for the comparable lane without one (#1499) -- the saving is the orientation reads being paid
 once in a context that dies, and that holds wherever the spawn is made.
 
-**One dispatcher-side use survives, and #1532 made it optional rather than required.** This said
-`--claim` needs `--lane` patterns before the lane exists; it no longer does (#788's rule protected
-the lane record, now retired). What is left is worth having and nothing forces it: `--lane` makes
-`lane_setup.py` report the cross-cutting guard tests those files trip, and `--suggest-companions`
-still requires it. For either, when you cannot name the patterns yourself, spawn one recon for that
-section alone:
-
-    Agent(subagent_type: "oss:recon", model: "sonnet", run_in_background: false, prompt: "<the issue numbers, the repo root, and: locate, do not design>")
-
-Read its `## Lane file set` and its `RECON-COST:` line, which goes beside the lane's own `cost` in
-the handback. **Discard the rest rather than pasting it** -- pasting it is the double payment above.
-Issue #1535 predicted that after #1532 nothing here would need a recon; that is true of *needs*,
-and whether to drop the optional use too is the maintainer's call, not this change's.
-
 **Spawn with the literal string, not the definition's name** -- `commands/tick.md` spells its own
-`oss:sub-manager` spawn out in full, and this step must do the same for the two it composes:
+`oss:sub-manager` spawn out in full, and this step must do the same for what it composes:
 
     Agent(subagent_type: "oss:developer", model: "sonnet", run_in_background: false)
-    Agent(subagent_type: "oss:triager", run_in_background: false)
 
 The only other place `agents/` demonstrates the `subagent_type: "..."` form is
 `agents/developer.md`'s own review spawns -- inside the file a sub-manager never reads -- so

@@ -173,7 +173,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # labels.lane_other" reading as scoped to the same "own initiative
         # only" clause as `labels.filed_by_loop`. Comfortably under the
         # 44800 B ceiling; ceiling unchanged.
-        42904,
+        # Re-baselined for #1691: 42904 B became 42777 B -- a third,
+        # word-for-word copy of the dead "triager is the board" sentence
+        # (found by a spawned reviewer during self-review) removed from the
+        # "Delegating" paragraph, keeping the still-live sentence beside it
+        # about an unresolved `subagent_type`. Ceiling unchanged.
+        42777,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -385,7 +390,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # disposition dropped from #970/#1036's own directive paragraph (retired
         # by #1528/#1530, never recomputed since), replaced with a one-sentence
         # pointer to how an overlap is judged instead. Ceiling unchanged.
-        58094,
+        # Re-baselined for #1691: 58094 B became 56845 B -- two dead rules
+        # deleted: the "triager is the board" agent-definition sentence and
+        # the "One dispatcher-side use survives" oss:recon spawn paragraph,
+        # both prose for a dispatch step #1544 already moved to
+        # oss:tick-dispatch, which is granted no Agent tool and so could
+        # never run either. Ceiling unchanged.
+        56845,
         58500,
         "delegating: the dispatch order, fleet size, lane disjointness, bundling, what every brief carries, and when to stack a lane on a sibling branch instead of default_branch",
     ),
