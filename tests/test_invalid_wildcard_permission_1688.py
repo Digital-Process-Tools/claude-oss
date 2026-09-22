@@ -197,6 +197,52 @@ def test_check_branch_delete_permission_reports_warn_for_invalid(tmp_path, capsy
 # -------------------------------------- the invalid spelling is not documented
 
 
+def test_invalid_literal_beside_a_covering_wildcard_reads_cannot_tell_whether_covered(
+    tmp_path,
+):
+    """Self-review finding: an invalid literal entry must not hide a
+    separate covering wildcard's own, more actionable signal -- the same
+    signal `absent` (no literal entry at all) already surfaces for the
+    identical wildcard."""
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(supertool 'gh-pr-merge:*')", "Bash(supertool *)"],
+    )
+    state, detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state == "cannot-tell-whether-covered"
+    assert detail
+
+
+def test_invalid_literal_beside_a_covering_deny_wildcard_reads_cannot_tell_whether_forbidden(
+    tmp_path,
+):
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(supertool 'gh-pr-merge:*')"],
+        deny=["Bash(supertool *)"],
+    )
+    state, detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state == "cannot-tell-whether-forbidden"
+    assert detail
+
+
+def test_invalid_literal_with_no_covering_wildcard_still_reads_invalid(tmp_path):
+    """Positive control: the wildcard fallback must not swallow a genuine
+    `invalid` when there is nothing covering it."""
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash(supertool 'gh-pr-merge:*')"],
+    )
+    state, _detail = doctor.merge_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state == "invalid"
+
+
 def test_the_invalid_spelling_is_not_documented_anywhere():
     """#1688's own acceptance criterion: a grep for the invalid trailing-
     quote-after-the-marker shape across scripts/commands/agents/skills/docs

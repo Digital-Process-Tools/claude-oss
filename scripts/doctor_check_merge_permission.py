@@ -396,10 +396,11 @@ def _permission_rule_state(project_dir, matches_entry, home=None):
 
 def merge_permission_state(project_dir, home=None):
     """Is there a settings rule naming the merge op? See `_permission_rule_state`
-    for the four answers and why an unreadable neighbour never wins over a
-    rule that was actually read. #1242: a fifth and sixth answer,
-    `cannot-tell-whether-covered` / `cannot-tell-whether-forbidden`, replace
-    `absent` when no entry literally names `gh-pr-merge` but a Bash entry
+    for the five answers (#1688 added `invalid` to the original four) and why
+    an unreadable neighbour never wins over a rule that was actually read.
+    #1242: a sixth and seventh answer, `cannot-tell-whether-covered` /
+    `cannot-tell-whether-forbidden`, replace `absent` OR `invalid` (#1688
+    self-review) when no entry literally names `gh-pr-merge` but a Bash entry
     granting (or denying) `supertool` or `./supertool` with a bare wildcard
     exists -- `gh-pr-merge` is invoked AS a supertool op
     (`supertool 'gh-pr-merge:...'`), so such an entry already covers it under
@@ -408,7 +409,14 @@ def merge_permission_state(project_dir, home=None):
     state, detail = _permission_rule_state(
         project_dir, lambda e: MERGE_OP in e, home=home
     )
-    if state == "absent":
+    # #1688 self-review: `invalid` joins `absent` here, not only `absent` --
+    # a settings file can hold ONLY a misspelled literal entry (the harness
+    # drops it) alongside a separate Bash wildcard that already covers the
+    # op under Claude Code's own matcher. Reporting bare `invalid` in that
+    # case would hide the more useful "may already be covered" signal the
+    # `absent` branch already surfaces for the identical wildcard with no
+    # literal entry present at all.
+    if state in ("absent", "invalid"):
         deny_wildcard_detail = _bash_wildcard_deny_detail(
             project_dir, SUPERTOOL_COMMAND_HEADS, home=home
         )
@@ -522,10 +530,11 @@ SUPERTOOL_ENTRY_RE = re.compile(r"^Bash\((?:\./|(?:[A-Za-z]:)?[/\\].*[/\\])?supe
 
 def supertool_permission_state(project_dir, home=None):
     """Is there a settings rule naming the supertool call itself? See
-    `_permission_rule_state` for the four answers and why an unreadable
-    neighbour never wins over a rule that was actually read. #1242: a fifth
-    and sixth answer, `cannot-tell-whether-covered` /
-    `cannot-tell-whether-forbidden`, replace `absent` when no entry matches
+    `_permission_rule_state` for the five answers (#1688 added `invalid` to
+    the original four) and why an unreadable neighbour never wins over a
+    rule that was actually read. #1242: a sixth and seventh answer,
+    `cannot-tell-whether-covered` / `cannot-tell-whether-forbidden`, replace
+    `absent` OR `invalid` (#1688 self-review) when no entry matches
     `SUPERTOOL_ENTRY_RE`'s anchored `supertool:`/`./supertool:` spelling but a
     Bash entry granting (or denying) `supertool` or `./supertool` with a bare
     wildcard exists (`Bash(supertool *)`, `Bash(./supertool *)`) -- a
@@ -534,7 +543,9 @@ def supertool_permission_state(project_dir, home=None):
     state, detail = _permission_rule_state(
         project_dir, lambda e: bool(SUPERTOOL_ENTRY_RE.match(e)), home=home
     )
-    if state == "absent":
+    # #1688 self-review: same reasoning as `merge_permission_state` above --
+    # `invalid` joins `absent` here too.
+    if state in ("absent", "invalid"):
         deny_wildcard_detail = _bash_wildcard_deny_detail(
             project_dir, SUPERTOOL_COMMAND_HEADS, home=home
         )
