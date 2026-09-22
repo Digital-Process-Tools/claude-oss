@@ -1,6 +1,7 @@
 (^|/)(commands/.*\.md|agents/.*\.md)$	agent-call-needs-run-in-background-pin.md
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
 (^|/)(CLAUDE\.md|scripts/lane_setup\.py|scripts/claude_md_budget\.py)$	claude-md-budget-guard-derivation.md
+(^|/)(CLAUDE\.md|scripts/claude_md_budget\.py)$	claude-md-budget-row-cross-check.md
 (^|/)scripts/cohort_freeze_record\.py$	cohort-freeze-label-before-agreement.md
 (^|/)scripts/(oss_config|scaffold|fix_commit_scope)\.py$	config-value-validation.md
 (^|/)scripts/[^/]+\.py$	counter-scripts-silent-gaps.md
