@@ -26,17 +26,24 @@ already made for gate 3.
 
 ## The rule, per pull request
 
-  review_decision        lane_active   comment age (min)  status
-  ----------------------  -----------  ------------------  -----------
-  CHANGES_REQUESTED       n/a          n/a                 in-flight
-  REVIEW_REQUIRED         n/a          n/a                 in-flight
-  APPROVED                n/a          n/a                 clear
-  NONE (or absent)        True         n/a                 in-flight
-  NONE (or absent)        False        < threshold          in-flight
-  NONE (or absent)        False        >= threshold or none  clear
-  NONE (or absent)        unknown      n/a                 could-not-tell
-  NONE (or absent)        False        unknown             could-not-tell
-  anything unrecognised   --           --                  could-not-tell
+  review_decision        lane_active   comment age (min)         status
+  ----------------------  -----------  -------------------------  -----------
+  CHANGES_REQUESTED       n/a          n/a                        in-flight
+  REVIEW_REQUIRED         n/a          n/a                        in-flight
+  APPROVED                n/a          n/a                        clear
+  NONE (or absent)        True         n/a                        in-flight
+  NONE (or absent)        False        < threshold                in-flight
+  NONE (or absent)        False        >= threshold, or explicit null  clear
+  NONE (or absent)        unknown      n/a                        could-not-tell
+  NONE (or absent)        False        unknown, or key absent     could-not-tell
+  anything unrecognised   --           --                         could-not-tell
+
+`(or absent)` beside `review_decision`/`lane_active` and `key absent` in the comment-age row
+name the same fact for a different field: the caller's payload never sent the key at all. This
+is deliberately distinct from an explicit `null` -- a caller who checked and confirmed no
+review comment exists sends `latest_review_comment_age_minutes: null` and that still clears;
+one whose payload omits the key entirely never established the fact and gets `could-not-tell`,
+the same as an absent `lane_active`.
 
 `review_decision: NONE` is the exact ambiguity the incident turned on -- no
 reviewer has weighed in either way, which is true of both an ordinary
@@ -285,7 +292,7 @@ def main(argv=None):
             if args.prs_json == "-"
             else Path(args.prs_json).read_text()
         )
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:
         parser.error("--prs-json could not be read: {0}".format(exc))
         return EXIT_COULD_NOT_TELL  # pragma: no cover -- parser.error exits
 
