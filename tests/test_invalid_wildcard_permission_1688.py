@@ -115,6 +115,24 @@ def test_supertool_permission_deny_side_invalid_never_denied(tmp_path):
     assert "Rewrite as" in detail
 
 
+def test_supertool_permission_invalid_literal_beside_a_covering_wildcard_reads_cannot_tell(
+    tmp_path,
+):
+    """Second-pass review (#1688): the same absent-plus-invalid fallback
+    fix merge_permission_state got must also hold for
+    supertool_permission_state -- an invalid literal entry must not hide a
+    separate covering wildcard's own, more actionable signal."""
+    _settings(
+        tmp_path / ".claude" / "settings.json",
+        allow=["Bash(supertool:*')", "Bash(supertool *)"],
+    )
+    state, detail = doctor.supertool_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state == "cannot-tell-whether-covered"
+    assert detail
+
+
 # -------------------------------------------------------------- shared helper
 
 
@@ -166,6 +184,37 @@ def test_branch_delete_permission_invalid_entry_reads_invalid(tmp_path):
     )
     assert state == "invalid"
     assert "Rewrite as" in detail
+
+
+def test_worktree_remove_permission_invalid_literal_beside_a_covering_wildcard_reads_cannot_tell(
+    tmp_path,
+):
+    """Second-pass review (#1688): the same absent-plus-invalid fallback fix
+    the merge/supertool checks got must also hold for the worktree-reap
+    checks, which share the same `_permission_rule_state`."""
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash('git worktree remove:*')", "Bash(git *)"],
+    )
+    state, detail = reap_mod.worktree_remove_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state == "cannot-tell-whether-covered"
+    assert detail
+
+
+def test_branch_delete_permission_invalid_literal_beside_a_covering_wildcard_reads_cannot_tell(
+    tmp_path,
+):
+    _settings(
+        tmp_path / ".claude" / "settings.local.json",
+        allow=["Bash('git branch -D:*')", "Bash(git *)"],
+    )
+    state, detail = reap_mod.branch_delete_permission_state(
+        tmp_path, home=_isolated_home(tmp_path)
+    )
+    assert state == "cannot-tell-whether-covered"
+    assert detail
 
 
 def test_check_worktree_remove_permission_reports_warn_for_invalid(tmp_path, capsys):
