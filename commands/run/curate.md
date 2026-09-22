@@ -36,7 +36,21 @@ Three answers, and the third is the one that matters: `N waiting`, `none waiting
 `could-not-read` — a directory that could not be listed **never** reports zero, because a pass that
 was silently skipped and a cycle with nothing to curate would otherwise render identically.
 
-`none waiting` ends the pass. Say so and stop; there is nothing here to decide.
+**`none waiting` ends the pass -- but first remove the worktree this pass just cut.** Nothing was
+written to it and no fragment was even read, so nothing is lost by tearing it down immediately,
+rather than leaving it for `worktree_reap.py`'s own gate: a branch that never carries a pull
+request is kept by that gate forever, since `branch_merge_state` reads it as `not-merged` and
+`plan_reap` never reaps anything not-merged (#1693).
+
+```bash
+cd <clone> && git worktree remove --force <worktree_root>/curate-<UTC timestamp, YYYYMMDDTHHMMSSZ> && git branch -D curate/<UTC timestamp, YYYYMMDDTHHMMSSZ>
+```
+
+Say so and stop; there is nothing here to decide.
+
+**`could-not-read` leaves the worktree in place.** An unreadable `trap.d/` is an error worth a
+human looking at, not a clean exit to tear down after -- do not sweep this outcome into the same
+teardown as `none waiting` above.
 
 ## What this pass is for
 

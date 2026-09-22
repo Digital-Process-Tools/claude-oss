@@ -217,13 +217,24 @@ def _gh_json(gh_bin, args, run):
         )
 
 
+_CLOSED_PR_STATE = "CLOSED"
+
+
 def branch_merge_state(slug, branch, run=None, gh_bin=None):
-    """``"merged"`` / ``"not-merged"`` / ``"could-not-tell"`` -- read from the
-    tracker BY NAME, never from local ancestry (see this module's own
-    docstring for why: a squash merge leaves no ancestor relationship at
-    all). ``MERGED`` wins over any other state recorded for the same head,
-    the same precedent `doctor_check_stale_branches._pr_state_for_branch`
-    already sets.
+    """``"merged"`` / ``"closed"`` / ``"not-merged"`` / ``"could-not-tell"`` --
+    read from the tracker BY NAME, never from local ancestry (see this
+    module's own docstring for why: a squash merge leaves no ancestor
+    relationship at all). ``MERGED`` wins over any other state recorded for
+    the same head, the same precedent
+    `doctor_check_stale_branches._pr_state_for_branch` already sets.
+
+    ``"closed"`` is its own state, distinct from ``"not-merged"`` (#1693): a
+    pull request explicitly CLOSED without merging is a final, recorded
+    decision not to merge that branch's work -- the same finality a MERGED
+    PR carries, just the opposite outcome -- and `plan_reap` below treats it
+    the same way. A branch with no pull request on record at all, or one
+    still OPEN, stays ``"not-merged"``: neither is a decision yet, so
+    neither licenses reaping the tree it lives in.
     """
     run = subprocess.run if run is None else run
     gh_bin = gh_bin or gh_which.safe_which("gh")
@@ -267,6 +278,8 @@ def branch_merge_state(slug, branch, run=None, gh_bin=None):
         return "merged", None
     if state is None:
         return "not-merged", "no pull request on record for this branch name"
+    if state == _CLOSED_PR_STATE:
+        return "closed", "the recorded pull request state is CLOSED"
     return "not-merged", "the recorded pull request state is {}".format(state)
 
 
@@ -529,6 +542,10 @@ def plan_reap(
                 }
             )
             continue
+        # merge_state is now "merged" or "closed" here -- both are final,
+        # recorded decisions not to keep the branch's work in flight (#1693)
+        # -- and #1628's own finding below applies to either the same way.
+        #
         # #1628 self-review finding: a MERGED verdict for this branch NAME is
         # not a guarantee this WORKTREE's own tip has nothing beyond it --
         # see `unpushed_commit_state`'s own docstring for the exact gap.
@@ -602,7 +619,7 @@ def plan_reap(
                 "path": path,
                 "branch": branch,
                 "decision": "reapable",
-                "reason": "merged, unoccupied, clean or artifacts-only",
+                "reason": "{}, unoccupied, clean or artifacts-only".format(merge_state),
                 "fragments": fragments,
             }
         )
