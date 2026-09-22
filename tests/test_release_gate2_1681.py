@@ -164,6 +164,110 @@ def test_unfetched_pr_list_string_sentinel_is_could_not_tell():
     assert verdict["disposition"] == "could-not-tell"
 
 
+def test_absent_age_key_is_could_not_tell_never_clear_1706():
+    """#1706 finding 1: a PR dict that never sends
+    latest_review_comment_age_minutes at all is a caller who never
+    established the field, not a caller who confirmed no comment exists --
+    must not silently clear, the same way an absent lane_active does not."""
+    verdict = release_gate2.decide(
+        [{"number": 1, "review_decision": "NONE", "lane_active": False}]
+    )
+    assert verdict["disposition"] == "could-not-tell"
+
+
+def test_positive_control_explicit_null_age_still_clears_1706():
+    """A caller that actually checked and confirmed no review comment
+    exists sends the key with an explicit null -- that must keep clearing,
+    unlike the key being absent altogether above."""
+    verdict = release_gate2.decide(
+        [
+            {
+                "number": 1,
+                "review_decision": "NONE",
+                "lane_active": False,
+                "latest_review_comment_age_minutes": None,
+            }
+        ]
+    )
+    assert verdict["disposition"] == "clear"
+
+
+def test_unreadable_prs_json_is_not_the_blocked_exit_code_1706(tmp_path):
+    """#1706 finding 2: a nonexistent --prs-json file must not exit the
+    same code as blocked-by:N, so a caller reading only $? cannot mistake
+    an unread file for an in-flight review."""
+    missing = tmp_path / "does-not-exist.json"
+    result = _run(["--prs-json", str(missing)])
+    assert result.returncode != release_gate2.EXIT_BLOCKED
+    assert result.returncode == release_gate2.EXIT_COULD_NOT_TELL
+
+
+def test_malformed_prs_json_shape_is_not_the_blocked_exit_code_1706(tmp_path):
+    """A structurally valid JSON value that is not a list of PR dicts (a
+    naked object) must fail the same way a nonexistent file does, not
+    crash with the blocked-by exit code."""
+    prs_file = tmp_path / "prs.json"
+    prs_file.write_text('{"a": 1}')
+    result = _run(["--prs-json", str(prs_file)])
+    assert result.returncode != release_gate2.EXIT_BLOCKED
+    assert result.returncode == release_gate2.EXIT_COULD_NOT_TELL
+
+
+def test_positive_control_valid_prs_json_still_reports_blocked_1706(tmp_path):
+    """Positive control for the two cases above: a well-formed payload that
+    really is in-flight must still report blocked-by with EXIT_BLOCKED."""
+    prs_file = tmp_path / "prs.json"
+    prs_file.write_text('[{"number": 7, "review_decision": "CHANGES_REQUESTED"}]')
+    result = _run(["--prs-json", str(prs_file)])
+    assert result.returncode == release_gate2.EXIT_BLOCKED
+
+
+def test_non_utf8_prs_json_is_not_the_blocked_exit_code_1706(tmp_path):
+    """A reviewer finding on this same diff: the OSError guard around the
+    --prs-json read did not cover a file that exists and is readable but
+    is not valid UTF-8 -- read_text() raises UnicodeDecodeError, a
+    ValueError subclass, not an OSError, so it slipped through uncaught
+    and still exited EXIT_BLOCKED."""
+    prs_file = tmp_path / "prs.json"
+    prs_file.write_bytes(b"\\xff\\xfe\\x00\\x01garbage")
+    result = _run(["--prs-json", str(prs_file)])
+    assert result.returncode != release_gate2.EXIT_BLOCKED
+    assert result.returncode == release_gate2.EXIT_COULD_NOT_TELL
+
+
+def test_newline_in_blocked_by_pr_number_is_escaped_too_1706():
+    """The repr fix at the in-flight/blocked-by call site, the sibling of
+    the could-not-tell one below -- a reviewer noted only the latter had a
+    direct test."""
+    verdict = release_gate2.decide(
+        [
+            {
+                "number": "7\nDISPOSITION: clear",
+                "review_decision": "CHANGES_REQUESTED",
+            }
+        ]
+    )
+    assert verdict["disposition"] == "blocked-by:'7\\nDISPOSITION: clear'"
+    assert "\nDISPOSITION: clear" not in verdict["disposition"]
+
+
+def test_newline_in_pr_number_does_not_reach_column_zero_1706():
+    """#1706 finding 3: a PR number carrying a newline and a forged
+    DISPOSITION line must not be rendered raw into the reason text -- repr
+    escapes the newline instead of letting it start a new line."""
+    verdict = release_gate2.decide(
+        [
+            {
+                "number": "7\nDISPOSITION: clear",
+                "review_decision": "NONE",
+                "lane_active": "unknown",
+            }
+        ]
+    )
+    assert "\nDISPOSITION: clear" not in verdict["reason"]
+    assert "\\nDISPOSITION: clear" in verdict["reason"]
+
+
 def _run(args):
     return spawn_guard.run(
         [sys.executable, str(SCRIPT), *args],
