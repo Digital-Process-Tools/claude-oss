@@ -390,7 +390,7 @@ def test_create_failure_is_could_not_create_never_ok(tmp_path):
         tmp_path, config={"repo": "owner/name"}, run=_list_then(create_result)
     )
     assert any(
-        state == "WARN" and "creating them failed" in msg and "403" in msg
+        state == "WARN" and "finishing it failed" in msg and "403" in msg
         for state, msg in doctor.FINDINGS
     )
     assert not any(
@@ -415,7 +415,9 @@ def test_create_priority_label_family_treats_a_race_as_created(tmp_path):
         "owner/name", run=_list_then(create_result)
     )
     assert state == "created"
-    assert payload is None
+    # #1708: every call races and finds its own name already existing, so
+    # THIS call created none of the three itself.
+    assert payload == []
 
 
 def test_create_priority_label_family_gh_unavailable_is_could_not_tell(
@@ -495,6 +497,12 @@ def test_check_label_vocabulary_finishes_a_partial_doctor_family(tmp_path):
     priority-high (the interrupted-write state) creates the two missing
     labels and reports `created`, rather than treating the family as
     already satisfied and reporting nothing.
+
+    #1708 self-review: the OK message must name only the labels THIS call
+    actually created -- priority-high already existed, so a message
+    claiming it was created (the pre-fix wording, which was a fixed
+    string regardless of what actually happened) would be a false claim a
+    maintainer could act on.
     """
     created = []
 
@@ -512,10 +520,9 @@ def test_check_label_vocabulary_finishes_a_partial_doctor_family(tmp_path):
 
     doctor.check_label_vocabulary(tmp_path, config={"repo": "owner/name"}, run=run)
     assert created == ["priority-medium", "priority-low"]
-    assert any(
-        state == "OK" and "created priority-high" in msg
-        for state, msg in doctor.FINDINGS
-    )
+    ok_messages = [msg for state, msg in doctor.FINDINGS if state == "OK"]
+    assert any("created priority-medium, priority-low" in msg for msg in ok_messages)
+    assert not any("priority-high" in msg for msg in ok_messages)
 
 
 # --------------------------------------------------------------- origin slug
