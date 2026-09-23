@@ -267,21 +267,38 @@ _MARKER_CLEARED = "cleared"
 _MARKER_NOT_A_REPO = "not-a-repo"
 _MARKER_ABSENT = "absent"
 _MARKER_OS_ERROR = "os-error"
+#: #1716: a `--write` that would overwrite a LIVE marker naming a
+#: DIFFERENT role -- most commonly a doctor run sharing a clone with a
+#: live tick's own `sub-manager` marker -- refuses rather than clobbering
+#: it, since `role_forbids_release` would then silently read the wrong
+#: role for the rest of that tick. `force=True` is the deliberate
+#: override, for a caller that has actually confirmed the old marker is
+#: dead rather than merely inconvenient.
+_MARKER_CONFLICT = "conflict"
 
 
-def _write_role_marker_detail(role, root=".", written_at=None):
-    """`write_role_marker`'s own work, plus which of three things happened.
+def _write_role_marker_detail(role, root=".", written_at=None, force=False):
+    """`write_role_marker`'s own work, plus which of four things happened.
 
-    Returns `(state, exc)`: `_MARKER_OK` (written, `exc` is `None`),
+    Returns `(state, detail)`: `_MARKER_OK` (written, `detail` is `None`),
     `_MARKER_NOT_A_REPO` (`root` is not inside a git repository this
-    process can ask about, `exc` is `None`), or `_MARKER_OS_ERROR` (the
-    repository was found and the write itself failed, `exc` is the
+    process can ask about, `detail` is `None`), `_MARKER_CONFLICT` (a LIVE
+    marker already names a different role and `force` was not passed,
+    `detail` is that other role, #1716), or `_MARKER_OS_ERROR` (the
+    repository was found and the write itself failed, `detail` is the
     `OSError`). Only this function's caller -- the CLI -- reads the
     distinction; every other caller uses `write_role_marker`'s bool.
     """
     path = _marker_path(root)
     if path is None:
         return _MARKER_NOT_A_REPO, None
+    if not force:
+        existing = _read_marker(root)
+        if (
+            existing["state"] == MARKER_STATE_LIVE
+            and existing["role"].strip().lower() != role.strip().lower()
+        ):
+            return _MARKER_CONFLICT, existing["role"]
     if written_at is None:
         written_at = time.time()
     payload = {"role": role.strip(), "written_at": written_at}
@@ -293,23 +310,29 @@ def _write_role_marker_detail(role, root=".", written_at=None):
 
 
 def write_role_marker(
-    role: str, root: str = ".", written_at: float | None = None
+    role: str, root: str = ".", written_at: float | None = None, force: bool = False
 ) -> bool:
     """Write `role` to the marker file for the repository at `root`.
 
     `written_at` is an epoch-seconds override, exposed for tests that need
     to construct an already-stale marker deterministically rather than
     sleeping past `MARKER_TTL_SECONDS`; a real caller never passes it.
+    `force` (#1716) overrides the live-different-role refusal below; a
+    real caller never passes it either -- the refusal exists precisely so
+    nothing overwrites a live marker by accident.
 
-    Returns whether the write happened -- `False` for both "`root` is not
-    inside a git repository this process can ask about" and "the write
-    itself failed", rather than raising, so a caller in a plain (non-git)
+    Returns whether the write happened -- `False` for "`root` is not
+    inside a git repository this process can ask about", "a live marker
+    already names a different role" (#1716), and "the write itself
+    failed", rather than raising, so a caller in a plain (non-git)
     directory gets a value to check instead of a crash on a release path.
-    The CLI tells the two `False` causes apart via
+    The CLI tells the three `False` causes apart via
     `_write_role_marker_detail`; this function's own contract -- a plain
     bool -- is unchanged.
     """
-    state, _exc = _write_role_marker_detail(role, root=root, written_at=written_at)
+    state, _detail = _write_role_marker_detail(
+        role, root=root, written_at=written_at, force=force
+    )
     return state == _MARKER_OK
 
 
@@ -573,6 +596,14 @@ def main(argv=None) -> int:
         action="store_true",
         help="remove this repository's role marker, if one exists",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="#1716: overwrite a live marker naming a different role, "
+        "instead of refusing. A real caller passes this only once it has "
+        "actually confirmed the old marker is dead, never on the ordinary "
+        "path.",
+    )
     args = parser.parse_args(argv)
 
     if args.write is not None and args.clear:
@@ -595,16 +626,27 @@ def main(argv=None) -> int:
         return 0
 
     if args.write is not None:
-        state, exc = _write_role_marker_detail(args.write, root=args.root)
+        state, detail = _write_role_marker_detail(
+            args.write, root=args.root, force=args.force
+        )
         if state == _MARKER_NOT_A_REPO:
             print(
                 "could not write the role marker for {0!r} -- not inside a "
                 "git repository this process can ask about".format(args.root)
             )
             return 1
+        if state == _MARKER_CONFLICT:
+            print(
+                "refusing to write role {0!r} for {1!r}: a live marker "
+                "already names role {2!r} -- pass --force to overwrite it "
+                "(#1716)".format(args.write.strip(), args.root, detail)
+            )
+            return 3
         if state == _MARKER_OS_ERROR:
             print(
-                "could not write the role marker for {0!r}: {1}".format(args.root, exc)
+                "could not write the role marker for {0!r}: {1}".format(
+                    args.root, detail
+                )
             )
             return 1
         print("wrote role {0!r} for {1!r}".format(args.write.strip(), args.root))

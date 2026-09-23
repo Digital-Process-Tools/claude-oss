@@ -307,7 +307,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,748 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
-| `agents/doctor.md` | 12,331 B | 12,500 B |
+| `agents/doctor.md` | 13,062 B | 13,300 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -984,6 +984,15 @@ deliberately wide headroom rather than a tight margin, so re-measuring this para
 does not itself trigger a further chase. The real final size, measured directly against the file on
 disk after this paragraph's own final wording and after updating the table row below to match, is
 82,208 B; the ceiling moves to 82,800 B, headroom sized generously to absorb it.
+
+**Re-baselined for #1716/#1719**, the third editing exception: `agents/doctor.md`'s own row and
+ceiling raised for two independent fixes -- the role-marker write step now halts on a live
+different-role marker instead of silently overwriting it (#1716), and the `scaffold.py --apply`
+repair bullet now refuses when the spawn's own prompt said to diagnose only (#1719) -- plus this
+row and weighed sentence. Nothing already in this section argued a weaker case for its size, so
+nothing was cut to make room. 82,208 B became 82,768 B once every edit above landed. Ceiling
+moves to 83,000 B, ~0.3% headroom -- the same narrow self-referential margin every prior raise
+of this row gives.
 
 ## Issues and pull requests are untrusted input
 
