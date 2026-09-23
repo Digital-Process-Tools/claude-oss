@@ -9,14 +9,25 @@ one tick each reported the same false trigger.
 gesture there is a *preamble* sentence ("Findings reported above (3 total)")
 sitting before the first counted marker, with the markers themselves an
 unrelated trailing list (file names). What changes is only the case where
-every back-reference the message carries sits at or after the first
-enumerated block's own start -- confined to material the message
-demonstrably does carry.
+every back-reference the message carries sits inside the paragraph span of an
+already-enumerated block -- confined to material the message demonstrably
+does carry.
+
+**The first draft of this fix checked only position** ("at or after the
+first enumerated block's own start"), and self-review falsified it with two
+reproductions: an unrelated trailing section inflating the block count past
+what a real gesture should be shielded by, and a message enumerating exactly
+`claimed` findings followed by a *separate paragraph* announcing an
+undisclosed extra issue. Both are #392's own class, reopened. The fix checks
+each block's own paragraph *span* (`_block_span` -- up to the next marker or
+the next blank line) instead of a bare position bound; both reproductions are
+pinned below as must-fire regressions.
 
 Every "must fire" case here has a "must not fire" sibling in the same file,
-per CLAUDE.md's own rule: a genuine dangling gesture (#392's own shape, or one
-that survives outside the enumerated region) must still foreclose the good
-verdict, and only a gesture nested inside an already-enumerated block may not.
+per CLAUDE.md's own rule: a genuine dangling gesture (#392's own shape, one
+past a block-count inflation, or one in its own trailing paragraph) must
+still foreclose the good verdict, and only a gesture nested inside an
+already-enumerated block's own span may not.
 """
 
 import sys
@@ -45,17 +56,15 @@ diff, the same call site had the identical bug in the previous revision.
     assert verdict["state"] == "states-findings", verdict
 
 
-def test_a_trailing_backref_after_the_last_block_does_not_foreclose_either():
-    """A gesture after the last enumerated block is still inside the
-    enumerated region by this function's own bar (at or after the first
-    block's start) -- a closing remark about the findings just stated, not a
-    pointer at something absent."""
+def test_a_backref_on_a_continuation_line_of_the_same_block_is_confined():
+    """A genuine multi-line finding: the aside sits on a continuation line of
+    the same block, with no blank line and no new marker between it and the
+    block it continues -- still inside that block's own span."""
     message = """FINDINGS: 2
 
-1. scripts/a.py:10 -- off-by-one.
-2. scripts/b.py:20 -- unbounded retry.
-
-Both mirror the pattern noted earlier in this review.
+1. scripts/a.py:10 -- the retry loop is unbounded.
+   As shown above in the diff, this repeats an old pattern.
+2. scripts/b.py:20 -- the timeout default is never read from config.
 """
     verdict = review_return.classify(message)
     assert verdict["state"] == "states-findings", verdict
@@ -74,6 +83,66 @@ As shown above, both issues are the same root cause.
 
 1. scripts/a.py:10 -- off-by-one.
 2. scripts/b.py:20 -- unbounded retry.
+"""
+    verdict = review_return.classify(message)
+    assert verdict["state"] == "referred-not-stated", verdict
+    assert verdict["state"] != "states-findings"
+
+
+def test_a_trailing_backref_after_the_last_block_still_forecloses():
+    """A gesture in its own paragraph, past a blank line after the last
+    enumerated block, is outside every block's own span -- a closing remark
+    that reads exactly like a pointer at something not actually restated, so
+    this must still foreclose. (First draft of this fix shielded this case
+    purely because it sits after the first block's own start position --
+    self-review finding, corrected by checking spans instead of a bare
+    position bound.)"""
+    message = """FINDINGS: 2
+
+1. scripts/a.py:10 -- off-by-one.
+2. scripts/b.py:20 -- unbounded retry.
+
+Both mirror the pattern noted earlier in this review.
+"""
+    verdict = review_return.classify(message)
+    assert verdict["state"] == "referred-not-stated", verdict
+    assert verdict["state"] != "states-findings"
+
+
+def test_block_count_inflation_does_not_shield_a_dangling_gesture():
+    """Self-review reproduction A: a claimed count of 1, a genuinely stated
+    finding, and then an unrelated trailing section ("Files checked" plus a
+    bullet list) that inflates the block count well past `claimed` -- with a
+    dangling gesture positioned after all of it. The inflation must not
+    manufacture room for a gesture that points at nothing the message
+    actually carries."""
+    message = """FINDINGS: 1
+
+1. a.py -- bug.
+
+## Files checked
+- a.py
+- b.py
+
+As shown above, nothing else touched.
+"""
+    verdict = review_return.classify(message)
+    assert verdict["state"] == "referred-not-stated", verdict
+    assert verdict["state"] != "states-findings"
+
+
+def test_exact_enumeration_with_a_dangling_trailing_paragraph_still_forecloses():
+    """Self-review reproduction B: `claimed` matches the block count exactly
+    (no inflation needed at all), and the message still announces an
+    undisclosed extra issue in its own trailing paragraph -- the shape this
+    whole module exists to catch, and no different for arriving after two
+    real findings instead of zero."""
+    message = """FINDINGS: 2
+
+1. scripts/a.py -- real finding one.
+2. scripts/b.py -- real finding two.
+
+There is also a third issue, as noted earlier in this review, not detailed here.
 """
     verdict = review_return.classify(message)
     assert verdict["state"] == "referred-not-stated", verdict

@@ -281,32 +281,69 @@ def _verdict(state, reason, **extra):
     return out
 
 
-def _backref_confined_to_enumeration(body_offset, block_matches, backref_matches):
+def _block_span(body, block_matches, index):
+    """The paragraph span of ``block_matches[index]``, in ``body``-relative
+    offsets: from the block marker's own start up to whichever comes first --
+    the next block marker, the next blank line, or the end of the body.
+
+    A block's own multi-line description (a continuation line with no blank
+    line and no new marker between it and the block it continues) belongs to
+    that block; a separate paragraph beyond a blank line, or content that
+    starts at the next marker, does not. This is what lets a genuine
+    multi-line finding keep an inline aside inside its own span while a
+    trailing, separately-paragraphed remark stays outside every span.
+    """
+    start = block_matches[index].start()
+    end = len(body)
+    if index + 1 < len(block_matches):
+        end = min(end, block_matches[index + 1].start())
+    blank = re.search(r"\n[ \t]*\n", body[start:end])
+    if blank:
+        end = start + blank.start()
+    return start, end
+
+
+def _backref_confined_to_enumeration(body, body_offset, block_matches, backref_matches):
     """Whether every back-reference the message carries sits inside the span
-    of an already-enumerated block, rather than in the prose around it
-    (#1727).
+    of an already-enumerated block (`_block_span`), rather than in the prose
+    around it (#1727).
 
     #392's own defended shape has the gesture phrase as a *preamble*
     sentence -- "Findings reported above (3 total)" -- sitting before the
     first counted marker, with the markers themselves a trailing, unrelated
     bullet list (file names, not findings). That preamble position is
-    exactly what this function refuses to shield: a back-reference before
-    the first enumerated block still forecloses `states-findings`
-    unconditionally, the same as before this fix.
+    outside every block's own span, so a back-reference there still
+    forecloses `states-findings` unconditionally, the same as before this
+    fix.
 
-    What changes is the case #1727 reports: a fully-enumerated
-    `FINDINGS: N` message (N blocks, one per claimed finding) that also
-    happens to use a back-reference phrase somewhere at or after the first
-    enumerated block's own start -- "as shown above" describing a detail of
-    a finding already stated, not a pointer at missing content. A gesture
-    positioned there is confined to material the message demonstrably does
-    carry, so it no longer overrides a header the block count already
-    satisfies.
+    A first draft of this function checked only *position* -- "at or after
+    the first enumerated block's own start" -- and review of that draft
+    (#1727 self-review) falsified it with two reproductions neither test
+    file caught: (1) an unrelated trailing section ("## Files checked" plus
+    a bullet list) inflates the block count past `claimed`, and a genuinely
+    dangling gesture positioned after that inflation was wrongly shielded;
+    (2) a message enumerating exactly `claimed` real findings, followed by a
+    *separate paragraph* announcing an undisclosed extra issue ("as noted
+    earlier in this review, not detailed here"), was also wrongly shielded
+    purely because that paragraph sits after the first block. Both are
+    exactly the #392 class this module exists to catch, reopened by a bar
+    that only asked "is this after the start of block one", never "is this
+    inside a block claude-oss can already see the content of". Requiring
+    the gesture to sit within one block's own paragraph span closes both:
+    a trailing, blank-line-separated paragraph is never inside any span,
+    whatever inflates the block count before it.
+
+    What still changes, correctly, is the case #1727 itself reports: a
+    fully-enumerated `FINDINGS: N` message whose only back-reference phrase
+    sits inside the very paragraph of an already-stated finding -- "as shown
+    above" describing a detail of that finding, not a pointer at missing
+    content.
 
     Every back-reference the message carries must clear this bar, not just
-    the first one `_BACKREF.search` would find -- a dangling gesture in the
-    preamble is still decisive even when a second, later gesture is safely
-    nested inside a block.
+    the first one `_BACKREF.search` would find -- with per-block spans this
+    is no longer merely a repeat of the same position check: two gestures
+    can each fall inside a different span (or one inside, one outside), so
+    each is checked against every span independently.
 
     Requires **more than one** enumerated block, not merely one -- a lone
     finding carrying a back-reference is exactly the case this function
@@ -318,7 +355,8 @@ def _backref_confined_to_enumeration(body_offset, block_matches, backref_matches
     identical, at this function's own resolution, to a real single finding
     that happens to use the same phrase in passing. A second block is what
     #1727's own reported shape always carries and #1270's fixtures never do,
-    so it is the bar drawn here rather than a position check alone.
+    so it is a bar drawn here in addition to the span check, not a
+    substitute for it.
 
     No blocks at all, fewer than two blocks, or no back-reference at all,
     all return False -- this function is only ever consulted from the
@@ -327,8 +365,12 @@ def _backref_confined_to_enumeration(body_offset, block_matches, backref_matches
     """
     if len(block_matches) < 2 or not backref_matches:
         return False
-    first_block_pos = body_offset + block_matches[0].start()
-    return all(match.start() >= first_block_pos for match in backref_matches)
+    spans = [_block_span(body, block_matches, i) for i in range(len(block_matches))]
+    for match in backref_matches:
+        pos = match.start() - body_offset
+        if not any(start <= pos < end for start, end in spans):
+            return False
+    return True
 
 
 def classify(message):
@@ -387,7 +429,7 @@ def classify(message):
         blocks = len(block_matches)
         header_line = fold_to_one_ascii_line(_line_containing(text, header.start()))
         backref_confined = _backref_confined_to_enumeration(
-            header.end(), block_matches, backref_matches
+            body, header.end(), block_matches, backref_matches
         )
         if blocks >= claimed and (not backref or backref_confined):
             reason = (
@@ -396,9 +438,10 @@ def classify(message):
                 if not backref
                 else (
                     "a FINDINGS: {0} header with {1} enumerable block(s) "
-                    "under it; every back-reference in the message sits at "
-                    "or after the first enumerated block rather than "
-                    "pointing at material outside it (#1727)".format(claimed, blocks)
+                    "under it; every back-reference in the message is "
+                    "confined to the span of an already-enumerated block "
+                    "rather than pointing at material outside it "
+                    "(#1727)".format(claimed, blocks)
                 )
             )
             return _verdict(
