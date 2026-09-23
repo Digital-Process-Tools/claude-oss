@@ -191,6 +191,25 @@ If the digest changed and nothing in your own `repaired` lines above was a scrip
 write to that file, add one more line: `could-not-tell: .claude/settings.local.json changed
 during this run and nothing above explains why`. Never fold that silently into a clean report.
 
+**Then clear your own role marker, as your very last act before writing the report (#1728).**
+You are the only agent in this loop that ever writes this marker and never clears it: a
+sub-manager clears its own through `tick_handback.py --clear-marker-root` (#1585), and you have
+no equivalent, so every `/oss:run` whose step 1 dispatches you leaves your marker live for the
+rest of `MARKER_TTL_SECONDS` -- long enough to make the very next tick's own `sub-manager`
+refuse to declare its role (#1716's refusal, tripped by your own residue rather than a rival).
+Skip this only if you took the `could-not-tell` stop at the very top of this file, because then
+you never wrote a marker of your own to begin with -- clearing here would remove a live marker
+that names a different, real role.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --clear --root .; echo "clear-exit:$?"
+```
+
+A nonzero exit is not fatal to your report, but it is a finding: add `could-not-tell: could not
+clear this run's own role marker -- <what the command printed>` as one more line rather than
+staying silent about it, the same "never fold this into a clean report" rule the digest check
+just above gives.
+
 One line per `WARN`/`FAIL` you chased, in the vocabulary above, plus a one-line summary count.
 Put it in your final message **in full** -- the caller reads only that message, never your
 transcript, and a reply that gestures at findings "reported above" hands back nothing at all (the

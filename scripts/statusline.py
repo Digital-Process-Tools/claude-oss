@@ -234,20 +234,26 @@ def version_status(installed, latest, stale=False):
 
 
 #: The text after "channel: " on `channel:health`'s own first content line,
-#: mapped to this module's five-way state (#613). Both routes to that report --
-#: `channel.py` run directly and `supertool 'channel:health'` -- agree on this
-#: text; only the exit code differs, and the supertool wrapper collapses every
-#: non-zero exit to 1, so text is the only signal both routes share. Anything
-#: not a key here -- an error page for a preset that is not enabled, output this
-#: module has never seen -- is deliberately not in this table, so it falls
-#: through to `cannot_determine` in `parse_channel_report` rather than being
-#: guessed at.
+#: mapped to this module's six-way state (#613, #1726). Both routes to that
+#: report -- `channel.py` run directly and `supertool 'channel:health'` --
+#: agree on this text; only the exit code differs, and the supertool wrapper
+#: collapses every non-zero exit to 1, so text is the only signal both routes
+#: share. Anything not a key here -- an error page for a preset that is not
+#: enabled, output this module has never seen -- is deliberately not in this
+#: table, so it falls through to `cannot_determine` in `parse_channel_report`
+#: rather than being guessed at.
 CHANNEL_STATES = {
     "FORWARDING": "forwarding",
     "NOT DELIVERING": "not_delivering",
     "CANNOT DETERMINE": "cannot_determine",
     "CONTRADICTED": "contradicted",
     "BOUND, NOT SUBSCRIBED": "not_subscribed",
+    # supertool 0.64.0 (Digital-Process-Tools/claude-supertool#2658): bound,
+    # verified and subscribed, but has never forwarded anything
+    # (`forwarded == 0`, no `last_forwarded`). Distinct from `forwarding`
+    # (it has not) and from `cannot_determine` (the check DID determine this
+    # -- #1726).
+    "BOUND, UNPROVEN": "unproven",
 }
 
 #: Same name supertool's own `presets/watch/naming.py` reads (`NAME_ENV`). Not
@@ -374,7 +380,7 @@ def _declared_watch_names(root):
 def parse_channel_report(text):
     """The state `channel:health` reported, from its own report text, or `None`.
 
-    `None` covers everything that is not one of the five recognised states --
+    `None` covers everything that is not one of the six recognised states --
     most importantly the "op 'channel' is unavailable here" refusal supertool
     prints when the `watch` preset is not enabled, which also exits 1 and would
     otherwise be indistinguishable from a genuine `NOT DELIVERING` (#613; this
@@ -411,7 +417,7 @@ def channel_status(
     (#613, widened by #754, widened again by #1362, and by #1636).
 
     Five ways this becomes `cannot_determine` before a caller ever sees one of
-    the five real states, and each is a distinct reason a reader might act on
+    the six real states, and each is a distinct reason a reader might act on
     differently -- collapsing them into one `?` would be this module's own
     defect class, the same reason `board_from_cache` keeps its counts separate:
 
@@ -1046,6 +1052,7 @@ def _symbols(ascii_only):
             "run": "...",
             "unk": "?",
             "own": "b",
+            "prv": "u",
         }
     return {
         "sep": " | ",
@@ -1074,6 +1081,13 @@ def _symbols(ascii_only):
         # on purpose", "a fifth state for the same reason"). Half-filled shape
         # reads as "handed off, half-heard" even before the colour is read.
         "own": "◐",
+        # `BOUND, UNPROVEN` (#1726): bound, verified and subscribed, but has
+        # never forwarded anything -- distinct from `own` above (nobody is
+        # subscribed there; here somebody is, and nothing has moved yet) and
+        # from `ok` (which means it HAS moved). Quarter-filled shape reads as
+        # "just started, no traffic yet" -- less filled than `own`'s half
+        # circle, on purpose.
+        "prv": "◔",
     }
 
 
@@ -1387,18 +1401,21 @@ def _channel_field(channel, symbols, color=False):
 
     Three or four characters -- the same width discipline `_plugins_field` (#512)
     argues for (that field spent 45 characters saying nothing on almost every
-    render), scaled down for a field with five possible states rather than a
+    render), scaled down for a field with six possible states rather than a
     per-plugin list.
     `None` -- never a placeholder `?` -- when `watch_channel` is off in
     `.oss.json`: an operator's deliberate off switch is not the same absence as
     a question this line asked and could not answer, and the whole point of the
     third state this repository is named after is keeping those apart.
 
-    The five upstream states map to distinct markers because they call for
-    distinct actions (the issue's own table): a pass, a definite negative, a
-    finding that is neither, a contradiction, and "nothing was established".
-    `CONTRADICTED` renders uncoloured on purpose, matching the issue's own table,
-    whose shade column is blank for that row alone.
+    The six upstream states map to distinct markers because they call for
+    distinct actions (the issue's own table, plus #1726's own sixth row): a
+    pass, a definite negative, a finding that is neither, a contradiction,
+    "nothing was established", and "verified but unproven" -- bound and
+    subscribed, but nothing has forwarded yet, which is neither a pass nor a
+    finding that something is wrong. `CONTRADICTED` renders uncoloured on
+    purpose, matching the issue's own table, whose shade column is blank for
+    that row alone.
 
     **What this must never claim, in the render layer too, not only in the
     docstrings that compute the state:** `forwarding` means the consumer's own
@@ -1416,6 +1433,8 @@ def _channel_field(channel, symbols, color=False):
         text, shade = "ch" + symbols["bad"], RED
     elif state == "not_subscribed":
         text, shade = "ch" + symbols["own"], YELLOW
+    elif state == "unproven":
+        text, shade = "ch" + symbols["prv"], YELLOW
     elif state == "contradicted":
         text, shade = "ch!", None
     else:
@@ -2616,13 +2635,13 @@ def _run_channel_health(timeout=30):
     """The raw text of `supertool 'channel:health'`, regardless of its exit code.
 
     NOT `_run`: that helper returns `None` on any non-zero exit, and `NOT
-    DELIVERING`/`CANNOT DETERMINE`/`CONTRADICTED`/`BOUND, NOT SUBSCRIBED` are
-    all real, distinct findings that exit non-zero on purpose (supertool's own
-    `presets/watch/channel.py`: "a single non-zero would put answers this op
-    exists to separate back into one bucket"). Using `_run` here would fold
-    four of the five real states into the same `None` a missing binary
-    produces, which is the exact defect this field exists to stop happening to
-    the loop's own instrumentation.
+    DELIVERING`/`CANNOT DETERMINE`/`CONTRADICTED`/`BOUND, NOT SUBSCRIBED`/
+    `BOUND, UNPROVEN` are all real, distinct findings that exit non-zero on
+    purpose (supertool's own `presets/watch/channel.py`: "a single non-zero
+    would put answers this op exists to separate back into one bucket").
+    Using `_run` here would fold five of the six real states into the same
+    `None` a missing binary produces, which is the exact defect this field
+    exists to stop happening to the loop's own instrumentation.
 
     30s, not the 1-3s the issue's own measurement names: that number is the
     ordinary case, and `MCP_LOOKUP_BUDGET` plus `PS_TIMEOUT` (supertool's own
@@ -3121,7 +3140,7 @@ def refresh(root, now=None, session_id=None):
                 # waiting out a fresh-looking `CHANNEL_REFRESH_AFTER`), and the
                 # failure IS recorded so `channel_status` can tell "still due"
                 # from "asked and failed". A raw_state that IS a string but not
-                # one of the five recognised ones is a DIFFERENT case (a real
+                # one of the six recognised ones is a DIFFERENT case (a real
                 # answer, just an unexpected one) and takes the `else` branch
                 # below like any other success -- `channel_status`'s own
                 # `"unrecognized"` reason catches that one, unconditionally.

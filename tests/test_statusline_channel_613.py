@@ -49,7 +49,7 @@ def test_expected_watch_name_is_none_without_a_usable_repo():
 # --------------------------------------------------------- parse_channel_report
 
 
-def test_parse_channel_report_reads_each_of_the_five_states():
+def test_parse_channel_report_reads_each_of_the_states():
     for label, state in statusline.CHANNEL_STATES.items():
         text = "--- channel:health ---\nFAIL (0.05s)\nchannel: {}\n  detail\n".format(
             label
@@ -177,7 +177,7 @@ def test_channel_field_renders_a_distinct_marker_per_state():
         assert text.startswith("ch")
         assert 3 <= len(text) <= 4, (state, text)
         seen.add(text)
-    assert len(seen) == 5, seen  # every state renders something distinguishable
+    assert len(seen) == 6, seen  # every state renders something distinguishable
 
 
 def test_channel_field_is_none_when_disabled_not_a_question_mark():

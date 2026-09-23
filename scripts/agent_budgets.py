@@ -558,7 +558,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # supplying --i-was-asked regardless of instruction. 12331 B became
     # 13062 B, past the 12500 B ceiling. Ceiling moves to 13300 B, ~1.8%
     # headroom.
-    "agents/doctor.md": (13062, 13300),
+    # Re-baselined for #1728: a doctor spawn writes its own role marker as
+    # step 1 (#1690) but had no step that ever clears it, so every ordinary
+    # doctor run leaves the marker live for up to MARKER_TTL_SECONDS -- long
+    # enough to make the very next tick's own sub-manager refuse to declare
+    # its role (#1716's own conflict refusal, tripped by the doctor's own
+    # residue rather than a rival). Fixed with a clear step mirroring the
+    # sub-manager's own tick_handback.py --clear-marker-root (#1585),
+    # skipped only on the could-not-tell stop at the top of the file, where
+    # no marker of this run's own was ever written. 13062 B became 14256 B,
+    # past the 13300 B ceiling. Ceiling moves to 14400 B, ~1% headroom.
+    "agents/doctor.md": (14256, 14400),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the

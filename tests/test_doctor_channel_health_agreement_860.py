@@ -55,6 +55,22 @@ def test_both_instruments_reporting_no_collision_agree():
     assert "no second channel-capable server" in detail, detail
 
 
+def test_unproven_channel_health_is_a_single_consumer_reading_1726():
+    """#1726 added `BOUND, UNPROVEN` -- bound, verified and subscribed, but
+    has never forwarded anything -- as a sixth `channel:health` state.
+    Before this fix `_health_signal` had no branch for `"unproven"` and fell
+    through to `None` (could-not-ask), so `channel_health_agreement_state`
+    reported `could-not-compare` for a repo in this state even though a
+    single, real consumer WAS identified -- exactly the same single-consumer
+    shape `forwarding`/`not_delivering`/`not_subscribed` already agree
+    against. Must-fire control for the `_health_signal` mapping gap."""
+    state, detail = agreement.channel_health_agreement_state(
+        "single", "oss-channel", "unproven", "cached", 5.0
+    )
+    assert state == "agree", detail
+    assert "no second channel-capable server" in detail, detail
+
+
 def test_both_instruments_reporting_a_collision_agree():
     state, detail = agreement.channel_health_agreement_state(
         "collision", ["oss-channel", "other"], "cannot_determine", "probed", 0.0
