@@ -24,6 +24,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 #: `<issue>.<slug>.md`. The issue number is what ties a fragment to the work that found the trap;
 #: the slug is what stops two fragments on one issue colliding. Both halves are required, so
@@ -212,6 +213,215 @@ def waiting_at_ref(root, ref, run=subprocess.run, git_bin=None, timeout=15):
     }
 
 
+def untracked_fragments(root, run=subprocess.run, git_bin=None, timeout=15):
+    """Same three states as ``waiting()``, but for files physically sitting in
+    ``<root>/trap.d/`` that git does not track at all -- never committed on
+    ANY branch, so they are invisible to ``waiting_at_ref`` no matter which
+    ref it is pointed at (#1723). ``harvest_fragments`` (``worktree_reap.py``)
+    and a releaser session both write straight into a clone's own working
+    tree this way, as a plain filesystem copy, with no ``git add`` and no
+    commit -- exactly the fragments the old working-tree-only branch of
+    ``curate_count`` used to count and a fresh ``git worktree add
+    origin/<default_branch>`` can never see.
+
+    ``git status --porcelain`` reports untracked entries (``??``) regardless
+    of which branch is currently checked out -- untracked-ness is a fact
+    about the index, not about HEAD -- so, unlike ``waiting()``, this is safe
+    to call no matter what the clone happens to be standing on.
+    """
+    command = [
+        git_bin or "git",
+        # Self-review finding (oss:auditor spawn, #1723): git C-quotes any
+        # path holding a non-ASCII byte by default (`core.quotePath=true`),
+        # e.g. `"trap.d/1.caf\\303\\251.md"` -- octal-escaped, wrapped in
+        # quotes. `-c core.quotePath=false` turns that off, so a non-ASCII
+        # fragment name comes back as plain UTF-8 and is never silently
+        # mangled or dropped by the parsing below. A literal `"`, backslash
+        # or control character in a name is still quoted regardless of this
+        # setting (git's own behaviour); `FRAGMENT_RE`-conforming names
+        # never contain one, so that residual case can only ever affect an
+        # already-malformed name, which is reported rather than lost --
+        # see the parsing note below.
+        "-c",
+        "core.quotePath=false",
+        "-C",
+        str(root),
+        "status",
+        "--porcelain",
+        "--ignored=no",
+        # Without this, a `trap.d/` that is ENTIRELY untracked (no file in it
+        # has ever been part of the index) collapses to one `?? trap.d/`
+        # line for the whole directory rather than one line per file --
+        # confirmed against a real repo before this landed. `--untracked-
+        # files=all` forces the per-file listing this function actually
+        # parses, matching `waiting()`'s own per-file, non-recursive shape.
+        "--untracked-files=all",
+        "--",
+        DIRNAME + "/",
+    ]
+    try:
+        done = run(
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return {
+            "state": "could-not-read",
+            "count": None,
+            "fragments": [],
+            "why": "{0} did not run ({1})".format(" ".join(command), exc),
+        }
+    if done.returncode != 0:
+        message = (_decode(done.stderr) or _decode(done.stdout)).strip()
+        return {
+            "state": "could-not-read",
+            "count": None,
+            "fragments": [],
+            "why": "{0} failed: {1}".format(
+                " ".join(command), message or "exit {0}".format(done.returncode)
+            ),
+        }
+    prefix = DIRNAME + "/"
+    names = []
+    for line in _decode(done.stdout).splitlines():
+        if not line.startswith("??"):
+            continue
+        rel = line[3:].strip()
+        if len(rel) >= 2 and rel[0] == '"' and rel[-1] == '"':
+            # Self-review finding (oss:auditor spawn, Explore reviewer,
+            # #1723): the earlier version stripped one quote character
+            # unconditionally and then ran a blanket backslash-to-slash
+            # replace meant for a Windows path separator that git's own
+            # porcelain output never actually contains -- against a real
+            # C-quoted entry (a literal quote, backslash or control
+            # character in the name; `-c core.quotePath=false` above
+            # already stops every OTHER path from being quoted at all)
+            # that replace corrupted the octal escape instead of decoding
+            # it. This only strips the enclosing quotes; it does not
+            # further unescape a backslash sequence inside them, so a name
+            # that still needed C-quoting even with quotePath off is
+            # reported with its raw, still-escaped spelling rather than a
+            # silently mangled one -- `_classify` still counts it (a
+            # malformed name is reported, never dropped), and
+            # `copy_stray_into` will fail to find the real file at that
+            # spelling and report it as `skipped`, never lose it silently.
+            rel = rel[1:-1]
+        rel_posix = rel.rstrip("/")
+        if not rel_posix.startswith(prefix):
+            continue
+        remainder = rel_posix[len(prefix) :]
+        if "/" in remainder:
+            # `--untracked-files=all` expands a wholly-untracked directory
+            # into one line per file, including anything nested a level
+            # deeper than `trap.d/` itself -- `waiting()`'s own `os.listdir`
+            # never descends, so a fragment logged inside a subdirectory
+            # must not be counted here either (mirrors `waiting_at_ref`'s
+            # own deliberately-not-recursive note, self-review finding,
+            # Explore reviewer, #1476).
+            continue
+        if remainder:
+            names.append(remainder)
+    fragments = [
+        _classify(n)
+        for n in sorted(names)
+        if n.endswith(".md") and not n.startswith(".") and n != OWNED_README
+    ]
+    if not fragments:
+        return {
+            "state": "none",
+            "count": 0,
+            "fragments": [],
+            "why": "{0}/ holds no untracked fragments".format(DIRNAME),
+        }
+    return {
+        "state": "waiting",
+        "count": len(fragments),
+        "fragments": fragments,
+        "why": "{0} untracked fragment(s) sitting in the clone's own working "
+        "tree".format(len(fragments)),
+    }
+
+
+def copy_stray_into(
+    clone_dir, worktree_dir, run=subprocess.run, git_bin=None, timeout=15
+):
+    """Copy every untracked ``trap.d/`` fragment sitting in ``clone_dir``'s
+    own working tree into ``worktree_dir``'s ``trap.d/``, so a curate pass
+    cut from ``origin/<default_branch>`` evaluates the same set
+    ``curate_count`` now counts (#1723) instead of silently missing every
+    fragment a filesystem-only write like ``harvest_fragments`` ever
+    produced. Read-only against ``clone_dir`` -- never writes there.
+
+    Returns ``(state, copied, skipped, why)``; ``state`` is ``"ok"`` or
+    ``"could-not-read"``. ``skipped`` pairs a name with why it was not
+    copied -- a name collision with a fragment already in this pass's own
+    ``trap.d/`` is never overwritten, the same rule ``harvest_fragments``
+    already follows.
+    """
+    result = untracked_fragments(clone_dir, run=run, git_bin=git_bin, timeout=timeout)
+    if result["state"] == "could-not-read":
+        return "could-not-read", [], [], result["why"]
+    dest_dir = Path(worktree_dir) / DIRNAME
+    copied = []
+    skipped = []
+    for f in result["fragments"]:
+        name = f["name"]
+        src = Path(clone_dir) / DIRNAME / name
+        dest = dest_dir / name
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                skipped.append(
+                    (
+                        name,
+                        "a fragment named {} already exists in this pass's "
+                        "own trap.d/ -- not overwritten".format(name),
+                    )
+                )
+                continue
+            dest.write_bytes(src.read_bytes())
+            copied.append(name)
+        except OSError as exc:
+            skipped.append((name, str(exc)))
+    return "ok", copied, skipped, result["why"]
+
+
+def sweep_resolved(clone_dir, worktree_dir, copied_names):
+    """Once a curate pass has decided every fragment it read, remove from
+    ``clone_dir``'s own ``trap.d/`` each name in ``copied_names`` that is no
+    longer present in ``worktree_dir``'s ``trap.d/`` -- promote, merge and
+    decline all delete the fragment from the pass's own worktree as part of
+    the disposition, so its absence there means this pass resolved it and
+    the untracked original in the clone is now a stale duplicate that would
+    otherwise inflate every later ``curate_count`` forever (#1723). A name
+    still present in ``worktree_dir`` was deferred -- left alone in the
+    clone too, exactly where ``harvest_fragments`` or the releaser put it,
+    so the next pass finds it the same way.
+
+    This is a deliberate, narrow write to the clone -- the one exception to
+    "never write to the primary clone" a curate pass otherwise holds to --
+    scoped to exactly the fragment names this same pass copied out of it a
+    moment earlier and has already safely captured into its own commit.
+    """
+    result = waiting(worktree_dir)
+    if result["state"] == "could-not-read":
+        return "could-not-read", [], [], result["why"]
+    still_here = {f["name"] for f in result["fragments"]}
+    removed = []
+    failures = []
+    for name in copied_names:
+        if not name or name in still_here:
+            continue
+        path = Path(clone_dir) / DIRNAME / name
+        try:
+            path.unlink()
+            removed.append(name)
+        except FileNotFoundError:
+            removed.append(name)
+        except OSError as exc:
+            failures.append((name, str(exc)))
+    return "ok", removed, failures, result["why"]
+
+
 def render(result):
     """One line for a status surface, then the fragment names when there are any."""
     state = result["state"]
@@ -226,8 +436,94 @@ def render(result):
     return "\n".join(lines)
 
 
+#: Self-review finding (oss:auditor spawn, #1723): the first version of
+#: `main` read a flag's value with `rest[rest.index(flag) + 1]`, which
+#: raises an uncaught `IndexError` (a bare traceback, exit via Python's own
+#: crash path rather than this module's own `could-not-read` reporting) when
+#: the flag is the very last token -- and `commands/run/curate.md`'s own
+#: literal `--sweep-resolved-in <clone> --copied <copied names>` invocation
+#: produces exactly that shape whenever nothing was copied in. `_flag`
+#: returns three distinct answers -- `None` (not given at all), `_MISSING`
+#: (given with nothing after it), or the value -- so a caller can tell
+#: "optional and absent" from "present but malformed" instead of indexing
+#: past the end of `argv`.
+_MISSING = object()
+
+
+def _flag(rest, name):
+    if name not in rest:
+        return None
+    idx = rest.index(name)
+    if idx + 1 >= len(rest):
+        return _MISSING
+    return rest[idx + 1]
+
+
 def main(argv):
-    root = argv[1] if len(argv) > 1 else "."
+    args = argv[1:]
+    root = args[0] if args else "."
+    rest = args[1:]
+
+    if "--copy-stray-from" in rest:
+        clone = _flag(rest, "--copy-stray-from")
+        if clone is _MISSING:
+            print("trap.d: could-not-read -- --copy-stray-from needs a path argument")
+            return 1
+        state, copied, skipped, why = copy_stray_into(clone, root)
+        if state == "could-not-read":
+            print(
+                "trap.d: could-not-read -- the stray scan of {0} failed: {1}".format(
+                    clone, why
+                )
+            )
+            return 1
+        print(
+            "trap.d: copied {0} stray fragment(s) from {1}".format(len(copied), clone)
+        )
+        for name, reason in skipped:
+            print("  skipped {0}: {1}".format(name, reason))
+        # A dedicated, machine-parseable line rather than folding the list
+        # into the sentence above: self-review finding (Explore reviewer,
+        # #1723), the earlier version printed a human "(none)" placeholder
+        # inside the exact comma-list `commands/run/curate.md` told the
+        # caller to capture verbatim, so an empty result threaded the
+        # literal string "(none)" into `--copied` at the end of the pass
+        # rather than an empty value.
+        print("STRAY-NAMES: {0}".format(",".join(copied)))
+        print(render(waiting(root)))
+        # Exit 0 in every state -- see the note on the plain-read branch below.
+        return 0
+
+    if "--sweep-resolved-in" in rest:
+        clone = _flag(rest, "--sweep-resolved-in")
+        if clone is _MISSING:
+            print("trap.d: could-not-read -- --sweep-resolved-in needs a path argument")
+            return 1
+        copied_arg = _flag(rest, "--copied")
+        if copied_arg is _MISSING:
+            print(
+                "trap.d: could-not-read -- --copied needs a value (pass an empty "
+                "string, or omit the flag entirely, for nothing to sweep)"
+            )
+            return 1
+        copied_names = [n for n in (copied_arg or "").split(",") if n]
+        state, removed, failures, why = sweep_resolved(clone, root, copied_names)
+        if state == "could-not-read":
+            print(
+                "trap.d: could-not-read -- this pass's own trap.d/ could not be "
+                "read: {0}".format(why)
+            )
+            return 1
+        print(
+            "trap.d: removed {0} resolved stray fragment(s) from {1}".format(
+                len(removed), clone
+            )
+        )
+        print("STRAY-NAMES: {0}".format(",".join(removed)))
+        for name, reason in failures:
+            print("  failed to remove {0}: {1}".format(name, reason))
+        return 0
+
     result = waiting(root)
     print(render(result))
     # Exit 0 in every state. A queue length is a report, never a gate: the gate that refuses to tag

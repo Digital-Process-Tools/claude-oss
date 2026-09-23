@@ -298,6 +298,38 @@ def test_curate_count_on_the_default_branch_itself_still_counts_real_fragments(
     assert count == 2, why
 
 
+def test_curate_count_on_the_default_branch_counts_a_committed_but_not_yet_pushed_fragment(
+    repo_on_main,
+):
+    """The scenario the docstring above actually names, exercised for real
+    (#1723 self-review finding, Explore reviewer and oss:auditor
+    independently): the first version of the #1723 fix deleted the
+    branch-aware working-tree read entirely and replaced it with `origin/
+    <default_branch>`'s committed tree unioned with only the UNTRACKED
+    files in the clone. A fragment that is `git add`ed or even committed on
+    `main` itself, but not yet pushed to `origin/main`, is neither of
+    those -- it fell out of the count completely under that version. This
+    is the real #1476 guarantee restored: committed locally, never
+    pushed, still counted."""
+    root = repo_on_main
+    env = _git_env()
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.local-only.md").write_text("x\n")
+    _run(["git", "add", "trap.d"], cwd=root, env=env)
+    _run(
+        ["git", "commit", "--quiet", "-m", "local commit, never pushed"],
+        cwd=root,
+        env=env,
+    )
+    # origin/main (set by the fixture) still points at the ORIGINAL commit --
+    # this one was never pushed there.
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count == 1, why
+
+
 def test_curate_count_with_no_default_branch_configured_keeps_reading_the_checkout(
     repo,
 ):
@@ -337,13 +369,72 @@ def test_curate_count_on_a_stale_branch_with_no_resolvable_origin_ref_is_could_n
     assert count is None, why
 
 
+def test_curate_count_when_the_untracked_scan_fails_off_branch_is_could_not_count(
+    repo_on_main, monkeypatch
+):
+    """#1723: standing on some OTHER branch, `curate_count` reads the
+    clone's own untracked `trap.d/` files (`trap_curate.untracked_fragments`)
+    so its answer matches what a curate pass's own setup step copies in. A
+    repository this scan genuinely could not read must report
+    could-not-count, never silently fall back to the ref-only half as
+    though nothing were wrong."""
+    root = repo_on_main
+    env = _git_env()
+    _run(["git", "checkout", "--quiet", "-b", "fix/999"], cwd=root, env=env)
+    import trap_curate
+
+    def _boom(root_arg, run=None, git_bin=None, timeout=15):
+        return {
+            "state": "could-not-read",
+            "count": None,
+            "fragments": [],
+            "why": "boom",
+        }
+
+    monkeypatch.setattr(trap_curate, "untracked_fragments", _boom)
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count is None, why
+    assert "boom" in why, why
+
+
+def test_curate_count_when_the_working_tree_read_fails_on_branch_is_could_not_count(
+    repo_on_main, monkeypatch
+):
+    """The default-branch counterpart of the case above: standing ON the
+    default branch, `curate_count` reads the clone's full working tree
+    (`trap_curate.waiting`) rather than `untracked_fragments`. That read
+    failing must be `could-not-count` too, never a silent fall back to the
+    ref-only half."""
+    root = repo_on_main
+    import trap_curate
+
+    def _boom(root_arg):
+        return {
+            "state": "could-not-read",
+            "count": None,
+            "fragments": [],
+            "why": "boom",
+        }
+
+    monkeypatch.setattr(trap_curate, "waiting", _boom)
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count is None, why
+    assert "boom" in why, why
+
+
 def test_curate_count_when_current_branch_cannot_be_determined_is_could_not_count(
     repo_on_main, monkeypatch
 ):
-    """Self-review finding (Explore reviewer, #1476): an earlier version of
-    this function fell back to the working-tree read whenever the current
-    branch could not be determined at all, silently reintroducing the exact
-    bug this closes. A repository this could not look at must not read the
+    """Self-review finding, restored (Explore reviewer and oss:auditor
+    independently, #1723): #1723's own first draft deleted this
+    branch-detection call entirely, which is what made the committed-but-
+    unpushed regression above possible in the first place. An earlier
+    #1476 finding already established the rule this protects: a repository
+    whose current branch could not even be determined must not read the
     same as one that is genuinely fine."""
     root = repo_on_main
     (root / "trap.d").mkdir()
@@ -357,6 +448,51 @@ def test_curate_count_when_current_branch_cannot_be_determined_is_could_not_coun
         str(root), config={"default_branch": "main"}
     )
     assert count is None, why
+
+
+def test_curate_count_combines_committed_and_untracked_fragments(repo_on_main):
+    """#1723's own core fix: a fragment committed at `origin/main` and a
+    fragment sitting untracked in the clone's own working tree must both
+    count, on whichever branch happens to be checked out -- neither half
+    alone is the real backlog `/oss:curate` will actually process once it
+    also copies the untracked half in (see the parity test below)."""
+    root = repo_on_main
+    env = _git_env()
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.committed.md").write_text("x\n")
+    _run(["git", "add", "trap.d"], cwd=root, env=env)
+    _run(["git", "commit", "--quiet", "-m", "committed fragment"], cwd=root, env=env)
+    _run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=root,
+        env=env,
+    )
+    (root / "trap.d" / "2.stray.md").write_text("y\n")  # untracked, on purpose
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count == 2, why
+
+
+def test_curate_count_sees_untracked_fragments_regardless_of_checked_out_branch(
+    repo_on_main,
+):
+    """#1723's own observation: an untracked file written straight into the
+    clone (`harvest_fragments`, a releaser session) sits there regardless of
+    which branch HEAD points to -- untracked-ness is a fact about the
+    index, not the checkout. The old on-branch/off-branch split missed this
+    stray on a feature branch even though the physical file never moved."""
+    root = repo_on_main
+    env = _git_env()
+    _run(["git", "checkout", "--quiet", "-b", "fix/999"], cwd=root, env=env)
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "3.stray.md").write_text("z\n")  # untracked
+
+    count, why = workspace_routes.curate_count(
+        str(root), config={"default_branch": "main"}
+    )
+    assert count == 1, why
 
 
 def test_waiting_at_ref_does_not_descend_into_a_subdirectory(repo_on_main):

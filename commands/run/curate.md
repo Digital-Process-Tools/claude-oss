@@ -26,6 +26,27 @@ cd <worktree_root>/curate-<UTC timestamp, YYYYMMDDTHHMMSSZ>
 Run every step below from inside that worktree. Never check out this pass's branch, and never
 write a jit-context file, a `00-README.md` line or anything else, in the primary clone.
 
+**Before reading anything, pull in the clone's own stray fragments (#1723).** A lane, the
+releaser and `worktree_reap.py`'s own `harvest_fragments` all write `trap.d/*.md` fragments
+straight into `<clone>`'s working tree as a plain filesystem copy — no commit, so they are
+untracked on every branch and this worktree, cut from `origin/<default_branch>`, cannot see them
+by construction. `curate_count` (the counter that decided this pass was due) now counts exactly
+this same set, so skipping this step means the number that triggered the pass and what the pass
+actually reads disagree again, the bug #1723 exists to close. This reads `<clone>` — never writes
+there:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/trap_curate.py" . --copy-stray-from <clone>
+```
+
+Capture the value of its own `STRAY-NAMES: <names>` line, verbatim — that exact comma list (which
+may be empty, when nothing was copied) is `<copied names>` below, needed again at the very end of
+this pass. **Read the `STRAY-NAMES:` line specifically, not the human `copied N stray fragment(s)
+from <clone>` sentence above it** — that sentence names a count for a person, never a list to
+re-paste. `could-not-read` here means the stray scan itself failed (not that `trap.d/` is empty) —
+leave the worktree in place and say so, the same way the `could-not-read` outcome below is handled,
+rather than treating a failed scan as zero strays and continuing.
+
 Read what is waiting:
 
 ```bash
@@ -174,6 +195,32 @@ this command was being written.
 **Report both results in the pull request that promotes the rule. A promotion with no firing proof in
 the PR is refused by this pass itself, not by whoever reviews it** — the mechanical guard is what
 makes deciding alone safe, and it does not relax because nobody is watching in real time.
+
+## Sweep the clone once every fragment is decided (#1723)
+
+**Once every fragment this pass read has a disposition — after the branch is committed, never
+before — remove the clone's own stray copies that this pass resolved.** Promote, merge and decline
+all delete the fragment from this worktree's own `trap.d/` as part of the disposition; `defer`
+leaves it in place. So, of the `<copied names>` captured earlier from `--copy-stray-from`, whichever
+are now gone from this worktree were resolved — captured safely into this pass's own commit — and
+the untracked original still sitting in `<clone>` is a stale duplicate that would otherwise inflate
+every later `curate_count` forever, the exact failure #1723 was filed against. Whichever are still
+present were deferred, and stay in `<clone>` untouched, so the next pass finds them the same way.
+
+**Skip this step entirely if `<copied names>` was empty** — nothing was copied in at the start of
+this pass, so there is nothing in `<clone>` for it to reconcile, and passing an empty `--copied`
+value is a pointless round trip rather than a wrong one.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/trap_curate.py" . --sweep-resolved-in <clone> --copied <copied names>
+```
+
+**This is the one deliberate exception to "never write in the primary clone" above** — scoped to
+exactly the names this same pass copied out of `<clone>` a moment earlier and has already committed
+elsewhere, nothing else. A concurrent tick's own `tree_snapshot.py` before/after pair may read this
+as an unexplained mutation of `<clone>`'s `trap.d/` (#1670's own incident, from the version of this
+pass that used to work in the clone directly) — that is expected for this one directory and this one
+action, not a real anomaly, and is not itself a finding worth re-raising.
 
 ## What this pass must not do
 
