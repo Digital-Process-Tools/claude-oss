@@ -265,7 +265,7 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    fi
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --repo . --plugin-root "$GATE3_ROOT" --json
    GATE3_RESOLVED_VERSION="$(python3 -c \
-     "import json,sys; print(json.load(open(sys.argv[1])).get('version',''))" \
+     "import json,sys; print(json.load(open(sys.argv[1], encoding='utf-8')).get('version') or '')" \
      "$GATE3_ROOT/.claude-plugin/plugin.json" 2>/dev/null)"
    NEWEST_CACHED_VERSION="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" \
      --print-newest-cached-version 2>/dev/null)"
