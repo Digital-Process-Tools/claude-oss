@@ -170,6 +170,17 @@ EFFECT_MATCHES = "effect-matches"
 EFFECT_DIFFERS = "effect-differs"
 EFFECT_COULD_NOT_TELL = "effect-could-not-tell"
 
+#: #1721: a third, SEPARATE axis from both of the above. `compute()` names
+#: which checklist version ran against this repo; `compare_effect` catches
+#: the spawn loading a different root than the gate measured. Neither says
+#: whether the root the gate measured was itself the newest copy cached on
+#: this machine -- a `resolved-install` root is built from the version
+#: recorded for THIS project, which a sibling project's more recent install
+#: (or a cache nobody pruned) can leave behind without anything naming it.
+ROOT_CURRENT = "root-current"
+ROOT_STALE = "root-stale"
+ROOT_COULD_NOT_TELL = "root-could-not-tell"
+
 #: A version-shaped token inside a free-text "checklist in effect" line --
 #: "version 0.26.0", ".../0.26.0/agents/auditor.md", "0.26.0" alone. Matches
 #: the last such token in the line rather than the first: the auditor's own
@@ -318,6 +329,87 @@ def compare_effect(installed_version, effect_line):
         "copy of the plugin than the one this gate compared against the "
         "repo".format(effect_version, installed_version),
     )
+
+
+def compare_root_freshness(resolved_version, newest_cached_version):
+    """Whether the root gate 3 resolved and measured is the newest copy of
+    this plugin cached on this machine, or a stale one behind it (#1721).
+
+    `resolved_version` is what THIS gate measured off the root it was given
+    (`compute()`'s own `installed_version`, read off `GATE3_ROOT`).
+    `newest_cached_version` is `plugin_update.newest_cached_version`'s own
+    answer -- the highest version directory actually sitting in the cache,
+    independent of which project is pinned to it. Callers pass both in
+    rather than this function deriving either itself, the same separation
+    `compare_effect` already uses: this script stays a pure comparison,
+    never a second place that resolves a root.
+
+    Three states, same discipline as `compare_effect`: either side missing
+    is `root-could-not-tell`, never silently read as current. A
+    `resolved_version` genuinely ahead of `newest_cached_version` (which
+    should not happen -- the resolved root is supposed to be one of the
+    cached versions) still renders as `root-stale` rather than raising: the
+    only claim this function makes is "the two numbers do not match", not
+    which one is more trustworthy.
+    """
+    payload = {
+        "resolved_version": resolved_version,
+        "newest_cached_version": newest_cached_version,
+    }
+    if not resolved_version or not newest_cached_version:
+        missing = []
+        if not resolved_version:
+            missing.append("the resolved root's own version")
+        if not newest_cached_version:
+            missing.append("the newest cached version")
+        return dict(
+            payload,
+            state=ROOT_COULD_NOT_TELL,
+            reason="could not establish {0}, so whether the resolved root is "
+            "stale is unknown".format(" and ".join(missing)),
+        )
+    if resolved_version == newest_cached_version:
+        return dict(
+            payload,
+            state=ROOT_CURRENT,
+            reason="the resolved root ({0}) is the newest copy cached on "
+            "this machine".format(resolved_version),
+        )
+    return dict(
+        payload,
+        state=ROOT_STALE,
+        reason="the resolved root ({0}) is NOT the newest copy cached on "
+        "this machine ({1}) -- an update elsewhere, or a cache nobody "
+        "pruned, has left this project's own pin behind".format(
+            resolved_version, newest_cached_version
+        ),
+    )
+
+
+def root_freshness_receipt(payload):
+    """One block a human reads for `compare_root_freshness`'s payload, same
+    shape as `effect_receipt` above but for the root-staleness comparison.
+    """
+    heading = {
+        ROOT_CURRENT: "current",
+        ROOT_STALE: "stale",
+        ROOT_COULD_NOT_TELL: "could not tell",
+    }[payload["state"]]
+    lines = ["checklist-root-freshness: {0}".format(heading)]
+    lines.append("reason                   : {0}".format(payload["reason"]))
+    if payload.get("resolved_version") not in (None, ""):
+        lines.append(
+            "resolved version         : {0}".format(payload["resolved_version"])
+        )
+    if payload.get("newest_cached_version") not in (None, ""):
+        lines.append(
+            "newest cached version    : {0}".format(payload["newest_cached_version"])
+        )
+    lines.append(
+        "gate                     : ANNOTATES -- this never stops the release. "
+        "could-not-tell never renders as current."
+    )
+    return "\n".join(lines)
 
 
 def effect_receipt(payload):
@@ -728,6 +820,28 @@ def main(argv=None):
             "'checklist in effect: ...' report line"
         ),
     )
+    parser.add_argument(
+        "--compare-root-freshness",
+        action="store_true",
+        help=(
+            "compare --resolved-version against --newest-cached-version, "
+            "instead of either comparison above -- whether the root gate 3 "
+            "measured is the newest copy cached on this machine (#1721)"
+        ),
+    )
+    parser.add_argument(
+        "--resolved-version",
+        default=None,
+        help="with --compare-root-freshness: what this gate measured as installed",
+    )
+    parser.add_argument(
+        "--newest-cached-version",
+        default=None,
+        help=(
+            "with --compare-root-freshness: "
+            "plugin_update.py --print-newest-cached-version's own answer"
+        ),
+    )
     args = parser.parse_args(argv)
 
     for stream in (sys.stdout, sys.stderr):
@@ -735,6 +849,16 @@ def main(argv=None):
             stream.reconfigure(errors="backslashreplace")
         except (AttributeError, ValueError):  # pragma: no cover - very old Python
             pass
+
+    if args.compare_root_freshness:
+        payload = compare_root_freshness(
+            args.resolved_version, args.newest_cached_version
+        )
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(root_freshness_receipt(payload))
+        return EXIT_OK
 
     if args.compare_effect:
         payload = compare_effect(args.installed_version, args.effect_line)
