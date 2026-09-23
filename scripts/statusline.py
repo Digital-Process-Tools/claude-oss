@@ -380,7 +380,7 @@ def _declared_watch_names(root):
 def parse_channel_report(text):
     """The state `channel:health` reported, from its own report text, or `None`.
 
-    `None` covers everything that is not one of the five recognised states --
+    `None` covers everything that is not one of the six recognised states --
     most importantly the "op 'channel' is unavailable here" refusal supertool
     prints when the `watch` preset is not enabled, which also exits 1 and would
     otherwise be indistinguishable from a genuine `NOT DELIVERING` (#613; this
@@ -417,7 +417,7 @@ def channel_status(
     (#613, widened by #754, widened again by #1362, and by #1636).
 
     Five ways this becomes `cannot_determine` before a caller ever sees one of
-    the five real states, and each is a distinct reason a reader might act on
+    the six real states, and each is a distinct reason a reader might act on
     differently -- collapsing them into one `?` would be this module's own
     defect class, the same reason `board_from_cache` keeps its counts separate:
 
@@ -1401,7 +1401,7 @@ def _channel_field(channel, symbols, color=False):
 
     Three or four characters -- the same width discipline `_plugins_field` (#512)
     argues for (that field spent 45 characters saying nothing on almost every
-    render), scaled down for a field with five possible states rather than a
+    render), scaled down for a field with six possible states rather than a
     per-plugin list.
     `None` -- never a placeholder `?` -- when `watch_channel` is off in
     `.oss.json`: an operator's deliberate off switch is not the same absence as
@@ -2635,13 +2635,13 @@ def _run_channel_health(timeout=30):
     """The raw text of `supertool 'channel:health'`, regardless of its exit code.
 
     NOT `_run`: that helper returns `None` on any non-zero exit, and `NOT
-    DELIVERING`/`CANNOT DETERMINE`/`CONTRADICTED`/`BOUND, NOT SUBSCRIBED` are
-    all real, distinct findings that exit non-zero on purpose (supertool's own
-    `presets/watch/channel.py`: "a single non-zero would put answers this op
-    exists to separate back into one bucket"). Using `_run` here would fold
-    four of the five real states into the same `None` a missing binary
-    produces, which is the exact defect this field exists to stop happening to
-    the loop's own instrumentation.
+    DELIVERING`/`CANNOT DETERMINE`/`CONTRADICTED`/`BOUND, NOT SUBSCRIBED`/
+    `BOUND, UNPROVEN` are all real, distinct findings that exit non-zero on
+    purpose (supertool's own `presets/watch/channel.py`: "a single non-zero
+    would put answers this op exists to separate back into one bucket").
+    Using `_run` here would fold five of the six real states into the same
+    `None` a missing binary produces, which is the exact defect this field
+    exists to stop happening to the loop's own instrumentation.
 
     30s, not the 1-3s the issue's own measurement names: that number is the
     ordinary case, and `MCP_LOOKUP_BUDGET` plus `PS_TIMEOUT` (supertool's own
@@ -3140,7 +3140,7 @@ def refresh(root, now=None, session_id=None):
                 # waiting out a fresh-looking `CHANNEL_REFRESH_AFTER`), and the
                 # failure IS recorded so `channel_status` can tell "still due"
                 # from "asked and failed". A raw_state that IS a string but not
-                # one of the five recognised ones is a DIFFERENT case (a real
+                # one of the six recognised ones is a DIFFERENT case (a real
                 # answer, just an unexpected one) and takes the `else` branch
                 # below like any other success -- `channel_status`'s own
                 # `"unrecognized"` reason catches that one, unconditionally.

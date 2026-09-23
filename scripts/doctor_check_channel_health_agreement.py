@@ -71,13 +71,14 @@ def _health_signal(raw_state):
     own subscription probe self-colliding with the live socket. Both are
     real, on different occasions, and this docstring does not adjudicate
     between them; `channel_health_agreement_state`'s own `disagree` branch is
-    where the #913 finding is actually surfaced. FORWARDING, NOT DELIVERING
-    and BOUND-NOT-SUBSCRIBED are all single-consumer readings (delivering or
-    not, but from one server rather than two racing for it).
+    where the #913 finding is actually surfaced. FORWARDING, NOT DELIVERING,
+    BOUND-NOT-SUBSCRIBED and BOUND-UNPROVEN are all single-consumer readings
+    (delivering, not delivering, unsubscribed, or subscribed-but-unproven --
+    but from one server rather than two racing for it, #1726).
     """
     if raw_state in ("cannot_determine", "contradicted"):
         return True
-    if raw_state in ("forwarding", "not_delivering", "not_subscribed"):
+    if raw_state in ("forwarding", "not_delivering", "not_subscribed", "unproven"):
         return False
     return None
 
