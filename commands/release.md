@@ -727,15 +727,17 @@ was established. Reporting it as `could-not-create` — or as the range gate's `
 a fact about the repository that nobody measured. Say the call was **denied**, name it exactly, and
 hand it to the maintainer to run or to permit.
 
-**Do not route around it.** Concretely:
+**Do not route around it.** This is SKILL.md's classifier-denial rule (#1724), applied to
+`release_publish.py`/`gh release create`. Concretely:
 
 - **Do not reword the call to get past the classifier.** A different spelling is a different command
   string, so a reworded call that succeeds proves nothing about the one that was refused — and
   hand-assembling the `gh release create` invocation loses `--verify-tag`, which is the whole reason
   the section above says not to assemble it.
-- **Do not retry in a loop.** The denial is unstable, so re-invoking the *identical* call once is a
-  legitimate probe, and its outcome is reported either way. A second denial is handed over. Retrying
-  until the classifier relents is not a gate being satisfied, it is a gate being outlasted.
+- **Do not retry more than once, and never in a loop.** The denial is unstable, so re-invoking the
+  *identical* call once is a legitimate probe, and its outcome is reported either way. A second
+  denial is handed over, never retried further. Retrying until the classifier relents is not a gate
+  being satisfied, it is a gate being outlasted.
 - **Do not read a denial as a gate that passed, and never as a release that shipped.** It stops the
   release where it stands; the report says `denied at <step>` and never reports as released.
 
