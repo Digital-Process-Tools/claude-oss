@@ -28,3 +28,13 @@ unreadable, so the scheduler could not rank either candidate until the
 fetch ran. **A lane that reproduces a shallow checkout for its own testing
 purposes must do it in its own worktree, never against the one shared clone
 the scheduler and every other lane also reads from.**
+
+**A truncated shallow-clone commit count can render as exact somewhere other
+than `release_delta.py` too.** `scripts/statusline.py`'s own
+`since_floor = len(commits) >= window` (confirmed still unguarded) treats a
+short `git log` as proof the release-boundary commit was actually reached;
+in a shallow clone `git log` stops at the graft point rather than the true
+boundary, so a truncated count can satisfy `>= window` and render as an
+exact figure (`rel 50/?`, no `+` marker) instead of the honest "at least N,
+could be more". `release_delta.py` already refuses to operate on a shallow
+clone for exactly this reason -- `statusline.py` does not (#1692).

@@ -79,3 +79,44 @@ match: (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$
   requires and gets refused. A behaviour change that adds a state is not
   done until every docstring and canonical sentence claiming a fixed
   count of them is grepped and updated too.
+- **Gate 2's own comment-age field needs an explicit `null`, never an omitted
+  key, for a PR with no review comment.** `skills/manager/phases/release.md`
+  tells the releaser to feed gate 2 "its latest review comment's age" but
+  never says what to send when there is none; `scripts/release_gate2.py`
+  treats an absent key as `could-not-tell` and clears only on an explicit
+  JSON `null`. A releaser who omits the key for every backlog PR with no
+  comments turns each one into `could-not-tell`, which blocks the release
+  (#1681).
+- **A handback line with no documented reader is a stop that nothing reads
+  as a stop.** `agents/scheduler-step.md` introduced a `PLUGIN-ROOT:
+  could-not-run` handback line (#1689), but `commands/run.md` names no such
+  state for any of its six sub-steps and nothing under `commands/`,
+  `scripts/` or `skills/` greps for the string outside the line itself and
+  this repo's own `CLAUDE.md` history note (confirmed by a repo-wide grep).
+  The line exists but has no documented reader that treats it as a stop.
+- **A per-repo label spelling stated as a literal string is wrong the
+  moment a repo declares a different one.** `agents/triager.md`'s own
+  priority floor still hardcodes the literal `priority-low` (confirmed
+  live) even though the same file's own "never invent a label spelling"
+  sentence sits a few lines above it, and a sibling repo's `SKILL.md`
+  spells the same concept `priority:high`. Say "the lowest of
+  `labels.priority`, in declared order" instead of a literal (#1695).
+- **A table's command cells are commands a session runs verbatim (see the
+  bullet above) -- one of them refuses at the tool.** `skills/manager/
+  phases/findings.md` tells a filer to run `gh-labels:repo:OWNER/NAME` to
+  check a label spelling on another repo; the installed supertool refuses
+  it outright (`gh-labels takes at most one argument, got 2`, reproduced
+  directly). The same paragraph's own "nothing matches: omit the label"
+  reads that refusal as a real "no match", silently dropping
+  `filed-by-loop` -- the exact defect the paragraph exists to close. Name a
+  call that actually works (e.g. `gh label list -R OWNER/NAME`) before
+  trusting this paragraph (#1705).
+- **A resolved plugin root can be stale in more than one caller.** #1721's
+  own fix built `plugin_update.newest_cached_version` /
+  `checklist_skew.compare_root_freshness` specifically to answer "is this
+  resolved root the newest cached copy" for gate 3, but `skills/manager/
+  phases/tick-order.md`'s own `DOCTOR_ROOT` resolution -- the identical
+  `--print-resolved-root` call (confirmed still unwired to either) -- never
+  calls either one. Every ordinary tick's `doctor.py` run still has no way
+  to know its root is stale, the same silent-luck gap gate 3 had, just for
+  a lower-stakes caller.
