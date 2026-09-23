@@ -24,6 +24,26 @@ narrative judgement at the point it disagreed with itself, and this makes it a
 function with tests instead, the same move `gate3_disposition.py` (#1043)
 already made for gate 3.
 
+**One narrow exception, added for #1725.** `git-worktrees`' own `occupied`
+reading ORs together five different probes (a lock, an in-progress
+rebase/merge/cherry-pick, a write newer than its own activity window, or a
+process cwd'd inside the tree) into one bit, with no way for a caller to tell
+which one tripped it. For a `doctor/*` or `curate/*` branch -- a single-spawn,
+commit-and-die loop procedure with no ongoing multi-turn lane -- the write its
+own commit makes is the only thing that will ever trip that bit, and it read
+identically to a lane still producing work: an observed doctor repair blocked
+a due release for ~15 minutes with no lane anywhere. `derive_lane_active()`
+narrows the composite `occupied` bit to `False` for those two prefixes only,
+regardless of which underlying probe tripped it -- including a genuine stuck
+lock or an unfinished rebase on that same branch, which this module has no way
+to distinguish from an ordinary finished commit once `git-worktrees` has
+already folded them into one bit. That residual risk is accepted rather than
+solved: a crashed doctor/curate spawn leaving a genuinely stuck worktree is
+judged far less likely than the false positive this fix removes, and no
+finer-grained signal exists to tell the two apart. When ``decide()`` is given
+a per-PR ``branch``, it applies this narrowing itself (below) rather than
+leaving it to the caller to remember.
+
 ## The rule, per pull request
 
   review_decision        lane_active   comment age (min)         status
@@ -102,6 +122,58 @@ EXIT_CLEAR = 0
 EXIT_BLOCKED = 1
 EXIT_COULD_NOT_TELL = 2
 
+# Loop-authored branch prefixes: single-spawn, commit-and-die procedures with
+# no ongoing multi-turn lane -- a doctor repair or a curate pass, never a
+# developer lane's own `fix/{issue}` branch. See derive_lane_active() (#1725).
+LOOP_AUTHORED_BRANCH_PREFIXES = ("doctor/", "curate/")
+
+
+def is_loop_authored_branch(branch):
+    """True when ``branch`` is one of this loop's own single-spawn branches
+    (`doctor/*`, `curate/*`) -- never a developer lane's `fix/{issue}`
+    branch. ``None`` and the empty string are False, not an error: a caller
+    that never established the branch name gets the same answer a caller
+    that established it is not one of these two prefixes gets, which is the
+    conservative direction here (does not suppress a real lane_active
+    reading).
+    """
+    return bool(branch) and branch.startswith(LOOP_AUTHORED_BRANCH_PREFIXES)
+
+
+def derive_lane_active(branch, occupied):
+    """Gate 2's own ``lane_active`` input, computed from git-worktrees'
+    ``occupied`` reading rather than passed through unchanged (#1725).
+
+    Observed on claude-supertool: the releaser refused at gate 2 with
+    ``blocked-by:N``, reading "a lane process is alive" for a PR whose
+    worktree held no lane at all -- it was a `doctor/*` branch the scheduler's
+    own repair had just committed and pushed. `git-worktrees`' own
+    ``occupied`` verdict ORs together an index-lock, an in-progress
+    rebase/merge/cherry-pick, a `git worktree lock`, a write newer than its
+    own activity window, and a process cwd'd inside the tree, and reports
+    only the composite bit -- never which probe tripped. For a `doctor/*` or
+    `curate/*` branch that composite is systematically wrong: both are
+    single-spawn, commit-and-die passes, so the write their own commit makes
+    is the only thing that will ever trip "occupied" for them, and it is
+    indistinguishable in the composite from a lane still producing work.
+
+    For those two prefixes, ``occupied`` is therefore never read as
+    ``lane_active`` on its own -- this returns ``False`` for them regardless
+    of what ``occupied`` says. Every other branch reads ``occupied``
+    unchanged: an ordinary developer lane's worktree genuinely can be
+    actively worked in during the window right after a commit, and there is
+    no equivalent reason to distrust the signal there.
+
+    ``occupied`` is passed through unchanged for ``None`` or the literal
+    string ``"unknown"`` -- a reading that was never established must not be
+    overwritten either way by the branch-name rule.
+    """
+    if occupied is None or occupied == UNKNOWN:
+        return occupied
+    if is_loop_authored_branch(branch):
+        return False
+    return occupied
+
 
 def _decide_one(pr, threshold_minutes):
     """Return the per-PR read: {"number", "status", "reason"}.
@@ -140,6 +212,13 @@ def _decide_one(pr, threshold_minutes):
     # review_decision == "NONE" -- the exact ambiguity the incident turned
     # on. Resolve it from the other two signals, never from narrative.
     lane_active = pr.get("lane_active")
+    if "branch" in pr:
+        # #1725: apply the doctor/*-curate/* narrowing here, inside the one
+        # place gate 2's own decision is made, rather than leaving it to the
+        # caller to remember to run derive_lane_active() by hand before
+        # building this payload -- a correction that only fires when someone
+        # remembers to apply it is the same bug in a different shape.
+        lane_active = derive_lane_active(pr.get("branch"), lane_active)
     if lane_active == UNKNOWN or lane_active is None:
         return {
             "number": number,
@@ -199,7 +278,11 @@ def decide(open_prs, threshold_minutes=DEFAULT_THRESHOLD_MINUTES):
 
     ``open_prs`` is a list of dicts shaped like ``_decide_one`` reads above:
     ``number``, ``review_decision``, ``lane_active``, and
-    ``latest_review_comment_age_minutes``. An *empty list* is ``clear`` --
+    ``latest_review_comment_age_minutes``, plus an optional ``branch`` (#1725)
+    -- when present, ``lane_active`` is first narrowed through
+    ``derive_lane_active()`` rather than trusted as given, so a caller does
+    not have to remember to apply that correction itself. Omitting ``branch``
+    preserves the pre-#1725 behaviour exactly. An *empty list* is ``clear`` --
     the open-PR list was fetched and confirmed to hold nothing, so nothing
     can be mid-review. ``None`` or the string ``"unknown"`` is a **different**
     fact: the fetch itself was never established, and must not collapse into
