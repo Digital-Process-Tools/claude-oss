@@ -1085,8 +1085,8 @@ def _symbols(ascii_only):
         # never forwarded anything -- distinct from `own` above (nobody is
         # subscribed there; here somebody is, and nothing has moved yet) and
         # from `ok` (which means it HAS moved). Quarter-filled shape reads as
-        # "just started, nothing to show yet" -- less filled than `own`'s
-        # half circle, on purpose.
+        # "just started, no traffic yet" -- less filled than `own`'s half
+        # circle, on purpose.
         "prv": "◔",
     }
 
