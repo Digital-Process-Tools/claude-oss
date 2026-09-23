@@ -281,6 +281,56 @@ def _verdict(state, reason, **extra):
     return out
 
 
+def _backref_confined_to_enumeration(body_offset, block_matches, backref_matches):
+    """Whether every back-reference the message carries sits inside the span
+    of an already-enumerated block, rather than in the prose around it
+    (#1727).
+
+    #392's own defended shape has the gesture phrase as a *preamble*
+    sentence -- "Findings reported above (3 total)" -- sitting before the
+    first counted marker, with the markers themselves a trailing, unrelated
+    bullet list (file names, not findings). That preamble position is
+    exactly what this function refuses to shield: a back-reference before
+    the first enumerated block still forecloses `states-findings`
+    unconditionally, the same as before this fix.
+
+    What changes is the case #1727 reports: a fully-enumerated
+    `FINDINGS: N` message (N blocks, one per claimed finding) that also
+    happens to use a back-reference phrase somewhere at or after the first
+    enumerated block's own start -- "as shown above" describing a detail of
+    a finding already stated, not a pointer at missing content. A gesture
+    positioned there is confined to material the message demonstrably does
+    carry, so it no longer overrides a header the block count already
+    satisfies.
+
+    Every back-reference the message carries must clear this bar, not just
+    the first one `_BACKREF.search` would find -- a dangling gesture in the
+    preamble is still decisive even when a second, later gesture is safely
+    nested inside a block.
+
+    Requires **more than one** enumerated block, not merely one -- a lone
+    finding carrying a back-reference is exactly the case this function
+    cannot tell apart from #392's own defended shape: a single block whose
+    entire content is the gesture itself ("See the details found above;
+    nothing new to add.", `tests/test_review_return_backref_1270.py`'s own
+    fixture convention -- one synthetic block wrapped around each tested
+    sentence to isolate whether `_BACKREF` fires at all) is structurally
+    identical, at this function's own resolution, to a real single finding
+    that happens to use the same phrase in passing. A second block is what
+    #1727's own reported shape always carries and #1270's fixtures never do,
+    so it is the bar drawn here rather than a position check alone.
+
+    No blocks at all, fewer than two blocks, or no back-reference at all,
+    all return False -- this function is only ever consulted from the
+    branch that already requires at least one block and at least one
+    back-reference.
+    """
+    if len(block_matches) < 2 or not backref_matches:
+        return False
+    first_block_pos = body_offset + block_matches[0].start()
+    return all(match.start() >= first_block_pos for match in backref_matches)
+
+
 def classify(message):
     """Sort one reviewer final message into the six states above.
 
@@ -299,7 +349,8 @@ def classify(message):
     text = str(message)
     header = _HEADER.search(text)
     clean = _NO_FINDINGS.search(text)
-    backref = _BACKREF.search(text)
+    backref_matches = list(_BACKREF.finditer(text))
+    backref = backref_matches[0] if backref_matches else None
     implied = _implied_count(text)
 
     claimed = int(header.group(1)) if header else None
@@ -332,13 +383,27 @@ def classify(message):
                 implied_count=implied,
             )
         body = text[header.end() :]
-        blocks = len(_BLOCK.findall(body))
+        block_matches = list(_BLOCK.finditer(body))
+        blocks = len(block_matches)
         header_line = fold_to_one_ascii_line(_line_containing(text, header.start()))
-        if blocks >= claimed and not backref:
+        backref_confined = _backref_confined_to_enumeration(
+            header.end(), block_matches, backref_matches
+        )
+        if blocks >= claimed and (not backref or backref_confined):
+            reason = (
+                "a FINDINGS: {0} header with {1} enumerable block(s) under "
+                "it and no back-reference anywhere".format(claimed, blocks)
+                if not backref
+                else (
+                    "a FINDINGS: {0} header with {1} enumerable block(s) "
+                    "under it; every back-reference in the message sits at "
+                    "or after the first enumerated block rather than "
+                    "pointing at material outside it (#1727)".format(claimed, blocks)
+                )
+            )
             return _verdict(
                 "states-findings",
-                "a FINDINGS: {0} header with {1} enumerable block(s) under "
-                "it and no back-reference anywhere".format(claimed, blocks),
+                reason,
                 claimed=claimed,
                 stated_blocks=blocks,
                 implied_count=implied,

@@ -101,6 +101,16 @@ OPTIONAL_KEYS = {
     # `outbound_route_threshold` shipping validated-but-unread, and the fix
     # for this key is to never repeat that.
     "claude_md_size_threshold",
+    # #1722: cross-cutting guard tests this managed repository declares for
+    # itself. `lane_setup_patterns.CROSS_CUTTING_GUARDS` is a fact about
+    # claude-oss's own tree -- every built-in entry names a claude-oss path --
+    # so a repo this loop merely operates on had no way to register a guard
+    # test of its own that a lane's file-set search should anticipate before
+    # dispatch. Absent means none declared, the same behaviour as before this
+    # key existed. Read directly by `lane_setup_patterns._repo_declared_guards`,
+    # not merely declared here -- the same `config-value-validation.md` trap
+    # `claude_md_size_threshold` above already names.
+    "lane_guards",
 }
 
 # #355: `.oss.json` is JSON, with no comment syntax, so the only place a maintainer
@@ -1223,6 +1233,45 @@ def _brace_interval_problem(pattern):
             index = close + 1
             continue
         index += 1
+    return None
+
+
+def lane_guards_problem(value):
+    """Why this `lane_guards` cannot be used, or None when it is fine.
+
+    Null/absent is the default and means this repository has declared no
+    guards of its own -- `lane_setup_patterns.CROSS_CUTTING_GUARDS` stays
+    exactly the built-in, claude-oss-only table it has always been (#1722).
+
+    A declared value is a non-empty list of objects, each naming one guard in
+    the identical shape the built-in table already uses: `prefix` (a
+    repo-relative path prefix a lane's touched files are matched against),
+    `test` (the repo-relative test file that guards it), and `why` (the
+    one-line reason shown in a lane brief). All three are required,
+    non-empty strings -- the same three fields
+    `lane_setup_patterns.guards_for_files`/`known_guards` already read off
+    the built-in tuple, so a per-repo entry threads through the identical
+    merge with no special case.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list) or not value:
+        return (
+            "lane_guards: expected a non-empty list of {{prefix, test, why}} "
+            "objects, or null for 'this repository declares no guards of its "
+            "own'; got {!r}.".format(value)
+        )
+    for index, entry in enumerate(value):
+        if not isinstance(entry, dict):
+            return "lane_guards[{}]: expected an object, got {!r}".format(index, entry)
+        for field in ("prefix", "test", "why"):
+            field_value = entry.get(field)
+            if not isinstance(field_value, str) or not field_value.strip():
+                return (
+                    "lane_guards[{}].{}: expected a non-empty string, got {!r}".format(
+                        index, field, field_value
+                    )
+                )
     return None
 
 
@@ -2391,6 +2440,10 @@ def validate(config):
     user_visible_paths = user_visible_paths_problem(config.get("user_visible_paths"))
     if user_visible_paths:
         problems.append(user_visible_paths)
+
+    lane_guards = lane_guards_problem(config.get("lane_guards"))
+    if lane_guards:
+        problems.append(lane_guards)
 
     if "release" in config:
         problems.extend(_validate_release(config["release"]))

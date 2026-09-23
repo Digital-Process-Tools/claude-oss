@@ -15,6 +15,7 @@ import stat as _stat
 from pathlib import Path
 
 import lane_setup_worktree
+import oss_config
 import select_issues_overlap
 
 CROSS_CUTTING_GUARDS = (
@@ -168,6 +169,55 @@ def _guard_test_existence(repo, test_path):
     return "exists" if _stat.S_ISREG(st.st_mode) else "absent"
 
 
+def _repo_declared_guards(repo):
+    """Extra `(prefix, test_path, why)` triples this managed repository declares
+    for itself via `.oss.json`'s `lane_guards` key (#1722).
+
+    `CROSS_CUTTING_GUARDS` above is a fact about claude-oss's own tree -- every
+    built-in entry names a claude-oss path -- so a repo this loop merely
+    operates on (e.g. claude-supertool) had no way to register a guard test of
+    its own that a lane's file-set search should have anticipated before
+    dispatch. This is that extension point: read the same way `_guard_test_
+    existence` already reads a repo-relative path, merged into the built-in
+    table wherever a caller passes `repo`.
+
+    Tolerant by construction: a missing `.oss.json`, one that fails to parse or
+    validate, or one that carries no `lane_guards` key at all, all return `()`
+    rather than raising -- `oss_config.load` already reports a malformed
+    config's own problems to whoever builds this lane's payload; this merge
+    exists only to add guards, never to duplicate that reporting. A
+    malformed *entry* inside an otherwise-valid `lane_guards` list is skipped
+    individually rather than discarding the whole declared list, the same
+    "still exercised, not lost to one bad sibling" shape `guards_for_files`
+    itself already gives a partially-covered file set.
+    """
+    if repo is None:
+        return ()
+    config, _problems = oss_config.load(Path(repo) / oss_config.CONFIG_NAME)
+    if not config:
+        return ()
+    declared = config.get("lane_guards")
+    if not isinstance(declared, list):
+        return ()
+    triples = []
+    for entry in declared:
+        if not isinstance(entry, dict):
+            continue
+        prefix = entry.get("prefix")
+        test_path = entry.get("test")
+        why = entry.get("why")
+        if (
+            isinstance(prefix, str)
+            and prefix.strip()
+            and isinstance(test_path, str)
+            and test_path.strip()
+            and isinstance(why, str)
+            and why.strip()
+        ):
+            triples.append((prefix, test_path, why))
+    return tuple(triples)
+
+
 def known_guards(repo=None):
     """The full enumeration, grouped by guard test with every trigger reason that
     maps to it. Answers #432's own sizing question -- how many of these exist --
@@ -183,9 +233,15 @@ def known_guards(repo=None):
     (`repo=None`) keeps the declared enumeration only -- the shape this
     function has always had, and what `claude-oss`'s own sizing test still
     checks against its own tree.
+
+    `repo`, when given, also folds in whatever that repository declares
+    for itself via `.oss.json`'s `lane_guards` key (`_repo_declared_guards`,
+    #1722) -- `CROSS_CUTTING_GUARDS` alone is a fact about claude-oss's own
+    tree, and this is the one place a managed repo's own guards join it.
     """
+    guards = CROSS_CUTTING_GUARDS + _repo_declared_guards(repo)
     grouped = {}
-    for prefix, test_path, why in CROSS_CUTTING_GUARDS:
+    for prefix, test_path, why in guards:
         grouped.setdefault(test_path, []).append({"prefix": prefix, "why": why})
     result = []
     for test_path in sorted(grouped):
@@ -215,10 +271,17 @@ def guards_for_files(files, repo=None):
     files touched, and dropping it would silently undo the trigger this
     function exists to report; only the disposition changes, from "run this"
     to "this class applies and cannot be run here".
+
+    `repo`, when given, also folds in whatever that repository declares for
+    itself via `.oss.json`'s `lane_guards` key (`_repo_declared_guards`,
+    #1722) -- the same merge `known_guards` above performs, so a lane's own
+    file-set search anticipates a managed repo's own guard exactly as it
+    already anticipates claude-oss's built-in ones.
     """
+    guards = CROSS_CUTTING_GUARDS + _repo_declared_guards(repo)
     hits = {}
     for f in files or []:
-        for prefix, test_path, why in CROSS_CUTTING_GUARDS:
+        for prefix, test_path, why in guards:
             if f == prefix or f.startswith(prefix):
                 reasons = hits.setdefault(test_path, [])
                 if why not in reasons:
