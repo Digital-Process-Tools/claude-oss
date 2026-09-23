@@ -29,6 +29,10 @@ SKILL_MD = REPO_ROOT / "skills" / "manager" / "SKILL.md"
 TICK_ORDER_MD = REPO_ROOT / "skills" / "manager" / "phases" / "tick-order.md"
 MERGE_MD = REPO_ROOT / "skills" / "manager" / "phases" / "merge.md"
 RELEASE_MD = REPO_ROOT / "commands" / "release.md"
+OSS_RULES_PY = REPO_ROOT / "scripts" / "oss_rules.py"
+MERGE_GATE_JIT_MD = (
+    REPO_ROOT / ".claude" / "jit-context" / "tools" / "01-oss" / "merge-gate.md"
+)
 
 # A short marker unique to the canonical rule's own wording -- not merely "retry" or
 # "classifier", either of which several unrelated passages in these same files already
@@ -74,6 +78,31 @@ def test_merge_md_no_longer_licenses_a_bare_retry_with_no_bound():
     text = MERGE_MD.read_text(encoding="utf-8")
     assert "not license to reword and re-send" in text
     assert "one-retry rule" in text
+
+
+def test_the_scripted_merge_gate_rule_also_points_at_the_canonical_rule():
+    """A self-review finding (spawned auditor, same lane): `scripts/oss_rules.py`'s
+    `TOOLS_MERGE_GATE` -- a fourth, pre-existing statement of "do not route around a
+    denied merge", rendered into every scaffolded repository's own
+    `.claude/jit-context/tools/01-oss/merge-gate.md` -- was not one of the three files
+    #1724's own issue named, and had been missed. Both the source constant and its
+    tracked, generated copy in this repository's own layer must reference #1724, and
+    the two must stay byte-identical (this repo ships the rule it also scaffolds with)."""
+    source = OSS_RULES_PY.read_text(encoding="utf-8")
+    assert "#1724" in source
+    generated = MERGE_GATE_JIT_MD.read_text(encoding="utf-8")
+    assert "#1724" in generated
+    # The constant is generated with a leading/trailing """ this repo's own copy does
+    # not carry -- compare stripped of the wrapping triple-quote and any \n it left.
+    marker = source[
+        source.index('TOOLS_MERGE_GATE = """') + len('TOOLS_MERGE_GATE = """') :
+    ]
+    marker = marker[: marker.index('"""')]
+    assert marker == generated, (
+        "scripts/oss_rules.py's TOOLS_MERGE_GATE and the tracked "
+        ".claude/jit-context/tools/01-oss/merge-gate.md have diverged -- this "
+        "repository ships the rule it also scaffolds with, so the two must match."
+    )
 
 
 def test_a_file_that_only_names_retry_without_the_bound_fails_the_marker():

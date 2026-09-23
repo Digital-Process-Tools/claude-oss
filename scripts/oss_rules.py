@@ -913,8 +913,9 @@ rename, an external-contributor PR, or anything irreversible.
   the default branch is the backstop that tests the real combined content regardless of whether
   the base moved underneath it (`skills/manager/phases/merge.md`, #1085). Only something other
   than staleness -- a real, stated reason -- justifies rebasing before merging.
-- **Do not route around a denied merge.** Say the call was denied, name it exactly, and let
-  the maintainer run or permit it.
+- **A denied merge follows SKILL.md's classifier-denial rule (#1724): retry the identical call
+  once, report the outcome either way, never a second time, never reworded.** Say the call was
+  denied, name it exactly, and let the maintainer run or permit it.
 
 Full argument, the `|force` opt-outs and their blast radii, the rerun-vs-moved-base trap, and
 the branch-deletion rules: `skills/manager/phases/merge.md`.
