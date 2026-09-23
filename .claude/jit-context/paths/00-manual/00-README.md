@@ -6,6 +6,59 @@ named and reasoned in the pass's own pull request, rather than forced into one o
 This file is the record of the declines, so the next lane to hit the same thing finds a decision
 rather than an absence and does not refile it. The rule builder skips this file by name.
 
+## 2026-09-23 -- 15 fragments, 3 promoted into 3 new rules, 6 merged, 3 declined, 3 deferred
+
+Three new rules: `paths/00-manual/worktree-reap-precedence-bug.md`,
+`paths/00-manual/release-gate2-comment-age-type.md`,
+`paths/00-manual/review-return-backref-fenced-code.md`.
+
+Six merges: five into `paths/00-manual/loop-prose-parity.md`
+(`1681.release-md-never-states-comment-age-must-be-an-explicit-null`,
+`1689.scheduler-step-plugin-root-could-not-run-line-has-no-documented-reader`,
+`1695.triager-priority-floor-names-a-literal-label-that-may-not-exist`,
+`1705.findings-md-points-at-a-gh-labels-invocation-that-does-not-exist`,
+`1721.doctor-root-same-staleness-gap`), and one into
+`vocabulary/00-manual/could-not-tell-shallow-clone.md`
+(`1692.statusline-renders-a-shallow-clones-truncated-commit-count-as-exact`). All six were
+confirmed still live against the current tree before merging -- each cited file still carries the
+gap or literal the fragment describes, checked by direct grep/read at the time of this pass.
+
+**Already actioned; the fragment is a record of work that shipped.**
+
+- `1690.doctor-role-marker-is-never-cleared-after-a-run` -- fixed by #1728: `agents/doctor.md` now
+  clears its own role marker as its last act (`agent_role.py --clear`), confirmed present in the
+  file at the time of this pass.
+- `1690.changelog-fragment-overclaims-a-push-and-commit-guard-that-was-never-built` -- already
+  corrected inside the v0.41.1 release commit itself, per that release's own "What is not proven
+  yet" marker (round 2 found the same overclaim and folded the correction into that release's own
+  `CHANGELOG.md` entry). `changelog.d/1690.fixed.md` no longer exists and the current
+  `CHANGELOG.md` entry for #1690 states the settings-digest check accurately, with no push/commit
+  guard claim.
+
+**One incident, not a rule.**
+
+- `1701.claude-md-cites-a-recon-call-that-1701-already-deleted` -- a narrow, self-referential
+  citation drift inside `CLAUDE.md`'s own hand-curated release-history prose (a line number/call
+  site reference that #1701 made stale). Confirmed still live, but it is a one-line correction to
+  a specific historical sentence, not a recurring pattern a path- or tool-triggered rule could
+  catch, and `CLAUDE.md` itself is outside what this pass may rewrite (its hand-curation rule
+  reserves edits to the release session and to lanes whose own subject is that file).
+
+**Deferred, left in `trap.d/` unchanged -- carried forward, no new information.**
+
+- `1630.fifty-one-worktrees-accumulate-because-every-reap-gate-declines` -- still the same design
+  decision named in the 2026-09-17 entry (whether to build a separate periodic reap sweep beyond
+  the existing conservative per-tick gate); nothing in this pass changes that. Distinct from
+  `1637` above, which is a concrete, reproducible precedence bug in the same file and was
+  promoted on its own.
+- `1660.pytest-leg-margin-arithmetic-ignores-pre-run-tests-step-overhead` -- still needs an
+  instrumented CI run timing each step of a real job separately; not something this pass could
+  produce locally either.
+- `1667.next-minor-pin-guard-failed-on-one-leg-and-passed-on-three` -- still needs the same read
+  (opening the three passing legs' own logs from that historical run to see whether they collected
+  the test at all); the run is old enough that those logs may no longer be retrievable, and this
+  pass did not attempt it.
+
 ## 2026-09-05 — 30 fragments, 4 promoted, 6 merged, 18 declined
 
 **Already actioned; the fragment is a record of work that shipped.**
