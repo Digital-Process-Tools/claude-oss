@@ -249,57 +249,74 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     #1723: a lane, the releaser, and `worktree_reap.py`'s own
     `harvest_fragments` all write `trap.d/*.md` fragments straight into the
     clone's working tree as a plain filesystem copy -- no `git add`, no
-    commit. Those fragments are untracked on EVERY branch, not just
-    whichever one happens to be checked out, and a fresh `/oss:curate`
-    worktree (`git worktree add ... origin/<default_branch>`) starts from
-    committed history only, so it can never see them either way. The
-    #1476 version of this function only counted them when the checkout WAS
-    the default branch, which reported a number `/oss:curate` itself could
-    never match on any branch other than that one -- the disagreement
-    #1723 is about.
+    commit. On the default branch this was never the actual disagreement:
+    `trap_curate.waiting`'s own bare `os.listdir` already counts an
+    untracked file sitting in `trap.d/` exactly as readily as a tracked
+    one, so the ON-branch count was always right. The real gap #1723
+    reports is narrower than "the counter is wrong" -- it is two other
+    things: (1) a `harvest_fragments`-style stray written while the clone
+    happens to be standing on some OTHER branch was invisible to the old
+    #1476 off-branch path, which only ever read `origin/<default_branch>`'s
+    committed tree; and (2) `/oss:curate`'s own fresh worktree, cut via
+    `git worktree add ... origin/<default_branch>`, starts from committed
+    history only and can never see ANY of the clone's untracked files --
+    on or off branch -- which is a consumer-side gap this function alone
+    cannot close (see `trap_curate.copy_stray_into`/`sweep_resolved` and
+    `commands/run/curate.md` for that half).
 
-    So: when `config` names a `default_branch`, the count is always the
-    union of two reads:
+    A first version of this fix (self-review round, #1723) rewrote the
+    on-branch case to ALSO require `origin/<default_branch>` to resolve,
+    which broke on every fixture and every real repository that has never
+    run `git fetch` yet -- `git remote add origin <url>` alone does not
+    create `refs/remotes/origin/<branch>`, so a freshly cloned or
+    freshly `git init`ed checkout has no such ref at all, and CI's own
+    `tests/test_next_action_1389.py` / `tests/test_flag_aliases_and_
+    state_override_1435.py` caught it (10 failures, `next_action.rank()`
+    reading `could-not-tell` where every existing test expected `due`).
+    Reverted: the on-branch case needs no `origin/<default_branch>` read
+    at all, exactly as before #1723, because it was never broken.
 
-    - `origin/<default_branch>`'s own committed tree via `git ls-tree`
-      (`trap_curate.waiting_at_ref`, unchanged from #1476);
-    - a SECOND read that depends on which branch is actually checked out,
-      never guessed (#1476's own original branch check, preserved rather
-      than removed -- an #1723 self-review finding, both a spawned
-      `Explore` reviewer and `oss:auditor` independently reproduced the
-      regression the first version of this fix introduced by dropping it:
-      a fragment `git add`ed or even committed on the default branch
-      itself, but not yet pushed to `origin`, is neither `origin/
-      <default_branch>`'s tree nor untracked -- it would have silently
-      stopped counting at all):
+    So: when `config` names a `default_branch`:
 
-      - the checkout IS the default branch -> the clone's own full working
-        tree (`trap_curate.waiting`, tracked and untracked both), so a
-        just-committed-but-not-yet-pushed fragment stays visible exactly
-        as #1476 first established;
-      - the checkout is standing on some OTHER, known branch ->
-        `trap_curate.untracked_fragments` (#1723) -- untracked-ness is a
-        fact about the index, not about HEAD, so a `harvest_fragments`-
-        style stray sitting in the clone counts here too, on whichever
-        branch happens to be checked out;
-      - the current branch could not even be determined -> `could-not-
-        count`, never a guessed read of whichever tree happens to be on
-        disk (unchanged from #1476: `curate_count`'s own module already
-        states the rule this follows -- "a repository this could not look
-        at must not read the same as one that is genuinely fine").
-
-    Either read failing is `could-not-count` -- never a guessed read of
-    only the half that succeeded. #1522: nothing on the ref-read path
-    fetches, so `why` also carries how long ago this checkout's last `git
-    fetch` ran (`_with_fetch_freshness`).
+    - the checkout IS the default branch -> the clone's own full working
+      tree (`trap_curate.waiting`), unchanged from before #1723 -- no
+      `origin/<default_branch>` resolution required, so a repository that
+      has never fetched still counts correctly;
+    - the checkout is standing on some OTHER, known branch -> the union of
+      `origin/<default_branch>`'s own committed tree via `git ls-tree`
+      (`trap_curate.waiting_at_ref`, unchanged from #1476) and the clone's
+      own untracked `trap.d/*.md` files (`trap_curate.untracked_fragments`,
+      #1723) -- untracked-ness is a fact about the index, not about HEAD,
+      so a `harvest_fragments`-style stray sitting in the clone counts
+      here too, on whichever branch happens to be checked out. Either
+      half failing is `could-not-count`. #1522: nothing on the ref-read
+      path fetches, so `why` also carries how long ago this checkout's
+      last `git fetch` ran (`_with_fetch_freshness`);
+    - the current branch could not even be determined -> `could-not-
+      count`, never a guessed read of whichever tree happens to be on
+      disk (unchanged from #1476: this module's own docstring already
+      states the rule this follows -- "a repository this could not look
+      at must not read the same as one that is genuinely fine").
 
     When no `default_branch` is configured at all, this preserves the
     function's original, no-config-passed behaviour -- an unconditional
     working-tree read -- used by every existing caller that does not
-    supply one. The working-tree path carries no fetch-freshness note:
-    it never reads `origin/*` at all, so there is nothing to date."""
+    supply one."""
     default_branch = (config or {}).get("default_branch")
     if isinstance(default_branch, str) and default_branch.strip():
+        current, branch_why = _current_branch(repo_root, run=run, git_bin=git_bin)
+        if current is None:
+            return None, (
+                "the checked-out branch could not be determined, so whether "
+                "trap.d/ belongs to {0} could not be told ({1})".format(
+                    default_branch, branch_why
+                )
+            )
+        if current == default_branch:
+            result = trap_curate.waiting(repo_root)
+            if result["state"] == "could-not-read":
+                return None, result["why"]
+            return result["count"], result["why"]
         ref_result = trap_curate.waiting_at_ref(
             repo_root,
             "origin/{0}".format(default_branch),
@@ -308,31 +325,18 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
         )
         if ref_result["state"] == "could-not-read":
             return None, ref_result["why"]
-        current, branch_why = _current_branch(repo_root, run=run, git_bin=git_bin)
-        if current is None:
-            return None, (
-                "the checked-out branch could not be determined, so whether an "
-                "untracked or not-yet-pushed fragment belongs to {0} could not "
-                "be told ({1})".format(default_branch, branch_why)
-            )
-        if current == default_branch:
-            extra_result = trap_curate.waiting(repo_root)
-            extra_label = "in the clone's own working tree (tracked or untracked)"
-        else:
-            extra_result = trap_curate.untracked_fragments(
-                repo_root, run=run, git_bin=git_bin
-            )
-            extra_label = "untracked in the clone's own working tree"
-        if extra_result["state"] == "could-not-read":
-            return None, extra_result["why"]
+        stray_result = trap_curate.untracked_fragments(
+            repo_root, run=run, git_bin=git_bin
+        )
+        if stray_result["state"] == "could-not-read":
+            return None, stray_result["why"]
         combined = {f["name"] for f in ref_result["fragments"]} | {
-            f["name"] for f in extra_result["fragments"]
+            f["name"] for f in stray_result["fragments"]
         }
-        why = "{0} fragment(s) at origin/{1} plus {2} {3} = {4} total".format(
+        why = "{0} fragment(s) at origin/{1} plus {2} untracked in the clone's own working tree = {3} total".format(
             len(ref_result["fragments"]),
             default_branch,
-            len(extra_result["fragments"]),
-            extra_label,
+            len(stray_result["fragments"]),
             len(combined),
         )
         return len(combined), _with_fetch_freshness(why, repo_root, run, git_bin)
