@@ -76,11 +76,14 @@ def test_gate3_resolves_the_plugin_root_before_using_it():
 
 
 def test_checklist_skew_call_passes_plugin_root_explicitly():
-    """#1328's `--compare-effect` call is excluded: it takes no `--plugin-root`
-    by design -- it compares two already-resolved version strings
-    (`--installed-version`/`--effect-line`) and never reads
-    `$CLAUDE_PLUGIN_ROOT` internally at all, so the #789 degradation this test
-    guards against (a silent env-var fallback) does not apply to it."""
+    """#1328's `--compare-effect` call and #1721's `--compare-root-freshness`
+    call are both excluded: neither takes a `--plugin-root` by design -- each
+    compares two already-resolved version strings passed explicitly
+    (`--installed-version`/`--effect-line` for the first,
+    `--resolved-version`/`--newest-cached-version` for the second) and
+    neither reads `$CLAUDE_PLUGIN_ROOT` internally at all, so the #789
+    degradation this test guards against (a silent env-var fallback) does not
+    apply to either."""
     text = _text()
     calls = [
         line
@@ -88,6 +91,7 @@ def test_checklist_skew_call_passes_plugin_root_explicitly():
         if "scripts/checklist_skew.py" in line
         and "python3" in line
         and "--compare-effect" not in line
+        and "--compare-root-freshness" not in line
     ]
     assert calls, "no checklist_skew.py invocation found in commands/release.md"
     for line in calls:
@@ -152,9 +156,10 @@ def _blocks_calling(script_name):
 
 def _blocks_requiring_plugin_root(script_name):
     """`_blocks_calling`, minus a block whose only invocation of `script_name`
-    is #1328's `--compare-effect` mode -- that call takes no `--plugin-root`
-    at all, so a block containing only that mode has no resolution step to
-    require in the first place."""
+    is #1328's `--compare-effect` mode or #1721's `--compare-root-freshness`
+    mode -- neither call takes a `--plugin-root` at all, so a block
+    containing only one of those modes has no resolution step to require in
+    the first place."""
     blocks = []
     for block in _blocks_calling(script_name):
         calls = [
@@ -162,7 +167,10 @@ def _blocks_requiring_plugin_root(script_name):
             for line in block.splitlines()
             if script_name in line and "python3" in line
         ]
-        if any("--compare-effect" not in line for line in calls):
+        if any(
+            "--compare-effect" not in line and "--compare-root-freshness" not in line
+            for line in calls
+        ):
             blocks.append(block)
     return blocks
 

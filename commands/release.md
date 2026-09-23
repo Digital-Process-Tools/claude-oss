@@ -264,6 +264,14 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
      GATE3_ROOT_ROUTE="pinned-root"
    fi
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --repo . --plugin-root "$GATE3_ROOT" --json
+   GATE3_RESOLVED_VERSION="$(python3 -c \
+     "import json,sys; print(json.load(open(sys.argv[1])).get('version',''))" \
+     "$GATE3_ROOT/.claude-plugin/plugin.json" 2>/dev/null)"
+   NEWEST_CACHED_VERSION="$(python3 "${CLAUDE_PLUGIN_ROOT}/scripts/plugin_update.py" \
+     --print-newest-cached-version 2>/dev/null)"
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/checklist_skew.py" --compare-root-freshness \
+     --resolved-version "$GATE3_RESOLVED_VERSION" \
+     --newest-cached-version "$NEWEST_CACHED_VERSION" --json
    ```
 
    Record `GATE3_ROOT_ROUTE` in the release report alongside the checklist-skew payload -- it names
@@ -311,6 +319,38 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
 
    This is where a `could not rank` usually comes from, and the two are still reported separately: a
    version skew is evidence about the cause, never a substitute for the agent's own answer.
+
+   **`--compare-root-freshness` is a separate, third axis, not a fifth state of the comparison
+   above (#1721).** `matches`/`differs`/`not-applicable`/`could-not-tell` name which checklist
+   version ran against this repo. They say nothing about whether `GATE3_ROOT` itself was the
+   newest copy of the plugin sitting on this machine: `resolved-install` is built from the version
+   *this project* has recorded, which a sibling project's more recent install, or a cache directory
+   nobody ever prunes, can leave behind without anything naming it -- gate 3 audited with one copy,
+   measured another, and a third was already installed, and nothing said so (the incident this
+   issue reports). Three states, quote them in the release report the same way the four above are
+   quoted:
+
+   - **`root-current`** — the resolved root's own version matches the newest version cached on this
+     machine. Nothing further to report.
+   - **`root-stale`** — they differ; name both. This is a **config finding**, the same weight as a
+     `differs`/`definitions` row above: the release audited with a checklist that is not the newest
+     copy available, and the release report must say so rather than let a `clean` verdict imply
+     otherwise.
+   - **`root-could-not-tell`** — either version could not be established (`newest_cached_version`
+     depends on the plugin's own marketplace resolving, the same dependency `resolved_plugin_root`
+     already has). Quote the `reason`. Never renders as `root-current`.
+
+   **Whether the spawn's own root can be pinned to `GATE3_ROOT` is already answered, not open**:
+   the spawn resolves its system prompt through the harness's own plugin registration, a mechanism
+   this session cannot reach into or override per-spawn -- see `--compare-effect` immediately below,
+   which exists *because* the two cannot be made to agree by construction and instead compares them
+   after the fact.
+
+   **A cache holding many superseded versions is tolerated, not pruned, by this fix.** Deleting a
+   cached version this project no longer points at is not this gate's decision to make silently: a
+   sibling project on the same machine may still be pinned to it, and `newest_cached_version` itself
+   has no notion of who else depends on a given copy. A pruning policy is a separate, deliberate
+   change with its own safety argument, not a side effect of measuring staleness.
 
    Then, and only for the two computable states of the range — and **mint a dispatch token first**,
    because it goes into the payload the spawn is handed and cannot be added afterwards. Any short

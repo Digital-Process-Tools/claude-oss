@@ -446,6 +446,66 @@ def _marketplace_refresh_command(name, dependencies, plugins_root=None):
     return bare + marketplaces, True
 
 
+def _version_key(text):
+    """A comparable tuple of leading digit-runs per dot-separated chunk
+    (``"0.10.0"`` -> ``(0, 10, 0)``), or ``None`` when a chunk has no digits
+    at all. Shared by `installed_version` (newest recorded for this project)
+    and `newest_cached_version` (newest sitting in the cache directory,
+    #1721) so the two cannot silently sort versions two different ways.
+    """
+    parts = []
+    for chunk in str(text).lstrip("vV").split("."):
+        digits = ""
+        for char in chunk:
+            if not char.isdigit():
+                break
+            digits += char
+        if not digits:
+            return None
+        parts.append(int(digits))
+    return tuple(parts) if parts else None
+
+
+def newest_cached_version(name, plugins_root=None):
+    """The highest version directory found under this plugin's own cache
+    tree -- ``<plugins_root>/cache/<marketplace>/<name>/*`` -- regardless of
+    which version any project currently has recorded (#1721).
+
+    This answers a different question from both existing lookups.
+    `installed_version` is "what THIS project is pinned to"; `resolved_plugin_root`
+    is "the on-disk copy that answer names". Neither can tell a caller whether
+    that recorded pin is itself behind the newest copy actually sitting on
+    this machine -- a copy installed once, superseded by an update elsewhere,
+    and never pruned still counts, because the question here is "what is the
+    newest copy on disk", not "what does any project actually use".
+
+    Returns ``None`` -- never a guess -- when the marketplace cannot be
+    resolved (an unqualified/local install, which this cache layout does not
+    describe) or the cache directory does not exist or holds nothing that
+    parses as a version.
+    """
+    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    qualified = qualified_name(name, plugins_root)
+    if "@" not in qualified:
+        return None
+    marketplace = qualified.split("@", 1)[1]
+    if not marketplace:
+        return None
+    cache_dir = root / "cache" / marketplace / name
+    try:
+        entries = [p.name for p in cache_dir.iterdir() if p.is_dir()]
+    except OSError:
+        return None
+    best = None
+    for version in entries:
+        candidate_key = _version_key(version)
+        if candidate_key is None:
+            continue
+        if best is None or candidate_key > (_version_key(best) or ()):
+            best = version
+    return best
+
+
 def installed_version(name, project_root, plugins_root=None):
     """The version recorded for ``name`` against THIS project, or ``None`` (#521).
 
@@ -477,19 +537,6 @@ def installed_version(name, project_root, plugins_root=None):
         statusline._normalized_path(project_root) if project_root is not None else None
     )
 
-    def key(text):
-        parts = []
-        for chunk in str(text).lstrip("vV").split("."):
-            digits = ""
-            for char in chunk:
-                if not char.isdigit():
-                    break
-                digits += char
-            if not digits:
-                return None
-            parts.append(int(digits))
-        return tuple(parts) if parts else None
-
     best = None
     for plugin_key, entries in (doc.get("plugins") or {}).items():
         if plugin_key.split("@", 1)[0] != name:
@@ -500,7 +547,9 @@ def installed_version(name, project_root, plugins_root=None):
             version = entry.get("version")
             if not version or version == "unknown":
                 continue
-            if best is None or (key(version) or ()) > (key(best) or ()):
+            if best is None or (_version_key(version) or ()) > (
+                _version_key(best) or ()
+            ):
                 best = version
     return best
 
@@ -1048,6 +1097,25 @@ def main(argv=None):
         # "run … inside Git Bash" case) already established this convention for the
         # identical reason; this follows it rather than inventing a second one.
         sys.stdout.write(resolved.as_posix())
+        return 0
+    if "--print-newest-cached-version" in argv:
+        # A read, not an update -- same non-mutating contract as
+        # --print-resolved-root above. #1721: gate 3 measures the version
+        # resolved for THIS project; this answers the separate question of
+        # whether that resolved version is the newest copy actually sitting
+        # in the cache, so a stale-but-resolved root becomes a named state
+        # rather than silent luck.
+        name = plugin_name()
+        if not name:
+            sys.stderr.write("could not read this plugin's own name\n")
+            return 1
+        newest = newest_cached_version(name)
+        if newest is None:
+            sys.stderr.write(
+                "could not resolve the newest cached version for {!r}\n".format(name)
+            )
+            return 1
+        sys.stdout.write(newest)
         return 0
     # Read once, threaded into `update()` as `receipt=` -- see that function's own
     # docstring for why this is the ONLY place that reads the real receipt for
