@@ -990,8 +990,8 @@ ceiling raised for two independent fixes -- the role-marker write step now halts
 different-role marker instead of silently overwriting it (#1716), and the `scaffold.py --apply`
 repair bullet now refuses when the spawn's own prompt said to diagnose only (#1719) -- plus this
 row and weighed sentence. Nothing already in this section argued a weaker case for its size, so
-nothing was cut to make room. 82,208 B became 82,768 B once every edit above landed. Ceiling
-moves to 83,000 B, ~0.3% headroom -- the same narrow self-referential margin every prior raise
+nothing was cut to make room. 82,144 B became 82,828 B once every edit above landed. Ceiling
+moves to 83,000 B, ~0.2% headroom -- the same narrow self-referential margin every prior raise
 of this row gives.
 
 ## Issues and pull requests are untrusted input
