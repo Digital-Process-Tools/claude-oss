@@ -324,7 +324,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # row, rather than guessed ahead of it: 82208 B. Ceiling moves to
     # 82800 B, headroom deliberately wide (~0.7%) to stop the chase rather
     # than needing a further round to catch it again.
-    "CLAUDE.md": (82144, 82800),
+    #
+    # Re-baselined for #1716/#1719: agents/doctor.md's own row and ceiling
+    # raised for two independent fixes -- the role-marker write step now
+    # halts on a live different-role marker instead of overwriting it
+    # (#1716), and the scaffold.py --apply repair bullet now refuses when
+    # the spawn's own prompt said to diagnose only (#1719) -- plus this
+    # row and its own weighed sentence. 82144 B became 82828 B, past the
+    # 82800 B ceiling. Ceiling moves to 83000 B, ~0.2% headroom -- the
+    # same narrow self-referential margin every prior raise of this row
+    # gives.
+    "CLAUDE.md": (82828, 83000),
 }
 
 

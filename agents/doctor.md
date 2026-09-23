@@ -34,7 +34,7 @@ branch and pushing, in a run whose own prompt said not to -- both now have a cod
 not only this sentence):
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write doctor
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write doctor; echo "write-exit:$?"
 python3 -c '
 import json, os, sys
 sys.path.insert(0, os.path.join(os.environ["CLAUDE_PLUGIN_ROOT"], "scripts"))
@@ -42,6 +42,12 @@ import agent_role
 print(json.dumps(agent_role.settings_local_digest(".")))
 '
 ```
+
+**`write-exit:3` means the write was refused: a live marker already names a different role**
+(#1716 -- most likely a tick's own `sub-manager`, mid-run). Overwriting it would silently disable
+that tick's release-authority refusal for the rest of its run. Stop here: skip everything below
+and report `could-not-tell: a live marker names a different role on disk -- refusing to declare
+doctor while it may be live` as your whole finding.
 
 The marker makes `scaffold.py --apply` refuse without `--i-was-asked`: your own scripted repair
 below passes that flag, since you are the reviewed, sanctioned caller for it; any other run of
@@ -60,7 +66,10 @@ For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
 
 1. **Ours to repair -- but first find out whether the write needs a commit at all.** An owned
    file missing or stale (`scripts/scaffold.py --apply --i-was-asked` -- the flag is required now
-   that the role marker you wrote above is live, #1690), a config gap `scripts/oss_config.py
+   that the role marker you wrote above is live, #1690, **and only when your own prompt did not
+   tell you to diagnose only or skip repair** -- if it did, #1719: never pass `--i-was-asked`, run
+   no `--apply` at all, and report `not-ours: repair skipped -- this run's own prompt said not to
+   repair` for the finding instead), a config gap `scripts/oss_config.py
    --probe`/`--build` can re-derive, a rule layer indexed but not installed -- anything a
    `doctor_check_*.py` already knows how to fix by running the tool it names. **Before writing a
    byte, check whether the path(s) the repair would write are tracked by git** -- an untracked or

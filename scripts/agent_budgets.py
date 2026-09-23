@@ -549,7 +549,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # underspecifying which git exit codes mean "could not tell" versus "no
     # match" -- fixed by stating the {0, 1} convention explicitly. Past the
     # 12200 B ceiling; ceiling moves to 12500 B, ~1.4% headroom.
-    "agents/doctor.md": (12331, 12500),
+    # Re-baselined for #1716/#1719: the role-marker write step now checks its
+    # own exit code and halts on a live different-role marker (#1716) instead
+    # of overwriting it, and the "Ours to repair" scaffold.py --apply bullet
+    # now refuses to run when the spawn's own prompt said to diagnose only
+    # (#1719), matching scaffold_apply_refusal's own "a caller that was
+    # genuinely told to run this passes the flag" contract instead of always
+    # supplying --i-was-asked regardless of instruction. 12331 B became
+    # 13062 B, past the 12500 B ceiling. Ceiling moves to 13300 B, ~1.8%
+    # headroom.
+    "agents/doctor.md": (13062, 13300),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the

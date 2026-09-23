@@ -51,7 +51,11 @@ Every line is one of the same three states doctor uses:
 - **The label vocabulary the triager needs** — read off the forge directly (`gh label list`, or
   `.oss.json`'s own `repo` key when one is loaded), classified with the same pattern the triager and
   `/oss:setup` both use. No `priority-*` label on the repo is a named gap, not a silent pass: the
-  triager correctly refuses to invent one rather than guessing.
+  triager correctly refuses to invent one rather than guessing. **When the whole family is entirely
+  absent, this command creates it** (`priority-high`/`-medium`/`-low`, #1686) rather than only
+  naming the gap — the one write this otherwise read-only audit makes, reported as `OK … created …`
+  rather than folded silently into a clean board (#1717). Any existing `priority-*`-shaped label,
+  in any spelling, is left untouched.
 - **Owned files**, and whether re-scaffolding would change them — only when `.oss.json` was found,
   because rendering what the plugin would write needs the config it renders from. Without one, this
   says so rather than skipping silently: `owned files: not checked -- .oss.json was not found`.
