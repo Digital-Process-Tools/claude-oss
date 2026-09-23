@@ -107,22 +107,20 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    with no ongoing lane) the write their own commit makes is the only thing that will ever trip that
    composite, and it read identically to a lane still producing work: a doctor repair blocked a due
    release for ~15 minutes with no lane anywhere. Run `git-worktrees` for each open PR's own
-   worktree, then compute `lane_active` rather than reading the composite by hand:
+   worktree and include its **head branch** in that PR's own object in the `--prs-json` payload,
+   alongside `occupied` under the key `lane_active`:
 
-   ```bash
-   python3 -c "
-   import sys
-   sys.path.insert(0, 'scripts')
-   import release_gate2
-   print(release_gate2.derive_lane_active('<branch>', <occupied: True/False/None/'unknown'>))
-   "
+   ```json
+   {"number": 2659, "branch": "doctor/statusline", "review_decision": null,
+    "lane_active": true, "latest_review_comment_age_minutes": null}
    ```
 
-   `<branch>` is the PR's own head branch; `<occupied>` is `git-worktrees`' reading for that
-   worktree (`True` for `occupied`, `False` for `idle`, `None` or `"unknown"` for `cannot tell`).
-   This narrows the rule to the two named prefixes -- an ordinary developer lane's worktree still
-   reads `occupied` as active unchanged, since it genuinely can be worked in during the window right
-   after a commit.
+   `decide()` narrows `lane_active` itself, inside `release_gate2.py`, whenever a `branch` key is
+   present -- the correction is no longer a separate step this document could describe and a release
+   run skip; the same `--prs-json` call gate 2 already makes applies it. Omit `branch` and the input
+   reads exactly as before #1725. An ordinary developer lane's worktree (`fix/{issue}`) still reads
+   `occupied` as active unchanged either way, since it genuinely can be worked in during the window
+   right after a commit -- only `doctor/*` and `curate/*` are narrowed.
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean, findings, or
    **could not run**. An audit that did not execute must never render as an audit that found nothing.
    **Two rounds, hard cap** — a competent audit of any non-trivial delta always finds something, so

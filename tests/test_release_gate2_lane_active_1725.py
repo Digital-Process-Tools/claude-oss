@@ -76,3 +76,62 @@ def test_is_loop_authored_branch_does_not_match_a_prefix_lookalike():
 def test_is_loop_authored_branch_handles_none_and_empty():
     assert release_gate2.is_loop_authored_branch(None) is False
     assert release_gate2.is_loop_authored_branch("") is False
+
+
+# The auditor spawned for this issue's own self-review found the correction
+# above was reachable only through a separate, hand-run snippet a release run
+# could skip -- so decide()/`_decide_one` now apply derive_lane_active()
+# themselves whenever a per-PR `branch` key is present. These tests exercise
+# that wiring end to end, through decide(), rather than the bare function.
+
+
+def test_decide_clears_a_doctor_branch_gate2_used_to_block():
+    """The exact incident shape: a doctor/* branch, occupied (lane_active
+    True as git-worktrees would report it), no formal review decision. Must
+    clear now that `branch` is supplied."""
+    verdict = release_gate2.decide(
+        [
+            {
+                "number": 2659,
+                "branch": "doctor/statusline",
+                "review_decision": None,
+                "lane_active": True,
+                "latest_review_comment_age_minutes": None,
+            }
+        ]
+    )
+    assert verdict["disposition"] == "clear"
+
+
+def test_decide_positive_control_ordinary_branch_still_blocks():
+    """The identical facts, for a branch that is not loop-authored, must
+    still block -- the wiring narrows two prefixes, it does not disable the
+    signal for everyone."""
+    verdict = release_gate2.decide(
+        [
+            {
+                "number": 1725,
+                "branch": "fix/1725",
+                "review_decision": None,
+                "lane_active": True,
+                "latest_review_comment_age_minutes": None,
+            }
+        ]
+    )
+    assert verdict["disposition"] == "blocked-by:1725"
+
+
+def test_decide_without_a_branch_key_preserves_pre_1725_behaviour():
+    """Omitting `branch` entirely (the pre-#1725 payload shape) must behave
+    exactly as it did before this fix -- lane_active trusted as given."""
+    verdict = release_gate2.decide(
+        [
+            {
+                "number": 2659,
+                "review_decision": None,
+                "lane_active": True,
+                "latest_review_comment_age_minutes": None,
+            }
+        ]
+    )
+    assert verdict["disposition"] == "blocked-by:2659"
