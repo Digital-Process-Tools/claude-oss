@@ -35,8 +35,11 @@ necessarily clear it. Two consequences worth knowing before the first tick:
   approval of the first does not carry to the second.
 - The obvious fallback is worse than the thing it replaces. Raw `gh pr merge` is refused by
   supertool's own guard, and rightly: the op is what does the leg-level arithmetic and reads
-  `state` / `mergedAt` / `mergeCommit` back. **Do not route around a denied merge.** Say the call
-  was denied, name it exactly, and let the maintainer run or permit it.
+  `state` / `mergedAt` / `mergeCommit` back. **A denied merge follows SKILL.md's classifier-denial
+  rule (#1724): retry the identical, unmodified call once, and report the outcome either way.** A
+  second denial on the identical call is handed over -- say the call was denied, name it exactly,
+  and let the maintainer run or permit it. Never retry a third time, and never reword the call to
+  get past it.
 
 **Which spelling to type.** Use the bare `supertool 'gh-pr-merge:N:squash|force'` from the clone
 root — an allowlist rule anchored on the `supertool ` prefix matches it. **Do not use
@@ -47,7 +50,10 @@ merge per Bash call — a loop or a compound command no longer *starts* with the
 is denied even when each call inside it would be allowed on its own. And **read
 `Blocked by classifier` as a claim about the command string, not about the action** (#445): on a call
 the allowlist appears to cover, it means the spelling in front of the op differs from the one the
-rule was written against, not that merging itself was refused.
+rule was written against, not that merging itself was refused. This is about picking the right
+spelling *before* the first call, not license to reword and re-send once denied -- a denial on the
+spelling above still follows the one-retry rule two paragraphs up, never a second attempt with a
+different spelling.
 
 ## Merge gates
 

@@ -183,7 +183,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # `labels.priority`/`labels.lane_other` inline, matching what
         # review.md already says, instead of stating attachment
         # unconditionally. Ceiling unchanged.
-        42862,
+        # Re-baselined for #1724: 42862 B became 44338 B -- one canonical
+        # classifier-denial rule (retry once, report either way, never
+        # reword the call) replaces three inconsistently-worded copies in
+        # tick-order.md, merge.md and commands/release.md, plus a
+        # one-sentence distinction from the neighbouring "do the step
+        # yourself" bullet, which governs a different actor. Comfortably
+        # under the 44800 B ceiling; ceiling unchanged.
+        44338,
         44800,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
@@ -585,7 +592,12 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # still a fact to read rather than recall, so the "two of those
         # gates" sentence now says one. Ceiling unchanged; comfortably under
         # it.
-        15596,
+        # Re-baselined for #1724: 15596 B became 16082 B -- a denied merge
+        # now names SKILL.md's canonical classifier-denial rule instead of
+        # only "do not route around it", and the command-string framing a
+        # sub-manager misread as retry license now says explicitly that it
+        # is not. Ceiling unchanged; comfortably under it.
+        16082,
         16400,
         "merging: the gates, the call itself, and what is still owed after green",
     ),
@@ -837,7 +849,11 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # `lane-collision` check `select_issues_overlap.py`/
         # `select_issues_companions.py` no longer perform, retired by
         # #1528/#1530. Ceiling unchanged.
-        35480,
+        # Re-baselined for #1724: 35480 B became 35518 B -- the
+        # classifier-denial paragraph now points at SKILL.md's single
+        # canonical rule instead of restating it, net larger by one short
+        # pointer sentence. Ceiling unchanged; comfortably under it.
+        35518,
         36000,
         "a sub-manager's own order of operations: steps 1 through 6 of a tick, and what ends one",
     ),

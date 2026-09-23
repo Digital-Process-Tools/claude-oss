@@ -334,7 +334,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 82800 B ceiling. Ceiling moves to 83000 B, ~0.2% headroom -- the
     # same narrow self-referential margin every prior raise of this row
     # gives.
-    "CLAUDE.md": (82828, 83000),
+    # Re-baselined for #1724: one canonical classifier-denial rule
+    # replaces three inconsistently-worded copies across SKILL.md,
+    # tick-order.md and merge.md, plus this row and its own weighed
+    # sentence. 82828 B became 84953 B, past the 83000 B ceiling.
+    # Ceiling moves to 86000 B, written with deliberately wide headroom
+    # rather than a tight margin, per the recorded self-referential-
+    # overshoot trap for this exact row.
+    "CLAUDE.md": (84953, 86000),
 }
 
 
