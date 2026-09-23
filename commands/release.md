@@ -93,12 +93,36 @@ Nothing in `.oss.json` can switch one off. Each is a call, not a feeling:
    arguing it from the same facts twice (#1681) -- two releaser runs on the same open, unreviewed
    pull request reached opposite verdicts four hours apart with nothing about the PR itself having
    changed. Three states, the same shape gate 3 gives: `clear` / `blocked-by:N` / `could-not-tell`.
-   Feed it each open PR's `review_decision`, whether a lane is still alive in its own worktree
-   (`git-worktrees`), and its latest review comment's age. `CHANGES_REQUESTED`/`REVIEW_REQUIRED`, an
-   active lane, or a comment inside the 30-minute default window are in-flight; `NONE` with none of
-   those is ordinary backlog and clears -- whether or not `tick-merge` already declined it for scope,
-   since waiting on the maintainer is not the same fact as a review round in progress. A signal that
-   could not be read is `could-not-tell`, never folded into clear.
+   Feed it each open PR's `review_decision`, its `lane_active` (below), and its latest review
+   comment's age. `CHANGES_REQUESTED`/`REVIEW_REQUIRED`, an active lane, or a comment inside the
+   30-minute default window are in-flight; `NONE` with none of those is ordinary backlog and clears
+   -- whether or not `tick-merge` already declined it for scope, since waiting on the maintainer is
+   not the same fact as a review round in progress. A signal that could not be read is
+   `could-not-tell`, never folded into clear.
+
+   **Do not hand `git-worktrees`' `occupied` bit straight through as `lane_active` (#1725).** That
+   bit ORs together five different probes -- a lock, an in-progress rebase/merge/cherry-pick, a
+   write newer than its own activity window, or a process cwd'd inside the tree -- and reports only
+   the composite. For `doctor/*` and `curate/*` branches (single-spawn, commit-and-die procedures
+   with no ongoing lane) the write their own commit makes is the only thing that will ever trip that
+   composite, and it read identically to a lane still producing work: a doctor repair blocked a due
+   release for ~15 minutes with no lane anywhere. Run `git-worktrees` for each open PR's own
+   worktree, then compute `lane_active` rather than reading the composite by hand:
+
+   ```bash
+   python3 -c "
+   import sys
+   sys.path.insert(0, 'scripts')
+   import release_gate2
+   print(release_gate2.derive_lane_active('<branch>', <occupied: True/False/None/'unknown'>))
+   "
+   ```
+
+   `<branch>` is the PR's own head branch; `<occupied>` is `git-worktrees`' reading for that
+   worktree (`True` for `occupied`, `False` for `idle`, `None` or `"unknown"` for `cannot tell`).
+   This narrows the rule to the two named prefixes -- an ordinary developer lane's worktree still
+   reads `occupied` as active unchanged, since it genuinely can be worked in during the window right
+   after a commit.
 3. **A security audit of the delta since the last tag passed.** Three outcomes: clean, findings, or
    **could not run**. An audit that did not execute must never render as an audit that found nothing.
    **Two rounds, hard cap** — a competent audit of any non-trivial delta always finds something, so

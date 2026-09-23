@@ -102,6 +102,58 @@ EXIT_CLEAR = 0
 EXIT_BLOCKED = 1
 EXIT_COULD_NOT_TELL = 2
 
+# Loop-authored branch prefixes: single-spawn, commit-and-die procedures with
+# no ongoing multi-turn lane -- a doctor repair or a curate pass, never a
+# developer lane's own `fix/{issue}` branch. See derive_lane_active() (#1725).
+LOOP_AUTHORED_BRANCH_PREFIXES = ("doctor/", "curate/")
+
+
+def is_loop_authored_branch(branch):
+    """True when ``branch`` is one of this loop's own single-spawn branches
+    (`doctor/*`, `curate/*`) -- never a developer lane's `fix/{issue}`
+    branch. ``None`` and the empty string are False, not an error: a caller
+    that never established the branch name gets the same answer a caller
+    that established it is not one of these two prefixes gets, which is the
+    conservative direction here (does not suppress a real lane_active
+    reading).
+    """
+    return bool(branch) and branch.startswith(LOOP_AUTHORED_BRANCH_PREFIXES)
+
+
+def derive_lane_active(branch, occupied):
+    """Gate 2's own ``lane_active`` input, computed from git-worktrees'
+    ``occupied`` reading rather than passed through unchanged (#1725).
+
+    Observed on claude-supertool: the releaser refused at gate 2 with
+    ``blocked-by:N``, reading "a lane process is alive" for a PR whose
+    worktree held no lane at all -- it was a `doctor/*` branch the scheduler's
+    own repair had just committed and pushed. `git-worktrees`' own
+    ``occupied`` verdict ORs together an index-lock, an in-progress
+    rebase/merge/cherry-pick, a `git worktree lock`, a write newer than its
+    own activity window, and a process cwd'd inside the tree, and reports
+    only the composite bit -- never which probe tripped. For a `doctor/*` or
+    `curate/*` branch that composite is systematically wrong: both are
+    single-spawn, commit-and-die passes, so the write their own commit makes
+    is the only thing that will ever trip "occupied" for them, and it is
+    indistinguishable in the composite from a lane still producing work.
+
+    For those two prefixes, ``occupied`` is therefore never read as
+    ``lane_active`` on its own -- this returns ``False`` for them regardless
+    of what ``occupied`` says. Every other branch reads ``occupied``
+    unchanged: an ordinary developer lane's worktree genuinely can be
+    actively worked in during the window right after a commit, and there is
+    no equivalent reason to distrust the signal there.
+
+    ``occupied`` is passed through unchanged for ``None`` or the literal
+    string ``"unknown"`` -- a reading that was never established must not be
+    overwritten either way by the branch-name rule.
+    """
+    if occupied is None or occupied == UNKNOWN:
+        return occupied
+    if is_loop_authored_branch(branch):
+        return False
+    return occupied
+
 
 def _decide_one(pr, threshold_minutes):
     """Return the per-PR read: {"number", "status", "reason"}.
