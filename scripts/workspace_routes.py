@@ -246,38 +246,33 @@ def _with_fetch_freshness(why, repo_root, run, git_bin):
 def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     """(count_or_None, why). `count` is `None` only on `could-not-read`.
 
-    #1476: a shared checkout can be standing on any branch when this runs,
-    and `trap.d/` at that branch's own working tree is not the same fact as
-    `trap.d/` on the repository's own default branch -- the incident this
-    closes had a curate commit already pushed to `main` while the checkout
-    itself had meanwhile moved to a feature branch cut before that commit,
-    and this reported the stale branch's own leftover fragments as though
-    they were `main`'s.
+    #1723: a lane, the releaser, and `worktree_reap.py`'s own
+    `harvest_fragments` all write `trap.d/*.md` fragments straight into the
+    clone's working tree as a plain filesystem copy -- no `git add`, no
+    commit. Those fragments are untracked on EVERY branch, not just
+    whichever one happens to be checked out, and a fresh `/oss:curate`
+    worktree (`git worktree add ... origin/<default_branch>`) starts from
+    committed history only, so it can never see them either way. The
+    earlier version of this function (#1476) only counted them when the
+    checkout WAS the default branch, which reported a number `/oss:curate`
+    itself could never match on any branch -- the disagreement #1723 is
+    about.
 
-    So: when `config` names a `default_branch`, this decides which tree to
-    read by first asking which branch is actually checked out, and never
-    guesses:
+    So: when `config` names a `default_branch`, the count is now always the
+    union of two reads, regardless of which branch is checked out:
 
-    - the checkout IS the default branch -> read the working tree
-      (`trap_curate.waiting`), so a just-committed, not-yet-pushed curate
-      run stays visible before it is pushed;
-    - the checkout is standing on some OTHER, known branch -> read
-      `origin/<default_branch>`'s own committed tree via `git ls-tree`
-      (`trap_curate.waiting_at_ref`) instead of the working directory --
-      never the wrong branch's disk state. #1522: nothing on this path
-      fetches, so `why` also carries how long ago this checkout's last
-      `git fetch` ran (`_with_fetch_freshness`) -- a confident count is
-      only ever as fresh as that, and a caller comparing two readings
-      needs the signal to tell a stale one from a fresh one;
-    - the current branch could not even be determined (self-review
-      finding, Explore reviewer, #1476: an earlier version of this
-      function fell back to the working-tree read here too, silently
-      reintroducing the exact bug this closes whenever `git rev-parse
-      --abbrev-ref HEAD` itself failed to run) -> `could-not-count`,
-      never a guessed read of whichever tree happens to be on disk. This
-      module's own docstring already states the rule this follows: "a
-      repository this could not look at must not read the same as one
-      that is genuinely fine."
+    - `origin/<default_branch>`'s own committed tree via `git ls-tree`
+      (`trap_curate.waiting_at_ref`, unchanged from #1476);
+    - the clone's own untracked `trap.d/*.md` files
+      (`trap_curate.untracked_fragments`, #1723) -- exactly the set
+      `/oss:curate`'s own setup step now copies into its fresh worktree
+      before it reads anything (`commands/run/curate.md`), so this count
+      and what that pass evaluates agree on the same fixture.
+
+    Either read failing is `could-not-count` -- never a guessed read of
+    only the half that succeeded. #1522: nothing on the ref-read path
+    fetches, so `why` also carries how long ago this checkout's last `git
+    fetch` ran (`_with_fetch_freshness`).
 
     When no `default_branch` is configured at all, this preserves the
     function's original, no-config-passed behaviour -- an unconditional
@@ -286,26 +281,32 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     it never reads `origin/*` at all, so there is nothing to date."""
     default_branch = (config or {}).get("default_branch")
     if isinstance(default_branch, str) and default_branch.strip():
-        current, why = _current_branch(repo_root, run=run, git_bin=git_bin)
-        if current is None:
-            return None, (
-                "the checked-out branch could not be determined, so whether "
-                "trap.d/ belongs to {0} could not be told ({1})".format(
-                    default_branch, why
-                )
+        ref_result = trap_curate.waiting_at_ref(
+            repo_root,
+            "origin/{0}".format(default_branch),
+            run=run,
+            git_bin=git_bin,
+        )
+        if ref_result["state"] == "could-not-read":
+            return None, ref_result["why"]
+        stray_result = trap_curate.untracked_fragments(
+            repo_root, run=run, git_bin=git_bin
+        )
+        if stray_result["state"] == "could-not-read":
+            return None, stray_result["why"]
+        combined = {f["name"] for f in ref_result["fragments"]} | {
+            f["name"] for f in stray_result["fragments"]
+        }
+        why = (
+            "{0} fragment(s) at origin/{1} plus {2} untracked in the clone's "
+            "own working tree = {3} total".format(
+                len(ref_result["fragments"]),
+                default_branch,
+                len(stray_result["fragments"]),
+                len(combined),
             )
-        if current != default_branch:
-            result = trap_curate.waiting_at_ref(
-                repo_root,
-                "origin/{0}".format(default_branch),
-                run=run,
-                git_bin=git_bin,
-            )
-            if result["state"] == "could-not-read":
-                return None, result["why"]
-            return result["count"], _with_fetch_freshness(
-                result["why"], repo_root, run, git_bin
-            )
+        )
+        return len(combined), _with_fetch_freshness(why, repo_root, run, git_bin)
     result = trap_curate.waiting(repo_root)
     if result["state"] == "could-not-read":
         return None, result["why"]

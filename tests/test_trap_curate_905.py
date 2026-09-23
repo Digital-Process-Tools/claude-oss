@@ -226,3 +226,220 @@ def test_doctor_never_reports_an_unreadable_queue_as_empty(tmp_path):
         assert "none waiting" not in line
     finally:
         os.chmod(d, 0o755)
+
+
+# --- #1723: producer, counter and consumer agreeing on the same set --------------------------
+#
+# A lane, the releaser and `worktree_reap.py`'s own `harvest_fragments` all write `trap.d/*.md`
+# fragments straight into the clone's working tree as a plain filesystem copy, never a commit.
+# `untracked_fragments` is the read that sees them; `copy_stray_into` and `sweep_resolved` are
+# how a curate pass, cut fresh from `origin/<default_branch>`, evaluates and then reconciles them.
+
+import subprocess  # noqa: E402
+
+import workspace_routes  # noqa: E402
+
+
+def _git_env():
+    env = dict(os.environ)
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_SYSTEM"] = os.devnull
+    return env
+
+
+def _run(args, cwd, env=None):
+    return subprocess.run(
+        args,
+        cwd=str(cwd),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
+        env=env or _git_env(),
+    )
+
+
+@pytest.fixture
+def clone(tmp_path):
+    """A real git repo on `main`, with `origin/main` faked at the same clean
+    commit -- the same shape `test_workspace_routes_1155.py`'s own
+    `repo_on_main` fixture uses, kept local here so this module does not
+    depend on that one."""
+    root = tmp_path / "clone"
+    root.mkdir()
+    env = _git_env()
+    done = _run(["git", "init", "--quiet", "."], cwd=root, env=env)
+    if done.returncode != 0:
+        pytest.skip("git init failed here: {0}".format(done.stderr.strip()))
+    _run(["git", "config", "user.email", "t@example.com"], cwd=root, env=env)
+    _run(["git", "config", "user.name", "t"], cwd=root, env=env)
+    (root / "README.md").write_text("hello\n")
+    _run(["git", "add", "."], cwd=root, env=env)
+    _run(["git", "checkout", "--quiet", "-B", "main"], cwd=root, env=env)
+    _run(["git", "commit", "--quiet", "-m", "initial"], cwd=root, env=env)
+    _run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=root,
+        env=env,
+    )
+    return root
+
+
+def test_untracked_fragments_sees_a_plain_filesystem_copy(clone):
+    """The producer side (`harvest_fragments`, a releaser session): a
+    fragment written straight into `trap.d/` with no `git add` is
+    untracked, and this is the read that reports it, distinctly from
+    `waiting()`'s own bare `os.listdir` (which would count it too, but
+    with no way to tell it apart from a committed one)."""
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.stray.md").write_text("x\n")
+    r = trap_curate.untracked_fragments(clone)
+    assert r["state"] == "waiting"
+    assert r["count"] == 1
+    assert r["fragments"][0]["name"] == "1.stray.md"
+
+
+def test_untracked_fragments_ignores_a_committed_one(clone):
+    env = _git_env()
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.committed.md").write_text("x\n")
+    _run(["git", "add", "trap.d"], cwd=clone, env=env)
+    _run(["git", "commit", "--quiet", "-m", "committed fragment"], cwd=clone, env=env)
+    r = trap_curate.untracked_fragments(clone)
+    assert r["state"] == "none"
+    assert r["count"] == 0
+
+
+def test_untracked_fragments_does_not_descend_into_a_subdirectory(clone):
+    """Mirrors `waiting_at_ref`'s own deliberately-not-recursive note
+    (self-review finding, Explore reviewer, #1476): `--untracked-files=all`
+    is needed to see a fragment inside a wholly-untracked `trap.d/` at all,
+    but it also expands one level deeper than `waiting()`'s own
+    `os.listdir` ever would -- a fragment nested inside a subdirectory of
+    `trap.d/` must not be counted."""
+    (clone / "trap.d" / "sub").mkdir(parents=True)
+    (clone / "trap.d" / "1.top.md").write_text("x\n")
+    (clone / "trap.d" / "sub" / "2.nested.md").write_text("y\n")
+    r = trap_curate.untracked_fragments(clone)
+    assert r["count"] == 1, r
+    assert r["fragments"][0]["name"] == "1.top.md"
+
+
+def test_untracked_fragments_on_a_missing_git_binary_is_could_not_read(clone):
+    def _boom(command, **kwargs):
+        raise FileNotFoundError("git not on PATH")
+
+    r = trap_curate.untracked_fragments(clone, run=_boom)
+    assert r["state"] == "could-not-read"
+    assert r["count"] is None
+
+
+def test_copy_stray_into_copies_without_touching_the_clone(clone, tmp_path):
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.stray.md").write_text("stray body\n")
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+    state, copied, skipped, why = trap_curate.copy_stray_into(clone, worktree)
+    assert state == "ok", why
+    assert copied == ["1.stray.md"]
+    assert not skipped
+    assert (worktree / "trap.d" / "1.stray.md").read_text() == "stray body\n"
+    # never touches the clone
+    assert (clone / "trap.d" / "1.stray.md").exists()
+
+
+def test_copy_stray_into_skips_a_name_collision_rather_than_overwriting(
+    clone, tmp_path
+):
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.same.md").write_text("clone body\n")
+    worktree = tmp_path / "curate-worktree"
+    (worktree / "trap.d").mkdir(parents=True)
+    (worktree / "trap.d" / "1.same.md").write_text("worktree body\n")
+    state, copied, skipped, why = trap_curate.copy_stray_into(clone, worktree)
+    assert state == "ok", why
+    assert not copied
+    assert skipped and skipped[0][0] == "1.same.md"
+    assert (worktree / "trap.d" / "1.same.md").read_text() == "worktree body\n"
+
+
+def test_sweep_resolved_removes_only_names_now_absent_from_the_worktree(
+    clone, tmp_path
+):
+    """The end-of-pass cleanup: `1.resolved.md` was copied in and then
+    deleted from the worktree as part of a promote/merge/decline
+    disposition -- its stale original in the clone is removed.
+    `2.deferred.md` is still sitting in the worktree (deferred), so its
+    clone-side original is left exactly where it was."""
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.resolved.md").write_text("x\n")
+    (clone / "trap.d" / "2.deferred.md").write_text("y\n")
+    worktree = tmp_path / "curate-worktree"
+    (worktree / "trap.d").mkdir(parents=True)
+    (worktree / "trap.d" / "2.deferred.md").write_text("y\n")  # still here -- deferred
+
+    state, removed, failures, why = trap_curate.sweep_resolved(
+        clone, worktree, ["1.resolved.md", "2.deferred.md"]
+    )
+    assert state == "ok", why
+    assert removed == ["1.resolved.md"]
+    assert not failures
+    assert not (clone / "trap.d" / "1.resolved.md").exists()
+    assert (clone / "trap.d" / "2.deferred.md").exists()
+
+
+def test_sweep_resolved_is_idempotent_on_an_already_removed_name(clone, tmp_path):
+    """A name that is already gone from the clone (swept once already, or
+    never actually copied) is not a failure -- the goal state is 'absent',
+    and it already is."""
+    (clone / "trap.d").mkdir()
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+    state, removed, failures, why = trap_curate.sweep_resolved(
+        clone, worktree, ["1.never-there.md"]
+    )
+    assert state == "ok", why
+    assert removed == ["1.never-there.md"]
+    assert not failures
+
+
+def test_the_counter_and_the_curate_pass_report_the_same_number_on_one_fixture(
+    clone, tmp_path
+):
+    """#1723's own literal ask: the count that decides a curate pass is due
+    and what that pass actually evaluates, on one fixture with both a
+    committed fragment and an untracked one, must agree -- the disagreement
+    this issue was filed against."""
+    env = _git_env()
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.committed.md").write_text("x\n")
+    _run(["git", "add", "trap.d"], cwd=clone, env=env)
+    _run(["git", "commit", "--quiet", "-m", "committed fragment"], cwd=clone, env=env)
+    _run(
+        ["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+        cwd=clone,
+        env=env,
+    )
+    (clone / "trap.d" / "2.stray.md").write_text("y\n")  # untracked
+
+    count, why = workspace_routes.curate_count(
+        str(clone), config={"default_branch": "main"}
+    )
+    assert count == 2, why
+
+    # the curate pass's own setup: a fresh worktree from origin/main sees
+    # only the committed fragment until it copies the clone's strays in
+    worktree = tmp_path / "curate-worktree"
+    _run(
+        ["git", "worktree", "add", str(worktree), "origin/main"],
+        cwd=clone,
+        env=env,
+    )
+    before = trap_curate.waiting(worktree)
+    assert before["count"] == 1, before
+
+    state, copied, skipped, copy_why = trap_curate.copy_stray_into(clone, worktree)
+    assert state == "ok", copy_why
+    assert not skipped
+
+    after = trap_curate.waiting(worktree)
+    assert after["count"] == count, (after, count, why)
