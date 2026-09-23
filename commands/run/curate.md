@@ -39,11 +39,13 @@ there:
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/trap_curate.py" . --copy-stray-from <clone>
 ```
 
-Capture its own `copied N stray fragment(s) from <clone>: <names>` line — that exact comma list is
-`<copied names>` below, needed again at the very end of this pass. `could-not-read` here means the
-stray scan itself failed (not that `trap.d/` is empty) — leave the worktree in place and say so,
-the same way the `could-not-read` outcome below is handled, rather than treating a failed scan as
-zero strays and continuing.
+Capture the value of its own `STRAY-NAMES: <names>` line, verbatim — that exact comma list (which
+may be empty, when nothing was copied) is `<copied names>` below, needed again at the very end of
+this pass. **Read the `STRAY-NAMES:` line specifically, not the human `copied N stray fragment(s)
+from <clone>` sentence above it** — that sentence names a count for a person, never a list to
+re-paste. `could-not-read` here means the stray scan itself failed (not that `trap.d/` is empty) —
+leave the worktree in place and say so, the same way the `could-not-read` outcome below is handled,
+rather than treating a failed scan as zero strays and continuing.
 
 Read what is waiting:
 
@@ -204,6 +206,10 @@ are now gone from this worktree were resolved — captured safely into this pass
 the untracked original still sitting in `<clone>` is a stale duplicate that would otherwise inflate
 every later `curate_count` forever, the exact failure #1723 was filed against. Whichever are still
 present were deferred, and stay in `<clone>` untouched, so the next pass finds them the same way.
+
+**Skip this step entirely if `<copied names>` was empty** — nothing was copied in at the start of
+this pass, so there is nothing in `<clone>` for it to reconcile, and passing an empty `--copied`
+value is a pointless round trip rather than a wrong one.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/trap_curate.py" . --sweep-resolved-in <clone> --copied <copied names>

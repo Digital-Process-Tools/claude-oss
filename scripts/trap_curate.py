@@ -231,6 +231,19 @@ def untracked_fragments(root, run=subprocess.run, git_bin=None, timeout=15):
     """
     command = [
         git_bin or "git",
+        # Self-review finding (oss:auditor spawn, #1723): git C-quotes any
+        # path holding a non-ASCII byte by default (`core.quotePath=true`),
+        # e.g. `"trap.d/1.caf\\303\\251.md"` -- octal-escaped, wrapped in
+        # quotes. `-c core.quotePath=false` turns that off, so a non-ASCII
+        # fragment name comes back as plain UTF-8 and is never silently
+        # mangled or dropped by the parsing below. A literal `"`, backslash
+        # or control character in a name is still quoted regardless of this
+        # setting (git's own behaviour); `FRAGMENT_RE`-conforming names
+        # never contain one, so that residual case can only ever affect an
+        # already-malformed name, which is reported rather than lost --
+        # see the parsing note below.
+        "-c",
+        "core.quotePath=false",
         "-C",
         str(root),
         "status",
@@ -272,8 +285,27 @@ def untracked_fragments(root, run=subprocess.run, git_bin=None, timeout=15):
     for line in _decode(done.stdout).splitlines():
         if not line.startswith("??"):
             continue
-        rel = line[3:].strip().strip('"')
-        rel_posix = rel.replace("\\", "/").rstrip("/")
+        rel = line[3:].strip()
+        if len(rel) >= 2 and rel[0] == '"' and rel[-1] == '"':
+            # Self-review finding (oss:auditor spawn, Explore reviewer,
+            # #1723): the earlier version stripped one quote character
+            # unconditionally and then ran a blanket backslash-to-slash
+            # replace meant for a Windows path separator that git's own
+            # porcelain output never actually contains -- against a real
+            # C-quoted entry (a literal quote, backslash or control
+            # character in the name; `-c core.quotePath=false` above
+            # already stops every OTHER path from being quoted at all)
+            # that replace corrupted the octal escape instead of decoding
+            # it. This only strips the enclosing quotes; it does not
+            # further unescape a backslash sequence inside them, so a name
+            # that still needed C-quoting even with quotePath off is
+            # reported with its raw, still-escaped spelling rather than a
+            # silently mangled one -- `_classify` still counts it (a
+            # malformed name is reported, never dropped), and
+            # `copy_stray_into` will fail to find the real file at that
+            # spelling and report it as `skipped`, never lose it silently.
+            rel = rel[1:-1]
+        rel_posix = rel.rstrip("/")
         if not rel_posix.startswith(prefix):
             continue
         remainder = rel_posix[len(prefix) :]
@@ -404,13 +436,39 @@ def render(result):
     return "\n".join(lines)
 
 
+#: Self-review finding (oss:auditor spawn, #1723): the first version of
+#: `main` read a flag's value with `rest[rest.index(flag) + 1]`, which
+#: raises an uncaught `IndexError` (a bare traceback, exit via Python's own
+#: crash path rather than this module's own `could-not-read` reporting) when
+#: the flag is the very last token -- and `commands/run/curate.md`'s own
+#: literal `--sweep-resolved-in <clone> --copied <copied names>` invocation
+#: produces exactly that shape whenever nothing was copied in. `_flag`
+#: returns three distinct answers -- `None` (not given at all), `_MISSING`
+#: (given with nothing after it), or the value -- so a caller can tell
+#: "optional and absent" from "present but malformed" instead of indexing
+#: past the end of `argv`.
+_MISSING = object()
+
+
+def _flag(rest, name):
+    if name not in rest:
+        return None
+    idx = rest.index(name)
+    if idx + 1 >= len(rest):
+        return _MISSING
+    return rest[idx + 1]
+
+
 def main(argv):
     args = argv[1:]
     root = args[0] if args else "."
     rest = args[1:]
 
     if "--copy-stray-from" in rest:
-        clone = rest[rest.index("--copy-stray-from") + 1]
+        clone = _flag(rest, "--copy-stray-from")
+        if clone is _MISSING:
+            print("trap.d: could-not-read -- --copy-stray-from needs a path argument")
+            return 1
         state, copied, skipped, why = copy_stray_into(clone, root)
         if state == "could-not-read":
             print(
@@ -420,22 +478,35 @@ def main(argv):
             )
             return 1
         print(
-            "trap.d: copied {0} stray fragment(s) from {1}: {2}".format(
-                len(copied), clone, ",".join(copied) if copied else "(none)"
-            )
+            "trap.d: copied {0} stray fragment(s) from {1}".format(len(copied), clone)
         )
         for name, reason in skipped:
             print("  skipped {0}: {1}".format(name, reason))
+        # A dedicated, machine-parseable line rather than folding the list
+        # into the sentence above: self-review finding (Explore reviewer,
+        # #1723), the earlier version printed a human "(none)" placeholder
+        # inside the exact comma-list `commands/run/curate.md` told the
+        # caller to capture verbatim, so an empty result threaded the
+        # literal string "(none)" into `--copied` at the end of the pass
+        # rather than an empty value.
+        print("STRAY-NAMES: {0}".format(",".join(copied)))
         print(render(waiting(root)))
         # Exit 0 in every state -- see the note on the plain-read branch below.
         return 0
 
     if "--sweep-resolved-in" in rest:
-        clone = rest[rest.index("--sweep-resolved-in") + 1]
-        copied_arg = ""
-        if "--copied" in rest:
-            copied_arg = rest[rest.index("--copied") + 1]
-        copied_names = [n for n in copied_arg.split(",") if n]
+        clone = _flag(rest, "--sweep-resolved-in")
+        if clone is _MISSING:
+            print("trap.d: could-not-read -- --sweep-resolved-in needs a path argument")
+            return 1
+        copied_arg = _flag(rest, "--copied")
+        if copied_arg is _MISSING:
+            print(
+                "trap.d: could-not-read -- --copied needs a value (pass an empty "
+                "string, or omit the flag entirely, for nothing to sweep)"
+            )
+            return 1
+        copied_names = [n for n in (copied_arg or "").split(",") if n]
         state, removed, failures, why = sweep_resolved(clone, root, copied_names)
         if state == "could-not-read":
             print(
@@ -444,10 +515,11 @@ def main(argv):
             )
             return 1
         print(
-            "trap.d: removed {0} resolved stray fragment(s) from {1}: {2}".format(
-                len(removed), clone, ",".join(removed) if removed else "(none)"
+            "trap.d: removed {0} resolved stray fragment(s) from {1}".format(
+                len(removed), clone
             )
         )
+        print("STRAY-NAMES: {0}".format(",".join(removed)))
         for name, reason in failures:
             print("  failed to remove {0}: {1}".format(name, reason))
         return 0

@@ -324,6 +324,23 @@ def test_untracked_fragments_does_not_descend_into_a_subdirectory(clone):
     assert r["fragments"][0]["name"] == "1.top.md"
 
 
+def test_untracked_fragments_counts_a_non_ascii_filename(clone):
+    """Self-review finding (oss:auditor spawn, #1723): git C-quotes any
+    path holding a non-ASCII byte by default (`core.quotePath=true`) --
+    e.g. an octal-escaped, double-quoted entry -- and the first version of
+    this parser stripped only the outer quote and then ran a blanket
+    backslash-to-slash replace that corrupted the escape rather than
+    decoding it, silently dropping the fragment from the count entirely.
+    `-c core.quotePath=false` on the `git status` call sidesteps this by
+    never quoting a non-ASCII path in the first place."""
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1723.café.md").write_text("x\n")
+    r = trap_curate.untracked_fragments(clone)
+    assert r["state"] == "waiting", r
+    assert r["count"] == 1, r
+    assert r["fragments"][0]["name"] == "1723.café.md"
+
+
 def test_untracked_fragments_on_a_missing_git_binary_is_could_not_read(clone):
     def _boom(command, **kwargs):
         raise FileNotFoundError("git not on PATH")
@@ -400,6 +417,85 @@ def test_sweep_resolved_is_idempotent_on_an_already_removed_name(clone, tmp_path
     assert state == "ok", why
     assert removed == ["1.never-there.md"]
     assert not failures
+
+
+# --- CLI argv robustness (self-review finding, oss:auditor spawn, #1723) ---------------------
+
+
+def _main_output(argv):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = trap_curate.main(argv)
+    return rc, buf.getvalue()
+
+
+def test_cli_copy_stray_from_with_no_value_is_an_error_not_a_crash(tmp_path):
+    """The first version indexed straight past the end of argv
+    (`rest[rest.index(flag) + 1]`), raising an uncaught `IndexError` --
+    `commands/run/curate.md`'s own literal invocations can produce exactly
+    this shape. Must be a reported `could-not-read`, never a Python
+    traceback."""
+    rc, out = _main_output(["trap_curate.py", str(tmp_path), "--copy-stray-from"])
+    assert rc == 1
+    assert "could-not-read" in out
+    assert "--copy-stray-from" in out
+
+
+def test_cli_sweep_resolved_in_with_no_value_is_an_error_not_a_crash(tmp_path):
+    rc, out = _main_output(["trap_curate.py", str(tmp_path), "--sweep-resolved-in"])
+    assert rc == 1
+    assert "could-not-read" in out
+    assert "--sweep-resolved-in" in out
+
+
+def test_cli_sweep_resolved_in_with_copied_flag_but_no_value_is_an_error_not_a_crash(
+    tmp_path,
+):
+    """The exact shape `commands/run/curate.md`'s own literal
+    `--sweep-resolved-in <clone> --copied <copied names>` invocation
+    produces whenever nothing was copied in and `<copied names>` is
+    threaded through as a bare, empty trailing token."""
+    rc, out = _main_output(
+        [
+            "trap_curate.py",
+            str(tmp_path),
+            "--sweep-resolved-in",
+            str(tmp_path),
+            "--copied",
+        ]
+    )
+    assert rc == 1
+    assert "could-not-read" in out
+    assert "--copied" in out
+
+
+def test_cli_copy_stray_from_prints_a_machine_readable_stray_names_line(
+    clone, tmp_path
+):
+    """#1723 self-review finding (Explore reviewer): the first version
+    folded the copied-name list into a human sentence that printed the
+    placeholder word "(none)" when the list was empty -- and
+    `commands/run/curate.md` told the caller to capture that exact
+    sentence's comma-list verbatim, so an empty result threaded the
+    literal string "(none)" into the sweep step's `--copied` value rather
+    than an empty one. `STRAY-NAMES:` is a dedicated line whose value is
+    the real, possibly-empty comma list."""
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+    rc, out = _main_output(
+        ["trap_curate.py", str(worktree), "--copy-stray-from", str(clone)]
+    )
+    assert rc == 0
+    assert "STRAY-NAMES: \n" in out or out.rstrip("\n").endswith("STRAY-NAMES: ")
+    assert "(none)" not in out
+
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.stray.md").write_text("x\n")
+    rc, out = _main_output(
+        ["trap_curate.py", str(worktree), "--copy-stray-from", str(clone)]
+    )
+    assert rc == 0
+    assert "STRAY-NAMES: 1.stray.md" in out
 
 
 def test_the_counter_and_the_curate_pass_report_the_same_number_on_one_fixture(

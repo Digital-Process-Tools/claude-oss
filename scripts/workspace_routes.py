@@ -253,21 +253,40 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     whichever one happens to be checked out, and a fresh `/oss:curate`
     worktree (`git worktree add ... origin/<default_branch>`) starts from
     committed history only, so it can never see them either way. The
-    earlier version of this function (#1476) only counted them when the
-    checkout WAS the default branch, which reported a number `/oss:curate`
-    itself could never match on any branch -- the disagreement #1723 is
-    about.
+    #1476 version of this function only counted them when the checkout WAS
+    the default branch, which reported a number `/oss:curate` itself could
+    never match on any branch other than that one -- the disagreement
+    #1723 is about.
 
-    So: when `config` names a `default_branch`, the count is now always the
-    union of two reads, regardless of which branch is checked out:
+    So: when `config` names a `default_branch`, the count is always the
+    union of two reads:
 
     - `origin/<default_branch>`'s own committed tree via `git ls-tree`
       (`trap_curate.waiting_at_ref`, unchanged from #1476);
-    - the clone's own untracked `trap.d/*.md` files
-      (`trap_curate.untracked_fragments`, #1723) -- exactly the set
-      `/oss:curate`'s own setup step now copies into its fresh worktree
-      before it reads anything (`commands/run/curate.md`), so this count
-      and what that pass evaluates agree on the same fixture.
+    - a SECOND read that depends on which branch is actually checked out,
+      never guessed (#1476's own original branch check, preserved rather
+      than removed -- an #1723 self-review finding, both a spawned
+      `Explore` reviewer and `oss:auditor` independently reproduced the
+      regression the first version of this fix introduced by dropping it:
+      a fragment `git add`ed or even committed on the default branch
+      itself, but not yet pushed to `origin`, is neither `origin/
+      <default_branch>`'s tree nor untracked -- it would have silently
+      stopped counting at all):
+
+      - the checkout IS the default branch -> the clone's own full working
+        tree (`trap_curate.waiting`, tracked and untracked both), so a
+        just-committed-but-not-yet-pushed fragment stays visible exactly
+        as #1476 first established;
+      - the checkout is standing on some OTHER, known branch ->
+        `trap_curate.untracked_fragments` (#1723) -- untracked-ness is a
+        fact about the index, not about HEAD, so a `harvest_fragments`-
+        style stray sitting in the clone counts here too, on whichever
+        branch happens to be checked out;
+      - the current branch could not even be determined -> `could-not-
+        count`, never a guessed read of whichever tree happens to be on
+        disk (unchanged from #1476: `curate_count`'s own module already
+        states the rule this follows -- "a repository this could not look
+        at must not read the same as one that is genuinely fine").
 
     Either read failing is `could-not-count` -- never a guessed read of
     only the half that succeeded. #1522: nothing on the ref-read path
@@ -289,22 +308,32 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
         )
         if ref_result["state"] == "could-not-read":
             return None, ref_result["why"]
-        stray_result = trap_curate.untracked_fragments(
-            repo_root, run=run, git_bin=git_bin
-        )
-        if stray_result["state"] == "could-not-read":
-            return None, stray_result["why"]
-        combined = {f["name"] for f in ref_result["fragments"]} | {
-            f["name"] for f in stray_result["fragments"]
-        }
-        why = (
-            "{0} fragment(s) at origin/{1} plus {2} untracked in the clone's "
-            "own working tree = {3} total".format(
-                len(ref_result["fragments"]),
-                default_branch,
-                len(stray_result["fragments"]),
-                len(combined),
+        current, branch_why = _current_branch(repo_root, run=run, git_bin=git_bin)
+        if current is None:
+            return None, (
+                "the checked-out branch could not be determined, so whether an "
+                "untracked or not-yet-pushed fragment belongs to {0} could not "
+                "be told ({1})".format(default_branch, branch_why)
             )
+        if current == default_branch:
+            extra_result = trap_curate.waiting(repo_root)
+            extra_label = "in the clone's own working tree (tracked or untracked)"
+        else:
+            extra_result = trap_curate.untracked_fragments(
+                repo_root, run=run, git_bin=git_bin
+            )
+            extra_label = "untracked in the clone's own working tree"
+        if extra_result["state"] == "could-not-read":
+            return None, extra_result["why"]
+        combined = {f["name"] for f in ref_result["fragments"]} | {
+            f["name"] for f in extra_result["fragments"]
+        }
+        why = "{0} fragment(s) at origin/{1} plus {2} {3} = {4} total".format(
+            len(ref_result["fragments"]),
+            default_branch,
+            len(extra_result["fragments"]),
+            extra_label,
+            len(combined),
         )
         return len(combined), _with_fetch_freshness(why, repo_root, run, git_bin)
     result = trap_curate.waiting(repo_root)
