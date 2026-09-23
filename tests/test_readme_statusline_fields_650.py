@@ -65,11 +65,11 @@ def test_readme_documents_the_watch_channel_opt_out():
 def test_readme_names_every_channel_state_glyph():
     """Every state `_channel_field` can render must appear in the README's
     `ch` row -- read from `statusline.CHANNEL_STATES`, the source of truth
-    for what the five upstream states are, not retyped.
+    for what the six upstream states are, not retyped.
     """
     section = _status_line_section()
     # The unicode markers `_symbols(ascii_only=False)` uses for `ch`.
-    for glyph in ("✓", "✗", "◐", "!", "?"):
+    for glyph in ("✓", "✗", "◐", "◔", "!", "?"):
         assert glyph in section, (
             "README's ch row is missing the {!r} state marker".format(glyph)
         )

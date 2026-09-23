@@ -341,7 +341,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Ceiling moves to 86000 B, written with deliberately wide headroom
     # rather than a tight margin, per the recorded self-referential-
     # overshoot trap for this exact row.
-    "CLAUDE.md": (84953, 86000),
+    # Re-baselined for #1728, the third editing exception: agents/doctor.md's
+    # own row and ceiling raised for a clear step on the doctor's own role
+    # marker, plus this row and its own weighed sentence. 84953 B became
+    # 85621 B. Ceiling unchanged; comfortably under the wide 86000 B
+    # headroom #1724's own raise left.
+    "CLAUDE.md": (85621, 86000),
 }
 
 

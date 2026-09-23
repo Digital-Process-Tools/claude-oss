@@ -234,20 +234,26 @@ def version_status(installed, latest, stale=False):
 
 
 #: The text after "channel: " on `channel:health`'s own first content line,
-#: mapped to this module's five-way state (#613). Both routes to that report --
-#: `channel.py` run directly and `supertool 'channel:health'` -- agree on this
-#: text; only the exit code differs, and the supertool wrapper collapses every
-#: non-zero exit to 1, so text is the only signal both routes share. Anything
-#: not a key here -- an error page for a preset that is not enabled, output this
-#: module has never seen -- is deliberately not in this table, so it falls
-#: through to `cannot_determine` in `parse_channel_report` rather than being
-#: guessed at.
+#: mapped to this module's six-way state (#613, #1726). Both routes to that
+#: report -- `channel.py` run directly and `supertool 'channel:health'` --
+#: agree on this text; only the exit code differs, and the supertool wrapper
+#: collapses every non-zero exit to 1, so text is the only signal both routes
+#: share. Anything not a key here -- an error page for a preset that is not
+#: enabled, output this module has never seen -- is deliberately not in this
+#: table, so it falls through to `cannot_determine` in `parse_channel_report`
+#: rather than being guessed at.
 CHANNEL_STATES = {
     "FORWARDING": "forwarding",
     "NOT DELIVERING": "not_delivering",
     "CANNOT DETERMINE": "cannot_determine",
     "CONTRADICTED": "contradicted",
     "BOUND, NOT SUBSCRIBED": "not_subscribed",
+    # supertool 0.64.0 (Digital-Process-Tools/claude-supertool#2658): bound,
+    # verified and subscribed, but has never forwarded anything
+    # (`forwarded == 0`, no `last_forwarded`). Distinct from `forwarding`
+    # (it has not) and from `cannot_determine` (the check DID determine this
+    # -- #1726).
+    "BOUND, UNPROVEN": "unproven",
 }
 
 #: Same name supertool's own `presets/watch/naming.py` reads (`NAME_ENV`). Not
@@ -1046,6 +1052,7 @@ def _symbols(ascii_only):
             "run": "...",
             "unk": "?",
             "own": "b",
+            "prv": "u",
         }
     return {
         "sep": " | ",
@@ -1074,6 +1081,13 @@ def _symbols(ascii_only):
         # on purpose", "a fifth state for the same reason"). Half-filled shape
         # reads as "handed off, half-heard" even before the colour is read.
         "own": "◐",
+        # `BOUND, UNPROVEN` (#1726): bound, verified and subscribed, but has
+        # never forwarded anything -- distinct from `own` above (nobody is
+        # subscribed there; here somebody is, and nothing has moved yet) and
+        # from `ok` (which means it HAS moved). Quarter-filled shape reads as
+        # "just started, nothing to show yet" -- less filled than `own`'s
+        # half circle, on purpose.
+        "prv": "◔",
     }
 
 
@@ -1394,11 +1408,14 @@ def _channel_field(channel, symbols, color=False):
     a question this line asked and could not answer, and the whole point of the
     third state this repository is named after is keeping those apart.
 
-    The five upstream states map to distinct markers because they call for
-    distinct actions (the issue's own table): a pass, a definite negative, a
-    finding that is neither, a contradiction, and "nothing was established".
-    `CONTRADICTED` renders uncoloured on purpose, matching the issue's own table,
-    whose shade column is blank for that row alone.
+    The six upstream states map to distinct markers because they call for
+    distinct actions (the issue's own table, plus #1726's own sixth row): a
+    pass, a definite negative, a finding that is neither, a contradiction,
+    "nothing was established", and "verified but unproven" -- bound and
+    subscribed, but nothing has forwarded yet, which is neither a pass nor a
+    finding that something is wrong. `CONTRADICTED` renders uncoloured on
+    purpose, matching the issue's own table, whose shade column is blank for
+    that row alone.
 
     **What this must never claim, in the render layer too, not only in the
     docstrings that compute the state:** `forwarding` means the consumer's own
@@ -1416,6 +1433,8 @@ def _channel_field(channel, symbols, color=False):
         text, shade = "ch" + symbols["bad"], RED
     elif state == "not_subscribed":
         text, shade = "ch" + symbols["own"], YELLOW
+    elif state == "unproven":
+        text, shade = "ch" + symbols["prv"], YELLOW
     elif state == "contradicted":
         text, shade = "ch!", None
     else:

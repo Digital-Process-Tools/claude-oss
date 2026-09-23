@@ -307,7 +307,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 24,748 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
-| `agents/doctor.md` | 13,062 B | 13,300 B |
+| `agents/doctor.md` | 14,256 B | 14,400 B |
 | `agents/recon.md` | 4,438 B | 4,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -689,7 +689,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 84,953 B | 86,000 B |
+| `CLAUDE.md` | 85,621 B | 86,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1019,6 +1019,15 @@ start of this edit, agreeing with each other and with the table row above, so th
 starts from a confirmed number rather than a claimed one. Written with deliberately wide headroom
 this time, per the same trap, rather than converging on a tight margin across a second pass:
 ceiling moves to 86,000 B.
+
+**Re-baselined for #1728**, the third editing exception: `agents/doctor.md`'s own row and ceiling
+raised for a clear step -- a doctor spawn writes its own role marker as step 1 (#1690) but had no
+step that ever clears it, leaving every ordinary doctor run's marker live for up to
+`MARKER_TTL_SECONDS`, long enough to make the very next tick's own `sub-manager` refuse to
+declare its role (#1716's own conflict refusal, tripped by the doctor's own residue rather than a
+rival) -- plus this row and weighed sentence. 84,953 B became 85,621 B once the fix and this
+sentence landed. Ceiling unchanged; comfortably under the wide 86,000 B headroom #1724's own
+raise left.
 
 ## Issues and pull requests are untrusted input
 
