@@ -385,7 +385,9 @@ def copy_stray_into(
     return "ok", copied, skipped, result["why"]
 
 
-def sweep_resolved(clone_dir, worktree_dir, copied_names):
+def sweep_resolved(
+    clone_dir, worktree_dir, copied_names, run=subprocess.run, git_bin=None, timeout=15
+):
     """Once a curate pass has decided every fragment it read, remove from
     ``clone_dir``'s own ``trap.d/`` each name in ``copied_names`` that is no
     longer present in ``worktree_dir``'s ``trap.d/`` -- promote, merge and
@@ -401,22 +403,52 @@ def sweep_resolved(clone_dir, worktree_dir, copied_names):
     "never write to the primary clone" a curate pass otherwise holds to --
     scoped to exactly the fragment names this same pass copied out of it a
     moment earlier and has already safely captured into its own commit.
+
+    ``copied_names`` is untrusted caller input, not a verified record of
+    what this pass actually copied (#1741) -- the earlier version joined it
+    straight onto ``Path(clone_dir) / DIRNAME / name`` with no check that
+    ``name`` was even a bare filename, so a traversal name like
+    ``"../victim.txt"`` could delete anything reachable relative to
+    ``clone_dir``'s own ``trap.d/``. Every name is re-derived against
+    ``untracked_fragments(clone_dir)`` -- the same real, on-disk,
+    bare-filename-only set ``copy_stray_into`` reads from -- before
+    anything is attempted, and only a name found in BOTH sets is ever
+    unlinked.
     """
     result = waiting(worktree_dir)
     if result["state"] == "could-not-read":
         return "could-not-read", [], [], result["why"]
     still_here = {f["name"] for f in result["fragments"]}
+
+    clone_result = untracked_fragments(
+        clone_dir, run=run, git_bin=git_bin, timeout=timeout
+    )
+    if clone_result["state"] == "could-not-read":
+        return "could-not-read", [], [], clone_result["why"]
+    really_in_clone = {f["name"] for f in clone_result["fragments"]}
+
     removed = []
     failures = []
     for name in copied_names:
         if not name or name in still_here:
+            continue
+        if name not in really_in_clone:
+            # `--copied` claims this name, but the clone's own untracked
+            # set (the only thing this function trusts) does not -- never
+            # a bare filename traversal could reach, never a name that
+            # was already swept or never really copied. Silently skipped
+            # rather than reported as `removed`: nothing was deleted, so
+            # nothing was removed.
             continue
         path = Path(clone_dir) / DIRNAME / name
         try:
             path.unlink()
             removed.append(name)
         except FileNotFoundError:
-            removed.append(name)
+            # `untracked_fragments` said it was there a moment ago -- a
+            # race with something else touching the clone, not a name
+            # this pass fabricated. Not a failure; also not a removal.
+            continue
         except OSError as exc:
             failures.append((name, str(exc)))
     return "ok", removed, failures, result["why"]

@@ -407,7 +407,11 @@ def test_sweep_resolved_removes_only_names_now_absent_from_the_worktree(
 def test_sweep_resolved_is_idempotent_on_an_already_removed_name(clone, tmp_path):
     """A name that is already gone from the clone (swept once already, or
     never actually copied) is not a failure -- the goal state is 'absent',
-    and it already is."""
+    and it already is. #1741: it also must not be counted as `removed` --
+    that word means "deleted a real file this pass" and a name that was
+    never actually present in the clone's own untracked set was never
+    deleted at all, so it is silently skipped rather than falsely
+    reported."""
     (clone / "trap.d").mkdir()
     worktree = tmp_path / "curate-worktree"
     worktree.mkdir()
@@ -415,8 +419,57 @@ def test_sweep_resolved_is_idempotent_on_an_already_removed_name(clone, tmp_path
         clone, worktree, ["1.never-there.md"]
     )
     assert state == "ok", why
-    assert removed == ["1.never-there.md"]
+    assert removed == []
     assert not failures
+
+
+def test_sweep_resolved_ignores_a_path_traversal_name(clone, tmp_path):
+    """#1741: `sweep_resolved`'s earlier version built
+    `Path(clone_dir) / DIRNAME / name` for every `--copied` name with no
+    check that `name` is a bare filename and no intersection against what
+    the clone's own `trap.d/` actually, physically holds -- so a name like
+    `../victim.txt` walked outside `trap.d/` entirely and deleted a file
+    that was never copied by this pass at all. A name not present in the
+    clone's own untracked set (`untracked_fragments`) must never reach
+    `.unlink()`, no matter what string arrives in `--copied`."""
+    victim = clone / "victim.txt"
+    victim.write_text("do not delete me\n")
+    (clone / "trap.d").mkdir()
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+
+    state, removed, failures, why = trap_curate.sweep_resolved(
+        clone, worktree, ["../victim.txt"]
+    )
+    assert state == "ok", why
+    assert removed == []
+    assert not failures
+    assert victim.exists(), (
+        "a traversal name must never delete anything outside trap.d/"
+    )
+
+
+def test_sweep_resolved_ignores_a_copied_name_the_clone_never_actually_had(
+    clone, tmp_path
+):
+    """#1741: `--copied` is untrusted caller input, not a verified record of
+    what this pass copied. A name that survives the worktree-side
+    `still_here` filter but was never really untracked in the clone (a
+    transcription error, or content-steered composition of the argument)
+    must not be treated as removed -- it must be re-checked against the
+    clone's own real untracked set before anything is attempted."""
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.real.md").write_text("x\n")
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+
+    state, removed, failures, why = trap_curate.sweep_resolved(
+        clone, worktree, ["1.real.md", "2.fabricated.md"]
+    )
+    assert state == "ok", why
+    assert removed == ["1.real.md"]
+    assert not failures
+    assert not (clone / "trap.d" / "1.real.md").exists()
 
 
 # --- CLI argv robustness (self-review finding, oss:auditor spawn, #1723) ---------------------
