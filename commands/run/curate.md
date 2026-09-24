@@ -126,7 +126,7 @@ For each fragment, exactly one outcome:
 | --- | --- | --- |
 | **promote** | this is a rule, and no existing rule covers it | write it into `.claude/jit-context/<paths\|tools\|vocabulary>/00-manual/`, with a firing proof — below |
 | **merge** | an existing rule already governs this situation | add it to that rule's body, and pay for the growth if the rule is getting long |
-| **decline** | not worth a rule: too narrow, already obvious, already stated elsewhere, or an observation about one incident rather than a rule | one line in that layer's `00-README.md`, naming what was declined and why |
+| **decline** | not worth a rule: too narrow, already obvious, already stated elsewhere, or an observation about one incident rather than a rule | one line in that layer's `00-README.md`, naming what was declined and why -- for a fragment whose claim is about the code, checked against HEAD and cited per the paragraph below (#1736) |
 | **defer** | genuinely cannot be decided alone, even with every other fragment visible — ambiguous dimension, an incident too thin to tell rule from noise, a call this pass is not positioned to make | leave the fragment in `trap.d/`, unchanged, and name it plus the reason in the PR body |
 
 **Delete the fragment for promote, merge and decline — the directory ends this pass empty of
@@ -139,6 +139,39 @@ queue.
 **A declined trap must leave its trace** in `00-README.md`, or the next lane to hit the same thing
 files it again and this pass declines it again. The rule builder skips that file by name, so an
 absence recorded there reads as a decision rather than an oversight.
+
+**A decline of a live code defect must never be the only record of it (#1736).** #1275 routes a
+non-blocking finding to `trap.d/` instead of the tracker, and a fragment describing a one-off code
+defect rather than an agent-facing lesson is exactly the shape this pass correctly declines. Put
+together, those two correct rules delete the bug: nothing at any step files it. So before writing
+the decline line for a fragment whose claim is about the code rather than about a lesson an agent
+should have learned, **check the claim against the code at HEAD.** Three outcomes, not two -- the
+third is the one that matters, the same shape this file already uses for `N waiting` / `none
+waiting` / `could-not-read`, above:
+
+- **still true** -- file a tracking issue for it (or find the one that already carries it) and
+  cite that number in the decline line. Use the same `gh-issue-create` payload shape
+  `skills/manager/phases/review.md` uses: `labels.filed_by_loop`'s label, plus a lane
+  (`labels.lane_other`) and a priority (`labels.priority`), each attached only when `.oss.json`
+  declares it -- omitting all three is exactly the failure #1682 was filed to close (the issue is
+  invisible to dispatch until the next triage sweep), and this decline-time filing carries that
+  same full shape, not a lighter one.
+- **already fixed** -- name the commit hash or pull request number that fixed it in the decline
+  line, instead of filing a new issue.
+- **cannot tell** -- say so in the decline line rather than guessing at either of the other two. A
+  false "already fixed" citation or a needless duplicate filing is worse than an honest "checked,
+  could not tell."
+
+Either way the decline line ends with a citation or a stated "could not tell," never a bare
+"declined -- one-off defect": that citation is what lets the next reader tell "filed, see #N" from
+"checked, already fixed by that commit" from "checked, could not tell" from "not checked", and an
+unlabelled decline reads as the last of those when it might be any of the first three. **A decline
+line for a code-claim fragment that carries neither a citation nor a stated "could not tell" is
+refused by this pass itself, not by whoever reviews it** -- the same self-refusal the promote
+outcome already states for a rule with no firing proof, below, and it does not relax because
+nobody is watching in real time. This does not reopen #1275 -- a non-blocking finding still skips
+the tracker at the moment it is *found*; this is only about the moment curate declines to turn it
+into a rule.
 
 **`defer` is a real answer, not a delay dressed up as one, and it is bounded.** The old rule here was
 *do not leave a fragment for next time* — written for a human who can always reach a decision given
