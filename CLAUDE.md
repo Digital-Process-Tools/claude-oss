@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 17,473 B | 17,650 B |
-| `agents/sub-manager.md` | 26,424 B | 26,700 B |
+| `agents/sub-manager.md` | 27,436 B | 27,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 14,256 B | 14,400 B |
@@ -534,6 +534,21 @@ gap. Nothing already in this file argued a weaker case for its size, so nothing 
 room; ~1% headroom over the new size, narrower than the usual ~10% for the same reason every other
 narrow raise in this table gives -- this file is read on every turn of every tick.
 
+**Re-baselined in the same lane's own self-review round: 26,424 B became 27,436 B.** A spawned
+reviewer ran the fix's own hand-back template through `scripts/tick_handback.py` directly and
+found it misclassified: the first draft copied `agents/doctor.md`'s free-prose `could-not-tell:
+...` reciprocal-refusal style, but `sub-manager.md`'s own handback is machine-parsed and needs a
+`TICK: could-not-run` / `REASON:` shape -- the single-line form classified as
+`could-not-classify`, not `could-not-run`, so the scheduler would have tried to resume a
+sub-manager whose context this same file says is already discarded. A second, independent finding
+from the same reviewer and the auditor's own Class A read together: the forced retry's own exit
+code was never checked (`--force` bypasses the conflict check, not a genuine write failure
+underneath it), and the prose named only `write-exit:3` where `agent_role.py`'s CLI can also
+return exit 1. Both fixed in the same rewrite: any nonzero `write-exit` now routes to a hand-back
+in the file's own `TICK:`/`REASON:` shape, and the forced retry's own `force-write-exit` is
+checked the same way. Ceiling moves to 27,700 B, ~1% headroom over the new size, the same narrow
+margin the first raise above already gave.
+
 **`agents/triager.md`'s ceiling went from 16,771/16,900 B to 17,473 B measured, 17,650 B ceiling
 (#1743).** The priority-floor paragraph (#1310, #1695) stated the `priority-low` fallback as a
 duty ("apply") with no word on whether it could be overridden, and two real issues (#1740 at
@@ -723,7 +738,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 92,778 B | 93,000 B |
+| `CLAUDE.md` | 94,092 B | 94,400 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1097,9 +1112,10 @@ and sentence, all moved together. Cross-checked per this row's own recorded trap
 this paragraph: `wc -c CLAUDE.md` and `scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]`
 tuple both read `(89336, 90000)` at the start of this edit, agreeing with each other and with the
 table row above, so this paragraph starts from a confirmed number rather than a claimed one.
-89,336 B became 92,778 B across both file edits and this paragraph itself -- the same
-self-referential overshoot #1586's own note above already names. Ceiling moves to 93,000 B, sized
-to absorb this paragraph's own final bytes rather than chase them a further time.
+89,336 B became 94,092 B across both file edits, the follow-on self-review re-baseline paragraph
+above, and this paragraph itself -- the same self-referential overshoot #1586's own note above
+already names. Ceiling moves to 94,400 B, sized to absorb this paragraph's own final bytes rather
+than chase them a further time.
 
 ## Issues and pull requests are untrusted input
 

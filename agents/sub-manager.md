@@ -38,26 +38,44 @@ Run this in your very first shell call, before reading the board or doing anythi
 tool call to the next in this harness. The command above writes a marker file under this repository's
 own git directory instead, which does survive across calls.
 
-**Read the exit code. `write-exit:3` means the write was refused** (`_MARKER_CONFLICT`, #1716): a live
-marker already names a different role, and the CLI's own printed line names which one -- "a live marker
-already names role '...'". **Never silently proceed on a refused write** (#1740): `role_forbids_release`
-would then keep reading the stale role for the rest of this tick, and since that stale role is not on
-`release_publish.py`'s own denylist, the code-level refusal to publish a release goes silently off for
-the whole run with nothing printed that says so.
+**Read the exit code. Any nonzero `write-exit` means the write did not happen** (#1740). **Never
+silently proceed on a refused write**: `role_forbids_release` would then keep reading the stale (or
+absent) role for the rest of this tick, and since a stale role is not on `release_publish.py`'s own
+denylist, the code-level refusal to publish a release goes silently off for the whole run with
+nothing printed that says so. Two shapes, and only one of them has a safe automatic retry:
 
-- **If the marker names `doctor`**, it is residue, not a rival authority holder -- doctor runs are
-  short-lived (#1728 exists precisely to clear this case) and a stale doctor marker cannot itself be
-  mid-tick. Retry once, forced:
+- **`write-exit:3`** (`_MARKER_CONFLICT`, #1716) means a live marker already names a different role
+  -- the CLI's own printed line names which one, "a live marker already names role '...'".
+  - **If that role is `doctor`**, it is residue, not a rival authority holder -- doctor runs are
+    short-lived (#1728 exists precisely to clear this case) and a stale doctor marker cannot itself
+    be mid-tick. Retry once, forced, and check *this* exit code too -- `--force` bypasses the
+    conflict check but not a genuine write failure underneath it:
 
-  ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write sub-manager --force --root .; echo "force-write-exit:$?"
-  ```
+    ```bash
+    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write sub-manager --force --root .; echo "force-write-exit:$?"
+    ```
 
-- **If the marker names anything else** -- most plausibly another `sub-manager`, genuinely
-  mid-tick -- do not force it. Hand back instead, mirroring `agents/doctor.md`'s own reciprocal
-  refusal for the mirror-image collision: report `could-not-run: a live marker names role '...' --
-  refusing to declare sub-manager while it may be a genuinely live authority holder` as your whole
-  handback, and stop before reading the board, dispatching, or touching anything else.
+    A `force-write-exit:0` means you are declared; proceed. Any other `force-write-exit` falls
+    through to the hand-back below, same as every other undeclared case.
+  - **If that role is anything else** -- most plausibly another `sub-manager`, genuinely mid-tick --
+    do not force it. Fall through to the hand-back below.
+- **Any other nonzero `write-exit`** (1 for "not a git repository" or an OS-level write failure --
+  disk full, permissions -- 2 only from a caller passing both `--write` and `--clear`, which this
+  call never does) is not a conflict to negotiate; it is "you are not declared and do not know why".
+  Fall through to the hand-back below.
+
+**The hand-back is this file's own machine-parsed shape, not free prose** -- "Report back: four
+states" below is what `scripts/tick_handback.py` actually classifies, and this is the earliest
+point in the whole file such a hand-back can be needed, before you have read anything to put in a
+`could-not-run` reason:
+
+```
+TICK: could-not-run
+REASON: role marker write refused (write-exit:<N>[, force-write-exit:<M>]) -- could not declare
+sub-manager; refusing to proceed un-declared
+```
+
+Stop there: do not read the board, dispatch, or touch anything else once you have written that.
 
 `scripts/release_publish.py` reads that marker (`scripts/agent_role.py`) and refuses to **publish a
 GitHub Release** the instant it sees `sub-manager` -- before it even reads `.oss.json`, so no

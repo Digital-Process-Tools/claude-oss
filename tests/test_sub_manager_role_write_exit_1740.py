@@ -75,3 +75,50 @@ def test_sub_manager_force_is_conditioned_on_doctor_role_only():
     assert "names role" in text or "names a different role" in text
     assert "doctor" in text
     assert "could-not-run" in text
+
+
+def test_sub_manager_checks_the_forced_retrys_own_exit_code_too():
+    """A first self-review round found the initial fix checked write-exit
+    but never force-write-exit -- `--force` bypasses the conflict check,
+    not a genuine underlying write failure, so an agent following the
+    unpatched prose literally could believe itself declared when the
+    forced retry itself failed."""
+    text = _flatten(SUB_MANAGER.read_text(encoding="utf-8"))
+    assert "force-write-exit" in text
+
+
+def test_sub_manager_hand_back_actually_classifies_as_could_not_run():
+    """A first self-review round found the initial fix's hand-back used
+    agents/doctor.md's free-prose `could-not-tell: ...` style, but
+    sub-manager.md's own handback is machine-parsed by
+    `scripts/tick_handback.py`, which requires a `TICK: <state>` header
+    plus that state's own companion field on a separate line
+    (`REASON:` for `could-not-run`) -- a single-line `could-not-run: ...`
+    sentence has no `TICK:` header at all and classifies as
+    `could-not-classify`, not `could-not-run`, defeating the whole point
+    of the fix one step later. This runs the actual classifier against
+    the fix's own template, extracted from the file rather than
+    retyped, so drift between the two is caught here rather than only in
+    a human re-read."""
+    import re
+    import sys
+
+    sys.path.insert(0, str(REPO_ROOT / "scripts"))
+    import tick_handback  # noqa: E402
+
+    text = SUB_MANAGER.read_text(encoding="utf-8")
+    match = re.search(
+        r"```\n(TICK: could-not-run\nREASON:.*?)\n```",
+        text,
+        re.DOTALL,
+    )
+    assert match, (
+        "no TICK: could-not-run / REASON: fenced block found near the role-write fix"
+    )
+    template = match.group(1)
+    filled = template.replace("<N>[, force-write-exit:<M>]", "3, force-write-exit:1")
+    verdict = tick_handback.classify(filled)
+    assert verdict["state"] == "could-not-run", (
+        "the role-write hand-back template does not classify as could-not-run: "
+        "{}".format(verdict)
+    )

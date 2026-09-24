@@ -415,7 +415,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # paragraph softened from "not a separate step you could skip" to prose
     # discipline plus a cross-reference to the scheduler's own backstop.
     # Ceiling unchanged; comfortably under.
-    "agents/sub-manager.md": (26424, 26700),
+    "agents/sub-manager.md": (27436, 27700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
