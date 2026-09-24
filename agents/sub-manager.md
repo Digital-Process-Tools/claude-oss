@@ -30,13 +30,34 @@ change explicitly.
 ## First: declare your role, before anything else
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write sub-manager --root .
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write sub-manager --root .; echo "write-exit:$?"
 ```
 
 Run this in your very first shell call, before reading the board or doing anything else. **Do not use
 `export OSS_AGENT_ROLE=sub-manager` instead** -- an exported variable does not survive from one `Bash`
 tool call to the next in this harness. The command above writes a marker file under this repository's
 own git directory instead, which does survive across calls.
+
+**Read the exit code. `write-exit:3` means the write was refused** (`_MARKER_CONFLICT`, #1716): a live
+marker already names a different role, and the CLI's own printed line names which one -- "a live marker
+already names role '...'". **Never silently proceed on a refused write** (#1740): `role_forbids_release`
+would then keep reading the stale role for the rest of this tick, and since that stale role is not on
+`release_publish.py`'s own denylist, the code-level refusal to publish a release goes silently off for
+the whole run with nothing printed that says so.
+
+- **If the marker names `doctor`**, it is residue, not a rival authority holder -- doctor runs are
+  short-lived (#1728 exists precisely to clear this case) and a stale doctor marker cannot itself be
+  mid-tick. Retry once, forced:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --write sub-manager --force --root .; echo "force-write-exit:$?"
+  ```
+
+- **If the marker names anything else** -- most plausibly another `sub-manager`, genuinely
+  mid-tick -- do not force it. Hand back instead, mirroring `agents/doctor.md`'s own reciprocal
+  refusal for the mirror-image collision: report `could-not-run: a live marker names role '...' --
+  refusing to declare sub-manager while it may be a genuinely live authority holder` as your whole
+  handback, and stop before reading the board, dispatching, or touching anything else.
 
 `scripts/release_publish.py` reads that marker (`scripts/agent_role.py`) and refuses to **publish a
 GitHub Release** the instant it sees `sub-manager` -- before it even reads `.oss.json`, so no

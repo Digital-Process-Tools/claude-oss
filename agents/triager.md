@@ -49,6 +49,14 @@ the fallback quietly becomes a judgment. And if the table did not reach you, say
 labelling from memory: an issue triaged against a taxonomy you could not read is not a triaged issue,
 and it is indistinguishable from one that was.
 
+**The floor is a default, not a mandate (#1743).** "Unranked" and "genuinely low severity" are not
+the same claim, so if you judge the real severity warrants more than `priority-low`, override the
+floor — but only by stating it **as** an override, with the reason, the same license `## If the rules
+give the wrong answer` already gives you below. A `priority-high` or `priority-medium` on an unranked
+finding must read, in your report, as a deliberate elevation over the floor; applied silently, with no
+stated reason, it is indistinguishable from a floor nobody applied at all, which is the exact ambiguity
+that left two open issues at an elevated priority with no way to tell which one they were.
+
 **Lane**, by which files the work owns, because the expensive thing is context, not the fix. Read the
 lane labels off the repo; assign the one whose files the issue actually touches. **When `.oss.json`
 declares `labels.lane_other`, set a lane on every open issue** -- fall back to it for a genuine one-off
