@@ -52,7 +52,7 @@ def test_decline_of_a_still_live_defect_files_or_cites_an_issue():
     collapsed = _collapse(_curate_text())
     idx = collapsed.find("must never be the only record of it")
     assert idx != -1
-    tail = collapsed[idx : idx + 900]
+    tail = collapsed[idx : idx + 1800]
     assert "file a tracking issue for it" in tail, (
         "curate.md does not say a still-live code defect must be filed "
         "(or an existing issue cited) rather than only declined (#1736)"
@@ -60,6 +60,11 @@ def test_decline_of_a_still_live_defect_files_or_cites_an_issue():
     assert "cite that number in the" in tail, (
         "curate.md does not say to cite the filed issue's number in the "
         "decline line itself (#1736)"
+    )
+    assert "labels.lane_other" in tail and "labels.priority" in tail, (
+        "curate.md's decline-time filing omits the lane/priority labels "
+        "review.md's own gh-issue-create shape requires -- an issue filed "
+        "without them is invisible to dispatch (#1682, #1736)"
     )
 
 
@@ -70,11 +75,42 @@ def test_decline_of_an_already_fixed_defect_names_the_fix():
     collapsed = _collapse(_curate_text())
     idx = collapsed.find("must never be the only record of it")
     assert idx != -1
-    tail = collapsed[idx : idx + 1100]
+    tail = collapsed[idx : idx + 1800]
     assert "name the commit hash or pull request number" in tail, (
         "curate.md does not say an already-fixed claim must name the "
         "commit or pull request that fixed it, rather than being filed "
         "again as a new issue (#1736)"
+    )
+
+
+def test_decline_has_a_third_cannot_tell_state():
+    """Positive-control pairing for the two checks above: an agent that
+    genuinely cannot tell whether a code-defect claim still holds must not
+    be forced to guess at either of the other two outcomes."""
+    collapsed = _collapse(_curate_text())
+    idx = collapsed.find("must never be the only record of it")
+    assert idx != -1
+    tail = collapsed[idx : idx + 1800]
+    assert "cannot tell" in tail, (
+        "curate.md's decline-time check has no third 'cannot tell' state, "
+        "forcing a guess between 'still true' and 'already fixed' when "
+        "neither is actually known (#1736)"
+    )
+
+
+def test_an_uncited_decline_line_is_self_refused():
+    """The promote outcome refuses itself when a rule ships with no firing
+    proof; the decline-time citation rule must carry the same enforcement,
+    or nothing distinguishes a pass that checked and forgot to cite from a
+    pass that never checked at all."""
+    collapsed = _collapse(_curate_text())
+    idx = collapsed.find("must never be the only record of it")
+    assert idx != -1
+    tail = collapsed[idx : idx + 2300]
+    assert "refused by this pass itself" in tail, (
+        "curate.md's decline-time citation rule states no self-refusal "
+        "for an uncited decline line, unlike the promote outcome's own "
+        "firing-proof refusal (#1736)"
     )
 
 
