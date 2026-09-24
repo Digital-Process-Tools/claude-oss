@@ -347,11 +347,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 85621 B. Ceiling unchanged; comfortably under the wide 86000 B
     # headroom #1724's own raise left.
     #
-    # Re-baselined for #1737: 85621 B became 87205 B -- the commands/tick.md
-    # row/ceiling update plus this file's own weighed sentence, past the
-    # 86000 B ceiling. Ceiling moves to 87500 B, sized to absorb the
-    # paragraph's own final bytes rather than chase them a further time.
-    "CLAUDE.md": (87205, 87500),
+    # Re-baselined for #1737: 85621 B became 87352 B -- the commands/tick.md
+    # and agents/sub-manager.md row/ceiling updates plus this file's own
+    # weighed sentence, past the 86000 B ceiling. Ceiling moves to 87500 B,
+    # sized to absorb the paragraph's own final bytes rather than chase
+    # them a further time.
+    "CLAUDE.md": (87352, 87500),
 }
 
 

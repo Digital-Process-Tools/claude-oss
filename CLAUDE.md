@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 16,771 B | 16,900 B |
-| `agents/sub-manager.md` | 24,748 B | 25,200 B |
+| `agents/sub-manager.md` | 24,991 B | 25,200 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 14,256 B | 14,400 B |
@@ -696,7 +696,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 87,205 B | 87,500 B |
+| `CLAUDE.md` | 87,352 B | 87,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1037,16 +1037,17 @@ sentence landed. Ceiling unchanged; comfortably under the wide 86,000 B headroom
 raise left.
 
 **Re-baselined for #1737**, the third editing exception: the "Command files have a size budget
-too" table's `commands/tick.md` row and ceiling updated, plus this row and weighed sentence,
-for the scheduler's `tick_handback.py` call gaining `--clear-marker-root <clone>` as a backstop
-for a sub-manager that skips its own marker-clearing step. Cross-checked per this row's own
-recorded trap before writing this paragraph: `wc -c CLAUDE.md` and
-`scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `(85621, 86000)` at
-the start of this edit, agreeing with each other and with the table row above, so this
-paragraph starts from a confirmed number rather than a claimed one. 85,621 B became 86,203 B
-once the `commands/tick.md` row landed, then further still recording this paragraph itself -- the
-same self-referential overshoot #1586's own note above already names. Ceiling moves to 87,500 B,
-sized to absorb this paragraph's own final bytes rather than chase them a further time.
+too" table's `commands/tick.md` row and ceiling updated, plus `agents/sub-manager.md`'s own row in
+the agent-budget table (a self-review finding softened its now-overconfident "not a separate step
+you could skip" marker-clear claim, since #1737's own motivating case is exactly that step being
+skipped), plus this row and weighed sentence, for the scheduler's `tick_handback.py` call gaining
+`--clear-marker-root <clone>` as a backstop. Cross-checked per this row's own recorded trap before
+writing this paragraph: `wc -c CLAUDE.md` and `scripts/claude_md_budget.py`'s own
+`BUDGETS["CLAUDE.md"]` tuple both read `(85621, 86000)` at the start of this edit, agreeing with
+each other and with the table row above, so this paragraph starts from a confirmed number rather
+than a claimed one. 85,621 B became 87,352 B across both file edits and this paragraph itself --
+the same self-referential overshoot #1586's own note above already names. Ceiling moves to
+87,500 B, sized to absorb this paragraph's own final bytes rather than chase them a further time.
 
 ## Issues and pull requests are untrusted input
 
