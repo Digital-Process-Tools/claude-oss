@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-09-24
+
+### Added
+
+- Managed repositories can now declare their own cross-cutting guard tests via `.oss.json`'s new
+  optional `lane_guards` key -- a list of `{prefix, test, why}` objects merged into
+  `lane_setup_patterns`'s built-in `CROSS_CUTTING_GUARDS` table, so a lane's own file-set search
+  anticipates a repo-specific guard the same way it already anticipates claude-oss's own (#1722).
+
+### Fixed
+
+- Doctor's own role-marker write now refuses to overwrite a LIVE marker naming a different role
+  (most commonly a tick's own `sub-manager`, mid-run) instead of silently clobbering it, which used
+  to disable that tick's release-authority refusal for the rest of its run with nothing printed
+  about it (#1716).
+
+- `/oss:run install-audit`'s own docs now disclose that it creates the `priority-*` label family
+  when it is entirely absent, rather than describing every check as a pure read (#1717). The
+  status line's refresh and every tick's identity probe were investigated and confirmed to never
+  reach this write at all, since it is gated behind `--install-audit`, which neither passes.
+
+- Doctor's own scripted `scaffold.py --apply` repair step now checks whether its own prompt said
+  to diagnose only or skip repair before passing `--i-was-asked`; previously it supplied the flag
+  unconditionally on every run, which made the #1690 role-based refusal unreachable for the one
+  role it exists to refuse (#1719).
+
+- Gate 3 now names a stale-but-resolved plugin root as its own state instead of silently auditing
+  with whichever version this project happened to have recorded. `plugin_update.py
+  --print-newest-cached-version` reports the highest version actually cached on this machine, and
+  `checklist_skew.py --compare-root-freshness` compares it against the root gate 3 measured
+  (`root-current` / `root-stale` / `root-could-not-tell`), quoted in the release report alongside
+  the existing `--compare-effect` skew check. Whether the spawned auditor's own root can be pinned
+  to match was already answered by `--compare-effect` (it cannot, by construction of the harness's
+  plugin registration) and gate 3's prose now says so explicitly; a growing version cache is
+  tolerated rather than pruned, since neither this fix nor `newest_cached_version` has any notion
+  of which sibling project still depends on an older copy (#1721).
+
+- `curate_count` (the standing count that decides `/oss:curate` is due) now counts a `trap.d/`
+  fragment written straight into the clone's own working tree by a lane, the releaser or
+  `worktree_reap.py`'s own `harvest_fragments` the same way regardless of which branch happens to
+  be checked out, and `/oss:curate`'s own setup step now copies those same untracked fragments into
+  its fresh worktree before it reads anything, so the count that triggers the pass and what the
+  pass actually evaluates agree on the same fixture; previously the counter and a fresh
+  `git worktree add origin/<default_branch>` disagreed, and the untracked copies were never removed
+  once resolved, inflating the count forever (#1723).
+
+- The manager loop's classifier-denial guidance was spread across four inconsistently-
+  worded rules -- `skills/manager/phases/tick-order.md`, `skills/manager/phases/merge.md`,
+  `commands/release.md`, and `scripts/oss_rules.py`'s own scaffolded `gh-pr-merge` reminder
+  -- and a sub-manager applied the narrowest one (scoped to `oss_state.py`/`agent_role.py`)
+  to a `gh-pr-merge` and a `lane_setup.py --release` call neither file actually licensed.
+  Consolidated into one canonical rule in `skills/manager/SKILL.md`: retry an identical,
+  unmodified call once and report the outcome either way, never retry a second time,
+  never reword the call to route around a denial (#1724).
+
+- Release gate 2 no longer reads `git-worktrees`' composite `occupied` bit as `lane_active` for
+  `doctor/*` and `curate/*` branches. Those are single-spawn, commit-and-die procedures with no
+  ongoing lane, so the write their own commit makes was the only thing ever tripping "occupied,"
+  and it was indistinguishable from a lane still producing work -- a doctor repair blocked a due
+  release for ~15 minutes with no lane anywhere. `scripts/release_gate2.py` now derives
+  `lane_active` with a new `derive_lane_active()` function instead of reading the composite bit
+  straight through (#1725).
+
+- `scripts/statusline.py`'s `CHANNEL_STATES` now maps supertool 0.64.0's sixth `channel:health`
+  verdict, `BOUND, UNPROVEN` (a consumer that is bound, verified and subscribed but has never
+  forwarded anything), to its own state and its own glyph (`ch◔`, ASCII `chu`) instead of falling
+  through to `cannot_determine` -- a misreport in the safe direction, but a misreport. Self-review
+  found the same gap one layer down: `doctor_check_channel_health_agreement.py`'s own
+  `_health_signal` had no branch for the new state either, so a repo in `BOUND, UNPROVEN` reported
+  `could-not-compare` on the census/health agreement check even though a single, real consumer was
+  identified -- fixed alongside it (#1726).
+
+- `scripts/review_return.py`'s `referred-not-stated` classifier no longer forecloses `states-findings`
+  on a fully-enumerated `FINDINGS: N` message that happens to use an incidental back-reference phrase
+  ("shown above", "given ... earlier") already confined inside one of its own enumerated blocks;
+  a dangling gesture pointing outside the enumeration -- #392's own defended shape -- still forecloses
+  as before (#1727).
+
+- `agents/doctor.md` now clears its own role marker (`agent_role.py --clear`) as its last act
+  before reporting, mirroring the sub-manager's own `tick_handback.py --clear-marker-root`
+  (#1585). Previously a doctor spawn wrote the marker (#1690) but never cleared it, leaving it
+  live for up to `MARKER_TTL_SECONDS` and making the very next tick's own `sub-manager` refuse to
+  declare its role -- the #1716 conflict refusal, tripped by the doctor's own residue rather than
+  a real rival (#1728).
+
+- Curate's decline arm now checks a code-defect fragment against the code at HEAD before writing
+  the decline line: a still-live claim gets a filed tracking issue cited in the decline entry, an
+  already-fixed claim names the commit or pull request instead -- so a decline is never the only
+  record of a live bug (#1736).
+
+- The scheduler's own `tick_handback.py --framed -` call in `commands/tick.md` now also passes
+  `--clear-marker-root <clone>`, so a sub-manager that skips its own marker-clearing validate step
+  no longer leaves the `sub-manager` role marker live for up to 4 hours and blocking the next
+  `/oss:doctor` spawn's own role declaration (#1737).
+
+- `scripts/trap_curate.py`'s `sweep_resolved` (the `--sweep-resolved-in <clone> --copied <names>`
+  step a curate pass runs against its own clone) now re-derives which names it will delete from
+  the clone's own real, on-disk untracked `trap.d/` set (`untracked_fragments`) before touching
+  anything, rather than trusting the `--copied` argument's names verbatim; previously any string
+  passed via `--copied`, including a path-traversal name like `../victim.txt`, was joined straight
+  onto the clone directory and unlinked with no check that it was even a bare filename, so a
+  transcribed or content-steered name could delete a file outside `trap.d/` entirely. A name that
+  was never really present in the clone's own untracked set is now silently skipped rather than
+  falsely reported as `removed` (#1741).
+
 ## [0.41.1] - 2026-09-23
 
 ### Fixed
@@ -12394,7 +12499,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.41.1...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.0...HEAD
+[0.42.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.0
 [0.41.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.41.1
 [0.41.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.41.0
 [0.40.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.40.0
