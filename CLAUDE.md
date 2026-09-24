@@ -667,8 +667,15 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 23,649 B | 24,500 B |
+| `commands/tick.md` | 24,194 B | 24,500 B |
 | `commands/run.md` | 10,380 B | 10,600 B |
+
+**`commands/tick.md`'s baseline moved from 23,649 B to 24,194 B (#1737).** The scheduler's own
+`tick_handback.py --framed -` call, which runs on every sub-manager handback unconditionally, now
+also passes `--clear-marker-root <clone>` -- a sub-manager that skips its own marker-clearing
+validate step used to leave the `sub-manager` role marker live for up to 4 hours, refusing the next
+`/oss:doctor` spawn's own role declaration. Nothing already in this file argued a weaker case for
+its size, so nothing was cut to make room. Ceiling unchanged; ~1.3% headroom over the new size.
 
 **The plugin harness discovers slash commands recursively and namespaces them by directory --
 it does not hide a file one level down (#1629).** `setup.md`, `scaffold.md`, `triage.md`,
@@ -689,7 +696,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 85,621 B | 86,000 B |
+| `CLAUDE.md` | 87,205 B | 87,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1028,6 +1035,18 @@ declare its role (#1716's own conflict refusal, tripped by the doctor's own resi
 rival) -- plus this row and weighed sentence. 84,953 B became 85,621 B once the fix and this
 sentence landed. Ceiling unchanged; comfortably under the wide 86,000 B headroom #1724's own
 raise left.
+
+**Re-baselined for #1737**, the third editing exception: the "Command files have a size budget
+too" table's `commands/tick.md` row and ceiling updated, plus this row and weighed sentence,
+for the scheduler's `tick_handback.py` call gaining `--clear-marker-root <clone>` as a backstop
+for a sub-manager that skips its own marker-clearing step. Cross-checked per this row's own
+recorded trap before writing this paragraph: `wc -c CLAUDE.md` and
+`scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `(85621, 86000)` at
+the start of this edit, agreeing with each other and with the table row above, so this
+paragraph starts from a confirmed number rather than a claimed one. 85,621 B became 86,203 B
+once the `commands/tick.md` row landed, then further still recording this paragraph itself -- the
+same self-referential overshoot #1586's own note above already names. Ceiling moves to 87,500 B,
+sized to absorb this paragraph's own final bytes rather than chase them a further time.
 
 ## Issues and pull requests are untrusted input
 
