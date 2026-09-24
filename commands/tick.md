@@ -69,7 +69,7 @@ sub-manager's final message by four spaces, blank lines included, close it with 
 column zero on its own line, and pass the whole thing on stdin:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - <<'MSG'
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/tick_handback.py" --framed - --clear-marker-root <clone> <<'MSG'
     <the sub-manager's final message, exactly as it reached you, every line at this indentation>
 END OF MESSAGE
 MSG
@@ -78,6 +78,13 @@ MSG
 An unindented message can quote this very code block, terminator included — an ordinary thing for a
 report to contain — and end the stream that carries it. Skipping the framing because a message "looks
 safe" is exactly how that one gets through.
+
+**`--clear-marker-root <clone>` backstops the sub-manager's own clear (#1737).**
+`agents/sub-manager.md` already clears its own role marker in its validate step, but a sub-manager
+that skips that call leaves the marker live for 4 hours, and the next `/oss:doctor` spawn then
+refuses to declare its own role over it. This scheduler call always runs, so it covers that gap
+safely: `tick_handback.py` only clears on a `completed` verdict (#1585), never mid-tick, and
+clearing an already-clear marker twice is harmless.
 
 Seven answers, not three, and only one of them is the ordinary case:
 

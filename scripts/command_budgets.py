@@ -126,7 +126,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # legs with "--detail is not valid JSON". Moved the --detail example
     # out of the executed fence into prose describing how to attach it
     # with real values. Ceiling unchanged, comfortably under.
-    "commands/tick.md": (23649, 24500),
+    "commands/tick.md": (24194, 24500),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at

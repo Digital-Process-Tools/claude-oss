@@ -54,7 +54,9 @@ tagging is not, and conflating the two overstates what actually protects this bo
 honoured a few hours after that, so a context that dies before its handback does not block a real
 maintainer's real release forever. That is automatic. The fast path for the ordinary clean finish is
 `tick_handback.py --clear-marker-root .`, run as a side effect of the validate step near the end of
-this file, not a separate step you could skip (#1585).
+this file (#1585). **This is prose discipline, not code enforcement** -- a tick that skips this step
+while still reporting `completed` has happened (#1737), which is why the scheduler's own handback
+call carries the identical flag as a backstop; run yours anyway, since clearing twice is harmless.
 
 ## Run the tick
 

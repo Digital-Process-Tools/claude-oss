@@ -411,7 +411,11 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # mention in the "Spawn depth" section corrected to "developer and
     # reviewer agents" (sub-manager no longer dispatches triager lanes since
     # #1544 moved rendering to oss:tick-dispatch). Ceiling unchanged.
-    "agents/sub-manager.md": (24748, 25200),
+    # Re-baselined for #1737: 24748 B became 24991 B -- the marker-clear
+    # paragraph softened from "not a separate step you could skip" to prose
+    # discipline plus a cross-reference to the scheduler's own backstop.
+    # Ceiling unchanged; comfortably under.
+    "agents/sub-manager.md": (24991, 25200),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).
