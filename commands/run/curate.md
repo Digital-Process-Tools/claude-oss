@@ -140,6 +140,23 @@ queue.
 files it again and this pass declines it again. The rule builder skips that file by name, so an
 absence recorded there reads as a decision rather than an oversight.
 
+**A decline of a live code defect must never be the only record of it (#1736).** #1275 routes a
+non-blocking finding to `trap.d/` instead of the tracker, and a fragment describing a one-off code
+defect rather than an agent-facing lesson is exactly the shape this pass correctly declines. Put
+together, those two correct rules delete the bug: nothing at any step files it. So before writing
+the decline line for a fragment whose claim is about the code rather than about a lesson an agent
+should have learned, **check the claim against the code at HEAD.** If it is still true, file a
+tracking issue for it (or find the one that already carries it) and cite that number in the
+decline line -- the same `gh-issue-create` payload shape `skills/manager/phases/review.md` uses,
+with `labels.filed_by_loop`'s label attached, since this pass decided alone. If the code has
+already moved and the claim no longer holds, name the commit hash or pull request number that
+fixed it in the decline line instead. Either way the decline line ends with a citation, never a
+bare "declined -- one-off defect": that citation is what lets the next reader tell "filed, see #N"
+from "checked, already fixed by that commit" from "not checked", and an unlabelled decline reads
+as the third when it might be either of the first two. This does not reopen #1275 -- a
+non-blocking finding still skips the tracker at the moment it is *found*; this is only about the
+moment curate declines to turn it into a rule.
+
 **`defer` is a real answer, not a delay dressed up as one, and it is bounded.** The old rule here was
 *do not leave a fragment for next time* — written for a human who can always reach a decision given
 enough time in the room. A spawn sometimes honestly cannot: it lacks the standing to judge, or the
