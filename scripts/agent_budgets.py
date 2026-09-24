@@ -205,7 +205,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # and stop, the same as the label rule, and check .oss.json's
     # _milestones_note before re-filing). Ceiling unchanged; comfortably
     # under it.
-    "agents/triager.md": (16771, 16900),
+    "agents/triager.md": (17473, 17650),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):
@@ -415,7 +415,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # paragraph softened from "not a separate step you could skip" to prose
     # discipline plus a cross-reference to the scheduler's own backstop.
     # Ceiling unchanged; comfortably under.
-    "agents/sub-manager.md": (24991, 25200),
+    "agents/sub-manager.md": (27436, 27700),
     # #696: the releaser agent -- a fresh-context spawn holding tag-and-publish
     # authority, delegating the six gates to commands/release.md rather than
     # restating them (per #673's lesson about two documents drifting).

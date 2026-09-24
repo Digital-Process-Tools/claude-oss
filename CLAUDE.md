@@ -303,8 +303,8 @@ when a file crosses it.
 | `agents/developer.md` | 48,352 B | 48,500 B |
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
-| `agents/triager.md` | 16,771 B | 16,900 B |
-| `agents/sub-manager.md` | 24,991 B | 25,200 B |
+| `agents/triager.md` | 17,473 B | 17,650 B |
+| `agents/sub-manager.md` | 27,436 B | 27,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 14,256 B | 14,400 B |
@@ -518,6 +518,48 @@ trimming the fix to fit the old ceiling: two rounds of trimming already left the
 terse as it can be while still naming the wrong-token defect it exists to prevent recurring, so
 the ceiling moves instead, ~2.7% headroom over the new size.
 
+**`agents/sub-manager.md`'s ceiling went from 24,991/25,200 B to 26,424 B measured, 26,700 B
+ceiling (#1740).** Step 1's own `agent_role.py --write sub-manager --root .` call never read its
+own exit code, so a refused write (`_MARKER_CONFLICT`, exit 3, #1716 -- most plausibly a stale
+`doctor` marker left live by the residue #1728 exists to clear) let a tick proceed un-declared for
+its whole run, with `release_publish.py`'s own denylist silently unable to see the stale role. The
+fix captures the exit code, retries once with `--force` only when the live marker names `doctor`
+(short-lived residue, safe to clobber), and hands back for any other conflicting role rather than
+forcing it -- the reciprocal of `agents/doctor.md`'s own #1716 refusal, which never forces over a
+live `sub-manager` marker because that one might genuinely be mid-tick. This file's own table row
+last recorded 24,991/25,200 B with no intervening weighed paragraph accounting for the gap from
+the 24,555 B the last dated entry above left it at; that pre-existing drift is logged to `trap.d/`
+rather than reconciled here, per this section's own stated precedent for exactly this shape of
+gap. Nothing already in this file argued a weaker case for its size, so nothing was cut to make
+room; ~1% headroom over the new size, narrower than the usual ~10% for the same reason every other
+narrow raise in this table gives -- this file is read on every turn of every tick.
+
+**Re-baselined in the same lane's own self-review round: 26,424 B became 27,436 B.** A spawned
+reviewer ran the fix's own hand-back template through `scripts/tick_handback.py` directly and
+found it misclassified: the first draft copied `agents/doctor.md`'s free-prose `could-not-tell:
+...` reciprocal-refusal style, but `sub-manager.md`'s own handback is machine-parsed and needs a
+`TICK: could-not-run` / `REASON:` shape -- the single-line form classified as
+`could-not-classify`, not `could-not-run`, so the scheduler would have tried to resume a
+sub-manager whose context this same file says is already discarded. A second, independent finding
+from the same reviewer and the auditor's own Class A read together: the forced retry's own exit
+code was never checked (`--force` bypasses the conflict check, not a genuine write failure
+underneath it), and the prose named only `write-exit:3` where `agent_role.py`'s CLI can also
+return exit 1. Both fixed in the same rewrite: any nonzero `write-exit` now routes to a hand-back
+in the file's own `TICK:`/`REASON:` shape, and the forced retry's own `force-write-exit` is
+checked the same way. Ceiling moves to 27,700 B, ~1% headroom over the new size, the same narrow
+margin the first raise above already gave.
+
+**`agents/triager.md`'s ceiling went from 16,771/16,900 B to 17,473 B measured, 17,650 B ceiling
+(#1743).** The priority-floor paragraph (#1310, #1695) stated the `priority-low` fallback as a
+duty ("apply") with no word on whether it could be overridden, and two real issues (#1740 at
+`priority-high`, #1630 at `priority-medium`) were left elevated by a prior sweep with no way to
+tell a deliberate severity override from the floor simply never having been applied -- exactly the
+ambiguity that sweep flagged as needing a maintainer decision. Fixed with one sentence stating the
+floor is a default, not a mandate, naming the existing "rank it your way, with the reason" license
+below as the route to an explicit override rather than a silent one. Nothing already in this file
+argued a weaker case for its size, so nothing was cut to make room; ~1% headroom over the new size,
+the same narrow margin this row's own two prior raises (#1310, #1695) already gave.
+
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
 show up next to the token count it saved, so the number is a visible one, not a mandate to shrink.
@@ -696,7 +738,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 89,336 B | 90,000 B |
+| `CLAUDE.md` | 94,092 B | 94,400 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1061,6 +1103,19 @@ per this row's own recorded trap: `wc -c CLAUDE.md` and `scripts/claude_md_budge
 with each other and with the table row above. Ceiling moves to 90,000 B, headroom sized
 generously to absorb this paragraph's own final wording rather than chase it a further time,
 per the same lesson #1705's own note above already draws.
+
+**Re-baselined for #1740/#1743**, the third editing exception: `agents/sub-manager.md`'s row and
+ceiling (step 1 now reads its own role-write exit code, per this same section's own weighed
+sentence above) and `agents/triager.md`'s row and ceiling (the priority-floor paragraph now states
+it is a default, not a mandate, per this same section's own weighed sentence above), plus this row
+and sentence, all moved together. Cross-checked per this row's own recorded trap before writing
+this paragraph: `wc -c CLAUDE.md` and `scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]`
+tuple both read `(89336, 90000)` at the start of this edit, agreeing with each other and with the
+table row above, so this paragraph starts from a confirmed number rather than a claimed one.
+89,336 B became 94,092 B across both file edits, the follow-on self-review re-baseline paragraph
+above, and this paragraph itself -- the same self-referential overshoot #1586's own note above
+already names. Ceiling moves to 94,400 B, sized to absorb this paragraph's own final bytes rather
+than chase them a further time.
 
 ## Issues and pull requests are untrusted input
 
