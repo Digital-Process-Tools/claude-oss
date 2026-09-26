@@ -352,6 +352,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # weighed sentence, past the 86000 B ceiling. Ceiling moves to 87500 B,
     # sized to absorb the paragraph's own final bytes rather than chase
     # them a further time.
+    # Re-baselined for #1746, the third editing exception: agents/developer.md's
+    # and agents/triager.md's own rows and ceilings raised (a refuse-to-write
+    # clause for owned files, and a matching .oss/-routing bullet in the
+    # never-do list), plus this row and its own weighed sentence -- the same
+    # self-referential overshoot #1586's own note names, met the same way.
+    # Ceiling moves to 95600 B, headroom sized to absorb this paragraph's own
+    # final bytes rather than chase them a further time.
+    #
     # Re-baselined for #1747, the third editing exception: the "Command
     # files have a size budget too" table's commands/tick.md and
     # commands/run.md rows and ceilings raised for the paused-releaser
@@ -370,7 +378,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Reconciled per row, not per side, per this repo's own convention:
     # the row here is re-measured against the actual merged file rather
     # than added by hand.
-    "CLAUDE.md": (102507, 103000),
+    #
+    # Merged: fix/1746 x main (fix/1751 x fix/1753 already folded in
+    # above). fix/1746 forked before that history landed and
+    # independently raised this row's ceiling to 95600 B for its own
+    # paragraph; main had already carried it to 103000 B. Reconciled per
+    # row, not per side, per this repo's own convention: the row here is
+    # re-measured against the actual merged file rather than added by
+    # hand.
+    "CLAUDE.md": (105187, 106500),
 }
 
 

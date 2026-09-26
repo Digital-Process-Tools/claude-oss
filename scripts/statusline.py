@@ -1648,9 +1648,10 @@ def repo_root(start):
 
 def repo_config(root):
     try:
-        return json.loads((Path(root) / ".oss.json").read_text(encoding="utf-8"))
+        doc = json.loads((Path(root) / ".oss.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    return doc if isinstance(doc, dict) else {}
 
 
 def repo_version(root):
@@ -1661,7 +1662,8 @@ def repo_version(root):
     """
     manifest = Path(root) / ".claude-plugin" / "plugin.json"
     try:
-        version = json.loads(manifest.read_text(encoding="utf-8")).get("version")
+        doc = json.loads(manifest.read_text(encoding="utf-8"))
+        version = doc.get("version") if isinstance(doc, dict) else None
         if version:
             return version
     except (OSError, ValueError):
@@ -1770,6 +1772,8 @@ def installed_plugins(project_root, plugins_root=None):
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
+    if not isinstance(doc, dict):
+        return {}
     project = _normalized_path(project_root) if project_root is not None else None
     found = {}
     for key, entries in (doc.get("plugins") or {}).items():
@@ -1793,6 +1797,8 @@ def installed_plugins(project_root, plugins_root=None):
                         ).read_text(encoding="utf-8")
                     )
                 except (OSError, ValueError):
+                    continue
+                if not isinstance(manifest, dict):
                     continue
                 record["repository"] = manifest.get("repository")
                 record["dependencies"] = manifest.get("dependencies") or []
@@ -2595,9 +2601,10 @@ def _latest_release(repo):
     try:
         import base64
 
-        return json.loads(base64.b64decode(encoded).decode("utf-8")).get("version")
+        doc = json.loads(base64.b64decode(encoded).decode("utf-8"))
     except (ValueError, TypeError, UnicodeDecodeError):
         return None
+    return doc.get("version") if isinstance(doc, dict) else None
 
 
 def _watch_preset_declared(root):
@@ -2847,6 +2854,8 @@ def _installed_plugin_root(project_root, name, plugins_root=None):
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
+    if not isinstance(doc, dict):
+        return None
     project = _normalized_path(project_root) if project_root is not None else None
     for key, entries in (doc.get("plugins") or {}).items():
         if key.split("@", 1)[0] != name:
@@ -3010,7 +3019,8 @@ def refresh(root, now=None, session_id=None):
     root = Path(root)
     config = repo_config(root)
     repo = config.get("repo")
-    previous = read_cache(cache_path(repo)) or {}
+    previous = read_cache(cache_path(repo))
+    previous = previous if isinstance(previous, dict) else {}
     document = {"fetched_at": now, "repo": repo}
     if repo:
         document["prs"] = _gh_count(repo, "pr")
