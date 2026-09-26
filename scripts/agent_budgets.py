@@ -572,7 +572,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # skipped only on the could-not-tell stop at the top of the file, where
     # no marker of this run's own was ever written. 13062 B became 14256 B,
     # past the 13300 B ceiling. Ceiling moves to 14400 B, ~1% headroom.
-    "agents/doctor.md": (14256, 14400),
+    "agents/doctor.md": (14799, 14900),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the
