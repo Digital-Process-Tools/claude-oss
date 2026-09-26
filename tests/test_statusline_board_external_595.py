@@ -66,12 +66,30 @@ def test_a_cache_with_a_genuine_zero_external_count_is_not_none():
 # ---------------------------------------------------------------- _gh_external_issue_count
 
 
+def _issue_lines(rows):
+    """`rows`: list of (author_association, [label names]). Mirrors the real
+    `--jq` output shape (#1748): one `{"a": ..., "l": [...]}` JSON object per
+    line, not a bare association string -- the label list is what lets the
+    fixed call tell a triaged outside issue from one still waiting."""
+    return "\n".join(
+        json.dumps({"a": assoc, "l": list(labels)}) for assoc, labels in rows
+    )
+
+
 def test_membership_rows_are_not_counted_as_external(monkeypatch):
     """`_run` is mocked to return the shape the fixed call actually produces: one
-    `author_association` value per line, raw text -- `gh api --jq` output, not a
-    JSON array (#620). PR rows never reach here at all: the jq `select` that keeps
-    them out runs server-side, before this function ever sees output."""
-    lines = "OWNER\nMEMBER\nCOLLABORATOR\nNONE\nCONTRIBUTOR"
+    JSON object per line, `gh api --jq` output (#1748), never a JSON array (#620).
+    PR rows never reach here at all: the jq `select` that keeps them out runs
+    server-side, before this function ever sees output."""
+    lines = _issue_lines(
+        [
+            ("OWNER", []),
+            ("MEMBER", []),
+            ("COLLABORATOR", []),
+            ("NONE", []),
+            ("CONTRIBUTOR", []),
+        ]
+    )
     monkeypatch.setattr(statusline, "_run", lambda command, timeout=25: lines)
     assert statusline._gh_external_issue_count("owner/repo", 5) == 2
 
@@ -80,9 +98,37 @@ def test_a_null_association_makes_the_whole_count_unreliable(monkeypatch):
     """None is not a floor -- one unreadable row and the whole count is untaken, per
     the module's own convention that a partial read is not a measurement. `null` is
     the literal jq prints for a missing/`None` field in raw mode."""
-    lines = "OWNER\nnull"
+    lines = '{"a": "OWNER", "l": []}\n{"a": null, "l": []}'
     monkeypatch.setattr(statusline, "_run", lambda command, timeout=25: lines)
     assert statusline._gh_external_issue_count("owner/repo", 2) is None
+
+
+def test_a_fully_triaged_outside_issue_is_no_longer_unruled(monkeypatch):
+    """#1748: an outside issue carrying both a declared priority and a declared
+    lane label has been accepted and triaged, even while it stays open pending
+    the fix -- it must not count as still unruled forever."""
+    lines = _issue_lines(
+        [
+            ("CONTRIBUTOR", ["priority-medium", "lane-doctor"]),  # triaged
+            ("CONTRIBUTOR", ["priority-medium"]),  # missing lane -- still unruled
+        ]
+    )
+    monkeypatch.setattr(statusline, "_run", lambda command, timeout=25: lines)
+    count = statusline._gh_external_issue_count(
+        "owner/repo",
+        2,
+        priority_labels=["priority-high", "priority-medium", "priority-low"],
+        lane_labels=["lane-doctor"],
+    )
+    assert count == 1, count
+
+
+def test_an_untriaged_outside_issue_is_still_unruled_positive_control(monkeypatch):
+    """Positive control for the assertion above: with no labels declared for
+    either axis, every external row still counts, exactly as before #1748."""
+    lines = _issue_lines([("CONTRIBUTOR", ["priority-medium", "lane-doctor"])])
+    monkeypatch.setattr(statusline, "_run", lambda command, timeout=25: lines)
+    assert statusline._gh_external_issue_count("owner/repo", 1) == 1
 
 
 def test_fewer_rows_than_the_known_total_is_unreliable_not_undercounted():

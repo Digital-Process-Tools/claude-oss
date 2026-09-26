@@ -180,7 +180,9 @@ def test_refresh_records_the_session_that_took_the_reading(tmp_path, monkeypatch
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 0
+    )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(
@@ -207,7 +209,9 @@ def test_refresh_the_must_not_fire_control_no_session_id_records_none(
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 0
+    )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(

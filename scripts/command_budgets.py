@@ -257,18 +257,35 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # a branch gets pushed and turned into a pull request (never waited on --
     # the ordinary dispatch/review/merge cadence picks it up). 9632 B became
     # 10380 B. Ceiling unchanged, ~2% headroom.
-    # Raised for #1747: 10380 B became 10771 B, past the 10600 B ceiling by
-    # 171 B. The `## release` section's spawn was one of the last bare
-    # `Agent(subagent_type: "oss:releaser")` calls in the repo -- the same
-    # gap #1586/#1649 already closed for oss:recon and oss:doctor -- and the
-    # section named no `paused` handling at all, the actual procedure the
-    # scheduler in #1747 was following when a resumed releaser's own
-    # SubagentHandback never reached it. Fixed with the pin plus one sentence
-    # pointing at `commands/tick.md`'s own release-trigger paragraph for the
-    # fallback, rather than duplicating it here. Nothing already in the file
-    # argued a weaker case for its size, so nothing was cut to make room;
-    # the ceiling moves to 11000 B, ~2% headroom over the new size.
-    "commands/run.md": (10771, 11000),
+    # Re-baselined for #1748: step 2's inbound carve-out claimed `--take
+    # inbound` was never needed, contradicting the "doubly safe" paragraph
+    # just below it that already assumed the receipt gets armed for inbound
+    # the same way it does for curate/triage. The carve-out is removed:
+    # inbound now gets the same `--take <source>` call every other source
+    # gets, before proceeding straight to dispatch. 10380 B became 10620 B,
+    # past the old 10600 B ceiling. Nothing already in this file argued a
+    # weaker case for its size, so nothing was cut to make room; ceiling
+    # moves to 10700 B, ~0.75% headroom over the new size.
+    #
+    # Raised for #1747 (parallel branch): 10380 B became 10771 B, past the
+    # 10600 B ceiling by 171 B. The `## release` section's spawn was one of
+    # the last bare `Agent(subagent_type: "oss:releaser")` calls in the
+    # repo -- the same gap #1586/#1649 already closed for oss:recon and
+    # oss:doctor -- and the section named no `paused` handling at all, the
+    # actual procedure the scheduler in #1747 was following when a resumed
+    # releaser's own SubagentHandback never reached it. Fixed with the pin
+    # plus one sentence pointing at `commands/tick.md`'s own release-trigger
+    # paragraph for the fallback, rather than duplicating it here. The
+    # ceiling moved to 11000 B, ~2% headroom over that branch's own size.
+    #
+    # Merged: fix/1750 x main. Both branches touched disjoint text spans of
+    # the same file (the inbound `--take` fix vs. the release-spawn pin), so
+    # git's own merge combined both without a textual conflict; only this
+    # tuple named the same fact twice, per this repo's own "lanes cannot be
+    # file-disjoint for prose" convention. Re-measured against the actual
+    # merged file rather than added by hand: 11011 B, past both branches'
+    # own 11000 B ceiling by 11 B. Ceiling moves to 11100 B, ~0.8% headroom.
+    "commands/run.md": (11011, 11100),
 }
 
 

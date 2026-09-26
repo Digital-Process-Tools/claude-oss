@@ -531,6 +531,16 @@ def test_triage_count_is_the_larger_of_no_lane_and_no_priority():
     assert count == 3, why
 
 
+def test_triage_count_why_names_the_legacy_prefixes_with_no_config():
+    """Positive control for the assertion above: with no config given, the
+    `why` message must still name the historical `lane-*`/`priority-*`
+    prefix convention -- the fix must not touch this call shape's message."""
+    run = _fake_run_issues(no_lane=1, no_priority=3, total=5)
+    _count, why = workspace_routes.triage_count("example/example", "gh", run)
+    assert "lane-*" in why, why
+    assert "priority-*" in why, why
+
+
 def test_triage_count_of_a_fully_labelled_board_is_zero():
     """Positive control: every issue carries both labels -- a real `0`."""
     run = _fake_run_issues(no_lane=0, no_priority=0, total=5)
@@ -547,6 +557,58 @@ def test_triage_count_a_failed_gh_call_is_could_not_count():
 def test_triage_count_with_no_gh_binary_is_could_not_count():
     count, why = workspace_routes.triage_count("example/example", None, subprocess.run)
     assert count is None, why
+
+
+def _fake_run_issues_with_labels(label_sets):
+    """A stand-in for `subprocess.run`, one issue per entry in `label_sets`,
+    each entry a list of the label names that issue carries verbatim."""
+    issues = [
+        {"number": i, "labels": [{"name": name} for name in names]}
+        for i, names in enumerate(label_sets)
+    ]
+
+    class _Result:
+        pass
+
+    def run(command, stdout=None, stderr=None, timeout=None):
+        result = _Result()
+        result.returncode = 0
+        result.stdout = json.dumps(issues).encode("utf-8")
+        result.stderr = b""
+        return result
+
+    return run
+
+
+def test_triage_count_honours_config_declared_label_spellings():
+    """#1749: a repo whose `.oss.json` spells its priority label
+    `priority:high` (colon) rather than `priority-high` (hyphen) must not
+    have every issue counted as missing it -- `triage_count` should match
+    against what the repo actually declares, the same way
+    `statusline._gh_unlabelled_issue_counts` already does."""
+    label_sets = [
+        ["lane-doctor", "priority:high"],
+        ["lane-doctor", "priority:medium"],
+        ["priority:low"],  # missing lane
+        ["lane-doctor"],  # missing priority
+        ["lane-doctor", "priority:high"],
+        ["lane-doctor", "priority:high"],
+    ]
+    run = _fake_run_issues_with_labels(label_sets)
+    config = {
+        "labels": {
+            "priority": ["priority:high", "priority:medium", "priority:low"],
+            "lanes": ["lane-doctor"],
+        }
+    }
+    count, why = workspace_routes.triage_count(
+        "example/example", "gh", run, config=config
+    )
+    assert count == 1, why
+    assert "declared lane label" in why, why
+    assert "declared priority label" in why, why
+    assert "lane-*" not in why, why
+    assert "priority-*" not in why, why
 
 
 # --- decide(): thresholds, third state, precedence ---------------------------

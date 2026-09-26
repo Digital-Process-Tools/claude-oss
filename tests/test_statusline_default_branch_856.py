@@ -669,7 +669,7 @@ def test_gather_is_none_when_no_default_branch_is_configured(tmp_path, monkeypat
 
 def _stub_refresh_deps(monkeypatch):
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, n: 0)
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, n, **k: 0)
     monkeypatch.setattr(
         statusline, "_gh_unlabelled_issue_counts", lambda repo, n, pl, ll: {}
     )

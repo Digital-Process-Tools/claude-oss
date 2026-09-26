@@ -73,7 +73,7 @@ def test_pr_argument_vector_hits_the_pulls_endpoint_not_issues(monkeypatch):
 
 
 def test_both_counts_measured_is_the_measured_state(monkeypatch):
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda r, t: 2)
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda r, t, **k: 2)
     monkeypatch.setattr(statusline, "_gh_external_pr_count", lambda r, t: 1)
     reading = statusline.inbound_reading("owner/repo", 14, 4)
     assert reading == {
@@ -88,7 +88,7 @@ def test_either_count_failing_is_could_not_tell_not_a_partial_number(monkeypatch
     """The must-fire control for the test above: one read failing must not
     quietly report the other's real number as though the whole thing
     measured cleanly."""
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda r, t: None)
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda r, t, **k: None)
     monkeypatch.setattr(statusline, "_gh_external_pr_count", lambda r, t: 1)
     reading = statusline.inbound_reading("owner/repo", 14, 4)
     assert reading["state"] == "could-not-tell"
@@ -99,7 +99,7 @@ def test_either_count_failing_is_could_not_tell_not_a_partial_number(monkeypatch
 def test_unanswered_comments_is_always_none(monkeypatch):
     """#1406's own scope line: no per-thread walk is built yet, and this must
     never silently render as a measured zero."""
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda r, t: 0)
+    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda r, t, **k: 0)
     monkeypatch.setattr(statusline, "_gh_external_pr_count", lambda r, t: 0)
     reading = statusline.inbound_reading("owner/repo", 0, 0)
     assert reading["unanswered_comments"] is None
@@ -190,7 +190,9 @@ def test_refresh_populates_inbound_on_the_board_clock(tmp_path, monkeypatch):
     monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda *a, **k: None)
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(statusline, "_doctor_reading", lambda root: None)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 1)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 1
+    )
     received = {}
 
     def _fake_inbound_reading(repo, i, p, unruled_issues=None):

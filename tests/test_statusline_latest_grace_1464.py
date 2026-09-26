@@ -203,7 +203,9 @@ def test_refresh_records_a_failure_when_a_due_ask_gets_nothing_back(
     )
     monkeypatch.setattr(statusline, "_latest_release", lambda slug: None)
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: None)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, n: None)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, n, **k: None
+    )
     monkeypatch.setattr(
         statusline, "_gh_unlabelled_issue_counts", lambda repo, n, pl, ll: None
     )
@@ -256,7 +258,9 @@ def test_refresh_clears_a_prior_failure_on_a_successful_ask(monkeypatch, tmp_pat
     )
     monkeypatch.setattr(statusline, "_latest_release", lambda slug: "0.14.0")
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: None)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, n: None)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, n, **k: None
+    )
     monkeypatch.setattr(
         statusline, "_gh_unlabelled_issue_counts", lambda repo, n, pl, ll: None
     )

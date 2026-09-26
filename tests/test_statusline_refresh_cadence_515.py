@@ -75,7 +75,7 @@ def _refresh(tmp_path, monkeypatch, answers, cache=None):
     monkeypatch.setattr(
         statusline,
         "_gh_external_issue_count",
-        lambda repo, total: answers.get("external", 0),
+        lambda repo, total, **k: answers.get("external", 0),
     )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: answers["rollups"])
     monkeypatch.setattr(

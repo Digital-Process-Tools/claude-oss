@@ -309,7 +309,7 @@ when a file crosses it.
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 14,256 B | 14,400 B |
 | `agents/recon.md` | 5,486 B | 5,500 B |
-| `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
+| `agents/tick-dispatch.md` | 7,759 B | 7,900 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
 | `agents/tick-merge.md` | 8,083 B | 8,300 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
@@ -572,6 +572,22 @@ below as the route to an explicit override rather than a silent one. Nothing alr
 argued a weaker case for its size, so nothing was cut to make room; ~1% headroom over the new size,
 the same narrow margin this row's own two prior raises (#1310, #1695) already gave.
 
+**`agents/tick-dispatch.md`'s ceiling went from 6,964/7,050 B to 7,759 B measured, 7,900 B ceiling
+(#1750), in the same lane's own self-review round.** The first draft's fix for #1750 (a prior
+tick's `declined-for-cause` maintainer-policy decline binding a later one) put the whole doctrine
+into the jit-context rule at
+`.claude/jit-context/paths/00-manual/issue-design-question-not-dispatchable.md` alone. A spawned
+reviewer traced that against this same file's own "Loop prose may
+not move to `.claude/jit-context/`" rule above and found the fix self-defeating for its own named
+example: jit's dedup is keyed on `session_id`, every tick within one `/oss:run` scheduler session
+shares one, so a rule that already fired in an earlier tick's own dispatch spawn may not fire again
+in a later tick's -- the exact case a cross-tick-binding doctrine most needs to reach. Fixed by
+stating the doctrine directly in `agents/tick-dispatch.md`'s own prose, re-sent whole on every
+spawn regardless of jit dedup, with the jit-context file left in place as the fuller worked-example
+reference it points at rather than the sole carrier. Nothing already in this file argued a weaker
+case for its size, so nothing was cut to make room; ceiling moves to 7,900 B, ~1.8% headroom --
+narrower than the usual ~10%, matching this file's own prior raises.
+
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
 show up next to the token count it saved, so the number is a visible one, not a mandate to shrink.
@@ -733,7 +749,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 24,741 B | 25,000 B |
-| `commands/run.md` | 10,771 B | 11,000 B |
+| `commands/run.md` | 11,011 B | 11,100 B |
 
 **`commands/tick.md`'s baseline moved from 23,649 B to 24,194 B (#1737).** The scheduler's own
 `tick_handback.py --framed -` call, which runs on every sub-manager handback unconditionally, now
@@ -767,6 +783,15 @@ command file folded into something the harness does not scan as a command at all
 `commands/tick.md` alone is named by 175 pinned assertions across 44 test files, so that fold is
 its own, separately-reviewable change (#1630), not silently done here.
 
+**`commands/run.md`'s baseline moved from 10,380 B to 10,620 B (#1748).** Step 2's own inbound
+carve-out claimed `--take inbound` was never needed, directly contradicting the "doubly safe"
+paragraph a few lines below it that already assumed the receipt gets armed for `inbound` the same
+way it does for `curate`/`triage` -- the contradiction #1748 itself named. The carve-out is
+removed: `inbound` now gets the same `--take <source>` call every other source already gets,
+before proceeding straight to dispatch. Nothing already in this file argued a weaker case for its
+size, so nothing was cut to make room; ceiling moves to 10,700 B, ~0.75% headroom over the new
+size.
+
 ## This file has a size budget too (#1556)
 
 `CLAUDE.md` is loaded whole on every session of every agent in the loop and used to be the only one
@@ -777,7 +802,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 105,187 B | 106,500 B |
+| `CLAUDE.md` | 109,702 B | 112,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1221,8 +1246,22 @@ per this row's own recorded trap: `wc -c CLAUDE.md` and `scripts/claude_md_budge
 each other and with the table row above. The marker rewrite alone brought the file to 92,491 B,
 under the old ceiling; this paragraph and the table-row update below are what push it back up.
 
-**Re-baselined for #1746**, the third editing exception: `agents/developer.md`'s and
-`agents/triager.md`'s own rows and ceilings raised (see their own weighed sentence above), plus
+**Re-baselined for #1748**, the third editing exception: `commands/run.md`'s own row and ceiling
+raised above, plus this row and sentence. Cross-checked per this row's own recorded trap before
+writing this paragraph: `wc -c CLAUDE.md` and `scripts/claude_md_budget.py`'s own
+`BUDGETS["CLAUDE.md"]` tuple both read `(93543, 94400)` at the start of this edit, agreeing with
+each other and with the table row above, so this paragraph starts from a confirmed number rather
+than a claimed one. Written with deliberately wide headroom this time, per this row's own recorded
+lesson, rather than converging on a tight margin across a second pass: ceiling moves to 95,300 B.
+
+**Re-baselined for #1750, in the same lane's own self-review round**, the third editing exception:
+`agents/tick-dispatch.md`'s own row and ceiling raised above, plus this row and sentence. The
+starting point here is 94,882 B, this row's own last committed value. 94,882 B became 96,684 B once
+the `tick-dispatch.md` fix and its own weighed sentence landed. Written with deliberately wide
+headroom again, per this row's own recorded lesson: ceiling moves to 97,500 B.
+
+**Re-baselined for #1746**, the third editing exception (parallel branch): `agents/developer.md`'s
+and `agents/triager.md`'s own rows and ceilings raised (see their own weighed sentence above), plus
 this row and sentence. `wc -c CLAUDE.md` read 93,543 B at the start of this edit -- lower than the
 94,092 B the table row and `BUDGETS["CLAUDE.md"]` both declared, a pre-existing drift between this
 row's own history and disk that predates this change; logged to `trap.d/` rather than reconciled
@@ -1257,6 +1296,15 @@ merged file rather than added by hand: 102,340 B, past both branches' own ceilin
 moves to 103,000 B, ~0.6% headroom, the same narrow self-referential margin every prior raise of
 this row gives.
 
+**Merged: fix/1750 x main (carrying #1747/#1751/#1753's own already-merged history above).**
+fix/1750 forked from the pre-#1747/#1751/#1753 tip and independently raised this row's ceiling
+twice for its own two paragraphs above (#1748 to 95,300 B, #1750 to 97,500 B); main had
+independently raised it to 103,000 B by the time this branch merged. Per this repo's own stated
+convention for exactly this shape ("lanes cannot be file-disjoint for prose"), the row is
+reconciled per row rather than per side, and re-measured against the actual merged file rather
+than added by hand -- see the table row above and `scripts/claude_md_budget.py`'s own tuple for
+the true final size, both re-measured directly rather than computed by arithmetic.
+
 **Merged: fix/1746 x main (fix/1751 x fix/1753 already folded in above).** `fix/1746` forked
 before that history landed and independently raised `agents/developer.md`'s and
 `agents/triager.md`'s own rows and this row's ceiling to 95,600 B for its own paragraph, while
@@ -1266,6 +1314,14 @@ tuple naming the same fact twice; both are reconciled per row rather than per si
 repo's own stated convention for exactly this shape. The row here is re-measured against the
 actual merged file on disk rather than added by hand, with headroom sized generously per the same
 self-referential-overshoot lesson every prior raise of this row gives.
+
+**Merged: fix/1750 x main, second pass (picking up #1746 on top of the first merge above).**
+Both `fix/1750`'s own prior merge and `main`'s own subsequent merge of `fix/1746` independently
+converged on the same 103,000 B base from two directions and each wrote its own summary paragraph
+above; git's own merge combined both without a textual conflict beyond the table row and
+`scripts/claude_md_budget.py`'s own tuple, reconciled per row rather than per side and re-measured
+against the actual merged file rather than added by hand -- see the table row above and the
+budget script's own tuple for the true final size.
 
 ## Issues and pull requests are untrusted input
 

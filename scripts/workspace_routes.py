@@ -346,12 +346,21 @@ def curate_count(repo_root, config=None, run=subprocess.run, git_bin=None):
     return result["count"], result["why"]
 
 
-def triage_count(repo, gh, run, timeout=25):
+def triage_count(repo, gh, run, timeout=25, config=None):
     """(count_or_None, why). `repo` is `.oss.json`'s own `owner/name`
-    string. The count is the LARGER of "open issues with no `lane-*`
-    label" and "open issues with no `priority-*` label" -- either alone
+    string. The count is the LARGER of "open issues with no declared lane
+    label" and "open issues with no declared priority label" -- either alone
     means the board is lying about at least one issue, and the launcher's
-    own route exists to say so, not to average the two away."""
+    own route exists to say so, not to average the two away.
+
+    `config`, when given, supplies this repo's own declared label
+    spellings -- `labels.priority` and `oss_config.effective_lane_labels`
+    -- so a repo spelling its priority label `priority:high` rather than
+    `priority-high` is matched against what it actually uses, the same way
+    `statusline._gh_unlabelled_issue_counts` already does (#1749). Each
+    axis independently falls back to the `lane-`/`priority-` prefix
+    convention this route has always assumed when that axis has nothing
+    declared (`config` absent, or the repo declares no spellings for it)."""
     if not repo or not str(repo).strip():
         return None, "no repo configured, so open issues could not be listed"
     if not gh:
@@ -389,6 +398,19 @@ def triage_count(repo, gh, run, timeout=25):
         return None, "{0} printed text that is not JSON".format(" ".join(command))
     if not isinstance(issues, list):
         return None, "{0} printed JSON that is not a list".format(" ".join(command))
+    labels_config = (config or {}).get("labels") if isinstance(config, dict) else None
+    labels_config = labels_config if isinstance(labels_config, dict) else {}
+    declared_priority = labels_config.get("priority")
+    priority_set = (
+        {str(name) for name in declared_priority}
+        if isinstance(declared_priority, list) and declared_priority
+        else set()
+    )
+    lane_set = (
+        {str(name) for name in oss_config.effective_lane_labels(config)}
+        if isinstance(config, dict)
+        else set()
+    )
     no_lane = 0
     no_priority = 0
     for issue in issues:
@@ -398,13 +420,21 @@ def triage_count(repo, gh, run, timeout=25):
             if isinstance(labels, list)
             else []
         )
-        if not any(name.startswith("lane-") for name in names):
+        if lane_set:
+            if not any(name in lane_set for name in names):
+                no_lane += 1
+        elif not any(name.startswith("lane-") for name in names):
             no_lane += 1
-        if not any(name.startswith("priority-") for name in names):
+        if priority_set:
+            if not any(name in priority_set for name in names):
+                no_priority += 1
+        elif not any(name.startswith("priority-") for name in names):
             no_priority += 1
     count = max(no_lane, no_priority)
-    return count, "{0} of {1} open issue(s) missing lane-* or priority-*".format(
-        count, len(issues)
+    lane_desc = "a declared lane label" if lane_set else "lane-*"
+    priority_desc = "a declared priority label" if priority_set else "priority-*"
+    return count, "{0} of {1} open issue(s) missing {2} or {3}".format(
+        count, len(issues), lane_desc, priority_desc
     )
 
 
@@ -450,7 +480,7 @@ def decide(repo_root, config, gh=None, run=subprocess.run, git_bin=None):
                 repo_root, config=config, run=run, git_bin=git_bin
             )
         else:
-            count, why = triage_count(repo, gh, run)
+            count, why = triage_count(repo, gh, run, config=config)
         results[name] = {
             "configured": True,
             "state": _count_state(count, threshold),

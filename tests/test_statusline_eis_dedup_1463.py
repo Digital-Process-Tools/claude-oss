@@ -64,7 +64,7 @@ def test_refresh_reads_the_external_issue_count_exactly_once(tmp_path, monkeypat
 
     calls = []
 
-    def _counted(repo, total):
+    def _counted(repo, total, **kwargs):
         calls.append((repo, total))
         return 2
 
@@ -95,7 +95,7 @@ def test_a_failed_external_read_is_not_retried_a_second_time(tmp_path, monkeypat
 
     calls = []
 
-    def _counted(repo, total):
+    def _counted(repo, total, **kwargs):
         calls.append((repo, total))
         return None
 
@@ -118,7 +118,7 @@ def test_inbound_reading_called_directly_still_takes_its_own_fresh_count(monkeyp
     still trigger the function's own live call in that shape."""
     calls = []
 
-    def _counted(repo, total):
+    def _counted(repo, total, **kwargs):
         calls.append((repo, total))
         return 3
 
@@ -134,7 +134,7 @@ def test_inbound_reading_called_directly_still_takes_its_own_fresh_count(monkeyp
 def test_inbound_reading_prefers_a_precomputed_count_over_calling_again(monkeypatch):
     calls = []
 
-    def _counted(repo, total):
+    def _counted(repo, total, **kwargs):
         calls.append((repo, total))
         return 99
 
@@ -155,7 +155,7 @@ def test_inbound_reading_honours_an_explicit_precomputed_none_without_retrying(
     removes, just moved one call later."""
     calls = []
 
-    def _counted(repo, total):
+    def _counted(repo, total, **kwargs):
         calls.append((repo, total))
         return 5
 

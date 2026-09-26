@@ -53,6 +53,16 @@ must never stand in for the third -- `candidates` (ranked claimable groups, one 
 label), `none-available` (every input read cleanly, nothing survived), `could-not-select` (at least one
 input could not be read, named). Report whichever one this returns, verbatim.
 
+**An issue you can tell needs a maintainer decision is not yours to decide either way, even once
+(#1750).** You are spawned fresh every tick with no memory of any earlier one, so you cannot know
+whether a prior tick already declined this exact issue for exactly this reason -- treat that as
+reason for more caution, not less: if your own read of the issue's body or comments says a design
+or policy question is outstanding, `declined-for-cause` it and move on. Deciding for yourself that
+the stakes are low or the change is reversible is not a maintainer's signal, however sound that
+reasoning looks in isolation -- it is the exact failure #1750 was filed over. Full reasoning and the
+worked example live at the jit-context rule matching this file:
+`issue-design-question-not-dispatchable.md`.
+
 For each lane you decide to fill (default three, per lane label, never four -- `skills/manager/phases/
 dispatch.md`'s "Run a fleet, not a queue" carries the full companion-search and file-disjointness
 argument; read it there rather than re-deriving it, since that is exactly the reasoning this spawn

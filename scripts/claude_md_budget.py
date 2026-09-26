@@ -352,41 +352,68 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # weighed sentence, past the 86000 B ceiling. Ceiling moves to 87500 B,
     # sized to absorb the paragraph's own final bytes rather than chase
     # them a further time.
-    # Re-baselined for #1746, the third editing exception: agents/developer.md's
-    # and agents/triager.md's own rows and ceilings raised (a refuse-to-write
-    # clause for owned files, and a matching .oss/-routing bullet in the
-    # never-do list), plus this row and its own weighed sentence -- the same
-    # self-referential overshoot #1586's own note names, met the same way.
-    # Ceiling moves to 95600 B, headroom sized to absorb this paragraph's own
-    # final bytes rather than chase them a further time.
     #
-    # Re-baselined for #1747, the third editing exception: the "Command
-    # files have a size budget too" table's commands/tick.md and
-    # commands/run.md rows and ceilings raised for the paused-releaser
-    # resume fallback, plus this row and its own weighed sentence. 93543 B
-    # became 95826 B, then 96093 B once a self-review round fixed a stale
-    # cross-check citation in this row's own closing paragraph (copy-pasted
-    # from the prior paragraph rather than re-derived at the point it was
-    # written). Ceiling moves to 97200 B, written with deliberately wide
-    # headroom this time rather than a tight margin, per the recorded
-    # self-referential-overshoot trap for this exact row.
+    # Re-baselined for #1748: commands/run.md's own row and ceiling raised
+    # (the inbound `--take` receipt fix, #1748), plus this file's own row
+    # and weighed sentence. 93543 B became 94882 B. Ceiling moves to
+    # 95300 B, written with deliberately wide headroom per this row's own
+    # recorded self-referential-overshoot trap.
     #
-    # Merged: fix/1751 x fix/1753. Both branches forked from the same
-    # 96093 B base and independently raised this row's ceiling for their
-    # own paragraph -- fix/1751's own #1745/#1751 fixes and two
-    # self-review rounds to 98500 B, fix/1753's #1747 fix to 97200 B.
-    # Reconciled per row, not per side, per this repo's own convention:
-    # the row here is re-measured against the actual merged file rather
-    # than added by hand.
+    # Re-baselined for #1750, in the same lane's own self-review round:
+    # agents/tick-dispatch.md's own row and ceiling raised (the sticky-
+    # maintainer-decline doctrine moved out of jit-context, which cannot
+    # reliably reach a later tick in the same scheduler session, and into
+    # this file's own re-sent-whole prose instead), plus this file's own
+    # row and weighed sentence. 94882 B became 96684 B. Ceiling moves to
+    # 97500 B, written with deliberately wide headroom per this row's own
+    # recorded self-referential-overshoot trap.
+    #
+    # Re-baselined for #1746, the third editing exception (parallel
+    # branch): agents/developer.md's and agents/triager.md's own rows and
+    # ceilings raised (a refuse-to-write clause for owned files, and a
+    # matching .oss/-routing bullet in the never-do list), plus this row
+    # and its own weighed sentence. Ceiling moves to 95600 B.
+    #
+    # Re-baselined for #1747, the third editing exception (parallel
+    # branch): the "Command files have a size budget too" table's
+    # commands/tick.md and commands/run.md rows and ceilings raised for
+    # the paused-releaser resume fallback, plus this row and its own
+    # weighed sentence. 93543 B became 95826 B, then 96093 B once a
+    # self-review round fixed a stale cross-check citation in this row's
+    # own closing paragraph. Ceiling moved to 97200 B.
+    #
+    # Merged: fix/1751 x fix/1753 (landed on main before this branch's own
+    # merge). Both branches forked from the same 96093 B base and
+    # independently raised this row's ceiling for their own paragraph --
+    # fix/1751's own #1745/#1751 fixes and two self-review rounds to
+    # 98500 B, fix/1753's #1747 fix to 97200 B. Reconciled per row, not
+    # per side: main's own value became (102507, 103000) -- note this
+    # figure already disagrees by 167 B with the 102,340 B this same
+    # commit's own CLAUDE.md table-row history cites for the identical
+    # merge, a pre-existing drift between the two files logged to
+    # `trap.d/` rather than reconciled here, per this repo's own stated
+    # precedent for exactly this shape of gap.
     #
     # Merged: fix/1746 x main (fix/1751 x fix/1753 already folded in
-    # above). fix/1746 forked before that history landed and
-    # independently raised this row's ceiling to 95600 B for its own
-    # paragraph; main had already carried it to 103000 B. Reconciled per
-    # row, not per side, per this repo's own convention: the row here is
+    # above, parallel branch). fix/1746 forked before that history landed
+    # and independently raised this row's ceiling to 95600 B for its own
+    # paragraph; main had already carried it to 103000 B.
+    #
+    # Merged: fix/1750 x main. fix/1750 forked before #1747/#1751/#1753
+    # and independently raised this row twice for its own two paragraphs
+    # above; main had independently raised it to 103000 B by the time
+    # this branch merged. Reconciled per row, not per side, and
     # re-measured against the actual merged file rather than added by
     # hand.
-    "CLAUDE.md": (105187, 106500),
+    #
+    # Merged: fix/1750 x main, second pass (picking up #1746 on top of
+    # the first merge above). Both fix/1750's own prior merge and main's
+    # own subsequent merge of fix/1746 independently converged on the
+    # same 103000 B base from two directions. Reconciled per row, not per
+    # side, and re-measured against the actual merged file rather than
+    # added by hand -- see the tuple immediately below for the true
+    # final value.
+    "CLAUDE.md": (109702, 112000),
 }
 
 

@@ -87,7 +87,7 @@ def _quiet_inbound(monkeypatch):
     monkeypatch.setattr(
         next_action,
         "_fresh_inbound_reading",
-        lambda repo: {
+        lambda repo, priority_labels=None, lane_labels=None: {
             "state": "measured",
             "unruled_issues": 0,
             "unreviewed_prs": 0,
@@ -348,7 +348,7 @@ def test_record_skip_with_state_file_override_writes_scratch_not_configured_file
     monkeypatch.setattr(
         next_action,
         "_fresh_inbound_reading",
-        lambda repo: {
+        lambda repo, priority_labels=None, lane_labels=None: {
             "state": "measured",
             "unruled_issues": 1,
             "unreviewed_prs": 0,

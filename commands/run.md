@@ -99,7 +99,10 @@ never arbitrating one verdict:
   arms `<source>`'s own receipt itself once the skip is recorded. `source` is `inbound`, `release`,
   `curate` or `triage`. `inbound` has no dedicated spawn of its own below -- `skills/manager/phases/
   inbound.md` is read inside dispatch's own tick, so an `inbound` `candidates[0]` proceeds straight
-  to **dispatch** rather than pointing anywhere new (and needs no `--take` call either).
+  to **dispatch** rather than pointing anywhere new. It still gets the same `--take inbound` call
+  above first (#1748): skipping it left the receipt unarmed forever, so an outside issue this loop
+  had already accepted and triaged read as freshly due on every tick, with no procedure here ever
+  allowed to clear it by closing.
 - **`nothing-due`** -- no source due; an unconfigured route is named, not folded into
   "clean" (#1610). Proceed to **dispatch**.
 

@@ -135,7 +135,9 @@ def _stub_refresh_forge_calls(monkeypatch):
         statusline, "_fork_refresh", lambda root, repo, session_id=None: None
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 0
+    )
     monkeypatch.setattr(statusline, "_gh_unlabelled_issue_counts", lambda *a, **k: {})
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
     monkeypatch.setattr(statusline, "check_rollup_counts", lambda *a, **k: {})
