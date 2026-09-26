@@ -1164,7 +1164,7 @@ lesson, rather than converging on a tight margin across a second pass: ceiling m
 
 **Re-baselined for #1750, in the same lane's own self-review round**, the third editing exception:
 `agents/tick-dispatch.md`'s own row and ceiling raised above, plus this row and sentence. The
-starting point here is 94,882 B, this row's own last committed value. 94,882 B became 96,216 B once
+starting point here is 94,882 B, this row's own last committed value. 94,882 B became 96,684 B once
 the `tick-dispatch.md` fix and its own weighed sentence landed. Written with deliberately wide
 headroom again, per this row's own recorded lesson: ceiling moves to 97,500 B.
 
