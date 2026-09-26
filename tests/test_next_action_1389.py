@@ -85,7 +85,7 @@ def _quiet_inbound(monkeypatch, unruled=0, unreviewed=0, measured=True):
     monkeypatch.setattr(
         next_action,
         "_fresh_inbound_reading",
-        lambda repo: {
+        lambda repo, priority_labels=None, lane_labels=None: {
             "state": "measured" if measured else "could-not-tell",
             "unruled_issues": unruled,
             "unreviewed_prs": unreviewed,

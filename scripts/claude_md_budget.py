@@ -352,7 +352,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # weighed sentence, past the 86000 B ceiling. Ceiling moves to 87500 B,
     # sized to absorb the paragraph's own final bytes rather than chase
     # them a further time.
-    "CLAUDE.md": (93543, 94400),
+    #
+    # Re-baselined for #1748: commands/run.md's own row and ceiling raised
+    # (the inbound `--take` receipt fix, #1748), plus this file's own row
+    # and weighed sentence. 93543 B became 94882 B. Ceiling moves to
+    # 95300 B, written with deliberately wide headroom per this row's own
+    # recorded self-referential-overshoot trap.
+    "CLAUDE.md": (94882, 95300),
 }
 
 

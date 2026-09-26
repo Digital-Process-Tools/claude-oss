@@ -336,17 +336,28 @@ def _routes(repo_root, config, gh=None, run=subprocess.run, git_bin=None):
     return results
 
 
-def _fresh_inbound_reading(repo):
+def _fresh_inbound_reading(repo, priority_labels=None, lane_labels=None):
     """The one place `next_action.py` reaches into `statusline.py` for its
     fresh, uncached reading (#1405's design note: one module, two
     consumers). `statusline.refresh()` calls `statusline.inbound_reading`
     for its own cached, throttled copy; this wrapper takes the two totals
     fresh and calls the identical function for a reading the loop can act on
     right now. A single injection point so a test can replace the whole
-    reading without needing to fake two subprocess calls into `gh`."""
+    reading without needing to fake two subprocess calls into `gh`.
+
+    `priority_labels`/`lane_labels` (#1748) are this repo's own declared
+    label spellings, threaded through so an outside issue already carrying
+    both -- accepted and triaged, even while still open -- does not count as
+    still unruled forever."""
     issues_total = statusline._gh_count(repo, "issue")
     prs_total = statusline._gh_count(repo, "pr")
-    return statusline.inbound_reading(repo, issues_total, prs_total)
+    return statusline.inbound_reading(
+        repo,
+        issues_total,
+        prs_total,
+        priority_labels=priority_labels,
+        lane_labels=lane_labels,
+    )
 
 
 def _inbound_candidate(repo_root, config, arm=False):
@@ -374,7 +385,14 @@ def _inbound_candidate(repo_root, config, arm=False):
             "reason": "no repo configured, so outside issues/pull requests cannot be counted",
             "evidence": {},
         }
-    reading = _fresh_inbound_reading(repo)
+    labels_config = config.get("labels")
+    labels_config = labels_config if isinstance(labels_config, dict) else {}
+    priority_labels = labels_config.get("priority")
+    priority_labels = priority_labels if isinstance(priority_labels, list) else []
+    lane_labels = oss_config.effective_lane_labels(config)
+    reading = _fresh_inbound_reading(
+        repo, priority_labels=priority_labels, lane_labels=lane_labels
+    )
     if reading.get("state") != "measured":
         return {
             "source": "inbound",

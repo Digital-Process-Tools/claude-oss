@@ -86,7 +86,7 @@ def test_written_threshold_actually_arms_the_triage_route(monkeypatch):
     monkeypatch.setattr(
         workspace_routes,
         "triage_count",
-        lambda repo, gh, run, timeout=25: (
+        lambda repo, gh, run, timeout=25, config=None: (
             threshold + 1,
             "fixture: one over the written threshold",
         ),
@@ -101,7 +101,7 @@ def test_written_threshold_actually_arms_the_triage_route(monkeypatch):
     monkeypatch.setattr(
         workspace_routes,
         "triage_count",
-        lambda repo, gh, run, timeout=25: (
+        lambda repo, gh, run, timeout=25, config=None: (
             threshold,
             "fixture: at the written threshold",
         ),

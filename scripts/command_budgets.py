@@ -245,7 +245,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # a branch gets pushed and turned into a pull request (never waited on --
     # the ordinary dispatch/review/merge cadence picks it up). 9632 B became
     # 10380 B. Ceiling unchanged, ~2% headroom.
-    "commands/run.md": (10380, 10600),
+    # Re-baselined for #1748: step 2's inbound carve-out claimed `--take
+    # inbound` was never needed, contradicting the "doubly safe" paragraph
+    # just below it that already assumed the receipt gets armed for inbound
+    # the same way it does for curate/triage. The carve-out is removed:
+    # inbound now gets the same `--take <source>` call every other source
+    # gets, before proceeding straight to dispatch. 10380 B became 10620 B,
+    # past the old 10600 B ceiling. Nothing already in this file argued a
+    # weaker case for its size, so nothing was cut to make room; ceiling
+    # moves to 10700 B, ~0.75% headroom over the new size.
+    "commands/run.md": (10620, 10700),
 }
 
 

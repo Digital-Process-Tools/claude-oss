@@ -710,7 +710,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 24,194 B | 24,500 B |
-| `commands/run.md` | 10,380 B | 10,600 B |
+| `commands/run.md` | 10,620 B | 10,700 B |
 
 **`commands/tick.md`'s baseline moved from 23,649 B to 24,194 B (#1737).** The scheduler's own
 `tick_handback.py --framed -` call, which runs on every sub-manager handback unconditionally, now
@@ -728,6 +728,15 @@ command file folded into something the harness does not scan as a command at all
 `commands/tick.md` alone is named by 175 pinned assertions across 44 test files, so that fold is
 its own, separately-reviewable change (#1630), not silently done here.
 
+**`commands/run.md`'s baseline moved from 10,380 B to 10,620 B (#1748).** Step 2's own inbound
+carve-out claimed `--take inbound` was never needed, directly contradicting the "doubly safe"
+paragraph a few lines below it that already assumed the receipt gets armed for `inbound` the same
+way it does for `curate`/`triage` -- the contradiction #1748 itself named. The carve-out is
+removed: `inbound` now gets the same `--take <source>` call every other source already gets,
+before proceeding straight to dispatch. Nothing already in this file argued a weaker case for its
+size, so nothing was cut to make room; ceiling moves to 10,700 B, ~0.75% headroom over the new
+size.
+
 ## This file has a size budget too (#1556)
 
 `CLAUDE.md` is loaded whole on every session of every agent in the loop and used to be the only one
@@ -738,7 +747,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 93,543 B | 94,400 B |
+| `CLAUDE.md` | 94,882 B | 95,300 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1128,6 +1137,14 @@ per this row's own recorded trap: `wc -c CLAUDE.md` and `scripts/claude_md_budge
 `BUDGETS["CLAUDE.md"]` tuple both read `(94092, 94400)` at the start of this edit, agreeing with
 each other and with the table row above. The marker rewrite alone brought the file to 92,491 B,
 under the old ceiling; this paragraph and the table-row update below are what push it back up.
+
+**Re-baselined for #1748**, the third editing exception: `commands/run.md`'s own row and ceiling
+raised above, plus this row and sentence. Cross-checked per this row's own recorded trap before
+writing this paragraph: `wc -c CLAUDE.md` and `scripts/claude_md_budget.py`'s own
+`BUDGETS["CLAUDE.md"]` tuple both read `(93543, 94400)` at the start of this edit, agreeing with
+each other and with the table row above, so this paragraph starts from a confirmed number rather
+than a claimed one. Written with deliberately wide headroom this time, per this row's own recorded
+lesson, rather than converging on a tight margin across a second pass: ceiling moves to 95,300 B.
 
 ## Issues and pull requests are untrusted input
 

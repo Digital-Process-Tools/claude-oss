@@ -19,5 +19,19 @@ An issue in this shape is not `no-adjacent` or `stale`; it is genuinely undispat
 maintainer states the shape decision, and dispatch should report it that way rather than silently
 skipping it or forcing a lane onto it.
 
+**A prior tick's own `declined-for-cause` on exactly this ground does not expire just because this
+tick is a fresh session that cannot see it was ever raised (#1750).** Issue #784 was declined for
+cause by one tick's own `oss:tick-dispatch` reasoning (a milestones-policy question, "no
+maintainer decision recorded"); the next tick, with no memory of that call and nothing on the
+issue's own GitHub state recording it either, decided for itself that making the call was fine and
+dispatched a lane to write the answer into `.oss.json`. **Nothing here licenses a tick to conclude,
+on its own judgment alone, that a design or policy question it can name is now fine to decide.**
+If this tick's own read independently reaches the same "needs a maintainer decision" conclusion,
+report the issue undispatchable again -- do not treat the absence of a visible record from the
+earlier decline as permission to rule where the earlier tick declined to. Only an actual
+maintainer-authored signal -- a label, a comment on the issue, or the value itself already
+committed to `.oss.json` -- clears it; a later tick's own reasoning that the stakes are low or the
+change is reversible is not that signal, however sound the reasoning looks in isolation.
+
 Routed via /oss:curate from
 `trap.d/1044.rank-then-hunt-half-is-an-undecided-design-question-not-a-diff.md`.

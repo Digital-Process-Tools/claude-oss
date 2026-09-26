@@ -89,7 +89,10 @@ def test_written_threshold_actually_arms_the_curate_route(monkeypatch):
     monkeypatch.setattr(
         workspace_routes,
         "triage_count",
-        lambda repo, gh, run, timeout=25: (0, "fixture: triage pinned under"),
+        lambda repo, gh, run, timeout=25, config=None: (
+            0,
+            "fixture: triage pinned under",
+        ),
     )
 
     monkeypatch.setattr(
