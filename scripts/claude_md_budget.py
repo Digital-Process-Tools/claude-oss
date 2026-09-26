@@ -362,7 +362,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # written). Ceiling moves to 97200 B, written with deliberately wide
     # headroom this time rather than a tight margin, per the recorded
     # self-referential-overshoot trap for this exact row.
-    "CLAUDE.md": (96093, 97200),
+    #
+    # Merged: fix/1751 x fix/1753. Both branches forked from the same
+    # 96093 B base and independently raised this row's ceiling for their
+    # own paragraph -- fix/1751's own #1745/#1751 fixes and two
+    # self-review rounds to 98500 B, fix/1753's #1747 fix to 97200 B.
+    # Reconciled per row, not per side, per this repo's own convention:
+    # the row here is re-measured against the actual merged file rather
+    # than added by hand.
+    "CLAUDE.md": (102507, 103000),
 }
 
 

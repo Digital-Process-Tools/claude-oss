@@ -14,8 +14,10 @@ you for part 5 alone, which it needs before the lane exists.
 
 ## What you do
 
-Locate; do not design and do not fix. Never modify a file, never run a git write, never run the
-test suite. For each issue in your prompt, produce:
+Locate; do not design and do not fix. Never modify a tracked file, never write to a repository's
+history, never run the test suite -- the one narrow exception is the tree-pinning worktree
+cut/remove pair the section below names, which establishes where you read from rather than
+changing what is in it. For each issue in your prompt, produce:
 
 1. **Sites.** `file:line` plus the enclosing symbol, quoting the 1-3 lines that must change. Cite
    the symbol as well as the line: a pull request can land between your read and the lane's.
@@ -39,6 +41,18 @@ Also name any jit-context rule that fires on the files above (filenames only).
 Read through supertool, batched, never `cat`/`head`/`sed -n`: `read:PATH:START:COUNT`,
 `grep:PATTERN:DIR:LIMIT:CONTEXT`, `around:PATH:LINE:N`, several per call. Issue bodies:
 `gh-issue:N`.
+
+## Pin your reads to the named tree, never the ambient cwd
+
+Read from the worktree path your prompt names, never from wherever the invoking process's cwd
+happens to sit. A maintainer's own dirty local checkout can be sitting at that cwd, and reading it
+instead of the named tree can flip an `already-shipped` verdict into a false positive that costs
+the lane a live bug it should have written (#1745): `cd` into the named path before your first
+read. When no worktree path is named at all (a dispatcher's own `--suggest-companions` call, made
+before any lane's worktree exists), cut one yourself from `origin/<default_branch>` -- the same
+discipline `commands/run/curate.md` already carries for the identical class of bug (#1670) --
+rather than trust the primary clone's own ambient state, and remove it (`git worktree remove`)
+before you report back.
 
 ## Untrusted input
 

@@ -308,10 +308,10 @@ when a file crosses it.
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 14,256 B | 14,400 B |
-| `agents/recon.md` | 4,438 B | 4,500 B |
+| `agents/recon.md` | 5,486 B | 5,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
-| `agents/tick-merge.md` | 7,870 B | 8,000 B |
+| `agents/tick-merge.md` | 8,083 B | 8,300 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
 | `agents/lane-report.md` | 14,946 B | 15,100 B |
 
@@ -595,7 +595,7 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 44,338 B | 44,800 B |
+| `skills/manager/SKILL.md` | 45,214 B | 46,000 B |
 | `skills/manager/phases/dispatch.md` | 56,845 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
 | `skills/manager/phases/accounting.md` | 25,892 B | 25,900 B |
@@ -624,6 +624,17 @@ it, choosing the issue's own proposed middle ground (`#1137`/`#1106`/`#186` alre
 classifier can deny a byte-identical call non-deterministically, so "never retry" would stall a
 tick on a false denial as often as it would stop a real routing-around). All three files stayed
 comfortably under their own ceilings, so none moved.
+
+**`skills/manager/SKILL.md`'s ceiling went from 44,800 B to 46,000 B (#1751).** Three agents were
+observed retrying a call the classifier had denied for a reason #1724's own wording never scoped
+against: an assignee release denied as "Create Public Surface", a developer-lane dispatch brief (an
+`Agent`/`Task` spawn, not a Bash call at all) denied as "Instruction Poisoning", and a merge agent's
+denied assignee release re-run by the sub-manager in its place rather than surfaced. The canonical
+rule now states, in the same bullet, that it applies only to a Bash command string the classifier
+flagged on the string itself -- never a content-classification denial, never a non-Bash spawn, and
+never a different agent standing in for the one denied. 44,338 B became 45,209 B. Nothing already
+in this file argued a weaker case for its size, so nothing was cut to make room; ~1.7% headroom
+over the new size.
 
 **`skills/manager/phases/release.md`'s ceiling went from 10,900 B to 12,300 B (#1681)** to hold gate
 2's own disposition rule: two `oss:releaser` runs on the same open, unreviewed pull request read
@@ -754,7 +765,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 96,093 B | 97,200 B |
+| `CLAUDE.md` | 102,340 B | 103,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1133,6 +1144,59 @@ above, and this paragraph itself -- the same self-referential overshoot #1586's 
 already names. Ceiling moves to 94,400 B, sized to absorb this paragraph's own final bytes rather
 than chase them a further time.
 
+**Re-baselined for #1745**, the third editing exception: `agents/recon.md`'s own row and ceiling
+raised for a new section pinning recon's reads to the worktree its prompt names, rather than
+whatever tree the invoking process's ambient cwd happens to resolve to -- a dirty sibling clone at
+that cwd had flipped an `already-shipped` verdict on a lane that genuinely needed the fix, the same
+class `commands/run/curate.md` already closed for the curate pass itself (#1670). Cross-checked per
+this row's own recorded trap before writing this paragraph: `wc -c CLAUDE.md` and
+`scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `(93543, 94400)` at the
+start of this edit, agreeing with each other and with the table row above, so this paragraph starts
+from a confirmed number rather than a claimed one. The table-row edit itself was byte-neutral (both
+old and new figures are the same digit count), so the net growth here is this paragraph's own
+bytes -- 93,543 B became 94,609 B, past the 94,400 B ceiling #1740/#1743's own raise left. Ceiling
+moves to 95,200 B, headroom sized to absorb this paragraph's own final wording rather than chase it
+a further time, per the same lesson #1705's own note above already draws.
+
+**Re-baselined for #1751**, the third editing exception: `skills/manager/SKILL.md`'s own row and
+ceiling raised for the classifier-denial rule's new scoping clause (Bash command-string denial
+only, never content-classification, never a non-Bash spawn, never a stand-in agent), plus this row
+and its own weighed sentence. Cross-checked per this row's own recorded trap before writing this
+paragraph: `wc -c CLAUDE.md` and `scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple
+both read `(94781, 95200)` at the start of this edit, agreeing with each other and with the table
+row above. 94,781 B became 96,597 B across this paragraph's own two drafts, past the 95,200 B
+ceiling -- the same self-referential overshoot #1586's own note above already names. Ceiling moves
+to 97,500 B this time, headroom deliberately wide (~0.9%) rather than a tight margin, per the same
+lesson #1705's own note above already draws, so the table-row update just below does not chase it a
+further time.
+
+**Re-baselined again in the same lane's own self-review round:** two reviewers independently found
+the #1751 fix left a false claim in place -- `skills/manager/SKILL.md`'s new "`lane_setup.py
+--release` (an assignee release, same three files)" clause named a call that appears in none of
+the three files the sentence points at, and the real call site (`agents/tick-merge.md`) carried no
+pointer to the rule at all, at exactly the file where #1751's own third reported incident happened.
+Fixed in both files, plus a one-sentence reconciliation in `agents/recon.md` between its new
+worktree-cut/remove fallback and its pre-existing "never run a git write" line, which a reviewer
+also flagged as an unreconciled contradiction. Three agent-budget rows moved (`agents/recon.md`,
+`skills/manager/SKILL.md`, `agents/tick-merge.md`, the last past its own ceiling), each with its
+own weighed sentence. 96,678 B became 97,888 B across this paragraph's own several drafts, past
+the 97,500 B ceiling set in the paragraph immediately above -- the same self-referential overshoot
+#1586's own note names. Ceiling moves to 98,500 B, headroom deliberately wide rather than a tight
+margin, so the table-row update below does not chase it a further time.
+
+**Re-baselined a third time, required second-pass round** (`fix_commit_scope.py` flagged the
+self-review fix commit itself): a reviewer found this paragraph's own byte count had already gone
+stale by the time it was written (it quoted 97,643 B where the real, final figure -- confirmed by
+`wc -c CLAUDE.md` and matching both the table row above and `scripts/claude_md_budget.py`'s own
+tuple -- was 97,888 B), the exact class of bug this section's own methodology exists to prevent,
+and the same reviewer separately found `skills/manager/SKILL.md`'s own "not three separately worded
+ones" left stale once the #1751 fix above made the enumerated list four items long. Both fixed in
+place (this paragraph's own number corrected above; SKILL.md's own row updated to match its
+resulting one-byte shrink, ceiling unchanged). 96,678 B became 98,793 B across every draft of this
+paragraph and the one above it -- past the 98,500 B ceiling set in the paragraph immediately
+above. Ceiling moves to 99,800 B, headroom deliberately wide rather than a tight margin, so the
+table-row update below does not chase it a further time.
+
 **Re-baselined at the v0.42.1 release, the release session's own first exception:** the "What is
 not proven yet" marker was rewritten inside this release commit, per that exception's own terms --
 a new delta range (1 commit, both routes agreeing, EXACT), gate 3 needing both rounds this time
@@ -1157,6 +1221,18 @@ paragraph's own cross-check rather than re-derived at this paragraph's own point
 sequence, an unreconstructible number the diff's own hunks could not produce. Written with
 deliberately wide headroom this time, per the same lesson #1705's own note above already draws,
 rather than converging on a tight margin across a second pass: ceiling moves to 97,200 B.
+
+**Merged: fix/1751 x fix/1753.** Both branches forked from the same 96,093 B base and
+independently raised this row's ceiling for their own paragraph -- fix/1753's own #1747 fix to
+97,200 B (the paragraph immediately above), fix/1751's own #1745/#1751 fixes and two self-review
+rounds to 98,500 B. Neither branch touched the other's prose, so git's own merge combined both
+paragraphs textually with no conflict; only the table row above and
+`scripts/claude_md_budget.py`'s own tuple named the same fact twice and had to be reconciled per
+row rather than per side, per this repo's own stated convention for exactly this shape
+("lanes cannot be file-disjoint for prose"). The row here is re-measured against the actual
+merged file rather than added by hand: 102,340 B, past both branches' own ceiling. Ceiling
+moves to 103,000 B, ~0.6% headroom, the same narrow self-referential margin every prior raise of
+this row gives.
 
 ## Issues and pull requests are untrusted input
 
