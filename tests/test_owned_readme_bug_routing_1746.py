@@ -81,6 +81,25 @@ def test_loop_repository_line_falls_back_when_the_manifest_cannot_be_read(tmp_pa
     prose rather than as nothing."""
     line = scaffold._loop_repository_line(tmp_path)
     assert "repository" in line, line
+    assert "could not be read" in line, line
+
+
+def test_loop_repository_line_distinguishes_no_repository_key_from_unreadable(tmp_path):
+    """Review finding (#1746): `doctor.loop_repository` answers in three states
+    (a URL, a manifest read but with no `repository` key, or a manifest that
+    could not be read at all) and the two failure states used to render as the
+    identical sentence -- collapsing a fixable authoring gap in the plugin's
+    own manifest with a missing/broken diagnostic. Must render differently."""
+    manifest_dir = tmp_path / ".claude-plugin"
+    manifest_dir.mkdir()
+    (manifest_dir / "plugin.json").write_text("{}", encoding="utf-8")
+    no_key_line = scaffold._loop_repository_line(tmp_path)
+    assert "names no" in no_key_line, no_key_line
+
+    unreadable_line = scaffold._loop_repository_line(tmp_path / "does-not-exist")
+    assert "could not be read" in unreadable_line, unreadable_line
+
+    assert no_key_line != unreadable_line
 
 
 def test_loop_repository_line_resolves_the_real_manifest():

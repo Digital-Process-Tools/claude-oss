@@ -1566,17 +1566,38 @@ def _assembler_packages():
 def _loop_repository_line(plugin_root):
     """Where a bug in an owned file gets reported, derived rather than hardcoded (#1746).
 
-    A local import, not a top-level one: `doctor.py` imports `scaffold` at module load,
-    so a top-level `import doctor` here would be circular. By the time this function
-    actually runs, `doctor` (if installed beside this file) is fully loaded either way.
+    A local import: `doctor` is an optional sibling script, the same convention this
+    file already uses for `oss_config`/`oss_rules` (each wrapped in its own
+    try/except ImportError). It is not needed to dodge a circular import -- a bare
+    `import doctor` at module level would not actually fail here, since neither file
+    touches the other's attributes at import time, only inside function bodies -- kept
+    local anyway for consistency with those siblings and because this is the one call
+    site that needs it.
+
+    `doctor.loop_repository()` answers in three states, by its own docstring (#292): a
+    real URL, a manifest that was read but names no repository, or a manifest that
+    could not be read at all. The last two are different facts -- the first is a
+    fixable gap in the plugin's own manifest, the second is a missing or broken
+    `doctor.py` -- and are named as such below rather than collapsed into one sentence.
     """
     try:
         import doctor
     except ImportError:  # pragma: no cover - the module sits beside this file
-        return "this plugin's own repository (see its `.claude-plugin/plugin.json`)"
+        return (
+            "this plugin's own repository -- its diagnostic module could not be "
+            "imported to confirm the URL"
+        )
     url, problem = doctor.loop_repository(plugin_root)
-    if problem is not None:
-        return "this plugin's own repository (see its `.claude-plugin/plugin.json`)"
+    if problem == "no-repository-key":
+        return (
+            "this plugin's own repository (its `.claude-plugin/plugin.json` names no "
+            "`repository` key)"
+        )
+    if problem == "unreadable":
+        return (
+            "this plugin's own repository -- its `.claude-plugin/plugin.json` could "
+            "not be read to confirm the URL"
+        )
     return url
 
 

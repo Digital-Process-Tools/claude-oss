@@ -3019,7 +3019,8 @@ def refresh(root, now=None, session_id=None):
     root = Path(root)
     config = repo_config(root)
     repo = config.get("repo")
-    previous = read_cache(cache_path(repo)) or {}
+    previous = read_cache(cache_path(repo))
+    previous = previous if isinstance(previous, dict) else {}
     document = {"fetched_at": now, "repo": repo}
     if repo:
         document["prs"] = _gh_count(repo, "pr")

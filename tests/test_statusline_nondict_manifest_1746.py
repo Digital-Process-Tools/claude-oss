@@ -132,6 +132,47 @@ def test_latest_release_survives_non_dict_decoded_manifest():
         assert statusline._latest_release("owner/repo") is None
 
 
+def test_refresh_survives_a_non_dict_cache_file(tmp_path, monkeypatch):
+    """#1746 review finding: `refresh()`'s own `previous = read_cache(...) or {}` only
+    substitutes `{}` on a falsy result -- a truthy non-dict cache body (a non-empty
+    list, string, or number) sailed straight through into `previous.get("latest")`
+    a few lines later, unconditionally, the same crash shape the six named sites
+    were fixed for. No `repo` is declared, so the `if repo:` block that would need
+    network helpers mocked is skipped entirely -- the crash (if unfixed) is on the
+    very first `previous.get(...)` after that block, before anything else runs.
+    `XDG_CACHE_HOME` is pinned to `tmp_path` so this never touches the real machine
+    cache (the convention `tests/test_launcher_receipt_isolation_853.py` already
+    uses for the same reason)."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    (tmp_path / ".oss.json").write_text('{"watch_channel": false}', encoding="utf-8")
+    cache_file = statusline.cache_path(None)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    monkeypatch.setattr(statusline, "_doctor_reading", lambda *a, **k: None)
+    monkeypatch.setattr(statusline, "installed_plugins", lambda *a, **k: {})
+    statusline.refresh(tmp_path)  # must not raise
+
+
+def test_refresh_still_returns_the_carried_forward_reading_for_a_well_formed_cache(
+    tmp_path, monkeypatch
+):
+    """Positive control: a well-formed dict cache still carries its own `latest`
+    value forward through `refresh()` -- the fix must not make `previous` always
+    read as empty."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    (tmp_path / ".oss.json").write_text('{"watch_channel": false}', encoding="utf-8")
+    cache_file = statusline.cache_path(None)
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(
+        json.dumps({"latest": {"acme/widget": "1.2.3"}, "latest_fetched_at": 10**12}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(statusline, "_doctor_reading", lambda *a, **k: None)
+    monkeypatch.setattr(statusline, "installed_plugins", lambda *a, **k: {})
+    document = statusline.refresh(tmp_path, now=10**12 + 1)
+    assert document["latest"] == {"acme/widget": "1.2.3"}
+
+
 def test_latest_release_still_reads_version_from_well_formed_manifest():
     encoded = base64.b64encode(json.dumps({"version": "9.9.9"}).encode("utf-8")).decode(
         "ascii"
