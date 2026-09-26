@@ -197,7 +197,14 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # new clause against a parent agent re-executing what its child was
         # denied -- three observed misapplications the unscoped wording had
         # licensed. Ceiling moves to 46000 B, ~1.7% headroom.
-        45209,
+        # Re-baselined again in the same lane's own self-review round: two
+        # reviewers independently found the new "lane_setup.py --release
+        # (an assignee release, same three files)" clause false -- that
+        # call appears in none of the three named files, and its real call
+        # site (agents/tick-merge.md) carried no #1724/#1751 pointer at
+        # all. Corrected to name agents/tick-merge.md directly. 45209 B
+        # became 45215 B. Ceiling unchanged; comfortably under it.
+        45215,
         46000,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),

@@ -14,8 +14,10 @@ you for part 5 alone, which it needs before the lane exists.
 
 ## What you do
 
-Locate; do not design and do not fix. Never modify a file, never run a git write, never run the
-test suite. For each issue in your prompt, produce:
+Locate; do not design and do not fix. Never modify a tracked file, never write to a repository's
+history, never run the test suite -- the one narrow exception is the tree-pinning worktree
+cut/remove pair the section below names, which establishes where you read from rather than
+changing what is in it. For each issue in your prompt, produce:
 
 1. **Sites.** `file:line` plus the enclosing symbol, quoting the 1-3 lines that must change. Cite
    the symbol as well as the line: a pull request can land between your read and the lane's.

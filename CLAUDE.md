@@ -308,10 +308,10 @@ when a file crosses it.
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 14,256 B | 14,400 B |
-| `agents/recon.md` | 5,291 B | 5,500 B |
+| `agents/recon.md` | 5,486 B | 5,500 B |
 | `agents/tick-dispatch.md` | 6,964 B | 7,050 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
-| `agents/tick-merge.md` | 7,870 B | 8,000 B |
+| `agents/tick-merge.md` | 8,083 B | 8,300 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
 | `agents/lane-report.md` | 14,946 B | 15,100 B |
 
@@ -595,7 +595,7 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 45,209 B | 46,000 B |
+| `skills/manager/SKILL.md` | 45,215 B | 46,000 B |
 | `skills/manager/phases/dispatch.md` | 56,845 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
 | `skills/manager/phases/accounting.md` | 25,892 B | 25,900 B |
@@ -749,7 +749,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 96,678 B | 97,500 B |
+| `CLAUDE.md` | 97,888 B | 98,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1153,6 +1153,20 @@ ceiling -- the same self-referential overshoot #1586's own note above already na
 to 97,500 B this time, headroom deliberately wide (~0.9%) rather than a tight margin, per the same
 lesson #1705's own note above already draws, so the table-row update just below does not chase it a
 further time.
+
+**Re-baselined again in the same lane's own self-review round:** two reviewers independently found
+the #1751 fix left a false claim in place -- `skills/manager/SKILL.md`'s new "`lane_setup.py
+--release` (an assignee release, same three files)" clause named a call that appears in none of
+the three files the sentence points at, and the real call site (`agents/tick-merge.md`) carried no
+pointer to the rule at all, at exactly the file where #1751's own third reported incident happened.
+Fixed in both files, plus a one-sentence reconciliation in `agents/recon.md` between its new
+worktree-cut/remove fallback and its pre-existing "never run a git write" line, which a reviewer
+also flagged as an unreconciled contradiction. Three agent-budget rows moved (`agents/recon.md`,
+`skills/manager/SKILL.md`, `agents/tick-merge.md`, the last past its own ceiling), each with its
+own weighed sentence. 96,678 B became 97,643 B across this paragraph's own bytes, past the
+97,500 B ceiling two paragraphs above -- the same self-referential overshoot #1586's own note
+names. Ceiling moves to 98,500 B, headroom deliberately wide rather than a tight margin, so the
+table-row update below does not chase it a further time.
 
 **Re-baselined at the v0.42.1 release, the release session's own first exception:** the "What is
 not proven yet" marker was rewritten inside this release commit, per that exception's own terms --
