@@ -147,7 +147,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # instead, to 48500 B -- ~3% headroom, narrower than the ~10% convention
     # for the same reason as every prior raise here: this file is re-sent on
     # every turn of every lane.
-    "agents/developer.md": (48352, 48500),
+    "agents/developer.md": (48844, 49000),
     # Re-baselined DOWN for #1071: the prose shared with agents/release-
     # auditor.md (the total Bash grant's explanation, how a read happens,
     # test behaviour reasoned not run -- 286 shared 8-grams, ~10% of each
@@ -205,7 +205,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # and stop, the same as the label rule, and check .oss.json's
     # _milestones_note before re-filing). Ceiling unchanged; comfortably
     # under it.
-    "agents/triager.md": (17473, 17650),
+    "agents/triager.md": (17903, 18100),
     # Baseline raised three times, each time for the same reason: a
     # review finding was a correctness or precision fix with nothing safe
     # to cut to pay for it in the same diff. (7450, 8200) -> (8578, 9450):

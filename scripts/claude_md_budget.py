@@ -352,7 +352,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # weighed sentence, past the 86000 B ceiling. Ceiling moves to 87500 B,
     # sized to absorb the paragraph's own final bytes rather than chase
     # them a further time.
-    "CLAUDE.md": (93543, 94400),
+    # Re-baselined for #1746, the third editing exception: agents/developer.md's
+    # and agents/triager.md's own rows and ceilings raised (a refuse-to-write
+    # clause for owned files, and a matching .oss/-routing bullet in the
+    # never-do list), plus this row and its own weighed sentence -- the same
+    # self-referential overshoot #1586's own note names, met the same way.
+    # Ceiling moves to 95600 B, headroom sized to absorb this paragraph's own
+    # final bytes rather than chase them a further time.
+    "CLAUDE.md": (95404, 95600),
 }
 
 

@@ -557,6 +557,13 @@ and a report on their board reads as work done while the board that could ship t
 The reverse holds exactly as firmly — a defect in the host project's own code belongs to the host
 project. **The split is who owns the code, never who is standing closest to it.**
 
+**Refuse to write there, unconditionally.** An owned file (`.oss/`, or
+`.github/workflows/oss-changelog.yml`) is replaced wholesale on the next resync, so a patch or a
+test committed against it here is undone silently, with no error, at whatever point that resync
+happens (#1746 -- observed for real: a fix landed in `.oss/statusline.py` and its own test, both
+gone the next `scaffold.py --apply`). Reporting the defect is not a substitute for this: do both,
+never one instead of the other.
+
 Nothing declares itself as its own dependency, so the loop's own board is the one name the
 derivation above cannot produce. **Do not infer a slug for it. Ask.** `loop_repository()` in
 `${CLAUDE_PLUGIN_ROOT}/scripts/doctor.py` reads it off the loop's own installed manifest, and

@@ -1127,6 +1127,17 @@ why this directory exists at all:
 
 To change something here, copy it out and point your own config at the copy.
 
+## Found a bug in one of these files?
+
+A defect in a file under `__DIR__/`, or in `.github/workflows/oss-changelog.yml` (the one
+exception below), is not this repository's bug. It ships from __LOOP_REPOSITORY__, and this
+directory is replaced wholesale on every `/oss:scaffold` run, so a patch or a test written
+against it here is undone at the next resync — silently, with no error, whenever that
+resync happens. Report it there instead, with a reproduction, the same way you would report a
+bug in any dependency you did not write. Never patch or test the file in this repository, and
+never let a scan, a triage sweep or a fix lane close a finding here as this repository's own
+issue — file it upstream and stop.
+
 ## The one exception
 
 `.github/workflows/oss-changelog.yml` is ours too and is replaced the same way. It
@@ -1552,6 +1563,23 @@ def _assembler_packages():
     return " ".join(sorted(ASSEMBLER_DEPENDENCIES.values()))
 
 
+def _loop_repository_line(plugin_root):
+    """Where a bug in an owned file gets reported, derived rather than hardcoded (#1746).
+
+    A local import, not a top-level one: `doctor.py` imports `scaffold` at module load,
+    so a top-level `import doctor` here would be circular. By the time this function
+    actually runs, `doctor` (if installed beside this file) is fully loaded either way.
+    """
+    try:
+        import doctor
+    except ImportError:  # pragma: no cover - the module sits beside this file
+        return "this plugin's own repository (see its `.claude-plugin/plugin.json`)"
+    url, problem = doctor.loop_repository(plugin_root)
+    if problem is not None:
+        return "this plugin's own repository (see its `.claude-plugin/plugin.json`)"
+    return url
+
+
 def _owned_readme(config, plugin_root):
     # `__SETTINGS__` and `__STATUSLINE_COMMAND__` are substituted rather than typed into
     # the template for the reason #693 was filed over one level up: a second spelling of
@@ -1564,6 +1592,7 @@ def _owned_readme(config, plugin_root):
         .replace("__PACKAGES__", _assembler_packages())
         .replace("__SETTINGS__", SETTINGS_PATH)
         .replace("__STATUSLINE_COMMAND__", STATUSLINE_COMMAND)
+        .replace("__LOOP_REPOSITORY__", _loop_repository_line(plugin_root))
     )
 
 
