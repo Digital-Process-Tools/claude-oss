@@ -190,8 +190,15 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # one-sentence distinction from the neighbouring "do the step
         # yourself" bullet, which governs a different actor. Comfortably
         # under the 44800 B ceiling; ceiling unchanged.
-        44338,
-        44800,
+        # Re-baselined for #1751: 44338 B became 45209 B -- the same rule
+        # narrowed to a Bash command-string denial only, never a
+        # content-classification denial ("Instruction Poisoning", "Create
+        # Public Surface") and never a non-Bash Agent/Task spawn, plus a
+        # new clause against a parent agent re-executing what its child was
+        # denied -- three observed misapplications the unscoped wording had
+        # licensed. Ceiling moves to 46000 B, ~1.7% headroom.
+        45209,
+        46000,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
     # Raised (#725): measured 26,052 B against the prior 26,100 B budget -- 48

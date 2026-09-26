@@ -599,7 +599,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Nothing here argued for cutting to make room; this file already had the
     # least headroom of the ten before the edit. Ceiling moves to 4500 B,
     # ~1.4% headroom.
-    "agents/recon.md": (4438, 4500),
+    # Re-baselined for #1745: a dirty sibling clone at the ambient cwd flipped
+    # an already-shipped verdict on a lane that needed the fix, because
+    # nothing here pinned recon's reads to the worktree its prompt names.
+    # New section states that discipline, mirroring commands/run/curate.md's
+    # own fix for the identical class (#1670). 4438 B became 5291 B, past the
+    # old ceiling with no headroom to absorb it. Ceiling moves to 5500 B,
+    # ~4% headroom.
+    "agents/recon.md": (5291, 5500),
     # #1544: new file. `oss:sub-manager` used to read the board, rank it and
     # reason about dispatch fill inline, in the same context that goes on to
     # review, merge and account for the whole tick -- one sub-manager was
