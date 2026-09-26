@@ -202,13 +202,19 @@ you never wrote a marker of your own to begin with -- clearing here would remove
 that names a different, real role.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --clear --root .; echo "clear-exit:$?"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --clear --root . --expect-role doctor; echo "clear-exit:$?"
 ```
 
-A nonzero exit is not fatal to your report, but it is a finding: add `could-not-tell: could not
-clear this run's own role marker -- <what the command printed>` as one more line rather than
-staying silent about it, the same "never fold this into a clean report" rule the digest check
-just above gives.
+`--expect-role doctor` (#1752) guards against a race a plain `--clear` cannot see: a sub-manager's
+own forced retry (#1740) can overwrite a live `doctor` marker mid-run, and an unconditional clear
+would then delete that sub-manager's own declaration instead of yours. Exit 4 means exactly that
+happened and was correctly left alone -- informational, not a failure: add `could-not-tell: this
+run's own role marker was overwritten mid-run (exit 4, #1752) -- another agent's declaration, left
+in place`. Any other nonzero exit is not fatal to your report either, but it is still a finding: add
+`could-not-tell: could not
+clear this run's own role marker -- <what the command printed>` as one more line rather than staying
+silent about it, the same "never fold this into a clean report" rule the digest check just above
+gives.
 
 One line per `WARN`/`FAIL` you chased, in the vocabulary above, plus a one-line summary count.
 Put it in your final message **in full** -- the caller reads only that message, never your

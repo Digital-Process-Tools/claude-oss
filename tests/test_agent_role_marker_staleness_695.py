@@ -43,6 +43,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "agent_role.py"
 
@@ -185,6 +187,164 @@ def test_clear_role_marker_removes_it(tmp_path):
 def test_clear_role_marker_on_an_absent_marker_is_not_an_error(tmp_path):
     _init_repo(tmp_path)
     assert agent_role.clear_role_marker(root=str(tmp_path)) is False
+
+
+# -- #1752: --clear must not drop someone else's live declaration ----------
+
+
+def test_clear_role_marker_refuses_a_live_mismatched_owner(tmp_path):
+    """The race #1752 describes: a sub-manager's forced retry has already
+    overwritten the marker with its own role by the time the doctor that
+    originally held it reaches its own end-of-run clear. `expect_role` must
+    refuse rather than deleting a declaration that is not the caller's own,
+    or `role_forbids_release` reads `False` for the rest of that tick with
+    nothing left on disk to explain why."""
+    _init_repo(tmp_path)
+    agent_role.write_role_marker("sub-manager", root=str(tmp_path))
+    cleared = agent_role.clear_role_marker(root=str(tmp_path), expect_role="doctor")
+    assert cleared is False
+    assert agent_role.current_role(root=str(tmp_path)) == "sub-manager", (
+        "the mismatch must leave the live marker exactly as it was -- a "
+        "caller that is not the marker's owner has no business removing it"
+    )
+
+
+def test_clear_role_marker_with_expect_role_still_clears_a_matching_owner(tmp_path):
+    """Positive control for the test above: `expect_role` must not turn an
+    ordinary, correctly-owned clear into a refusal."""
+    _init_repo(tmp_path)
+    agent_role.write_role_marker("doctor", root=str(tmp_path))
+    cleared = agent_role.clear_role_marker(root=str(tmp_path), expect_role="doctor")
+    assert cleared is True
+    assert agent_role.current_role(root=str(tmp_path)) is None
+
+
+def test_clear_role_marker_expect_role_still_clears_a_stale_mismatch(tmp_path):
+    """A stale marker is not a rival authority holder (per this file's own
+    #695 fixture above) even when `expect_role` names something else -- the
+    ownership check exists for a LIVE rival, not to reintroduce the residue
+    bug in disguise as 'names differ, so refuse.'"""
+    _init_repo(tmp_path)
+    ancient = time.time() - (agent_role.MARKER_TTL_SECONDS + 3600)
+    agent_role.write_role_marker("sub-manager", root=str(tmp_path), written_at=ancient)
+    cleared = agent_role.clear_role_marker(root=str(tmp_path), expect_role="doctor")
+    assert cleared is True
+    assert agent_role.current_role(root=str(tmp_path)) is None
+
+
+def test_clear_role_marker_refuses_an_unreadable_marker_rather_than_unlinking(tmp_path):
+    """A reviewer finding on this same fix: an earlier draft's ownership check
+    only excluded `absent`, so a marker that exists but could not be read
+    (permission denied, mid-write) fell straight through to `path.unlink()`
+    regardless of `expect_role` -- exactly the case this whole feature exists
+    to guard against, since `unreadable` cannot be told apart from
+    `live-and-someone-else's` any more than from `live-and-mine`. Per this
+    repository's own working rule, the unreadable condition is a measurement,
+    not a given -- skip with what went untested if this platform will not
+    honour the mode bit, the same construction `test_agent_role_marker_
+    unreadable_695.py` already uses."""
+    _init_repo(tmp_path)
+    agent_role.write_role_marker("doctor", root=str(tmp_path))
+    marker_path = agent_role._marker_path(root=str(tmp_path))
+    marker_path.chmod(0)
+    try:
+        try:
+            marker_path.read_text(encoding="utf-8")
+        except OSError:
+            pass
+        else:
+            pytest.skip(
+                "mode 0 did not deny a read of the marker file on this "
+                "platform, so this construction cannot produce an "
+                "unreadable-but-present marker here. UNTESTED here: whether "
+                "clear_role_marker refuses rather than unlinking an "
+                "unreadable marker when expect_role is given."
+            )
+        cleared = agent_role.clear_role_marker(root=str(tmp_path), expect_role="doctor")
+        assert cleared is False
+        assert marker_path.is_file(), (
+            "an unreadable marker must be left alone, not unlinked -- this "
+            "process cannot confirm it is safe to remove"
+        )
+    finally:
+        marker_path.chmod(0o600)
+
+
+def test_clear_role_marker_detail_reports_owner_mismatch_state(tmp_path):
+    _init_repo(tmp_path)
+    agent_role.write_role_marker("sub-manager", root=str(tmp_path))
+    state, detail = agent_role._clear_role_marker_detail(
+        root=str(tmp_path), expect_role="doctor"
+    )
+    assert state == agent_role._MARKER_OWNER_MISMATCH
+    assert detail == "sub-manager"
+
+
+def test_cli_clear_with_expect_role_mismatch_exits_4_and_leaves_the_marker(tmp_path):
+    _init_repo(tmp_path)
+    write = spawn_guard.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--write",
+            "sub-manager",
+            "--root",
+            str(tmp_path),
+        ],
+        subject="the marker --clear --expect-role is then asked to remove",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert write.returncode == 0, write.stdout + write.stderr
+
+    clear = spawn_guard.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--clear",
+            "--expect-role",
+            "doctor",
+            "--root",
+            str(tmp_path),
+        ],
+        subject="whether --clear --expect-role refuses a mismatched live marker",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert clear.returncode == 4, clear.stdout + clear.stderr
+    assert agent_role.current_role(root=str(tmp_path)) == "sub-manager"
+
+
+def test_cli_clear_with_expect_role_match_still_exits_0(tmp_path):
+    _init_repo(tmp_path)
+    write = spawn_guard.run(
+        [sys.executable, str(SCRIPT), "--write", "doctor", "--root", str(tmp_path)],
+        subject="the marker --clear --expect-role is then asked to remove",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert write.returncode == 0, write.stdout + write.stderr
+
+    clear = spawn_guard.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--clear",
+            "--expect-role",
+            "doctor",
+            "--root",
+            str(tmp_path),
+        ],
+        subject="whether --clear --expect-role clears a matching live marker",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert clear.returncode == 0, clear.stdout + clear.stderr
+    assert agent_role.current_role(root=str(tmp_path)) is None
 
 
 def test_cli_clear_removes_a_marker_written_by_a_separate_process(tmp_path):

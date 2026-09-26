@@ -275,6 +275,16 @@ _MARKER_OS_ERROR = "os-error"
 #: override, for a caller that has actually confirmed the old marker is
 #: dead rather than merely inconvenient.
 _MARKER_CONFLICT = "conflict"
+#: #1752: an unconditional `--clear` can race a still-running holder of the
+#: marker -- most commonly a sub-manager's own #1740 forced retry having
+#: already overwritten a doctor's marker with `sub-manager` by the time the
+#: doctor that originally wrote it reaches its own end-of-run clear.
+#: `expect_role` makes that clear conditional on the marker still naming the
+#: caller's own role; `_MARKER_OWNER_MISMATCH` is what a LIVE mismatch
+#: reports, `detail` is the role actually found. A stale or absent marker is
+#: not a rival, so only a LIVE mismatch refuses -- the same fail-open
+#: direction #695's own staleness fix already takes.
+_MARKER_OWNER_MISMATCH = "owner-mismatch"
 
 
 def _write_role_marker_detail(role, root=".", written_at=None, force=False):
@@ -336,19 +346,48 @@ def write_role_marker(
     return state == _MARKER_OK
 
 
-def _clear_role_marker_detail(root="."):
-    """`clear_role_marker`'s own work, plus which of three things happened.
+def _clear_role_marker_detail(root=".", expect_role=None):
+    """`clear_role_marker`'s own work, plus which of four things happened.
 
     Returns `(state, exc)`: `_MARKER_CLEARED` (a file was removed, `exc` is
     `None`), `_MARKER_ABSENT` (no marker was there, or `root` is not inside
     a git repository -- the two `clear_role_marker` itself does not tell
-    apart either, `exc` is `None`), or `_MARKER_OS_ERROR` (a marker was
-    found and the removal itself failed, `exc` is the `OSError`). Only this
-    function's caller -- the CLI -- reads the distinction.
+    apart either, `exc` is `None`), `_MARKER_OWNER_MISMATCH` (`expect_role`
+    was given, the marker is LIVE, and it names a different role -- `exc` is
+    that role, #1752), or `_MARKER_OS_ERROR` (a marker was found and the
+    removal itself failed, `exc` is the `OSError`). Only this function's
+    caller -- the CLI -- reads the distinction.
+
+    `expect_role`, when given, refuses to remove a LIVE marker that names a
+    role other than `expect_role` rather than clobbering someone else's live
+    declaration (#1752): a `doctor` marker forcibly overwritten mid-run by a
+    sub-manager's own #1740 retry must not be deleted by the doctor's own
+    end-of-run clear once it no longer names `doctor` at all. A stale or
+    absent marker is never a rival, so the check only fires on `live` -- with
+    one exception: `unreadable` cannot be told apart from `live-and-mine` any
+    more than it can from `live-and-someone-else's`, so it is treated as
+    inconclusive and refused too (`exc` is `None` in that case, since no role
+    was ever read), rather than falling through to an unconditional unlink
+    the way `MARKER_STATE_UNREADABLE` would if this only checked for `live`.
+    A self-review of this same fix found exactly that gap in an earlier
+    draft: the check as first written only excluded `absent`, so an
+    unreadable-but-present marker (permission denied, mid-write) sailed
+    through to `path.unlink()` regardless of `expect_role` -- the one state
+    this whole feature exists to guard against, reached by construction
+    rather than by oversight in the condition's phrasing.
     """
     path = _marker_path(root)
     if path is None or not path.is_file():
         return _MARKER_ABSENT, None
+    if expect_role is not None:
+        marker = _read_marker(root)
+        if marker["state"] == MARKER_STATE_UNREADABLE:
+            return _MARKER_OWNER_MISMATCH, None
+        if (
+            marker["state"] == MARKER_STATE_LIVE
+            and marker["role"].strip().lower() != expect_role.strip().lower()
+        ):
+            return _MARKER_OWNER_MISMATCH, marker["role"]
     try:
         path.unlink()
     except OSError as exc:
@@ -356,18 +395,19 @@ def _clear_role_marker_detail(root="."):
     return _MARKER_CLEARED, None
 
 
-def clear_role_marker(root: str = ".") -> bool:
+def clear_role_marker(root: str = ".", expect_role: str | None = None) -> bool:
     """Remove the marker file for `root`, if one exists.
 
-    Returns whether a file was actually removed -- `False` for both "no
-    marker was there" and "root is not inside a git repository", so a
-    caller cannot tell those apart from the return value alone, but a
+    Returns whether a file was actually removed -- `False` for "no marker
+    was there", "root is not inside a git repository", and, when
+    `expect_role` is given, "a live marker names a different role" (#1752),
+    so a caller cannot tell those apart from the return value alone, but a
     caller that only wants "is a marker gone now" gets exactly that. A
-    third cause -- a marker was found and the removal itself failed --
-    also renders `False` here; the CLI tells it apart via
+    fourth cause -- a marker was found and the removal itself failed --
+    also renders `False` here; the CLI tells all of these apart via
     `_clear_role_marker_detail`.
     """
-    state, _exc = _clear_role_marker_detail(root=root)
+    state, _exc = _clear_role_marker_detail(root=root, expect_role=expect_role)
     return state == _MARKER_CLEARED
 
 
@@ -604,6 +644,17 @@ def main(argv=None) -> int:
         "actually confirmed the old marker is dead, never on the ordinary "
         "path.",
     )
+    parser.add_argument(
+        "--expect-role",
+        metavar="ROLE",
+        default=None,
+        help="with --clear, refuse to remove a LIVE marker that names a "
+        "role other than ROLE, instead of clobbering it (#1752): protects "
+        "a still-running holder of the marker -- most commonly a doctor "
+        "run whose marker a sub-manager's own #1740 forced retry has "
+        "already overwritten -- from having its role dropped by another "
+        "agent's own end-of-run clear.",
+    )
     args = parser.parse_args(argv)
 
     if args.write is not None and args.clear:
@@ -611,7 +662,29 @@ def main(argv=None) -> int:
         return 2
 
     if args.clear:
-        state, exc = _clear_role_marker_detail(root=args.root)
+        state, exc = _clear_role_marker_detail(
+            root=args.root, expect_role=args.expect_role
+        )
+        if state == _MARKER_OWNER_MISMATCH:
+            if exc is None:
+                print(
+                    "refusing to clear the role marker for {0!r}: it could "
+                    "not be read to confirm it still names the expected "
+                    "{1!r} -- leaving it alone rather than risk dropping "
+                    "someone else's live declaration (#1752)".format(
+                        args.root, args.expect_role.strip()
+                    )
+                )
+            else:
+                print(
+                    "refusing to clear the role marker for {0!r}: a live "
+                    "marker names role {1!r}, not the expected {2!r} -- "
+                    "leaving it alone rather than dropping someone else's "
+                    "live declaration (#1752)".format(
+                        args.root, exc, args.expect_role.strip()
+                    )
+                )
+            return 4
         if state == _MARKER_OS_ERROR:
             print(
                 "could not clear the role marker for {0!r}: {1} -- the "

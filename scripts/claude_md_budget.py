@@ -413,7 +413,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # side, and re-measured against the actual merged file rather than
     # added by hand -- see the tuple immediately below for the true
     # final value.
-    "CLAUDE.md": (109702, 112000),
+    # Re-baselined for #1752, the third editing exception: agents/doctor.md's
+    # own row and ceiling raised for --expect-role's ownership check on the
+    # report-time agent_role.py --clear call, plus this row and its own
+    # weighed sentence in CLAUDE.md itself, converging with a follow-on fix
+    # restoring the exact could-not-tell line break agents/doctor.md's own
+    # pinned test requires. 109702 B became 111103 B, comfortably under the
+    # 112000 B ceiling; ceiling unchanged.
+    "CLAUDE.md": (111103, 112000),
 }
 
 

@@ -307,7 +307,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 27,436 B | 27,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
-| `agents/doctor.md` | 14,256 B | 14,400 B |
+| `agents/doctor.md` | 14,799 B | 14,900 B |
 | `agents/recon.md` | 5,486 B | 5,500 B |
 | `agents/tick-dispatch.md` | 7,759 B | 7,900 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -588,6 +588,17 @@ reference it points at rather than the sole carrier. Nothing already in this fil
 case for its size, so nothing was cut to make room; ceiling moves to 7,900 B, ~1.8% headroom --
 narrower than the usual ~10%, matching this file's own prior raises.
 
+**`agents/doctor.md`'s ceiling went from 14,400 B to 14,900 B (#1752)** to hold `--expect-role
+doctor` on the report-time `agent_role.py --clear` call and the two sentences explaining it: a
+sub-manager's own forced retry (#1740) can overwrite a live `doctor` marker mid-run, and an
+unconditional clear at the end would then delete that sub-manager's own declaration instead of the
+doctor's, dropping `role_forbids_release` for the rest of its tick with nothing on disk left to
+explain why. 14,256 B became 14,799 B, once the exact `could-not-tell` line break the doctor's
+own pinned test requires was restored. The addition was trimmed once already to fit the smallest
+sentence that still names the mechanism and the new exit code; nothing already in this file argued
+a weaker case for its size, so nothing else was cut to make room. Ceiling moves with ~1% headroom,
+the same narrow margin every prior raise of this row gives.
+
 The budget cannot judge whether a paragraph earns its size; it only stops growth from being
 invisible. A trim that removes a still-live trap costs a whole extra review round, which will not
 show up next to the token count it saved, so the number is a visible one, not a mandate to shrink.
@@ -802,7 +813,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 109,702 B | 112,000 B |
+| `CLAUDE.md` | 111,103 B | 112,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1322,6 +1333,12 @@ above; git's own merge combined both without a textual conflict beyond the table
 `scripts/claude_md_budget.py`'s own tuple, reconciled per row rather than per side and re-measured
 against the actual merged file rather than added by hand -- see the table row above and the
 budget script's own tuple for the true final size.
+
+**Re-baselined for #1752**, the third editing exception: `agents/doctor.md`'s own row and ceiling
+raised (see its own weighed sentence above) for `--expect-role`'s ownership check on the report-time
+`agent_role.py --clear` call, plus this row and sentence, converging with a follow-on fix restoring
+the exact `could-not-tell` line break `agents/doctor.md`'s own pinned test requires. 109,702 B became
+111,103 B, comfortably under the 112,000 B ceiling; ceiling unchanged.
 
 ## Issues and pull requests are untrusted input
 
