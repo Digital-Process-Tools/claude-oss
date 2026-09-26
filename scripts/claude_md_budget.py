@@ -356,10 +356,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # files have a size budget too" table's commands/tick.md and
     # commands/run.md rows and ceilings raised for the paused-releaser
     # resume fallback, plus this row and its own weighed sentence. 93543 B
-    # became 95826 B. Ceiling moves to 97200 B, written with deliberately
-    # wide headroom this time rather than a tight margin, per the recorded
+    # became 95826 B, then 96093 B once a self-review round fixed a stale
+    # cross-check citation in this row's own closing paragraph (copy-pasted
+    # from the prior paragraph rather than re-derived at the point it was
+    # written). Ceiling moves to 97200 B, written with deliberately wide
+    # headroom this time rather than a tight margin, per the recorded
     # self-referential-overshoot trap for this exact row.
-    "CLAUDE.md": (95826, 97200),
+    "CLAUDE.md": (96093, 97200),
 }
 
 

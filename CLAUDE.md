@@ -754,7 +754,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 95,826 B | 97,200 B |
+| `CLAUDE.md` | 96,093 B | 97,200 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1148,10 +1148,13 @@ under the old ceiling; this paragraph and the table-row update below are what pu
 **Re-baselined for #1747**, the third editing exception: the "Command files have a size budget
 too" table's `commands/tick.md` and `commands/run.md` rows and ceilings raised, plus this row and
 weighed sentence, for the paused-releaser resume fallback (see that section's own weighed
-paragraph above). Cross-checked per this row's own recorded trap before writing this paragraph:
-`wc -c CLAUDE.md` and `scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read
-`(94092, 94400)` at the start of this edit, agreeing with each other and with the table row above,
-so this paragraph starts from a confirmed number rather than a claimed one. Written with
+paragraph above). Cross-checked per this row's own recorded trap immediately before writing this
+paragraph, i.e. after that section's own weighed paragraph and the table-row bump above had
+already landed: `wc -c CLAUDE.md` read 94,974 B against the still-unraised 94,400 B ceiling,
+confirming the row was already over before this closing paragraph added its own bytes -- a
+self-review round found the first draft of this citation stale, copy-pasted from the prior
+paragraph's own cross-check rather than re-derived at this paragraph's own point in the edit
+sequence, an unreconstructible number the diff's own hunks could not produce. Written with
 deliberately wide headroom this time, per the same lesson #1705's own note above already draws,
 rather than converging on a tight margin across a second pass: ceiling moves to 97,200 B.
 
