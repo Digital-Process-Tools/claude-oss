@@ -43,6 +43,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "scripts" / "agent_role.py"
 
@@ -228,6 +230,44 @@ def test_clear_role_marker_expect_role_still_clears_a_stale_mismatch(tmp_path):
     cleared = agent_role.clear_role_marker(root=str(tmp_path), expect_role="doctor")
     assert cleared is True
     assert agent_role.current_role(root=str(tmp_path)) is None
+
+
+def test_clear_role_marker_refuses_an_unreadable_marker_rather_than_unlinking(tmp_path):
+    """A reviewer finding on this same fix: an earlier draft's ownership check
+    only excluded `absent`, so a marker that exists but could not be read
+    (permission denied, mid-write) fell straight through to `path.unlink()`
+    regardless of `expect_role` -- exactly the case this whole feature exists
+    to guard against, since `unreadable` cannot be told apart from
+    `live-and-someone-else's` any more than from `live-and-mine`. Per this
+    repository's own working rule, the unreadable condition is a measurement,
+    not a given -- skip with what went untested if this platform will not
+    honour the mode bit, the same construction `test_agent_role_marker_
+    unreadable_695.py` already uses."""
+    _init_repo(tmp_path)
+    agent_role.write_role_marker("doctor", root=str(tmp_path))
+    marker_path = agent_role._marker_path(root=str(tmp_path))
+    marker_path.chmod(0)
+    try:
+        try:
+            marker_path.read_text(encoding="utf-8")
+        except OSError:
+            pass
+        else:
+            pytest.skip(
+                "mode 0 did not deny a read of the marker file on this "
+                "platform, so this construction cannot produce an "
+                "unreadable-but-present marker here. UNTESTED here: whether "
+                "clear_role_marker refuses rather than unlinking an "
+                "unreadable marker when expect_role is given."
+            )
+        cleared = agent_role.clear_role_marker(root=str(tmp_path), expect_role="doctor")
+        assert cleared is False
+        assert marker_path.is_file(), (
+            "an unreadable marker must be left alone, not unlinked -- this "
+            "process cannot confirm it is safe to remove"
+        )
+    finally:
+        marker_path.chmod(0o600)
 
 
 def test_clear_role_marker_detail_reports_owner_mismatch_state(tmp_path):

@@ -651,8 +651,16 @@ def main(argv=None):
             # clear" for a marker that is still on disk after a failed
             # unlink (permissions, a read-only mount), which is precisely
             # the failure #1585 exists to fix, recurring one layer down.
+            #
+            # #1752 self-review: this is the structural mirror of
+            # agents/doctor.md's own end-of-run clear, the exact call site
+            # #1752 fixed with `expect_role`. Nothing forces an overwrite of
+            # a live `sub-manager` marker today, but leaving this call site
+            # unguarded would silently reintroduce the same defect class the
+            # day a symmetric forced-overwrite path is ever added here, so
+            # it passes `expect_role` too, for the same reason.
             state, exc = _agent_role._clear_role_marker_detail(
-                root=args.clear_marker_root
+                root=args.clear_marker_root, expect_role=_agent_role.SUB_MANAGER
             )
         except Exception:  # noqa: BLE001 -- clearing the marker is a
             # courtesy this command performs on the caller's behalf; it must
@@ -663,6 +671,13 @@ def main(argv=None):
                 marker_note = "cleared"
             elif state == _agent_role._MARKER_OS_ERROR:
                 marker_note = "could not clear: {0}".format(exc)
+            elif state == _agent_role._MARKER_OWNER_MISMATCH:
+                marker_note = (
+                    "refused (owner mismatch): a live marker now names "
+                    "role {0!r}, not sub-manager -- left alone rather than "
+                    "dropping someone else's live declaration "
+                    "(#1752)".format(exc)
+                )
             else:
                 marker_note = "nothing to clear"
 

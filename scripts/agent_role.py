@@ -363,13 +363,26 @@ def _clear_role_marker_detail(root=".", expect_role=None):
     declaration (#1752): a `doctor` marker forcibly overwritten mid-run by a
     sub-manager's own #1740 retry must not be deleted by the doctor's own
     end-of-run clear once it no longer names `doctor` at all. A stale or
-    absent marker is never a rival, so the check only fires on `live`.
+    absent marker is never a rival, so the check only fires on `live` -- with
+    one exception: `unreadable` cannot be told apart from `live-and-mine` any
+    more than it can from `live-and-someone-else's`, so it is treated as
+    inconclusive and refused too (`exc` is `None` in that case, since no role
+    was ever read), rather than falling through to an unconditional unlink
+    the way `MARKER_STATE_UNREADABLE` would if this only checked for `live`.
+    A self-review of this same fix found exactly that gap in an earlier
+    draft: the check as first written only excluded `absent`, so an
+    unreadable-but-present marker (permission denied, mid-write) sailed
+    through to `path.unlink()` regardless of `expect_role` -- the one state
+    this whole feature exists to guard against, reached by construction
+    rather than by oversight in the condition's phrasing.
     """
     path = _marker_path(root)
     if path is None or not path.is_file():
         return _MARKER_ABSENT, None
     if expect_role is not None:
         marker = _read_marker(root)
+        if marker["state"] == MARKER_STATE_UNREADABLE:
+            return _MARKER_OWNER_MISMATCH, None
         if (
             marker["state"] == MARKER_STATE_LIVE
             and marker["role"].strip().lower() != expect_role.strip().lower()
@@ -653,14 +666,24 @@ def main(argv=None) -> int:
             root=args.root, expect_role=args.expect_role
         )
         if state == _MARKER_OWNER_MISMATCH:
-            print(
-                "refusing to clear the role marker for {0!r}: a live "
-                "marker names role {1!r}, not the expected {2!r} -- "
-                "leaving it alone rather than dropping someone else's "
-                "live declaration (#1752)".format(
-                    args.root, exc, args.expect_role.strip()
+            if exc is None:
+                print(
+                    "refusing to clear the role marker for {0!r}: it could "
+                    "not be read to confirm it still names the expected "
+                    "{1!r} -- leaving it alone rather than risk dropping "
+                    "someone else's live declaration (#1752)".format(
+                        args.root, args.expect_role.strip()
+                    )
                 )
-            )
+            else:
+                print(
+                    "refusing to clear the role marker for {0!r}: a live "
+                    "marker names role {1!r}, not the expected {2!r} -- "
+                    "leaving it alone rather than dropping someone else's "
+                    "live declaration (#1752)".format(
+                        args.root, exc, args.expect_role.strip()
+                    )
+                )
             return 4
         if state == _MARKER_OS_ERROR:
             print(
