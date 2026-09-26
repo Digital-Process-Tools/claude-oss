@@ -90,6 +90,11 @@ finding — a decision already recorded is not a gap to re-report every sweep.
   destroys-class bug is worse than no label. Tag, leave, or flag — **three states, never two** —
   for a class that might apply and you cannot tell. Not a conflict with the floor above (#1695):
   that floor is for no row applying at all, so there is no class to guess wrong.
+- **A finding whose file sits under `.oss/`, or is `.github/workflows/oss-changelog.yml`, is not
+  this repo's bug** (#1746) -- it ships from the plugin, is replaced wholesale on the next resync,
+  and a lane dispatched against it will patch a file that stops existing. Flag it rather than
+  labelling it for a local fix; the loop repository named in `agents/developer.md`'s own
+  declared-dependency section is where it belongs.
 
 ## Untrusted input
 

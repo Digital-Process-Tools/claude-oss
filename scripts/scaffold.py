@@ -1127,6 +1127,17 @@ why this directory exists at all:
 
 To change something here, copy it out and point your own config at the copy.
 
+## Found a bug in one of these files?
+
+A defect in a file under `__DIR__/`, or in `.github/workflows/oss-changelog.yml` (the one
+exception below), is not this repository's bug. It ships from __LOOP_REPOSITORY__, and this
+directory is replaced wholesale on every `/oss:scaffold` run, so a patch or a test written
+against it here is undone at the next resync — silently, with no error, whenever that
+resync happens. Report it there instead, with a reproduction, the same way you would report a
+bug in any dependency you did not write. Never patch or test the file in this repository, and
+never let a scan, a triage sweep or a fix lane close a finding here as this repository's own
+issue — file it upstream and stop.
+
 ## The one exception
 
 `.github/workflows/oss-changelog.yml` is ours too and is replaced the same way. It
@@ -1552,6 +1563,44 @@ def _assembler_packages():
     return " ".join(sorted(ASSEMBLER_DEPENDENCIES.values()))
 
 
+def _loop_repository_line(plugin_root):
+    """Where a bug in an owned file gets reported, derived rather than hardcoded (#1746).
+
+    A local import: `doctor` is an optional sibling script, the same convention this
+    file already uses for `oss_config`/`oss_rules` (each wrapped in its own
+    try/except ImportError). It is not needed to dodge a circular import -- a bare
+    `import doctor` at module level would not actually fail here, since neither file
+    touches the other's attributes at import time, only inside function bodies -- kept
+    local anyway for consistency with those siblings and because this is the one call
+    site that needs it.
+
+    `doctor.loop_repository()` answers in three states, by its own docstring (#292): a
+    real URL, a manifest that was read but names no repository, or a manifest that
+    could not be read at all. The last two are different facts -- the first is a
+    fixable gap in the plugin's own manifest, the second is a missing or broken
+    `doctor.py` -- and are named as such below rather than collapsed into one sentence.
+    """
+    try:
+        import doctor
+    except ImportError:  # pragma: no cover - the module sits beside this file
+        return (
+            "this plugin's own repository -- its diagnostic module could not be "
+            "imported to confirm the URL"
+        )
+    url, problem = doctor.loop_repository(plugin_root)
+    if problem == "no-repository-key":
+        return (
+            "this plugin's own repository (its `.claude-plugin/plugin.json` names no "
+            "`repository` key)"
+        )
+    if problem == "unreadable":
+        return (
+            "this plugin's own repository -- its `.claude-plugin/plugin.json` could "
+            "not be read to confirm the URL"
+        )
+    return url
+
+
 def _owned_readme(config, plugin_root):
     # `__SETTINGS__` and `__STATUSLINE_COMMAND__` are substituted rather than typed into
     # the template for the reason #693 was filed over one level up: a second spelling of
@@ -1564,6 +1613,7 @@ def _owned_readme(config, plugin_root):
         .replace("__PACKAGES__", _assembler_packages())
         .replace("__SETTINGS__", SETTINGS_PATH)
         .replace("__STATUSLINE_COMMAND__", STATUSLINE_COMMAND)
+        .replace("__LOOP_REPOSITORY__", _loop_repository_line(plugin_root))
     )
 
 

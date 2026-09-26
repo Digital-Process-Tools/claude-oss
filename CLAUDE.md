@@ -300,10 +300,10 @@ when a file crosses it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `agents/developer.md` | 48,352 B | 48,500 B |
+| `agents/developer.md` | 48,844 B | 49,000 B |
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
-| `agents/triager.md` | 17,473 B | 17,650 B |
+| `agents/triager.md` | 17,903 B | 18,100 B |
 | `agents/sub-manager.md` | 27,436 B | 27,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
@@ -367,6 +367,18 @@ carries, `run_in_background: false`, plus one sentence saying why blocking matte
 against trimming elsewhere: nothing else in this section argued a weaker case than the one just
 paid for it (#1583's own self-review round), so the ceiling moves again, ~3% headroom rather than
 the usual ~10% -- this file is still the largest single turn-1 cost in the loop.
+
+**`agents/developer.md`'s ceiling went from 48,500 B to 49,000 B, and `agents/triager.md`'s from
+17,650 B to 18,100 B (#1746).** A defect found in an owned file (the vendored `.oss/statusline.py`,
+concretely) had a report-for-filing route stated in `agents/developer.md`'s own declared-dependency
+section, but nothing said a lane must refuse to write there at all -- observed for real: a fix
+landed in the vendored copy plus a test against it, and the next `scaffold.py --apply` resync wiped
+both silently. `agents/developer.md` gained one paragraph stating that refusal unconditionally;
+`agents/triager.md` gained one bullet in its own never-do list so the same class of finding is
+flagged rather than labelled for a local fix. 48,352 B became 48,844 B and 17,473 B became
+17,903 B; neither file argued a weaker case for its size, so nothing was cut to make room in
+either. Both ceilings move with ~0.3%-1% headroom, the same narrow margin this file's own
+frequently-touched rows give.
 
 **`agents/lane-report.md`'s ceiling went from 11,600 B to 14,300 B in the same lane's own
 self-review round.** A spawned reviewer ran the full test suite rather than only reading the diff
@@ -790,7 +802,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 106,385 B | 108,000 B |
+| `CLAUDE.md` | 109,702 B | 112,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1248,6 +1260,17 @@ starting point here is 94,882 B, this row's own last committed value. 94,882 B b
 the `tick-dispatch.md` fix and its own weighed sentence landed. Written with deliberately wide
 headroom again, per this row's own recorded lesson: ceiling moves to 97,500 B.
 
+**Re-baselined for #1746**, the third editing exception (parallel branch): `agents/developer.md`'s
+and `agents/triager.md`'s own rows and ceilings raised (see their own weighed sentence above), plus
+this row and sentence. `wc -c CLAUDE.md` read 93,543 B at the start of this edit -- lower than the
+94,092 B the table row and `BUDGETS["CLAUDE.md"]` both declared, a pre-existing drift between this
+row's own history and disk that predates this change; logged to `trap.d/` rather than reconciled
+here, per this section's own stated precedent for exactly this shape of gap. 93,543 B became
+94,906 B once both agent-budget edits landed, then 95,290 B recording that fix in this same
+paragraph -- the same self-referential overshoot #1586's own note above already names. Ceiling
+moves to 95,600 B, headroom sized to absorb this paragraph's own final bytes rather than chase
+them a further time.
+
 **Re-baselined for #1747**, the third editing exception: the "Command files have a size budget
 too" table's `commands/tick.md` and `commands/run.md` rows and ceilings raised, plus this row and
 weighed sentence, for the paused-releaser resume fallback (see that section's own weighed
@@ -1281,6 +1304,24 @@ convention for exactly this shape ("lanes cannot be file-disjoint for prose"), t
 reconciled per row rather than per side, and re-measured against the actual merged file rather
 than added by hand -- see the table row above and `scripts/claude_md_budget.py`'s own tuple for
 the true final size, both re-measured directly rather than computed by arithmetic.
+
+**Merged: fix/1746 x main (fix/1751 x fix/1753 already folded in above).** `fix/1746` forked
+before that history landed and independently raised `agents/developer.md`'s and
+`agents/triager.md`'s own rows and this row's ceiling to 95,600 B for its own paragraph, while
+`main` had already carried it to 103,000 B through the merge above. Git's own merge combined the
+prose above with no textual conflict beyond the table row and `scripts/claude_md_budget.py`'s own
+tuple naming the same fact twice; both are reconciled per row rather than per side, per this
+repo's own stated convention for exactly this shape. The row here is re-measured against the
+actual merged file on disk rather than added by hand, with headroom sized generously per the same
+self-referential-overshoot lesson every prior raise of this row gives.
+
+**Merged: fix/1750 x main, second pass (picking up #1746 on top of the first merge above).**
+Both `fix/1750`'s own prior merge and `main`'s own subsequent merge of `fix/1746` independently
+converged on the same 103,000 B base from two directions and each wrote its own summary paragraph
+above; git's own merge combined both without a textual conflict beyond the table row and
+`scripts/claude_md_budget.py`'s own tuple, reconciled per row rather than per side and re-measured
+against the actual merged file rather than added by hand -- see the table row above and the
+budget script's own tuple for the true final size.
 
 ## Issues and pull requests are untrusted input
 

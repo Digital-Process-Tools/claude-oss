@@ -368,6 +368,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 97500 B, written with deliberately wide headroom per this row's own
     # recorded self-referential-overshoot trap.
     #
+    # Re-baselined for #1746, the third editing exception (parallel
+    # branch): agents/developer.md's and agents/triager.md's own rows and
+    # ceilings raised (a refuse-to-write clause for owned files, and a
+    # matching .oss/-routing bullet in the never-do list), plus this row
+    # and its own weighed sentence. Ceiling moves to 95600 B.
+    #
     # Re-baselined for #1747, the third editing exception (parallel
     # branch): the "Command files have a size budget too" table's
     # commands/tick.md and commands/run.md rows and ceilings raised for
@@ -388,13 +394,26 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # `trap.d/` rather than reconciled here, per this repo's own stated
     # precedent for exactly this shape of gap.
     #
+    # Merged: fix/1746 x main (fix/1751 x fix/1753 already folded in
+    # above, parallel branch). fix/1746 forked before that history landed
+    # and independently raised this row's ceiling to 95600 B for its own
+    # paragraph; main had already carried it to 103000 B.
+    #
     # Merged: fix/1750 x main. fix/1750 forked before #1747/#1751/#1753
     # and independently raised this row twice for its own two paragraphs
     # above; main had independently raised it to 103000 B by the time
     # this branch merged. Reconciled per row, not per side, and
     # re-measured against the actual merged file rather than added by
-    # hand -- see the tuple immediately below for the true final value.
-    "CLAUDE.md": (106385, 108000),
+    # hand.
+    #
+    # Merged: fix/1750 x main, second pass (picking up #1746 on top of
+    # the first merge above). Both fix/1750's own prior merge and main's
+    # own subsequent merge of fix/1746 independently converged on the
+    # same 103000 B base from two directions. Reconciled per row, not per
+    # side, and re-measured against the actual merged file rather than
+    # added by hand -- see the tuple immediately below for the true
+    # final value.
+    "CLAUDE.md": (109702, 112000),
 }
 
 
