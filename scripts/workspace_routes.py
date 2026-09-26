@@ -431,8 +431,10 @@ def triage_count(repo, gh, run, timeout=25, config=None):
         elif not any(name.startswith("priority-") for name in names):
             no_priority += 1
     count = max(no_lane, no_priority)
-    return count, "{0} of {1} open issue(s) missing lane-* or priority-*".format(
-        count, len(issues)
+    lane_desc = "a declared lane label" if lane_set else "lane-*"
+    priority_desc = "a declared priority label" if priority_set else "priority-*"
+    return count, "{0} of {1} open issue(s) missing {2} or {3}".format(
+        count, len(issues), lane_desc, priority_desc
     )
 
 

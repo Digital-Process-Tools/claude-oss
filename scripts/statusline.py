@@ -1984,11 +1984,18 @@ def _gh_external_issue_count(repo, total, priority_labels=None, lane_labels=None
     line), so the only way the count ever cleared was a human closing it by hand.
     `priority_labels`/`lane_labels`, when given, are this repo's own declared
     spellings (`labels.priority`, `oss_config.effective_lane_labels`) -- an issue
-    missing either one still counts as unruled; one carrying both does not. Absent
-    both (the legacy, no-config call shape), every external issue counts as unruled
-    regardless of its labels, exactly as this function always has -- there is no
-    signal to tell a triaged issue from an untriaged one without a repo that
-    declares what triage looks like.
+    missing either one still counts as unruled; one carrying both does not. **Both
+    axes must actually be declared for this to apply at all** -- a repo declaring
+    only one of the two has no signal on the other, and treating an undeclared axis
+    as automatically satisfied would silently degrade the stated AND into "whichever
+    axis happens to be configured", the same false-triaged reading
+    `_gh_unlabelled_issue_counts` avoids by reporting `None` for an axis with
+    nothing declared rather than treating it as satisfied. So with only one axis
+    declared, or with neither declared (the legacy, no-config call shape), every
+    external issue counts as unruled regardless of its labels, exactly as this
+    function always has -- there is no signal to tell a triaged issue from an
+    untriaged one without a repo that declares what triage looks like on both
+    axes.
 
     Not `-author:@me`: that resolves to whoever is authenticated on this machine, so
     the count would be a fact about a laptop rather than about the repository, and a
@@ -2017,12 +2024,15 @@ def _gh_external_issue_count(repo, total, priority_labels=None, lane_labels=None
     What matters for `--paginate` *without* `--jq` is that each page is a raw JSON
     array, and concatenating two JSON arrays end to end produces text no parser can
     read (`[...][...]`) -- the exact trap #620's own writeup names for a naive fix.
-    `--jq` sidesteps it by construction: piping `.[] | select(...) | .author_association`
-    through jq's raw-output mode prints one bare `author_association` value per line,
-    and *lines* concatenate safely across pages -- unlike JSON arrays, there is no
-    boundary for two pages' lines to collide on. `--paginate` alone still walks every
-    page regardless of the repository's issue count, so there is no analogue of the
-    old `--limit`-at-100 hazard to reintroduce here.
+    `--jq` sidesteps it by construction: piping `.[] | select(...) | ({...} | tojson)`
+    through jq's raw-output mode prints one JSON object per line -- `{"a":
+    author_association, "l": label names}` since #1748 added the label read this
+    function needs to tell a triaged issue from an untriaged one, a bare
+    `author_association` string before that -- and *lines* concatenate safely across
+    pages either way, unlike JSON arrays: there is no boundary for two pages' lines to
+    collide on. `--paginate` alone still walks every page regardless of the
+    repository's issue count, so there is no analogue of the old `--limit`-at-100
+    hazard to reintroduce here.
 
     The row count is cross-checked against `total` exactly as before: fewer lines
     than the count `_gh_count` already took means this call did not cover every open
@@ -2074,10 +2084,19 @@ def _gh_external_issue_count(repo, total, priority_labels=None, lane_labels=None
             return None
         if assoc.upper() in _INSIDE_ASSOCIATIONS:
             continue
-        if priority_set or lane_set:
+        if priority_set and lane_set:
+            # Both axes declared (#1748's own reviewer finding, self-review):
+            # only then can "carries every declared label" actually be told.
+            # A repo declaring just one axis has no signal on the other, and
+            # `bool(priority_set) and not (...)` on an undeclared axis is
+            # unconditionally `False` -- treating that as "not missing" would
+            # silently degrade the stated AND into "whichever axis happens to
+            # be configured", exactly the false-triaged reading
+            # `_gh_unlabelled_issue_counts` avoids by reporting `None` for an
+            # axis with nothing declared rather than treating it as satisfied.
             names = {str(name) for name in (parsed.get("l") or [])}
-            missing_priority = bool(priority_set) and not (names & priority_set)
-            missing_lane = bool(lane_set) and not (names & lane_set)
+            missing_priority = not (names & priority_set)
+            missing_lane = not (names & lane_set)
             if not missing_priority and not missing_lane:
                 # Triaged: carries every declared label, even while still open.
                 continue

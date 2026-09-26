@@ -358,7 +358,16 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # and weighed sentence. 93543 B became 94882 B. Ceiling moves to
     # 95300 B, written with deliberately wide headroom per this row's own
     # recorded self-referential-overshoot trap.
-    "CLAUDE.md": (94882, 95300),
+    #
+    # Re-baselined for #1750, in the same lane's own self-review round:
+    # agents/tick-dispatch.md's own row and ceiling raised (the sticky-
+    # maintainer-decline doctrine moved out of jit-context, which cannot
+    # reliably reach a later tick in the same scheduler session, and into
+    # this file's own re-sent-whole prose instead), plus this file's own
+    # row and weighed sentence. 94882 B became 96684 B. Ceiling moves to
+    # 97500 B, written with deliberately wide headroom per this row's own
+    # recorded self-referential-overshoot trap.
+    "CLAUDE.md": (96684, 97500),
 }
 
 

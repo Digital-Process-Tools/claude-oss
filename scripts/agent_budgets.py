@@ -629,7 +629,24 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # 64 B. Same one-line "## Trap" trigger as every other Bash-granted file
     # in this table. Ceiling moves to 7050 B, ~1.2% headroom -- narrower than
     # the usual ~10%, matching this file's own prior raises.
-    "agents/tick-dispatch.md": (6964, 7050),
+    # Re-baselined for #1750, in the same lane's own self-review round: a
+    # spawned reviewer found the jit-context fix for #1750 (the design-
+    # question rule extended with a sticky-decline paragraph) structurally
+    # unenforceable for the case it names as its own worked example --
+    # CLAUDE.md's own "Loop prose may not move to .claude/jit-context/"
+    # rule states exactly why: jit's shown-set dedup is keyed on session_id,
+    # and every tick within one /oss:run scheduler session shares one, so a
+    # rule that fires once in an earlier tick's own dispatch spawn may not
+    # fire again in this tick's, the opposite of what a cross-tick-binding
+    # doctrine needs. Fixed by stating the doctrine directly in this file's
+    # own prose instead, which is re-sent whole on every spawn regardless of
+    # jit dedup; the jit-context file stays as the fuller worked-example
+    # reference this paragraph points at. 6964 B became 7759 B, past the
+    # 7050 B ceiling. Nothing already in this file argued a weaker case for
+    # its size, so nothing was cut to make room; ceiling moves to 7900 B,
+    # ~1.8% headroom -- narrower than the usual ~10%, matching this file's
+    # own prior raises.
+    "agents/tick-dispatch.md": (7759, 7900),
     # #1544 step 2: new file. `oss:sub-manager` used to call `pr_green.py
     # --wait` and then read `skills/manager/phases/review.md`'s checklist
     # (together over 24,000 B) inline, in the same long-lived context that

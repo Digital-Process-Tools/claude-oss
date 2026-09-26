@@ -531,6 +531,16 @@ def test_triage_count_is_the_larger_of_no_lane_and_no_priority():
     assert count == 3, why
 
 
+def test_triage_count_why_names_the_legacy_prefixes_with_no_config():
+    """Positive control for the assertion above: with no config given, the
+    `why` message must still name the historical `lane-*`/`priority-*`
+    prefix convention -- the fix must not touch this call shape's message."""
+    run = _fake_run_issues(no_lane=1, no_priority=3, total=5)
+    _count, why = workspace_routes.triage_count("example/example", "gh", run)
+    assert "lane-*" in why, why
+    assert "priority-*" in why, why
+
+
 def test_triage_count_of_a_fully_labelled_board_is_zero():
     """Positive control: every issue carries both labels -- a real `0`."""
     run = _fake_run_issues(no_lane=0, no_priority=0, total=5)
@@ -595,6 +605,10 @@ def test_triage_count_honours_config_declared_label_spellings():
         "example/example", "gh", run, config=config
     )
     assert count == 1, why
+    assert "declared lane label" in why, why
+    assert "declared priority label" in why, why
+    assert "lane-*" not in why, why
+    assert "priority-*" not in why, why
 
 
 # --- decide(): thresholds, third state, precedence ---------------------------
