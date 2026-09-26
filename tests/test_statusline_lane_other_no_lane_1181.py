@@ -25,7 +25,9 @@ def _refresh_with_labels(tmp_path, monkeypatch, labels, gh_labels_line):
         statusline, "repo_config", lambda root: {"repo": "owner/repo", "labels": labels}
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 1)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 0
+    )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
     monkeypatch.setattr(statusline, "_gh_default_branch_state", lambda repo, br: None)
     monkeypatch.setattr(

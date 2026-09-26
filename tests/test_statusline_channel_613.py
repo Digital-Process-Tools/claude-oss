@@ -704,7 +704,9 @@ def test_refresh_carries_the_channel_reading_forward_when_not_due(
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 0
+    )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     called = []
@@ -744,7 +746,9 @@ def test_refresh_records_a_failed_channel_reading_1636(tmp_path, monkeypatch):
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 0
+    )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(
@@ -778,7 +782,9 @@ def test_refresh_clears_a_prior_channel_failure_on_success_1636(tmp_path, monkey
         lambda root: {"repo": "owner/repo", "default_branch": "main"},
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 0
+    )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     monkeypatch.setattr(
@@ -815,7 +821,9 @@ def test_refresh_does_not_ask_when_watch_channel_is_off(tmp_path, monkeypatch):
         },
     )
     monkeypatch.setattr(statusline, "_gh_count", lambda repo, kind: 0)
-    monkeypatch.setattr(statusline, "_gh_external_issue_count", lambda repo, total: 0)
+    monkeypatch.setattr(
+        statusline, "_gh_external_issue_count", lambda repo, total, **k: 0
+    )
     monkeypatch.setattr(statusline, "_gh_rollups", lambda repo: [])
     monkeypatch.setattr(statusline, "installed_plugins", lambda root: {})
     called = []
