@@ -116,7 +116,13 @@ Seven answers, not three, and only one of them is the ordinary case:
   releaser names what it set in motion and what clears it (`WAIT-DISPATCH:`/`WAIT-OBSERVABLE:`), the
   same two facts a `paused` sub-manager hands back below — wait on the named observable and resume
   the same releaser with `SendMessage`, never a fresh spawn: a fresh one re-derives from gate 1
-  instead of the gate it actually paused at.
+  instead of the gate it actually paused at. **A resume whose task notification reports delivery
+  while nothing arrives here is unresolved, not evidence the releaser died** (#1747, observed
+  twice on a real release) — probe it first, the same three-outcome `SendMessage` status probe
+  #1349 gives a `work-started` sub-manager (refusal = genuinely gone, reply = still live, silence
+  = unresolved, arm a wakeup and re-probe), and only spawn a second `oss:releaser` on a confirmed
+  refusal, never on the notification alone: a duplicate spawn would hold tag authority beside a
+  live one.
 
   **On `RELEASE: released`, check the triage cadence before spawning the next sub-manager (#1386).**
   A sub-manager cannot run this check itself — it dies with its own context at the end of its tick

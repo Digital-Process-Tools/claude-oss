@@ -367,7 +367,34 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # row and weighed sentence. 94882 B became 96684 B. Ceiling moves to
     # 97500 B, written with deliberately wide headroom per this row's own
     # recorded self-referential-overshoot trap.
-    "CLAUDE.md": (96684, 97500),
+    #
+    # Re-baselined for #1747, the third editing exception (parallel
+    # branch): the "Command files have a size budget too" table's
+    # commands/tick.md and commands/run.md rows and ceilings raised for
+    # the paused-releaser resume fallback, plus this row and its own
+    # weighed sentence. 93543 B became 95826 B, then 96093 B once a
+    # self-review round fixed a stale cross-check citation in this row's
+    # own closing paragraph. Ceiling moved to 97200 B.
+    #
+    # Merged: fix/1751 x fix/1753 (landed on main before this branch's own
+    # merge). Both branches forked from the same 96093 B base and
+    # independently raised this row's ceiling for their own paragraph --
+    # fix/1751's own #1745/#1751 fixes and two self-review rounds to
+    # 98500 B, fix/1753's #1747 fix to 97200 B. Reconciled per row, not
+    # per side: main's own value became (102507, 103000) -- note this
+    # figure already disagrees by 167 B with the 102,340 B this same
+    # commit's own CLAUDE.md table-row history cites for the identical
+    # merge, a pre-existing drift between the two files logged to
+    # `trap.d/` rather than reconciled here, per this repo's own stated
+    # precedent for exactly this shape of gap.
+    #
+    # Merged: fix/1750 x main. fix/1750 forked before #1747/#1751/#1753
+    # and independently raised this row twice for its own two paragraphs
+    # above; main had independently raised it to 103000 B by the time
+    # this branch merged. Reconciled per row, not per side, and
+    # re-measured against the actual merged file rather than added by
+    # hand -- see the tuple immediately below for the true final value.
+    "CLAUDE.md": (106385, 108000),
 }
 
 

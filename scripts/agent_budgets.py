@@ -599,7 +599,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # Nothing here argued for cutting to make room; this file already had the
     # least headroom of the ten before the edit. Ceiling moves to 4500 B,
     # ~1.4% headroom.
-    "agents/recon.md": (4438, 4500),
+    # Re-baselined for #1745: a dirty sibling clone at the ambient cwd flipped
+    # an already-shipped verdict on a lane that needed the fix, because
+    # nothing here pinned recon's reads to the worktree its prompt names.
+    # New section states that discipline, mirroring commands/run/curate.md's
+    # own fix for the identical class (#1670). 4438 B became 5291 B, past the
+    # old ceiling with no headroom to absorb it. Ceiling moves to 5500 B,
+    # ~4% headroom.
+    # Re-baselined again in the same lane's own self-review round: a
+    # reviewer found the new section's own worktree-cut/remove fallback
+    # contradicted this file's pre-existing "never run a git write" line a
+    # few lines above -- reconciled by naming the one narrow exception
+    # inline. 5291 B became 5486 B. Ceiling unchanged; 14 B headroom.
+    "agents/recon.md": (5486, 5500),
     # #1544: new file. `oss:sub-manager` used to read the board, rank it and
     # reason about dispatch fill inline, in the same context that goes on to
     # review, merge and account for the whole tick -- one sub-manager was
@@ -749,7 +761,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # for cutting the fix, so the ceiling moves to 8000 B, ~2.8% headroom.
     # Re-baselined for #1616: 7782 B became 7870 B -- the same "## Trap"
     # trigger line. Ceiling unchanged; 130 B headroom.
-    "agents/tick-merge.md": (7870, 8000),
+    # Re-baselined for #1751, the same lane's own self-review round: two
+    # reviewers found the classifier-denial rule's own #1724 fix left this
+    # file's actual assignee-release call site (the incident this issue's
+    # own third example happened at) with no pointer to the rule at all.
+    # Added a one-sentence pointer to the `lane_setup.py <issue> --release`
+    # call. 7870 B became 8083 B, past the 8000 B ceiling. Ceiling moves to
+    # 8300 B, ~2.6% headroom.
+    "agents/tick-merge.md": (8083, 8300),
     # Re-baselined for #1600: 7219 B became 7459 B -- fold a `CURATE:` line
     # into the drafted `TICK:` block's paragraph when the prompt names a
     # curate-authored merge, the same optional-field fold `tick_handback.py`
