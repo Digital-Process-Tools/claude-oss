@@ -352,7 +352,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # weighed sentence, past the 86000 B ceiling. Ceiling moves to 87500 B,
     # sized to absorb the paragraph's own final bytes rather than chase
     # them a further time.
-    "CLAUDE.md": (93543, 94400),
+    # Re-baselined for #1747, the third editing exception: the "Command
+    # files have a size budget too" table's commands/tick.md and
+    # commands/run.md rows and ceilings raised for the paused-releaser
+    # resume fallback, plus this row and its own weighed sentence. 93543 B
+    # became 95826 B. Ceiling moves to 97200 B, written with deliberately
+    # wide headroom this time rather than a tight margin, per the recorded
+    # self-referential-overshoot trap for this exact row.
+    "CLAUDE.md": (95826, 97200),
 }
 
 

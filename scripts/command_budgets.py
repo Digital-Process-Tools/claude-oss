@@ -126,7 +126,19 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # legs with "--detail is not valid JSON". Moved the --detail example
     # out of the executed fence into prose describing how to attach it
     # with real values. Ceiling unchanged, comfortably under.
-    "commands/tick.md": (24194, 24500),
+    # Raised for #1747: 24194 B became 24741 B, past the 24500 B ceiling by
+    # 241 B. The release-trigger paragraph's `paused` handling named the
+    # resume-with-SendMessage rule but nothing for the case a resume's own
+    # task notification reports delivery while nothing arrives in this
+    # session's context -- observed twice on a real release (#1747), read
+    # by the scheduler as the releaser having silently died. The new
+    # sentence points at the same three-outcome status probe #1349 already
+    # gives a `work-started` sub-manager rather than duplicating it.
+    # Nothing already in the file argued a weaker case for its size, so
+    # nothing was cut to make room; the ceiling moves to 25000 B, ~1%
+    # headroom over the new size, the same narrow margin this file's own
+    # recent raises give since it is read on every tick.
+    "commands/tick.md": (24741, 25000),
     # #1389: the new two-verb entry point. It stays deliberately thin -- it
     # diagnoses (step 1), decides via `scripts/next_action.py` (step 2), and
     # for every branch other than the ordinary dispatch cadence it points at
@@ -245,7 +257,18 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # a branch gets pushed and turned into a pull request (never waited on --
     # the ordinary dispatch/review/merge cadence picks it up). 9632 B became
     # 10380 B. Ceiling unchanged, ~2% headroom.
-    "commands/run.md": (10380, 10600),
+    # Raised for #1747: 10380 B became 10771 B, past the 10600 B ceiling by
+    # 171 B. The `## release` section's spawn was one of the last bare
+    # `Agent(subagent_type: "oss:releaser")` calls in the repo -- the same
+    # gap #1586/#1649 already closed for oss:recon and oss:doctor -- and the
+    # section named no `paused` handling at all, the actual procedure the
+    # scheduler in #1747 was following when a resumed releaser's own
+    # SubagentHandback never reached it. Fixed with the pin plus one sentence
+    # pointing at `commands/tick.md`'s own release-trigger paragraph for the
+    # fallback, rather than duplicating it here. Nothing already in the file
+    # argued a weaker case for its size, so nothing was cut to make room;
+    # the ceiling moves to 11000 B, ~2% headroom over the new size.
+    "commands/run.md": (10771, 11000),
 }
 
 
