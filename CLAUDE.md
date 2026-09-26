@@ -749,7 +749,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 99,009 B | 99,800 B |
+| `CLAUDE.md` | 99,033 B | 99,800 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1175,11 +1175,11 @@ stale by the time it was written (it quoted 97,643 B where the real, final figur
 tuple -- was 97,888 B), the exact class of bug this section's own methodology exists to prevent,
 and the same reviewer separately found `skills/manager/SKILL.md`'s own "not three separately worded
 ones" left stale once the #1751 fix above made the enumerated list four items long. Both fixed in
-place (this paragraph's own number corrected above; SKILL.md's own row and ceiling updated to
-match its resulting one-byte shrink). 96,678 B became 98,793 B across every draft of this
-paragraph and the one above it -- past the 98,500 B ceiling set two paragraphs up. Ceiling moves
-to 99,800 B, headroom deliberately wide rather than a tight margin, so the table-row update below
-does not chase it a further time.
+place (this paragraph's own number corrected above; SKILL.md's own row updated to match its
+resulting one-byte shrink, ceiling unchanged). 96,678 B became 98,793 B across every draft of this
+paragraph and the one above it -- past the 98,500 B ceiling set in the paragraph immediately
+above. Ceiling moves to 99,800 B, headroom deliberately wide rather than a tight margin, so the
+table-row update below does not chase it a further time.
 
 **Re-baselined at the v0.42.1 release, the release session's own first exception:** the "What is
 not proven yet" marker was rewritten inside this release commit, per that exception's own terms --
