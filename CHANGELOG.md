@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.1] - 2026-09-26
+
+### Fixed
+
+- `agents/sub-manager.md`'s own role-write step now reads the exit code of `agent_role.py --write
+  sub-manager` and acts on a refusal, instead of silently proceeding un-declared: a stale `doctor`
+  marker is retried once with `--force`, and any other conflicting role hands the tick back rather
+  than risking an overwrite of a genuinely live authority holder (#1740).
+- `agents/triager.md`'s priority floor for an unranked gate-3 finding now states explicitly that it
+  is a default, not a mandate -- an agent may override it with a stated reason, but a silent
+  elevation is indistinguishable from a floor that was never applied (#1743).
+
 ## [0.42.0] - 2026-09-24
 
 ### Added
@@ -12499,7 +12511,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.1...HEAD
+[0.42.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.1
 [0.42.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.0
 [0.41.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.41.1
 [0.41.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.41.0
