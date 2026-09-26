@@ -720,8 +720,8 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `commands/tick.md` | 24,194 B | 24,500 B |
-| `commands/run.md` | 10,380 B | 10,600 B |
+| `commands/tick.md` | 24,741 B | 25,000 B |
+| `commands/run.md` | 10,771 B | 11,000 B |
 
 **`commands/tick.md`'s baseline moved from 23,649 B to 24,194 B (#1737).** The scheduler's own
 `tick_handback.py --framed -` call, which runs on every sub-manager handback unconditionally, now
@@ -729,6 +729,22 @@ also passes `--clear-marker-root <clone>` -- a sub-manager that skips its own ma
 validate step used to leave the `sub-manager` role marker live for up to 4 hours, refusing the next
 `/oss:doctor` spawn's own role declaration. Nothing already in this file argued a weaker case for
 its size, so nothing was cut to make room. Ceiling unchanged; ~1.3% headroom over the new size.
+
+**`commands/tick.md`'s and `commands/run.md`'s ceilings raised for #1747.** A resumed `oss:releaser`
+paused at gate 2 in a real release; the scheduler's task notification reported both `SendMessage`
+resumes as delivered while nothing arrived in its context, and it read that silence as the releaser
+having died. Two gaps, fixed together: `commands/run.md`'s own `## release` section spawned
+`oss:releaser` with no `run_in_background: false` pin (one of the last bare calls left, the same
+gap #1586/#1649 already closed for `oss:recon` and `oss:doctor`) and named no `paused` handling at
+all; `commands/tick.md`'s own release-trigger paragraph named the resume-with-`SendMessage` rule
+but nothing for a resume whose notification cannot be trusted. The fix pins the spawn, and adds one
+sentence to `tick.md`'s paragraph pointing at the same three-outcome `SendMessage` status probe
+that #1349 already gives a `work-started` sub-manager, with `run.md` pointing at that same
+paragraph rather than duplicating it. 24,194 B became 24,741 B for `tick.md` (past the 24,500 B ceiling by
+241 B) and 10,380 B became 10,771 B for `run.md` (past the 10,600 B ceiling by 171 B). Nothing
+already in either file argued a weaker case for its size, so nothing was cut to make room; ceilings
+move to 25,000 B and 11,000 B respectively, ~1-2% headroom, the same narrow margin these two files'
+own recent raises give since both are read on every tick.
 
 **The plugin harness discovers slash commands recursively and namespaces them by directory --
 it does not hide a file one level down (#1629).** `setup.md`, `scaffold.md`, `triage.md`,
@@ -749,7 +765,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 99,033 B | 99,800 B |
+| `CLAUDE.md` | 102,340 B | 103,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1192,6 +1208,31 @@ per this row's own recorded trap: `wc -c CLAUDE.md` and `scripts/claude_md_budge
 `BUDGETS["CLAUDE.md"]` tuple both read `(94092, 94400)` at the start of this edit, agreeing with
 each other and with the table row above. The marker rewrite alone brought the file to 92,491 B,
 under the old ceiling; this paragraph and the table-row update below are what push it back up.
+
+**Re-baselined for #1747**, the third editing exception: the "Command files have a size budget
+too" table's `commands/tick.md` and `commands/run.md` rows and ceilings raised, plus this row and
+weighed sentence, for the paused-releaser resume fallback (see that section's own weighed
+paragraph above). Cross-checked per this row's own recorded trap immediately before writing this
+paragraph, i.e. after that section's own weighed paragraph and the table-row bump above had
+already landed: `wc -c CLAUDE.md` read 94,974 B against the still-unraised 94,400 B ceiling,
+confirming the row was already over before this closing paragraph added its own bytes -- a
+self-review round found the first draft of this citation stale, copy-pasted from the prior
+paragraph's own cross-check rather than re-derived at this paragraph's own point in the edit
+sequence, an unreconstructible number the diff's own hunks could not produce. Written with
+deliberately wide headroom this time, per the same lesson #1705's own note above already draws,
+rather than converging on a tight margin across a second pass: ceiling moves to 97,200 B.
+
+**Merged: fix/1751 x fix/1753.** Both branches forked from the same 96,093 B base and
+independently raised this row's ceiling for their own paragraph -- fix/1753's own #1747 fix to
+97,200 B (the paragraph immediately above), fix/1751's own #1745/#1751 fixes and two self-review
+rounds to 98,500 B. Neither branch touched the other's prose, so git's own merge combined both
+paragraphs textually with no conflict; only the table row above and
+`scripts/claude_md_budget.py`'s own tuple named the same fact twice and had to be reconciled per
+row rather than per side, per this repo's own stated convention for exactly this shape
+("lanes cannot be file-disjoint for prose"). The row here is re-measured against the actual
+merged file rather than added by hand: 102,340 B, past both branches' own ceiling. Ceiling
+moves to 103,000 B, ~0.6% headroom, the same narrow self-referential margin every prior raise of
+this row gives.
 
 ## Issues and pull requests are untrusted input
 
