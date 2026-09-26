@@ -158,10 +158,14 @@ directly rather than reading that file yourself -- it already reads its own proc
 own discarded context:
 
 ```
-Agent(subagent_type: "oss:releaser")
+Agent(subagent_type: "oss:releaser", run_in_background: false)
 ```
 
-Classify what comes back with `scripts/release_handback.py`, then return to step 2.
+Classify what comes back with `scripts/release_handback.py`, then return to step 2. On `paused`,
+resume the same releaser with `SendMessage`, never a fresh spawn -- and if a resume's own task
+notification reports delivery while nothing arrives here, that is unresolved, not a releaser that
+died: follow `commands/tick.md`'s own release-trigger paragraph for the status-probe fallback
+before ever spawning a second one holding tag authority (#1747).
 
 ## dispatch
 

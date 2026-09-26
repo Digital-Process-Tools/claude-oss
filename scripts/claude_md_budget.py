@@ -359,7 +359,34 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # self-referential overshoot #1586's own note names, met the same way.
     # Ceiling moves to 95600 B, headroom sized to absorb this paragraph's own
     # final bytes rather than chase them a further time.
-    "CLAUDE.md": (95404, 95600),
+    #
+    # Re-baselined for #1747, the third editing exception: the "Command
+    # files have a size budget too" table's commands/tick.md and
+    # commands/run.md rows and ceilings raised for the paused-releaser
+    # resume fallback, plus this row and its own weighed sentence. 93543 B
+    # became 95826 B, then 96093 B once a self-review round fixed a stale
+    # cross-check citation in this row's own closing paragraph (copy-pasted
+    # from the prior paragraph rather than re-derived at the point it was
+    # written). Ceiling moves to 97200 B, written with deliberately wide
+    # headroom this time rather than a tight margin, per the recorded
+    # self-referential-overshoot trap for this exact row.
+    #
+    # Merged: fix/1751 x fix/1753. Both branches forked from the same
+    # 96093 B base and independently raised this row's ceiling for their
+    # own paragraph -- fix/1751's own #1745/#1751 fixes and two
+    # self-review rounds to 98500 B, fix/1753's #1747 fix to 97200 B.
+    # Reconciled per row, not per side, per this repo's own convention:
+    # the row here is re-measured against the actual merged file rather
+    # than added by hand.
+    #
+    # Merged: fix/1746 x main (fix/1751 x fix/1753 already folded in
+    # above). fix/1746 forked before that history landed and
+    # independently raised this row's ceiling to 95600 B for its own
+    # paragraph; main had already carried it to 103000 B. Reconciled per
+    # row, not per side, per this repo's own convention: the row here is
+    # re-measured against the actual merged file rather than added by
+    # hand.
+    "CLAUDE.md": (105187, 106500),
 }
 
 

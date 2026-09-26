@@ -74,12 +74,14 @@ named:
    the bare `supertool` spelling -- never `python3 supertool.py` for this one call). Read
    `state`/`mergedAt`/`mergeCommit` back; a zero exit is not a merge.
 2. The post-merge obligations, gated on that read-back: release the issue's own GitHub assignee
-   (`lane_setup.py <issue> --release`), verify every `Closes #N` actually closed, and reap the
-   worktree (`|cleanup` handles it when the board holds exactly one idle tree; otherwise read
-   `git-worktrees` and reap by hand, recording any forced override with the reason). If `.branch`
-   from step 0 matched `^curate/`, report `.title` from that same call verbatim as a `CURATE:` line
-   below (#1600) -- do not parse or reformat it. `commands/run/curate.md` names no title schema, and
-   a title is free text the same way every pull request's title is
+   (`lane_setup.py <issue> --release` -- a denial here follows SKILL.md's classifier-denial rule,
+   #1724/#1751: retry the identical call once, report the outcome either way, never a second time,
+   and never let the sub-manager run it in your place), verify every `Closes #N` actually closed,
+   and reap the worktree (`|cleanup` handles it when the board holds exactly one idle tree;
+   otherwise read `git-worktrees` and reap by hand, recording any forced override with the reason).
+   If `.branch` from step 0 matched `^curate/`, report `.title` from that same call verbatim as a
+   `CURATE:` line below (#1600) -- do not parse or reformat it. `commands/run/curate.md` names no
+   title schema, and a title is free text the same way every pull request's title is
    (`skills/manager/phases/handback.md`: "`title` is the agent's... it belongs to whoever did the
    work"); the observed shape ("curate: promote N rules, merge N, decline N, defer N (N fragments)")
    is what one curate pass happened to write, not a contract to assume.
