@@ -595,7 +595,7 @@ enters it.
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `skills/manager/SKILL.md` | 45,215 B | 46,000 B |
+| `skills/manager/SKILL.md` | 45,214 B | 46,000 B |
 | `skills/manager/phases/dispatch.md` | 56,845 B | 58,500 B |
 | `skills/manager/phases/handback.md` | 19,297 B | 20,900 B |
 | `skills/manager/phases/accounting.md` | 25,892 B | 25,900 B |
@@ -749,7 +749,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 97,888 B | 98,500 B |
+| `CLAUDE.md` | 99,009 B | 99,800 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1163,10 +1163,23 @@ Fixed in both files, plus a one-sentence reconciliation in `agents/recon.md` bet
 worktree-cut/remove fallback and its pre-existing "never run a git write" line, which a reviewer
 also flagged as an unreconciled contradiction. Three agent-budget rows moved (`agents/recon.md`,
 `skills/manager/SKILL.md`, `agents/tick-merge.md`, the last past its own ceiling), each with its
-own weighed sentence. 96,678 B became 97,643 B across this paragraph's own bytes, past the
-97,500 B ceiling two paragraphs above -- the same self-referential overshoot #1586's own note
-names. Ceiling moves to 98,500 B, headroom deliberately wide rather than a tight margin, so the
-table-row update below does not chase it a further time.
+own weighed sentence. 96,678 B became 97,888 B across this paragraph's own several drafts, past
+the 97,500 B ceiling set in the paragraph immediately above -- the same self-referential overshoot
+#1586's own note names. Ceiling moves to 98,500 B, headroom deliberately wide rather than a tight
+margin, so the table-row update below does not chase it a further time.
+
+**Re-baselined a third time, required second-pass round** (`fix_commit_scope.py` flagged the
+self-review fix commit itself): a reviewer found this paragraph's own byte count had already gone
+stale by the time it was written (it quoted 97,643 B where the real, final figure -- confirmed by
+`wc -c CLAUDE.md` and matching both the table row above and `scripts/claude_md_budget.py`'s own
+tuple -- was 97,888 B), the exact class of bug this section's own methodology exists to prevent,
+and the same reviewer separately found `skills/manager/SKILL.md`'s own "not three separately worded
+ones" left stale once the #1751 fix above made the enumerated list four items long. Both fixed in
+place (this paragraph's own number corrected above; SKILL.md's own row and ceiling updated to
+match its resulting one-byte shrink). 96,678 B became 98,793 B across every draft of this
+paragraph and the one above it -- past the 98,500 B ceiling set two paragraphs up. Ceiling moves
+to 99,800 B, headroom deliberately wide rather than a tight margin, so the table-row update below
+does not chase it a further time.
 
 **Re-baselined at the v0.42.1 release, the release session's own first exception:** the "What is
 not proven yet" marker was rewritten inside this release commit, per that exception's own terms --

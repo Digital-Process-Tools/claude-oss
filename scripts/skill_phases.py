@@ -204,7 +204,13 @@ DOCUMENTS: dict[str, tuple[int, int, str]] = {
         # site (agents/tick-merge.md) carried no #1724/#1751 pointer at
         # all. Corrected to name agents/tick-merge.md directly. 45209 B
         # became 45215 B. Ceiling unchanged; comfortably under it.
-        45215,
+        # Re-baselined a third time, required second-pass round
+        # (fix_commit_scope.py flagged the self-review fix commit itself):
+        # a reviewer found the same bullet's closing "not three separately
+        # worded ones" left stale once the fix above made it a four-item
+        # list. Corrected to "not four". 45215 B became 45214 B. Ceiling
+        # unchanged.
+        45214,
         46000,
         "the loop itself: what is decided every tick, and where each phase's rules live",
     ),
