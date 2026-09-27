@@ -305,7 +305,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # route's own receipt. Nothing already in the file argued a weaker case
     # for its size, so nothing was cut to make room; the ceiling moves to
     # 11800 B, ~2% headroom over the new size.
-    "commands/run.md": (11598, 11800),
+    # Re-baselined for #1770: 11598 B became 11784 B. Step 1 now sends a repo
+    # with no .oss.json to step 2 before the doctor spawn, and setup hands back
+    # to step 1 rather than step 2 -- a first run spent a whole doctor pass (37
+    # lines, ~10 minutes) listing what setup was about to write. The first
+    # draft was 110 B over; trimmed to fit instead, including a redundant
+    # clause in the setup section's own hand-back line. Ceiling unchanged.
+    "commands/run.md": (11784, 11800),
 }
 
 

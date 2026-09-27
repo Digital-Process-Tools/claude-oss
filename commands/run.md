@@ -28,6 +28,9 @@ No argument: run every step below in order.
 
 ## Step 1 -- diagnose and repair, never stop except for a named unsafe gap (#1390)
 
+**No `.oss.json` yet: go to step 2 first (#1770).** Doctor checks read the config, so a pass before
+setup only lists what setup will write (37 lines, ~10 min, measured). Setup hands back here.
+
 Spawn the diagnostic chase agent rather than running `doctor.sh` and chasing each WARN/FAIL line
 inline in this session (#1457) -- the same reasoning #1414 already gives for the six
 `commands/run/*.md` sub-steps: a line that needs investigation, not a scripted repair, would
@@ -69,7 +72,7 @@ never arbitrating one verdict:
   resolve to a real ref. A refusal, not a candidate. Stop. Report `reason` and `remedy` plainly --
   "the loop refused to start" must never be a dead end with nothing attached to clear it.
 - **`due`** -- only ever `next: "setup"`: no `.oss.json` at all, and a probe is confirmed safe.
-  Spawn it below, then return to step 2 once it completes -- `setup` changes what every other check
+  Spawn it below, then return to step 1 once it completes -- `setup` changes what every other check
   reads, so the honest next answer is a fresh call, not an assumption.
 - **`ranked`** -- `candidates`, ordered, each carrying its own `source`/`state`/`reason`/`evidence`.
   Take `candidates[0]` by default. If its `state` is `could-not-tell`, report `reason` loudly and
@@ -118,7 +121,7 @@ Agent(subagent_type: "oss:scheduler-step", prompt: "Read and follow ${CLAUDE_PLU
 ```
 
 It measures the repo and writes the config; do not guess values by hand. Read its report, then
-return to step 2 -- `setup` changes what every other check reads.
+return to step 1 -- the doctor now has a config to check.
 
 ## scaffold / install-audit / triage / curate / changelog
 
