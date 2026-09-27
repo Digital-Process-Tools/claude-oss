@@ -420,7 +420,17 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # restoring the exact could-not-tell line break agents/doctor.md's own
     # pinned test requires. 109702 B became 111103 B, comfortably under the
     # 112000 B ceiling; ceiling unchanged.
-    "CLAUDE.md": (111103, 112000),
+    # Re-baselined for #1758, the third editing exception: the "Command files
+    # have a size budget too" table's commands/run.md row and its own
+    # weighed sentence in CLAUDE.md itself, updated to the real
+    # command_budgets.py values (11598, 11800) after that branch's own two
+    # in-lane raises were never carried into CLAUDE.md -- exactly the gap
+    # test_claude_md_command_budget_table_985.py exists to catch. 111103 B
+    # became 113078 B across both edits. Ceiling set with deliberately wide
+    # headroom rather than converged on across a second pass, per the
+    # self-referential-overshoot lesson CLAUDE.md's own #1586 note already
+    # gives: moves to 113500 B.
+    "CLAUDE.md": (113078, 113500),
 }
 
 

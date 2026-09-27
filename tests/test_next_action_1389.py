@@ -1220,3 +1220,326 @@ def test_a_changed_inbound_reading_re_arms(tmp_path, monkeypatch):
     _quiet_inbound(monkeypatch, unruled=2)
     second = next_action.rank(root)
     assert _candidate(second, "inbound")["state"] == next_action.CANDIDATE_DUE
+
+
+# --- idle_candidates (#1758) -------------------------------------------------
+
+
+def _decide_with(curate=None, triage=None, release=None):
+    """A `workspace_routes.decide` double naming exactly the per-route dicts
+    a test needs, so the idle-candidate tests below can set curate/triage's
+    state/count/threshold directly rather than manufacturing real trap.d/
+    fragments or a real `gh` reading for every shape."""
+    return lambda *a, **k: (
+        None,
+        {
+            "release": release or {"configured": False},
+            "curate": curate or {"configured": False},
+            "triage": triage or {"configured": False},
+        },
+    )
+
+
+def test_idle_candidates_surfaces_a_below_threshold_curate_backlog(
+    tmp_path, monkeypatch
+):
+    """A `nothing-due` reading with a real, below-threshold curate backlog
+    waiting used to render identically to trap.d/ being empty -- #1758."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 15})
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        _decide_with(
+            curate={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 12,
+                "threshold": 15,
+                "why": "trap.d/ is not over curate_route_threshold (15)",
+            }
+        ),
+    )
+    result = next_action.rank(root)
+    assert result["state"] == next_action.NOTHING_DUE
+    idle = result["idle_candidates"]
+    assert [entry["source"] for entry in idle] == ["curate"]
+    assert idle[0]["evidence"]["count"] == 12
+    assert idle[0]["evidence"]["threshold"] == 15
+
+
+def test_idle_candidates_excludes_a_zero_count(tmp_path, monkeypatch):
+    """Positive control for the test above: a count of zero is not an idle
+    candidate, it is done -- nothing below threshold to take."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 15})
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        _decide_with(
+            curate={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 0,
+                "threshold": 15,
+                "why": "trap.d/ is not over curate_route_threshold (15)",
+            }
+        ),
+    )
+    result = next_action.rank(root)
+    assert result["idle_candidates"] == []
+
+
+def test_idle_candidates_excludes_a_suppressed_over_reading(tmp_path, monkeypatch):
+    """An `OVER` reading `_route_already_seen` is deliberately holding back
+    must not resurface as an idle candidate -- `--take-idle` must never be
+    a way to route around curate/triage's own repeat-suppression receipt."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 0, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action,
+        "_route_already_seen",
+        lambda *a, **k: (
+            True,
+            "unchanged since the receipt already recorded (over:1)",
+        ),
+    )
+    result = next_action.rank(root)
+    assert result["state"] == next_action.NOTHING_DUE
+    assert result["idle_candidates"] == []
+
+
+def test_idle_candidates_ordered_by_count_descending(tmp_path, monkeypatch):
+    """Both curate and triage below threshold at once: the one closer to
+    firing on its own -- the larger count -- sorts first."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 15, "triage_route_threshold": 20})
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        _decide_with(
+            curate={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 3,
+                "threshold": 15,
+                "why": "trap.d/ is not over curate_route_threshold (15)",
+            },
+            triage={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 9,
+                "threshold": 20,
+                "why": "9 of 30 open issue(s) missing lane-* or priority-*",
+            },
+        ),
+    )
+    result = next_action.rank(root)
+    idle = result["idle_candidates"]
+    assert [entry["source"] for entry in idle] == ["triage", "curate"]
+
+
+def test_idle_candidates_empty_when_nothing_is_configured(tmp_path, monkeypatch):
+    """Positive control: the ordinary #1610 fixture (neither route
+    configured at all) must not manufacture an idle candidate out of
+    nothing to look at."""
+    root = _git_repo(tmp_path)
+    _write_config(root)
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    result = next_action.rank(root)
+    assert result["state"] == next_action.NOTHING_DUE
+    assert result["idle_candidates"] == []
+
+
+def test_receipt_names_idle_candidates_and_the_take_idle_call(tmp_path, monkeypatch):
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 15})
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        _decide_with(
+            curate={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 12,
+                "threshold": 15,
+                "why": "trap.d/ is not over curate_route_threshold (15)",
+            }
+        ),
+    )
+    result = next_action.rank(root)
+    text = next_action.receipt(result)
+    assert "idle-candidate: curate (count=12, threshold=15)" in text
+    assert "--take-idle curate" in text
+
+
+# --- --take-idle CLI (#1758) -------------------------------------------------
+
+
+def test_take_idle_cli_takes_a_below_threshold_source(tmp_path, monkeypatch, capsys):
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 15, "state_file": ".max/oss-watch.json"}
+    )
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        _decide_with(
+            curate={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 12,
+                "threshold": 15,
+                "why": "trap.d/ is not over curate_route_threshold (15)",
+            }
+        ),
+    )
+    rc = next_action.main(["--root", str(root), "--take-idle", "curate"])
+    assert rc == 0
+    assert "OK:" in capsys.readouterr().out
+
+
+def test_take_idle_cli_refuses_outside_nothing_due(tmp_path, monkeypatch, capsys):
+    """Positive control: something is genuinely due -- `--take-idle` must
+    refuse rather than silently acting on a below-threshold source while
+    real work waits."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 15, "state_file": ".max/oss-watch.json"}
+    )
+    _quiet_inbound(monkeypatch, unruled=1)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        _decide_with(
+            curate={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 12,
+                "threshold": 15,
+                "why": "trap.d/ is not over curate_route_threshold (15)",
+            }
+        ),
+    )
+    rc = next_action.main(["--root", str(root), "--take-idle", "curate"])
+    assert rc != 0
+    assert "FAIL:" in capsys.readouterr().out
+
+
+def test_take_idle_cli_refuses_a_source_not_in_idle_candidates(
+    tmp_path, monkeypatch, capsys
+):
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 15, "state_file": ".max/oss-watch.json"}
+    )
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        _decide_with(
+            curate={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 12,
+                "threshold": 15,
+                "why": "trap.d/ is not over curate_route_threshold (15)",
+            }
+        ),
+    )
+    rc = next_action.main(["--root", str(root), "--take-idle", "triage"])
+    assert rc != 0
+    assert "FAIL:" in capsys.readouterr().out
+
+
+def test_take_idle_arms_the_receipt_the_same_way_take_does(tmp_path, monkeypatch):
+    """#1758 self-review finding (Explore reviewer and oss:auditor, both
+    independently): an earlier version of this test only asserted `rc == 0`
+    and never re-ranked, so it would have passed identically against a
+    `_take_idle_cli` that printed `OK:` while persisting no receipt at all
+    (`_arm_route_source` is a documented no-op for curate/triage's `UNDER`
+    branch). This is the real positive control, the same shape
+    `test_taking_curate_arms_it_so_the_next_read_does_not_repeat_due_
+    forever` already gives the ordinary `--take` path: a second `rank()`
+    call, against the identical unchanged reading, must no longer list the
+    taken source among `idle_candidates`."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 15, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    for i in range(3):
+        (root / "trap.d" / "{0}.some-lesson.md".format(i)).write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+
+    first = next_action.rank(root)
+    assert first["state"] == next_action.NOTHING_DUE
+    idle = first["idle_candidates"]
+    assert [entry["source"] for entry in idle] == ["curate"]
+    assert idle[0]["evidence"]["count"] == 3
+
+    rc = next_action.main(["--root", str(root), "--take-idle", "curate"])
+    assert rc == 0
+
+    second = next_action.rank(root)
+    assert second["idle_candidates"] == []
+
+
+def test_idle_candidates_re_arm_when_the_reading_changes(tmp_path, monkeypatch):
+    """Positive control for the test above: taking curate's idle candidate
+    suppresses it only for the reading it was taken on -- a real change to
+    the underlying count (one more fragment landed) must surface it again,
+    the same must-fire-again guarantee `test_a_changed_inbound_reading_
+    re_arms` already gives the ordinary `--take` path."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 15, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    for i in range(3):
+        (root / "trap.d" / "{0}.some-lesson.md".format(i)).write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+
+    first = next_action.rank(root)
+    assert [entry["source"] for entry in first["idle_candidates"]] == ["curate"]
+    assert next_action.main(["--root", str(root), "--take-idle", "curate"]) == 0
+
+    second = next_action.rank(root)
+    assert second["idle_candidates"] == []
+
+    (root / "trap.d" / "extra.some-lesson.md").write_text("one more\n")
+    third = next_action.rank(root)
+    idle = third["idle_candidates"]
+    assert [entry["source"] for entry in idle] == ["curate"]
+    assert idle[0]["evidence"]["count"] == 4

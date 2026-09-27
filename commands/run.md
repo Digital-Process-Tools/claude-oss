@@ -104,7 +104,10 @@ never arbitrating one verdict:
   had already accepted and triaged read as freshly due on every tick, with no procedure here ever
   allowed to clear it by closing.
 - **`nothing-due`** -- no source due; an unconfigured route is named, not folded into
-  "clean" (#1610). Proceed to **dispatch**.
+  "clean" (#1610). Check `idle_candidates` before dispatching a wakeup (#1758): if it names a
+  source (curate/triage still holding a positive count below its own threshold), take the first
+  one the same way -- `--take-idle <source>` -- before spawning its procedure; only proceed
+  straight to **dispatch** when `idle_candidates` is empty too.
 
 ## setup
 
@@ -143,7 +146,10 @@ review; the spawn is never waiting on a human's word before it writes.
 the moment its procedure ends; nothing here blocks on that PR's CI -- return to step 2 immediately,
 for any of the five. `curate`/`triage`/`inbound` are doubly safe: step 2's `--take <source>` already
 armed the repeat-suppression receipt, so the next `next_action.py` call reports the backlog
-`not-due` rather than re-entering the open step (`tests/test_next_action_1389.py` guards it).
+`not-due` rather than re-entering the open step (`tests/test_next_action_1389.py` guards it). A
+`curate`/`triage` spawn reached via `--take-idle` (#1758) instead is doubly safe the same way, on its
+own, separate receipt -- `--take-idle`'s own commit does not reuse `--take`'s repeat-suppression
+receipt (the two must never collide), it arms one keyed to the idle reading itself.
 `scaffold`/`install-audit`/`changelog` are never `next_action.py` sources at all -- forced by
 `$ARGUMENTS` only -- so there is nothing to re-select. `release` self-resolves from the merged-PR
 count.

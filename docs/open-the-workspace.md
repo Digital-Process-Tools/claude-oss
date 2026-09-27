@@ -172,8 +172,9 @@ successor to this section lives in `commands/run.md`, not here:
   `setup`/`unsafe` cases the two tooling routes above used to cover on their own. See
   `commands/run.md` for the full shape -- `unsafe` refuses, `due` (`setup`, when there is no
   `.oss.json` yet) spawns and re-asks, `ranked` orders every candidate rather than picking one
-  silently, and `nothing-due` falls through to the ordinary dispatch cadence
-  (`skills/manager/phases/tick-order.md`).
+  silently, and `nothing-due` checks its own `idle_candidates` (#1758 -- curate/triage still
+  holding a positive count below threshold) before ever falling through to the ordinary dispatch
+  cadence (`skills/manager/phases/tick-order.md`).
 
 **The launcher must not become a second scheduler**, and moving job 2 out of it entirely is the
 sharper version of that same rule this section used to state about precedence alone: tick ordering

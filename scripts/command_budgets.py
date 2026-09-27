@@ -285,7 +285,27 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # file-disjoint for prose" convention. Re-measured against the actual
     # merged file rather than added by hand: 11011 B, past both branches'
     # own 11000 B ceiling by 11 B. Ceiling moves to 11100 B, ~0.8% headroom.
-    "commands/run.md": (11011, 11100),
+    #
+    # Re-baselined for #1758: the `nothing-due` bullet in step 2 now checks
+    # `next_action.py`'s new `idle_candidates` before dispatching another
+    # wakeup, per that issue's own fix in `scripts/next_action.py`. 11011 B
+    # became 11313 B, past the 11100 B ceiling by 213 B. Nothing already in
+    # the file argued a weaker case for its size, so nothing was cut to make
+    # room; the ceiling moves to 11550 B, ~2% headroom over the new size.
+    #
+    # Re-baselined again in the same lane's own self-review round: 11313 B
+    # became 11598 B, past the 11550 B ceiling. Two reviewers (Explore and
+    # oss:auditor, independently) found the "doubly safe" paragraph just
+    # below step 2's own five-spawn list still claimed only `--take`'s own
+    # receipt covers curate/triage/inbound, unqualified -- now false for a
+    # `curate`/`triage` spawn reached via the new `--take-idle` route, which
+    # this same self-review round gave its own, separate repeat-suppression
+    # receipt (`scripts/next_action.py`'s `_idle_already_seen`) rather than
+    # relying on the pre-existing one. One clause added naming the idle
+    # route's own receipt. Nothing already in the file argued a weaker case
+    # for its size, so nothing was cut to make room; the ceiling moves to
+    # 11800 B, ~2% headroom over the new size.
+    "commands/run.md": (11598, 11800),
 }
 
 
