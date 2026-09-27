@@ -760,7 +760,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 24,741 B | 25,000 B |
-| `commands/run.md` | 11,598 B | 11,800 B |
+| `commands/run.md` | 11,784 B | 11,800 B |
 
 **`commands/tick.md`'s baseline moved from 23,649 B to 24,194 B (#1737).** The scheduler's own
 `tick_handback.py --framed -` call, which runs on every sub-manager handback unconditionally, now
