@@ -23,7 +23,8 @@ here:
 - **a byte-budgeted file touched** -- the fix lands inside a file this repo
   already governs with its own ceiling (`agent_budgets.BUDGETS`,
   `command_budgets.BUDGETS`, `developer_phases.DOCUMENTS`,
-  `skill_phases.DOCUMENTS`). A rewrite squeezed for bytes is exactly where
+  `skill_phases.DOCUMENTS`, `claude_md_budget.BUDGETS`,
+  `remind_budgets.BUDGETS`). A rewrite squeezed for bytes is exactly where
   PR #921's own second finding -- a sentence that parsed two ways -- came
   from, so any touch to one of these files crosses the line regardless of
   count.
@@ -51,9 +52,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import agent_budgets  # noqa: E402
+import claude_md_budget  # noqa: E402
 import command_budgets  # noqa: E402
 import developer_phases  # noqa: E402
 import gh_which  # noqa: E402
+import remind_budgets  # noqa: E402
 import skill_phases  # noqa: E402
 
 #: See the module docstring's "file count" bullet for why 3, not a measured
@@ -70,6 +73,8 @@ def budgeted_paths(root=None):
     paths.update(command_budgets.BUDGETS)
     paths.update(developer_phases.DOCUMENTS)
     paths.update(skill_phases.DOCUMENTS)
+    paths.update(claude_md_budget.BUDGETS)
+    paths.update(remind_budgets.BUDGETS)
     return paths
 
 

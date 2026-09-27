@@ -52,6 +52,29 @@ def test_budgeted_paths_is_a_real_union_not_an_empty_set():
     assert "agents/developer/review.md" in paths
 
 
+def test_budgeted_paths_includes_claude_md_and_remind_budgets():
+    """#1762: `budgeted_paths()` used to read only four of the six
+    byte-budgeted-file modules -- `CLAUDE.md` itself (governed by
+    `claude_md_budget.BUDGETS`) and every jit-context rule under
+    `remind_budgets.BUDGETS` were invisible to this check, so a fix commit
+    touching only those was scored `within-scope` regardless of risk."""
+    paths = fix_commit_scope.budgeted_paths()
+    assert "CLAUDE.md" in paths
+    assert (
+        ".claude/jit-context/tools/00-manual/exit-sensitive-pipe-to-head-tail.md"
+        in paths
+    )
+
+
+def test_claude_md_alone_crosses_the_budgeted_file_check():
+    """The issue's own observed-live scenario: a commit touching only
+    `CLAUDE.md` (plus its own budget script) must not be scored
+    `within-scope`."""
+    result = fix_commit_scope.check(["CLAUDE.md", "scripts/claude_md_budget.py"])
+    assert result["state"] == "needs-second-pass"
+    assert "CLAUDE.md" in result["budgeted_files_touched"]
+
+
 # --- files_from_git ------------------------------------------------------------
 
 
