@@ -430,7 +430,20 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # headroom rather than converged on across a second pass, per the
     # self-referential-overshoot lesson CLAUDE.md's own #1586 note already
     # gives: moves to 113500 B.
-    "CLAUDE.md": (113078, 113500),
+    # Re-baselined for the v0.42.2 release commit's "What is not proven yet"
+    # marker rewrite (the release session's own first editing exception): a
+    # new delta range (v0.42.1..HEAD, 16 commits), two gate-3 rounds this
+    # time against zero last release (5 total findings, 4 carried forward, 1
+    # new, 0 blocking, each round's own findings landed via a pull request
+    # rather than a direct commit), re-derived gate-1/gate-2 reads at the
+    # final tagged commit, and a checklist-skew reading now showing 3 of 16
+    # definition files `differs` (against all 15 `identical` last release).
+    # 113078 B became 115246 B across this table row's own two rewrites --
+    # the same self-referential overshoot CLAUDE.md's own #1586 note
+    # already names. Ceiling moves to 116500 B this time, headroom
+    # deliberately wide rather than a tight margin, so the CLAUDE.md-side
+    # sentence recording this does not chase it a further time.
+    "CLAUDE.md": (115361, 116500),
 }
 
 

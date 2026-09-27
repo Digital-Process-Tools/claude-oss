@@ -7,6 +7,135 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.2] - 2026-09-27
+
+### Fixed
+
+- `oss:recon` now pins its reads to the worktree path its prompt names, and cuts a fresh
+  `origin/<default_branch>` worktree when none is named, instead of reading whatever tree the
+  invoking process's ambient cwd happens to resolve to. A dirty sibling clone sitting at that cwd
+  had flipped an `already-shipped` verdict for a lane that genuinely needed to write the fix (#1745).
+
+- `scripts/statusline.py` no longer crashes when `.oss.json`, a plugin's own
+  `plugin.json`, or `installed_plugins.json` parses to valid JSON that is not an
+  object (`null`, a list, a string, a number) — six call sites now check the type
+  before calling `.get(...)` or `.items()` on the parsed value (#1746).
+- The `.oss/README.md` template now says where a bug in an owned file goes — a
+  "Found a bug in one of these files?" section, naming the plugin's own repository
+  (derived from its manifest, never hardcoded) and stating plainly that an owned
+  file is never patched or tested in the consuming repository (#1746).
+- The developer lane now refuses, unconditionally, to write a patch or a test
+  against an owned file (`.oss/`, or `.github/workflows/oss-changelog.yml`), and
+  the triager now flags a finding under either as belonging to the plugin's own
+  tracker rather than labelling it for a local fix (#1746).
+
+- The scheduler's `/oss:run release` step spawned `oss:releaser` with no `run_in_background`
+  pin -- one of the last bare spawn calls left in the repo, the same gap already closed for
+  `oss:recon` and `oss:doctor`. Resuming a paused releaser with `SendMessage` could then report
+  its task notification as delivered while the message never reached the scheduler's context,
+  which read the silence as the releaser having died and risked a duplicate spawn holding tag
+  authority alongside a live one. `commands/run.md` now pins the spawn and points at
+  `commands/tick.md`'s release-trigger paragraph, which now names the fallback: probe the
+  releaser's own status before ever spawning a second one, never re-spawn on a notification
+  alone (#1747).
+
+- The inbound outside-issue count no longer stays "unruled" forever once an issue is
+  accepted and triaged (both a declared priority and lane label applied) -- it used to
+  clear only by closing, which no procedure in this loop's own inbound step is allowed
+  to do, so a triaged issue reported due on every tick indefinitely (#1748). `commands/
+  run.md`'s inbound step also now arms the same `--take inbound` repeat-suppression
+  receipt every other source already gets, instead of a carve-out that contradicted the
+  paragraph right below it.
+
+- `/oss:triage`'s own due-count no longer hardcodes the `lane-`/`priority-` (hyphen)
+  label prefix -- a repository declaring a different spelling (e.g. `priority:high`,
+  colon) had every open issue counted as missing its priority label regardless of
+  whether it actually carried one, and the resulting threshold could never clear
+  (#1749). The count now matches against this repository's own declared label
+  spellings, the same way the statusline's board counters already do, falling back to
+  the historical hyphenated convention only when nothing is declared.
+
+- The loop's own dispatch doctrine now states explicitly that a prior tick's
+  `declined-for-cause` on a maintainer-policy question binds later ticks -- a later
+  tick reaching the same issue fresh may not conclude on its own judgment that the
+  policy call is now fine to make, however sound that reasoning looks in isolation.
+  Only an actual maintainer-authored signal (a label, a comment, or a value already
+  committed to `.oss.json`) clears it (#1750). This closes the doctrine gap that let
+  one tick's `oss:tick-dispatch` decline a milestones-policy question for cause and the
+  very next tick decide, unprompted, that making the call itself was fine.
+
+- The loop's classifier-denial retry rule now applies only to a Bash command string the harness's
+  permission classifier flagged non-deterministically on the string itself. It no longer retries a
+  content-classification denial (such as "Instruction Poisoning" or "Create Public Surface"), a
+  non-Bash `Agent`/`Task` spawn denial, or lets a different agent re-run a call its own spawn was
+  denied -- three misapplications observed under the rule's prior, unscoped wording (#1751).
+
+- `agent_role.py --clear` now takes `--expect-role ROLE` and refuses to remove a LIVE marker that
+  names a different role, instead of clobbering it. This closes a race the loop's own #1740 fix for
+  a forced doctor-marker overwrite left open: a sub-manager's forced retry could overwrite a live
+  `doctor` marker mid-run, and the doctor's own unconditional end-of-run `--clear` would then delete
+  that sub-manager's declaration instead of its own, silently dropping `role_forbids_release` for the
+  rest of that tick. `agents/doctor.md`'s own clear step now passes `--expect-role doctor`, and a
+  mismatch (exit 4) is reported as an informational finding rather than folded into a clean report.
+  The check also refuses to clear a marker it could not read at all, rather than treating an
+  unreadable marker the same as a confirmed match; and `tick_handback.py`'s own sub-manager-side
+  clear now passes `--expect-role sub-manager` too, closing the identical race on its own end-of-tick
+  clear before a symmetric forced-overwrite path could ever reach it (#1752).
+
+- `next_action.py --json` reporting `nothing-due` used to render a curate/triage backlog
+  genuinely below its own threshold identically to a board with no idle work at all -- a real
+  session saw five hourly wakeups of pure re-ranking while `trap.d/` sat at 12 fragments,
+  below its threshold of 15, with no way to act on it (#1758). `rank()`'s `nothing-due` payload
+  now also names `idle_candidates`: the still-below-threshold sources with a positive count,
+  ordered by count. A new `--take-idle <source>` CLI commits to one of them, the same way
+  `--take` commits to an ordinarily-ranked candidate, and `commands/run.md` step 2 now checks
+  `idle_candidates` before arming another wakeup.
+
+- `/oss:curate`'s own pull request never set the `no-changelog` label, so a pass that touched
+  only `trap.d/` and `.claude/jit-context/` -- no user-visible change, ever -- relied on the
+  changelog workflow's path filter alone and needed a maintainer to point out the escape hatch
+  by hand (#1710). `commands/run/curate.md` now sets `labels = ["no-changelog"]` unconditionally
+  in that payload, and its "prove it fires" step now warns against staging the owned `01-oss/`
+  layer the firing-proof drive can dirty, which had already failed CI once as a
+  `test_rule_layer_sync_1063.py` drift (#1759).
+
+- `trap_curate.py`'s `STRAY-NAMES`/`--copied` accounting joined and split fragment names on a
+  plain comma, so a fragment filename containing a comma split into the wrong names on the way
+  through -- reproduced in a scratch repo with `1.a,b.md` (#1760). Both now escape a literal
+  backslash or comma per name before joining, and unescape on the way back, so a comma-bearing
+  name round-trips intact through the CLI.
+
+- `trap_curate.py`'s `sweep_resolved` silently dropped a `--copied` name that was not really
+  present in the clone's own untracked set -- a fabricated name, a transcription error, or a
+  correctly-refused traversal attempt -- with zero trace, so that refusal rendered identically
+  to a pass with nothing to remove at all (#1761). `sweep_resolved` now returns a fourth bucket,
+  `refused`, and the CLI prints it on a dedicated `REFUSED-NAMES:` line, unconditionally, the
+  same way `STRAY-NAMES:` already is.
+
+- `fix_commit_scope.py`'s byte-budgeted-file check now reads `claude_md_budget.BUDGETS` and
+  `remind_budgets.BUDGETS` alongside the four modules it already read, so a fix commit that
+  touches only `CLAUDE.md` or a jit-context rule under `remind_budgets.BUDGETS` is scored
+  `needs-second-pass` instead of `within-scope`. Observed live: a fix commit touching only
+  `CLAUDE.md` and `scripts/claude_md_budget.py` was scored `within-scope -- touches 2 file(s),
+  none byte-budgeted`, even though `CLAUDE.md` is exactly the highest-risk file for the "a
+  sentence that parsed two ways" defect class this check exists to catch (#1762).
+
+- `oss-workspace` no longer opens a session on `/oss:run` in a repository where the oss plugin is
+  not installed, where the first launch used to end on `Unknown command: /oss:run`. It now checks
+  `installed_plugins.json` for a record that applies to the repository first. At a terminal it
+  offers to install the plugin at project scope, and otherwise it prints the exact
+  `claude plugin install` command and opens nothing. When the registry cannot be read, it warns and
+  opens anyway (#1768).
+
+- `/oss:run` on a repository with no `.oss.json` now runs setup before the doctor pass, not after
+  it. The first run used to spend a whole doctor spawn (37 lines, about ten minutes) listing checks
+  that could not run until setup wrote the config. Setup now hands back to the doctor, which then
+  checks the config it just got (#1770).
+
+- The `oss-workspace` splash now clears the screen below it before it draws. It used to blank
+  only 64 columns, so in a terminal still holding earlier output, the old text stayed visible to
+  the right of the fireworks and beside the step lines (#1772).
+
 ## [0.42.1] - 2026-09-26
 
 ### Fixed
@@ -12511,7 +12640,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.1...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.2...HEAD
+[0.42.2]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.2
 [0.42.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.1
 [0.42.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.0
 [0.41.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.41.1
