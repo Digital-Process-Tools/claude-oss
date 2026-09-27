@@ -114,6 +114,15 @@ this step opens is the deliberately-closes-nothing branch of `pr_body.closes`'s 
 `no_close = true` at the payload's top level — `gh-pr-create` refuses outright on a body with no
 working `Closes #N`, and `no_close` is the named escape hatch that publishes it anyway.
 
+**Set `labels = ["no-changelog"]` in the same payload, unconditionally.** A curate PR changes only
+`trap.d/` and `.claude/jit-context/` -- no user-visible change, ever, by the same construction that
+makes it close nothing -- so the changelog gate's own escape hatch applies every time, not only when
+someone remembers to point it out by hand (#1710). This is a fixed convention name, not one of
+`.oss.json`'s declared label lists, so it is never omitted the way `labels.priority` or
+`labels.lane_other` are when a repo declares none: `scripts/scaffold.py` names it as the changelog
+gate's own hard-coded escape hatch, present or not depending only on whether the maintainer has run
+`gh label create no-changelog` once, never on this pass's own config.
+
 ## Read every fragment first, then decide
 
 Read them all before deciding any of them. A fragment read alone gets promoted; the same fragment
@@ -228,6 +237,18 @@ this command was being written.
 **Report both results in the pull request that promotes the rule. A promotion with no firing proof in
 the PR is refused by this pass itself, not by whoever reviews it** — the mechanical guard is what
 makes deciding alone safe, and it does not relax because nobody is watching in real time.
+
+**Driving the hook can dirty `01-oss/` -- never stage that (#1710).** `01-oss` is the owned layer
+`oss_rules.install()` writes wholesale, per this repo's own three-way ownership table; the general
+jit-context tool's own `rebuild-tsv.sh`, run above against this worktree to prove the rule fires,
+regenerates every dimension's `00-index.tsv` from whatever is on disk right now, including
+`01-oss/00-index.tsv` -- and that regenerated copy is not guaranteed to match what
+`oss_rules.install()` would write for this repo, since the two generators read different inputs.
+Committing it by accident is exactly the drift `tests/test_rule_layer_sync_1063.py` exists to catch,
+and it has already failed CI once this way (job 106910952028). So: stage only the files this pass
+actually decided on -- `trap.d/` deletions, the `00-manual` rule bodies, the layer's own
+`00-README.md` -- and run `git checkout -- .claude/jit-context/*/01-oss/` (or an equivalent
+per-path restore) before committing, discarding whatever the firing-proof drive touched there.
 
 ## Sweep the clone once every fragment is decided (#1723)
 
