@@ -1,4 +1,5 @@
 (^|/)(commands/.*\.md|agents/.*\.md)$	agent-call-needs-run-in-background-pin.md
+(^|/)(scripts/agent_role\.py|agents/doctor\.md|agents/sub-manager\.md)$	agent-role-marker-plugin-lag.md
 (^|/)(\.oss/assemble_changelog\.py|scripts/assemble_changelog\.py)$	assemble-changelog-root.md
 (^|/)(CLAUDE\.md|scripts/lane_setup\.py|scripts/claude_md_budget\.py)$	claude-md-budget-guard-derivation.md
 (^|/)(CLAUDE\.md|scripts/claude_md_budget\.py)$	claude-md-budget-row-cross-check.md
@@ -15,8 +16,9 @@
 (^|/)(agents|commands|skills)/.*\.md$	frontmatter-key-spelling-is-unverifiable-from-source.md
 (^|/)(skills/manager/phases/dispatch\.md|agents/tick-dispatch\.md|agents/recon\.md)$	issue-design-question-not-dispatchable.md
 (^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$	issue-selection-goal.md
+(^|/)scripts/lane_setup\.py$	lane-setup-claim-reuses-stale-merged-branch.md
 (^|/)bin/oss-workspace$	launcher-prompt-selection.md
-(^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
+(^|/)(CLAUDE\.md|agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
 (^|/)(agents/([^/]+\.md|[^/]+/[^/]+\.md)|skills/manager/([^/]+\.md|phases/[^/]+\.md)|commands/[^/]+\.md|\.claude/jit-context/.+\.md)$	md-is-a-manual-not-a-rationale.md
 (^|/)(CLAUDE\.md|agents/.+\.md|commands/.+\.md|skills/manager/.+\.md|trap\.d/.+\.md|\.claude/jit-context/.+\.md)$	md018-issue-ref-at-line-start.md
 (^|/)\.github/workflows/	owned-workflow-constraints.md

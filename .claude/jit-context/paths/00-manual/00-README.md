@@ -6,6 +6,66 @@ named and reasoned in the pass's own pull request, rather than forced into one o
 This file is the record of the declines, so the next lane to hit the same thing finds a decision
 rather than an absence and does not refile it. The rule builder skips this file by name.
 
+## 2026-09-27 -- 12 fragments: 2 promoted, 1 merged, 2 declined, 5 filed, 2 deferred
+
+Two new rules: `paths/00-manual/agent-role-marker-plugin-lag.md`
+(`1733.installed-plugin-lags-doctor-clear-fix`), `paths/00-manual/lane-setup-claim-reuses-stale-merged-branch.md`
+(`1757.stale-merged-worktree-survives-classifier-denials`).
+
+One merge, into `paths/00-manual/loop-prose-parity.md` (`1750.backtick-span-wrapped-across-lines-inserts-a-space`
+-- the same file's own match widened to also cover `CLAUDE.md`, which this fragment's own incident
+touched and the prior match excluded).
+
+**Declined, resolved by direct evidence rather than left ambiguous.**
+
+- `1667.next-minor-pin-guard-failed-on-one-leg-and-passed-on-three` -- the prior 2026-09-23 pass
+  deferred this ("still needs the same read... may no longer be retrievable"). This pass found the
+  explanation without needing the archived logs: `.github/workflows/tests.yml`'s own pytest
+  invocation carries `-m "not invariant"` on every leg except `ubuntu-latest`/Python 3.12
+  (confirmed by direct read), and the guard in question,
+  `tests/test_no_test_pins_the_current_version_350.py`, is marked `@pytest.mark.invariant`
+  (confirmed by grep). The three legs that reported success without the guard firing did not
+  skip a run silently -- they never collected the test at all, by design, documented under #1176.
+  Not a live defect; the observed distribution is exactly what the marker filter produces.
+- `1750.claude-md-and-budget-script-disagree-by-167-bytes-after-a-merge` -- the cited 167 B gap
+  (`102,340` in prose vs. `(102507, 103000)` in `scripts/claude_md_budget.py`) is from a
+  since-superseded point in `CLAUDE.md`'s own self-referential bookkeeping history. Checked
+  against the current tree (2026-09-27): `wc -c CLAUDE.md` and
+  `scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `(111103, 112000)`,
+  agreeing with each other and with the file's own table row -- the specific disagreement this
+  fragment names no longer describes present state.
+
+**Filed as issues -- each a live, still-reproducible code gap, confirmed against this repo's own
+HEAD at the time of this pass rather than trusted from the fragment's own age.**
+
+- `1710.curate-pr-misses-no-changelog-and-dirties-01-oss-index` -- filed as #1759. Confirmed:
+  `commands/run/curate.md` still has zero mentions of `no-changelog` or `01-oss`.
+- `1723.stray-names-comma-delimiter-collides-with-filenames` -- filed as #1760. Confirmed:
+  `scripts/trap_curate.py` still joins/splits `STRAY-NAMES`/`--copied` on a plain `","`. The
+  destructive sibling half of this same finding is already closed (#1741/#1742); this is the
+  remaining non-blocking `misreports` half.
+- `1741.sweep-resolved-silent-skip-indistinguishable-from-nothing-to-do` -- filed as #1761.
+  Confirmed: `sweep_resolved` still returns only `(state, removed, failures, why)`, no bucket for
+  a `--copied` name refused for not being genuinely present.
+- `1751.fix_commit_scope-omits-claude_md_budget-and-remind_budgets` -- filed as #1762. Confirmed:
+  `scripts/fix_commit_scope.py` still has zero mentions of `claude_md_budget` or `remind_budgets`.
+- `1752.hand-back-reason-line-wrap-truncates-in-tick-handback` -- filed as #1763. Confirmed:
+  `agents/sub-manager.md`'s role-write-refused `REASON:` template still wraps across two physical
+  lines.
+
+**Deferred, left in `trap.d/` unchanged -- carried forward from the 2026-09-23 pass, no new
+information this time either.**
+
+- `1630.fifty-one-worktrees-accumulate-because-every-reap-gate-declines` -- still the same design
+  decision (build a periodic full reap sweep beyond the existing conservative per-tick gate, or
+  not). `git-worktrees` now reports 13 trees rather than 51 -- several sibling fixes (#1637,
+  #1685, #1698, #1731) landed since -- but several `[merged, clean]` idle trees are still sitting
+  unreaped with nothing to sweep them outside a tick's own post-merge check, the same gap named
+  in the 2026-09-17 original. Not a decision this pass can make alone.
+- `1660.pytest-leg-margin-arithmetic-ignores-pre-run-tests-step-overhead` -- still needs an
+  instrumented CI run timing each step of a real job separately; not something this pass could
+  produce locally either.
+
 ## 2026-09-23 -- 15 fragments, 3 promoted into 3 new rules, 6 merged, 3 declined, 3 deferred
 
 Three new rules: `paths/00-manual/worktree-reap-precedence-bug.md`,
