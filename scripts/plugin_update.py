@@ -395,6 +395,61 @@ def installed_scopes(name, project_root, plugins_root=None):
     return scopes
 
 
+def enablement(project_root, plugin_root=None, plugins_root=None):
+    """``(state, name)`` -- is this plugin installed for ``project_root`` at all
+    (#1768)?
+
+    `bin/oss-workspace` runs every one of its own steps from the copy its symlink
+    points into, so they all succeed whether or not the plugin applies to the
+    repository being opened -- and then it opens `claude "/oss:run"` on a command
+    that does not exist there. This is the question it never asked.
+
+    Three states: ``installed`` (a record applies to this project, by the same
+    `statusline._entry_applies` match every other reader here uses),
+    ``not-installed`` (the registry was read and nothing in it applies, or there
+    is no registry file at all -- a machine that has never installed a plugin,
+    which is exactly the first launch this exists for), and ``could-not-tell``
+    (the registry, or this plugin's own manifest, exists and could not be read --
+    which says nothing about what is installed). `installed_scopes` returns
+    ``[]`` for all three of the latter, which is why this reads the registry
+    itself rather than calling it.
+
+    This plugin only, not its declared dependencies: a missing dependency leaves
+    `/oss:run` present and degraded rather than absent, and whether one should be
+    installed is `doctor.check_install`'s row, which `/oss:run` runs on start.
+
+    ``name`` is ``qualified_name``'s answer -- ``oss@dpt-plugins`` when any record
+    on the machine carries a marketplace, else the bare name, which `claude plugin
+    install` also accepts.
+    """
+    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    name = plugin_name(plugin_root)
+    if not name:
+        return "could-not-tell", "(this plugin's own manifest)"
+    try:
+        doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
+        if not isinstance(doc, dict):
+            raise ValueError("not an object")
+    except FileNotFoundError:
+        return "not-installed", name
+    except (OSError, ValueError):
+        return "could-not-tell", name
+
+    import statusline
+
+    project = statusline._normalized_path(project_root)
+    applies = any(
+        isinstance(entry, dict) and statusline._entry_applies(entry, project)
+        for plugin_key, entries in (doc.get("plugins") or {}).items()
+        if plugin_key.split("@", 1)[0] == name
+        for entry in entries or []
+    )
+    return (
+        "installed" if applies else "not-installed",
+        qualified_name(name, plugins_root),
+    )
+
+
 def qualified_name(name, plugins_root=None):
     """`oss@dpt-plugins` where the record carries a marketplace, else the bare name.
 
@@ -1097,6 +1152,18 @@ def main(argv=None):
         # "run … inside Git Bash" case) already established this convention for the
         # identical reason; this follows it rather than inventing a second one.
         sys.stdout.write(resolved.as_posix())
+        return 0
+    if "--print-enablement" in argv:
+        # A read, not an update (#1768): one `state<TAB>name` line, for
+        # `bin/oss-workspace` to decide whether `/oss:run` exists in this repo at
+        # all before it opens a session on it. Tabs/newlines in the name are
+        # flattened so none can forge a field or a line.
+        state, each = enablement(root)
+        sys.stdout.write(
+            "{}\t{}\n".format(
+                state, " ".join(str(each).replace("\t", " ").splitlines())
+            )
+        )
         return 0
     if "--print-newest-cached-version" in argv:
         # A read, not an update -- same non-mutating contract as
