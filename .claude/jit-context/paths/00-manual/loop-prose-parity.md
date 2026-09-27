@@ -1,7 +1,7 @@
 ---
 title: "Editing an agent definition or a manager phase file: parity and runnable cells"
 description: "Two copies agreeing proves nothing about whether either is right -- pin the measured string. A table's command cells are run verbatim: quote the plugin root and check the exec bit."
-match: (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$
+match: (^|/)(CLAUDE\.md|agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$
 ---
 
 - **Two copies of a brief agreeing with each other proves nothing about whether either is right.**
@@ -120,3 +120,12 @@ match: (^|/)(agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$
   calls either one. Every ordinary tick's `doctor.py` run still has no way
   to know its root is stale, the same silent-luck gap gate 3 had, just for
   a lower-stakes caller.
+- **Any backtick-quoted path or filename that wraps across two physical
+  source lines reads wrong, not just commands (see two bullets above).**
+  CommonMark turns a line ending inside a code span into a single space, so
+  `` `issue-design-question-not-\ndispatchable.md` `` renders as
+  `issue-design-question-not- dispatchable.md` -- a filename with an
+  inserted space, wrong only in the *rendered* meaning, so `ruff`,
+  `markdownlint` and `gitleaks` all pass it. Keep every backtick-quoted
+  path or filename on one physical source line; do not let a paragraph's
+  own comfortable wrap width land inside a code span (#1750).
