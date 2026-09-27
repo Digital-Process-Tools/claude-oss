@@ -264,6 +264,95 @@ if [ -z "$python_bin" ]; then
          "neither the channel name nor the consumer path could be read. This" \
          "session opens without a channel." >&2
 fi
+
+# Outside the block below so tests/test_workspace_plugin_enabled_1768.py can
+# stand in for a terminal: the prompt it guards is only ever shown to a person.
+enable_is_tty() { [ -t 0 ] && [ -t 1 ]; }
+
+# --- is this plugin enabled for this repository at all (#1768) ---
+#
+# Every step above and below runs from the copy this launcher's own symlink
+# points into, so each succeeds whether or not the plugin applies to the
+# repository being opened -- and then `exec claude "/oss:run"` lands in a
+# session with no /oss:* command in it: "Unknown command: /oss:run", on the very
+# first launch, for exactly the maintainer who has read nothing yet. Only
+# installed_plugins.json can say, so plugin_update.py --print-enablement is
+# asked: one `state<TAB>name` line, three states. This plugin only -- a missing
+# declared dependency leaves /oss:run present and degraded, and /oss:run's own
+# doctor pass already reports it.
+#
+#   installed       nothing to say.
+#   not-installed   asked at a terminal: install at project scope (which writes
+#                   the repository's own .claude/settings.json, so it is asked,
+#                   never done silently); declined, failed or not at a
+#                   terminal: print the exact command and open nothing.
+#   could-not-tell  (anything else, including no python and an empty answer)
+#                   warn and open anyway: an unreadable registry is not evidence
+#                   the plugin is missing, and refusing on it would lock a
+#                   working install out.
+enable_line=""
+if [ -n "$python_bin" ]; then
+    enable_line=$("$python_bin" "$plugin_root/scripts/plugin_update.py" \
+        --root "$repo_root" --print-enablement 2>/dev/null </dev/null) || enable_line=""
+fi
+enable_tab=$(printf '\t')
+enable_state=$(printf '%s' "$enable_line" | cut -s -d "$enable_tab" -f1)
+enable_name=$(printf '%s' "$enable_line" | cut -s -d "$enable_tab" -f2)
+# The name reaches `claude plugin install` below, so only the characters a
+# plugin key is made of are accepted as not-installed; anything else is read as
+# could-not-tell rather than executed.
+case $enable_state:$enable_name in
+    not-installed:*[!A-Za-z0-9._@-]* | not-installed:) enable_state=could-not-tell ;;
+esac
+case $enable_state in
+    installed) ;;
+    not-installed)
+        oss_step enabled "not installed: $enable_name" ask
+        echo "oss-workspace: $enable_name is not installed for $repo_root, so a" \
+             "session opened here has no $prompt to run (#1768)." >&2
+        enable_do=0
+        if enable_is_tty; then
+            printf 'Install it at project scope now (writes .claude/settings.json)? [Y/n] ' >&2
+            enable_answer=""
+            if ! IFS= read -r enable_answer; then
+                [ -n "$enable_answer" ] || enable_answer=n
+            fi
+            case $enable_answer in
+                "" | [Yy] | [Yy][Ee][Ss]) enable_do=1 ;;
+            esac
+        fi
+        if [ "$enable_do" -eq 1 ]; then
+            claude plugin install "$enable_name" --scope project && enable_status=0 || enable_status=$?
+            if [ "$enable_status" -ne 0 ]; then
+                echo "oss-workspace: 'claude plugin install $enable_name --scope" \
+                     "project' failed (exit $enable_status), so no session was" \
+                     "opened on a command that may not exist." >&2
+                exit 1
+            fi
+            oss_step enabled "installed $enable_name" ok
+        else
+            echo "  Nothing was opened. From $repo_root, run" >&2
+            echo "    claude plugin install $enable_name --scope project" >&2
+            echo "  then run this again." >&2
+            exit 1
+        fi
+        ;;
+    *)
+        if [ -z "$python_bin" ]; then
+            enable_why="no working python to ask with"
+        elif [ -z "$enable_line" ]; then
+            enable_why="the check printed nothing"
+        else
+            enable_why="the check answered '$enable_line'"
+        fi
+        oss_step enabled "could not tell" ask
+        echo "oss-workspace: could not tell whether the oss plugin is installed" \
+             "for $repo_root ($enable_why). Opening $prompt anyway; if the" \
+             "session answers 'Unknown command', install it for this project." >&2
+        ;;
+esac
+# --- end of the enablement check (#1768) ---
+
 # --- keep this plugin current, synchronously, before deciding what to open (#753) --
 #
 # hooks/session-start-update.sh forks scripts/plugin_update.py and returns, by

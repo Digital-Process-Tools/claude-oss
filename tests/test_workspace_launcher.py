@@ -302,6 +302,25 @@ def _with_channel_consumer(home, bindir, naming=None):
     return consumer
 
 
+def _with_oss_enabled(home):
+    """Record the oss plugin at user scope in this fixture's own registry,
+    merged into whatever `_with_channel_consumer` already wrote (#1768).
+
+    Without it the launcher's enablement check reads "not installed here" and
+    refuses to open a session at all, which is what it is for -- but none of the
+    tests using this helper are about that. `test_workspace_plugin_enabled_1768.py`
+    is the file that is.
+    """
+    registry = home / ".claude" / "plugins" / "installed_plugins.json"
+    document = (
+        json.loads(registry.read_text(encoding="utf-8"))
+        if registry.exists()
+        else {"version": 2, "plugins": {}}
+    )
+    document["plugins"].setdefault("oss@dpt-plugins", []).append({"scope": "user"})
+    registry.write_text(json.dumps(document), encoding="utf-8")
+
+
 def run(
     cwd,
     args=(),
@@ -340,6 +359,7 @@ def run(
     (home / ".claude" / "plugins").mkdir(parents=True, exist_ok=True)
     if with_channel:
         _with_channel_consumer(home, bindir, naming=naming)
+    _with_oss_enabled(home)
 
     env = dict(os.environ)
     env["HOME"] = str(home)
@@ -607,8 +627,15 @@ def test_it_survives_being_run_through_a_symlink(tmp_path):
     bindir = repo / "_stubbin"
     bindir.mkdir(exist_ok=True)
     _stub_claude(bindir, repo / "argv.txt")
+    # HOME pinned and seeded (#1768): unpinned, the enablement check reads the
+    # runner's real registry, which on CI has no oss record and refuses the launch.
+    home = repo / "_home"
+    (home / ".claude" / "plugins").mkdir(parents=True)
+    _with_oss_enabled(home)
     env = dict(os.environ)
     env["PATH"] = launcher_env.pinned_path(bindir)
+    env["HOME"] = str(home)
+    env["USERPROFILE"] = str(home)
 
     done = subprocess.run(
         [BASH, str(link)],
