@@ -450,7 +450,7 @@ def sweep_resolved(
     anything is attempted, and only a name found in BOTH sets is ever
     unlinked.
 
-    Returns a fifth bucket, ``refused``, alongside ``removed`` and
+    Returns a fourth bucket, ``refused``, alongside ``removed`` and
     ``failures`` (#1761): a ``--copied`` name filtered out because it is
     not really present in the clone's own untracked set -- a fabricated
     name, a transcription error, or a correctly-refused traversal attempt

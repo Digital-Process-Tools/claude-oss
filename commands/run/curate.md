@@ -247,8 +247,19 @@ regenerates every dimension's `00-index.tsv` from whatever is on disk right now,
 Committing it by accident is exactly the drift `tests/test_rule_layer_sync_1063.py` exists to catch,
 and it has already failed CI once this way (job 106910952028). So: stage only the files this pass
 actually decided on -- `trap.d/` deletions, the `00-manual` rule bodies, the layer's own
-`00-README.md` -- and run `git checkout -- .claude/jit-context/*/01-oss/` (or an equivalent
-per-path restore) before committing, discarding whatever the firing-proof drive touched there.
+`00-README.md` -- and restore whatever the firing-proof drive touched under `01-oss/` before
+committing:
+
+```bash
+git checkout -- $(git status --porcelain -- .claude/jit-context | awk '{print $2}' | grep '/01-oss/' || true)
+```
+
+**Never the bare glob form** (`git checkout -- .claude/jit-context/*/01-oss/`): when no dimension's
+`01-oss/` happens to be dirty, an unmatched glob makes the shell itself refuse the whole line before
+git ever sees it (zsh: `no matches found`), or git refuses it with `did not match any file(s)`
+(bash) -- a hard, non-zero-exit failure in a step meant to be a safety net, not the silent no-op it
+looks like. The `git status --porcelain` form above lists only paths that actually changed, so an
+empty result is an empty, successful `git checkout --` with nothing to restore -- never a refusal.
 
 ## Sweep the clone once every fragment is decided (#1723)
 
