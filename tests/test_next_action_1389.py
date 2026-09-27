@@ -1480,11 +1480,16 @@ def test_take_idle_cli_refuses_a_source_not_in_idle_candidates(
 
 
 def test_take_idle_arms_the_receipt_the_same_way_take_does(tmp_path, monkeypatch):
-    """`--take-idle` reuses `_arm_route_source`, the same call `--take`
-    makes -- exercised here against a real trap.d/ fragment count (rather
-    than the mocked-decide fixtures above) so the receipt write path is a
-    real one, matching `test_taking_curate_arms_it_so_the_next_read_does_
-    not_repeat_due_forever`'s own shape for the ordinary case."""
+    """#1758 self-review finding (Explore reviewer and oss:auditor, both
+    independently): an earlier version of this test only asserted `rc == 0`
+    and never re-ranked, so it would have passed identically against a
+    `_take_idle_cli` that printed `OK:` while persisting no receipt at all
+    (`_arm_route_source` is a documented no-op for curate/triage's `UNDER`
+    branch). This is the real positive control, the same shape
+    `test_taking_curate_arms_it_so_the_next_read_does_not_repeat_due_
+    forever` already gives the ordinary `--take` path: a second `rank()`
+    call, against the identical unchanged reading, must no longer list the
+    taken source among `idle_candidates`."""
     root = _git_repo(tmp_path)
     _write_config(
         root, {"curate_route_threshold": 15, "state_file": ".max/oss-watch.json"}
@@ -1504,3 +1509,37 @@ def test_take_idle_arms_the_receipt_the_same_way_take_does(tmp_path, monkeypatch
 
     rc = next_action.main(["--root", str(root), "--take-idle", "curate"])
     assert rc == 0
+
+    second = next_action.rank(root)
+    assert second["idle_candidates"] == []
+
+
+def test_idle_candidates_re_arm_when_the_reading_changes(tmp_path, monkeypatch):
+    """Positive control for the test above: taking curate's idle candidate
+    suppresses it only for the reading it was taken on -- a real change to
+    the underlying count (one more fragment landed) must surface it again,
+    the same must-fire-again guarantee `test_a_changed_inbound_reading_
+    re_arms` already gives the ordinary `--take` path."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 15, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    for i in range(3):
+        (root / "trap.d" / "{0}.some-lesson.md".format(i)).write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+
+    first = next_action.rank(root)
+    assert [entry["source"] for entry in first["idle_candidates"]] == ["curate"]
+    assert next_action.main(["--root", str(root), "--take-idle", "curate"]) == 0
+
+    second = next_action.rank(root)
+    assert second["idle_candidates"] == []
+
+    (root / "trap.d" / "extra.some-lesson.md").write_text("one more\n")
+    third = next_action.rank(root)
+    idle = third["idle_candidates"]
+    assert [entry["source"] for entry in idle] == ["curate"]
+    assert idle[0]["evidence"]["count"] == 4

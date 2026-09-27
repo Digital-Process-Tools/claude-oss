@@ -674,13 +674,52 @@ def _is_idle_entry(entry):
     return count > 0
 
 
-def _idle_candidates(not_due):
+def _idle_already_seen(repo_root, config, source, signature, arm=False):
+    """The idle-candidate counterpart of `_route_already_seen`'s own use
+    inside `_curate_candidate`/`_triage_candidate`'s `OVER` branch -- but
+    keyed on a distinct route name (`"{source}-idle"`), never `source`
+    itself, so this receipt cannot collide with -- or be mistaken for --
+    curate/triage's ordinary `OVER` repeat-suppression receipt. Self-review
+    finding (Explore reviewer and oss:auditor, both independently, #1758):
+    an earlier version of this fix called `--take-idle`'s own commit through
+    `_arm_route_source`, which only ever writes a receipt inside the `OVER`
+    branch curate/triage's `UNDER` fallback never reaches -- so `--take-idle`
+    printed the identical `OK:` line `--take` does while persisting nothing,
+    and the very next `nothing-due` read would resurface the same idle
+    candidate, sending a scheduler that follows `commands/run.md`'s own new
+    instruction to spawn the same procedure again on an unchanged reading,
+    forever. This is that receipt, real rather than borrowed."""
+    return _route_already_seen(
+        repo_root, config, "{0}-idle".format(source), signature, arm=arm
+    )
+
+
+def _idle_signature(entry):
+    """The one string `_idle_already_seen` compares against its own prior
+    receipt -- state plus count, the same shape `_curate_candidate`'s own
+    `OVER` branch already builds for its unrelated receipt."""
+    route_evidence = _route_evidence(entry)
+    return "{0}:{1}".format(route_evidence.get("state"), route_evidence.get("count"))
+
+
+def _idle_candidates(repo_root, config, not_due):
     """The `not_due` sources #1758 asks `nothing-due` to surface rather than
-    silently hold: still below their own threshold, but not empty. Ordered
+    silently hold: still below their own threshold, but not empty, and not
+    already committed to via `--take-idle` on this exact reading. Ordered
     by count, most fragments/issues first -- the entry closest to firing on
-    its own. Never mutates or re-ranks `not_due` itself; this is a read of
-    it, the same way `candidates` is a read of `by_source`."""
-    idle = [entry for entry in not_due if _is_idle_entry(entry)]
+    its own. `_idle_already_seen` is read-only here (`arm=False`), the same
+    "rank() never writes" discipline `_curate_candidate`/`_triage_candidate`
+    already hold for their own receipt."""
+    idle = []
+    for entry in not_due:
+        if not _is_idle_entry(entry):
+            continue
+        seen, _detail = _idle_already_seen(
+            repo_root, config, entry["source"], _idle_signature(entry), arm=False
+        )
+        if seen:
+            continue
+        idle.append(entry)
     idle.sort(key=lambda entry: _route_evidence(entry)["count"], reverse=True)
     return idle
 
@@ -786,7 +825,7 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
             # below-threshold work waiting is distinguishable from a board
             # that is genuinely empty. Never includes an OVER-but-suppressed
             # entry; see `_is_idle_entry`.
-            "idle_candidates": _idle_candidates(not_due),
+            "idle_candidates": _idle_candidates(repo_root, config, not_due),
             "config": config,
         }
     return {
@@ -1081,12 +1120,13 @@ def _take_idle_cli(root, source, state_file_override=None):
     """#1758: the below-threshold counterpart of `_take_cli` -- commits to
     `source` from `rank()`'s own `idle_candidates` rather than its ordinary
     `candidates[0]`, for the case a `nothing-due` reading still has a
-    standing backlog nobody has acted on. Arms the same
-    `_arm_route_source` receipt `_take_cli` does; for curate/triage's own
-    `UNDER`-threshold branch that write is already a no-op (only the `OVER`
-    branch ever checks `_route_already_seen`), so this call is exactly as
-    harmless where nothing needs arming as `_take_cli` already is for
-    inbound/release."""
+    standing backlog nobody has acted on. Arms `_idle_already_seen`'s own
+    receipt (self-review finding, Explore reviewer and oss:auditor, both
+    independently: an earlier version of this routed the commit through
+    `_arm_route_source`, which only writes inside curate/triage's `OVER`
+    branch -- never the `UNDER` branch `--take-idle` exists for -- so it
+    printed `OK:` while persisting nothing, and the identical idle candidate
+    would resurface on the very next read)."""
     payload = _resolve_idle(root)
     if payload is None:
         return 1
@@ -1103,8 +1143,7 @@ def _take_idle_cli(root, source, state_file_override=None):
     if state_file_override is not None:
         config = dict(config)
         config["state_file"] = state_file_override
-    routes = _routes(root, config, git_bin=gh_which.safe_which("git"))
-    _arm_route_source(root, config, routes, source)
+    _idle_already_seen(root, config, source, _idle_signature(match), arm=True)
     print("OK: took {0} (idle)".format(source))
     return 0
 
