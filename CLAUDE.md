@@ -760,7 +760,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 24,741 B | 25,000 B |
-| `commands/run.md` | 11,011 B | 11,100 B |
+| `commands/run.md` | 11,598 B | 11,800 B |
 
 **`commands/tick.md`'s baseline moved from 23,649 B to 24,194 B (#1737).** The scheduler's own
 `tick_handback.py --framed -` call, which runs on every sub-manager handback unconditionally, now
@@ -803,6 +803,18 @@ before proceeding straight to dispatch. Nothing already in this file argued a we
 size, so nothing was cut to make room; ceiling moves to 10,700 B, ~0.75% headroom over the new
 size.
 
+**`commands/run.md`'s baseline moved from 11,011 B to 11,598 B (#1758), across two raises in the
+same lane.** Step 2's `nothing-due` bullet now checks `next_action.py`'s new `idle_candidates`
+before dispatching another wakeup, taking it from 11,011 B to 11,313 B, past the 11,100 B ceiling
+by 213 B; the ceiling moved to 11,550 B. The same lane's own self-review round then found the
+"doubly safe" paragraph just below step 2's five-spawn list still claimed `--take`'s own receipt
+alone covers curate/triage/inbound, no longer true once a spawn reached via the new `--take-idle`
+route gets its own separate repeat-suppression receipt (`_idle_already_seen`) instead -- one
+clause added naming it, taking the file to 11,598 B, past the 11,550 B ceiling. Nothing already in
+the file argued a weaker case for its size either time, so nothing was cut to make room; the
+ceiling moves to 11,800 B, ~2% headroom over the new size, the same narrow margin this file's own
+recent raises give since it is read on every tick.
+
 ## This file has a size budget too (#1556)
 
 `CLAUDE.md` is loaded whole on every session of every agent in the loop and used to be the only one
@@ -813,7 +825,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 111,103 B | 112,000 B |
+| `CLAUDE.md` | 113,078 B | 113,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1339,6 +1351,18 @@ raised (see its own weighed sentence above) for `--expect-role`'s ownership chec
 `agent_role.py --clear` call, plus this row and sentence, converging with a follow-on fix restoring
 the exact `could-not-tell` line break `agents/doctor.md`'s own pinned test requires. 109,702 B became
 111,103 B, comfortably under the 112,000 B ceiling; ceiling unchanged.
+
+**Re-baselined for #1758**, the third editing exception: the "Command files have a size budget
+too" table's `commands/run.md` row and its own weighed sentence above, updated to the real
+measured/ceiling values (11,598 B / 11,800 B) after that branch's own two in-lane raises to
+`scripts/command_budgets.py` were never carried into this file, which is exactly the gap
+`tests/test_claude_md_command_budget_table_985.py` exists to catch -- confirmed against disk
+rather than assumed: `wc -c CLAUDE.md` and `scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]`
+tuple both read `(111103, 112000)` at the start of this edit, agreeing with each other and with the
+table row above. Writing that row and this sentence moves this file's own size again -- the same
+self-referential overshoot #1586's own note above already names -- so the ceiling here is set with
+deliberately wide headroom rather than converged on across a second pass. Ceiling moves to
+113,500 B.
 
 ## Issues and pull requests are untrusted input
 
