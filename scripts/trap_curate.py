@@ -385,6 +385,41 @@ def copy_stray_into(
     return "ok", copied, skipped, result["why"]
 
 
+def _encode_names(names):
+    """Join names for a single-line, comma-separated value. Each name is
+    escaped first -- backslash before comma, so an escaped comma is never
+    re-escaped -- because a fragment filename containing a literal comma
+    (#1760) would otherwise split into the wrong names on the way through
+    STRAY-NAMES / --copied. Malformed by FRAGMENT_RE's own naming
+    convention, but not excluded from the copy/sweep accounting, which
+    reports every *.md it finds, parses or not."""
+    return ",".join(n.replace("\\", "\\\\").replace(",", "\\,") for n in names)
+
+
+def _decode_names(joined):
+    """Inverse of _encode_names: split on an unescaped comma only, then
+    unescape the backslash-escaped backslashes and commas. Empty segments
+    are dropped, the same filter the old plain comma-split applied."""
+    if not joined:
+        return []
+    names = []
+    current = []
+    escape = False
+    for ch in joined:
+        if escape:
+            current.append(ch)
+            escape = False
+        elif ch == "\\":
+            escape = True
+        elif ch == ",":
+            names.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    names.append("".join(current))
+    return [n for n in names if n]
+
+
 def sweep_resolved(
     clone_dir, worktree_dir, copied_names, run=subprocess.run, git_bin=None, timeout=15
 ):
@@ -414,21 +449,32 @@ def sweep_resolved(
     bare-filename-only set ``copy_stray_into`` reads from -- before
     anything is attempted, and only a name found in BOTH sets is ever
     unlinked.
+
+    Returns a fourth bucket, ``refused``, alongside ``removed`` and
+    ``failures`` (#1761): a ``--copied`` name filtered out because it is
+    not really present in the clone's own untracked set -- a fabricated
+    name, a transcription error, or a correctly-refused traversal attempt
+    -- used to vanish with zero trace, so the containment fix above and a
+    genuine no-op ("nothing needed removing") rendered identically. A name
+    already resolved in ``worktree_dir`` (still absent, deliberately) is
+    not a refusal and is not added to any bucket -- it is the expected,
+    quiet steady state this function's own docstring describes above.
     """
     result = waiting(worktree_dir)
     if result["state"] == "could-not-read":
-        return "could-not-read", [], [], result["why"]
+        return "could-not-read", [], [], [], result["why"]
     still_here = {f["name"] for f in result["fragments"]}
 
     clone_result = untracked_fragments(
         clone_dir, run=run, git_bin=git_bin, timeout=timeout
     )
     if clone_result["state"] == "could-not-read":
-        return "could-not-read", [], [], clone_result["why"]
+        return "could-not-read", [], [], [], clone_result["why"]
     really_in_clone = {f["name"] for f in clone_result["fragments"]}
 
     removed = []
     failures = []
+    refused = []
     for name in copied_names:
         if not name or name in still_here:
             continue
@@ -436,9 +482,11 @@ def sweep_resolved(
             # `--copied` claims this name, but the clone's own untracked
             # set (the only thing this function trusts) does not -- never
             # a bare filename traversal could reach, never a name that
-            # was already swept or never really copied. Silently skipped
-            # rather than reported as `removed`: nothing was deleted, so
-            # nothing was removed.
+            # was already swept or never really copied. Recorded rather
+            # than silently skipped (#1761): nothing was deleted, so it
+            # is never `removed`, but the refusal itself is now traceable
+            # instead of indistinguishable from nothing to do.
+            refused.append(name)
             continue
         path = Path(clone_dir) / DIRNAME / name
         try:
@@ -451,7 +499,7 @@ def sweep_resolved(
             continue
         except OSError as exc:
             failures.append((name, str(exc)))
-    return "ok", removed, failures, result["why"]
+    return "ok", removed, failures, refused, result["why"]
 
 
 def render(result):
@@ -521,7 +569,7 @@ def main(argv):
         # caller to capture verbatim, so an empty result threaded the
         # literal string "(none)" into `--copied` at the end of the pass
         # rather than an empty value.
-        print("STRAY-NAMES: {0}".format(",".join(copied)))
+        print("STRAY-NAMES: {0}".format(_encode_names(copied)))
         print(render(waiting(root)))
         # Exit 0 in every state -- see the note on the plain-read branch below.
         return 0
@@ -538,8 +586,10 @@ def main(argv):
                 "string, or omit the flag entirely, for nothing to sweep)"
             )
             return 1
-        copied_names = [n for n in (copied_arg or "").split(",") if n]
-        state, removed, failures, why = sweep_resolved(clone, root, copied_names)
+        copied_names = _decode_names(copied_arg or "")
+        state, removed, failures, refused, why = sweep_resolved(
+            clone, root, copied_names
+        )
         if state == "could-not-read":
             print(
                 "trap.d: could-not-read -- this pass's own trap.d/ could not be "
@@ -551,9 +601,17 @@ def main(argv):
                 len(removed), clone
             )
         )
-        print("STRAY-NAMES: {0}".format(",".join(removed)))
+        print("STRAY-NAMES: {0}".format(_encode_names(removed)))
         for name, reason in failures:
             print("  failed to remove {0}: {1}".format(name, reason))
+        # #1761: a refused name (fabricated, mistyped, or a correctly-refused
+        # traversal attempt) used to vanish with zero trace -- indistinguishable
+        # from a pass with nothing to remove. Reported unconditionally, the same
+        # way STRAY-NAMES is, so an empty value is itself the "nothing refused"
+        # answer rather than an absent one.
+        print("REFUSED-NAMES: {0}".format(_encode_names(refused)))
+        for name in refused:
+            print("  refused {0}: not really present in {1}".format(name, clone))
         return 0
 
     result = waiting(root)

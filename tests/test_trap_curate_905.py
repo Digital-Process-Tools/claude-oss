@@ -394,12 +394,13 @@ def test_sweep_resolved_removes_only_names_now_absent_from_the_worktree(
     (worktree / "trap.d").mkdir(parents=True)
     (worktree / "trap.d" / "2.deferred.md").write_text("y\n")  # still here -- deferred
 
-    state, removed, failures, why = trap_curate.sweep_resolved(
+    state, removed, failures, refused, why = trap_curate.sweep_resolved(
         clone, worktree, ["1.resolved.md", "2.deferred.md"]
     )
     assert state == "ok", why
     assert removed == ["1.resolved.md"]
     assert not failures
+    assert not refused
     assert not (clone / "trap.d" / "1.resolved.md").exists()
     assert (clone / "trap.d" / "2.deferred.md").exists()
 
@@ -415,12 +416,18 @@ def test_sweep_resolved_is_idempotent_on_an_already_removed_name(clone, tmp_path
     (clone / "trap.d").mkdir()
     worktree = tmp_path / "curate-worktree"
     worktree.mkdir()
-    state, removed, failures, why = trap_curate.sweep_resolved(
+    state, removed, failures, refused, why = trap_curate.sweep_resolved(
         clone, worktree, ["1.never-there.md"]
     )
     assert state == "ok", why
     assert removed == []
     assert not failures
+    assert refused == ["1.never-there.md"], (
+        "#1761: a name not really present in the clone's own untracked set "
+        "must be traceable as a refusal, not silently dropped -- a fabricated "
+        "or already-swept name and nothing-to-sweep-at-all must not render "
+        "identically"
+    )
 
 
 def test_sweep_resolved_ignores_a_path_traversal_name(clone, tmp_path):
@@ -438,12 +445,16 @@ def test_sweep_resolved_ignores_a_path_traversal_name(clone, tmp_path):
     worktree = tmp_path / "curate-worktree"
     worktree.mkdir()
 
-    state, removed, failures, why = trap_curate.sweep_resolved(
+    state, removed, failures, refused, why = trap_curate.sweep_resolved(
         clone, worktree, ["../victim.txt"]
     )
     assert state == "ok", why
     assert removed == []
     assert not failures
+    assert refused == ["../victim.txt"], (
+        "#1761: a correctly-refused traversal attempt is still a refusal "
+        "worth tracing, not a silent no-op"
+    )
     assert victim.exists(), (
         "a traversal name must never delete anything outside trap.d/"
     )
@@ -463,12 +474,16 @@ def test_sweep_resolved_ignores_a_copied_name_the_clone_never_actually_had(
     worktree = tmp_path / "curate-worktree"
     worktree.mkdir()
 
-    state, removed, failures, why = trap_curate.sweep_resolved(
+    state, removed, failures, refused, why = trap_curate.sweep_resolved(
         clone, worktree, ["1.real.md", "2.fabricated.md"]
     )
     assert state == "ok", why
     assert removed == ["1.real.md"]
     assert not failures
+    assert refused == ["2.fabricated.md"], (
+        "#1761: a fabricated name filtered out by the containment guard "
+        "must still be traceable as a refusal"
+    )
     assert not (clone / "trap.d" / "1.real.md").exists()
 
 
@@ -592,3 +607,136 @@ def test_the_counter_and_the_curate_pass_report_the_same_number_on_one_fixture(
 
     after = trap_curate.waiting(worktree)
     assert after["count"] == count, (after, count, why)
+
+
+# --- #1760: a fragment filename containing a comma must not split into the wrong names -------
+
+
+def test_encode_decode_names_round_trips_a_comma_in_a_name():
+    names = ["1.a,b.md", "2.plain.md"]
+    encoded = trap_curate._encode_names(names)
+    assert trap_curate._decode_names(encoded) == names, (
+        "a comma inside a fragment filename must survive the join/split "
+        "round trip intact -- a plain comma join/split collapses "
+        "'1.a,b.md' into the two wrong names '1.a' and 'b.md'"
+    )
+
+
+def test_encode_decode_names_round_trips_a_backslash_in_a_name():
+    names = ["1.has\\backslash.md", "2.plain.md"]
+    assert trap_curate._decode_names(trap_curate._encode_names(names)) == names
+
+
+def test_decode_names_drops_empty_segments_like_the_old_plain_split_did():
+    assert trap_curate._decode_names("") == []
+    assert trap_curate._decode_names("a.md,,b.md") == ["a.md", "b.md"]
+
+
+def test_cli_copy_stray_from_reports_a_comma_bearing_name_unambiguously(
+    clone, tmp_path
+):
+    """Reproduces #1760's own scratch-repo finding: a fragment named
+    `1.a,b.md` must come back through STRAY-NAMES as one name, not two."""
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.a,b.md").write_text("x\n")
+    rc, out = _main_output(
+        ["trap_curate.py", str(worktree), "--copy-stray-from", str(clone)]
+    )
+    assert rc == 0
+    line = next(l for l in out.splitlines() if l.startswith("STRAY-NAMES:"))
+    value = line[len("STRAY-NAMES: ") :]
+    assert trap_curate._decode_names(value) == ["1.a,b.md"], (
+        "a comma-bearing fragment name must decode back to exactly one "
+        "name, not split into '1.a' and 'b.md' (#1760)"
+    )
+
+
+def test_sweep_resolved_in_round_trips_a_comma_bearing_name_through_the_cli(
+    clone, tmp_path
+):
+    """The full CLI round trip #1760 describes: copy a comma-bearing stray
+    out, capture STRAY-NAMES verbatim, and feed it back through
+    --sweep-resolved-in --copied, the same shape curate.md's own recipe
+    uses."""
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+    (clone / "trap.d").mkdir()
+    (clone / "trap.d" / "1.a,b.md").write_text("x\n")
+    rc, out = _main_output(
+        ["trap_curate.py", str(worktree), "--copy-stray-from", str(clone)]
+    )
+    assert rc == 0
+    stray_line = next(l for l in out.splitlines() if l.startswith("STRAY-NAMES:"))
+    captured = stray_line[len("STRAY-NAMES: ") :]
+    assert (worktree / "trap.d" / "1.a,b.md").exists()
+
+    # disposed of in the worktree -- the fragment is gone, as promote/merge/
+    # decline would leave it
+    (worktree / "trap.d" / "1.a,b.md").unlink()
+
+    rc, out = _main_output(
+        [
+            "trap_curate.py",
+            str(worktree),
+            "--sweep-resolved-in",
+            str(clone),
+            "--copied",
+            captured,
+        ]
+    )
+    assert rc == 0
+    assert not (clone / "trap.d" / "1.a,b.md").exists(), (
+        "the comma-bearing name must round-trip through --copied intact "
+        "and actually be swept, not misparsed into a name that never existed"
+    )
+
+
+# --- #1761: a refused --copied name must be traceable, not a silent no-op ---------------------
+
+
+def test_cli_sweep_resolved_in_reports_a_refused_names_line(clone, tmp_path):
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+    (clone / "trap.d").mkdir()
+    rc, out = _main_output(
+        [
+            "trap_curate.py",
+            str(worktree),
+            "--sweep-resolved-in",
+            str(clone),
+            "--copied",
+            "2.fabricated.md",
+        ]
+    )
+    assert rc == 0
+    assert "REFUSED-NAMES: 2.fabricated.md" in out, (
+        "a --copied name the clone never really had must be reported on a "
+        "dedicated REFUSED-NAMES line, distinguishable from a pass with "
+        "nothing to sweep at all (#1761)"
+    )
+
+
+def test_cli_sweep_resolved_in_reports_an_empty_refused_names_line_when_nothing_was_refused(
+    clone, tmp_path
+):
+    worktree = tmp_path / "curate-worktree"
+    worktree.mkdir()
+    (clone / "trap.d").mkdir()
+    rc, out = _main_output(
+        [
+            "trap_curate.py",
+            str(worktree),
+            "--sweep-resolved-in",
+            str(clone),
+            "--copied",
+            "",
+        ]
+    )
+    assert rc == 0
+    assert "REFUSED-NAMES: \n" in out or out.rstrip("\n").endswith("REFUSED-NAMES: "), (
+        "REFUSED-NAMES must be printed unconditionally, even when empty -- "
+        "an absent line and an empty one must not render the same way a "
+        "missing check and a passing one would"
+    )
