@@ -194,7 +194,9 @@ def _extract_block():
 
 
 def _executable(path, body):
-    path.write_text(body, encoding="utf-8", newline="\n")
+    # write_bytes, not write_text(newline=...): that keyword is 3.10+, and the
+    # floor is 3.9. Bytes also keep LF on Windows, which a shebang needs.
+    path.write_bytes(body.encode("utf-8"))
     path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return path
 
@@ -210,14 +212,13 @@ def _run_block(tmp_path, enablement, tty=False, answer="", install_ok=True):
         ),
     )
     fixture = tmp_path / "enablement.txt"
-    fixture.write_text(enablement, encoding="utf-8", newline="\n")
+    fixture.write_bytes(enablement.encode("utf-8"))
     fake_python = _executable(
         tmp_path / "fake-python", '#!/bin/sh\ncat "{}"\n'.format(fixture.as_posix())
     )
     script = "\n".join(
         [
             "set -eu",
-            'PATH="{}:$PATH"'.format(bin_dir.as_posix()),
             "oss_steps=0",
             "oss_step_begin() { :; }",
             "oss_step() { :; }",
@@ -230,9 +231,16 @@ def _run_block(tmp_path, enablement, tty=False, answer="", install_ok=True):
             "echo REACHED",
         ]
     )
+    # The stub directory goes in through the environment, joined with this
+    # platform's own separator, the way tests/launcher_env.py does it: written
+    # into the script as `C:/...:$PATH`, Git Bash splits the drive letter off at
+    # the colon and never finds the stub (exit 127 on the Windows leg).
+    env = dict(os.environ)
+    env["PATH"] = os.pathsep.join([str(bin_dir), env.get("PATH", "")])
     done = subprocess.run(
         [BASH, "-c", script],
         input=answer.encode("utf-8"),
+        env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
