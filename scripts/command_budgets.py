@@ -285,7 +285,14 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # file-disjoint for prose" convention. Re-measured against the actual
     # merged file rather than added by hand: 11011 B, past both branches'
     # own 11000 B ceiling by 11 B. Ceiling moves to 11100 B, ~0.8% headroom.
-    "commands/run.md": (11011, 11100),
+    #
+    # Re-baselined for #1758: the `nothing-due` bullet in step 2 now checks
+    # `next_action.py`'s new `idle_candidates` before dispatching another
+    # wakeup, per that issue's own fix in `scripts/next_action.py`. 11011 B
+    # became 11313 B, past the 11100 B ceiling by 213 B. Nothing already in
+    # the file argued a weaker case for its size, so nothing was cut to make
+    # room; the ceiling moves to 11550 B, ~2% headroom over the new size.
+    "commands/run.md": (11313, 11550),
 }
 
 

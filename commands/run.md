@@ -104,7 +104,10 @@ never arbitrating one verdict:
   had already accepted and triaged read as freshly due on every tick, with no procedure here ever
   allowed to clear it by closing.
 - **`nothing-due`** -- no source due; an unconfigured route is named, not folded into
-  "clean" (#1610). Proceed to **dispatch**.
+  "clean" (#1610). Check `idle_candidates` before dispatching a wakeup (#1758): if it names a
+  source (curate/triage still holding a positive count below its own threshold), take the first
+  one the same way -- `--take-idle <source>` -- before spawning its procedure; only proceed
+  straight to **dispatch** when `idle_candidates` is empty too.
 
 ## setup
 

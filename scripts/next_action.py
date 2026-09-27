@@ -638,6 +638,53 @@ def _triage_candidate(repo_root, config, routes, arm=False):
     }
 
 
+def _route_evidence(entry):
+    """The per-route count/threshold/state dict inside one `not_due` entry's
+    own `evidence` -- flat for curate and for triage's own `OVER`/
+    `COULD_NOT_COUNT` readings, but nested under `triage_route` for
+    triage's `UNDER` fallback: `_triage_candidate` folds the post-release
+    trigger's own `triage_trigger` reading into the same `evidence` dict
+    there, so the label-coverage route it actually names sits one level
+    down instead of at the top."""
+    evidence = entry.get("evidence") or {}
+    if entry.get("source") == "triage" and "triage_route" in evidence:
+        return evidence.get("triage_route") or {}
+    return evidence
+
+
+def _is_idle_entry(entry):
+    """#1758: an entry from `not_due` is a genuine below-threshold backlog --
+    worth surfacing when nothing else is due -- only when all three hold: it
+    is built on `workspace_routes`'s own standing-count shape (curate,
+    triage's label-coverage half; `inbound`/`release` carry no `count`/
+    `threshold` pair in their evidence at all and are never idle candidates),
+    it read `UNDER` rather than `OVER`-but-suppressed (an `OVER` count
+    `_route_already_seen` is holding back on purpose must stay suppressed,
+    never resurface here as something to take instead), and its count is
+    strictly positive -- a count of zero is not idle, it is done."""
+    route_evidence = _route_evidence(entry)
+    if route_evidence.get("state") != workspace_routes.UNDER:
+        return False
+    count = route_evidence.get("count")
+    threshold = route_evidence.get("threshold")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return False
+    if not isinstance(threshold, int) or isinstance(threshold, bool):
+        return False
+    return count > 0
+
+
+def _idle_candidates(not_due):
+    """The `not_due` sources #1758 asks `nothing-due` to surface rather than
+    silently hold: still below their own threshold, but not empty. Ordered
+    by count, most fragments/issues first -- the entry closest to firing on
+    its own. Never mutates or re-ranks `not_due` itself; this is a read of
+    it, the same way `candidates` is a read of `by_source`."""
+    idle = [entry for entry in not_due if _is_idle_entry(entry)]
+    idle.sort(key=lambda entry: _route_evidence(entry)["count"], reverse=True)
+    return idle
+
+
 def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
     """The whole answer, in one call. Never raises.
 
@@ -733,6 +780,13 @@ def rank(repo_root, run=subprocess.run, gh=None, git_bin=None, now=None):
             "next": "dispatch",
             "reason": reason,
             "not_due": not_due,
+            # #1758: sources from `not_due` still holding a positive count
+            # below their own threshold -- curate's trap.d/ backlog, triage's
+            # missing labels -- so a `nothing-due` reading with real,
+            # below-threshold work waiting is distinguishable from a board
+            # that is genuinely empty. Never includes an OVER-but-suppressed
+            # entry; see `_is_idle_entry`.
+            "idle_candidates": _idle_candidates(not_due),
             "config": config,
         }
     return {
@@ -892,6 +946,16 @@ def receipt(payload):
                     entry["source"], _flatten(entry["reason"])
                 )
             )
+        for entry in payload.get("idle_candidates", []):
+            route_evidence = _route_evidence(entry)
+            lines.append(
+                "  -- idle-candidate: {0} (count={1}, threshold={2}) -- "
+                "--take-idle {0}".format(
+                    entry["source"],
+                    route_evidence.get("count"),
+                    route_evidence.get("threshold"),
+                )
+            )
     elif state == RANKED:
         for entry in payload["candidates"]:
             marker = (
@@ -966,6 +1030,18 @@ def _build_parser():
             "candidate -- use --record-skip for a deliberate deviation."
         ),
     )
+    parser.add_argument(
+        "--take-idle",
+        metavar="SOURCE",
+        default=None,
+        help=(
+            "#1758: commit to SOURCE from rank()'s own idle_candidates -- "
+            "only valid when state is nothing-due and SOURCE names a "
+            "source still holding a positive count below its own "
+            "threshold. Refuses outside nothing-due, and refuses a SOURCE "
+            "not currently an idle candidate."
+        ),
+    )
     return parser
 
 
@@ -981,6 +1057,56 @@ def _resolve_ranked(root):
         )
         return None
     return payload
+
+
+def _resolve_idle(root):
+    """`rank(root)`, refusing anything but a `NOTHING_DUE` payload with a
+    printed `FAIL:` and `None` -- the `--take-idle` counterpart of
+    `_resolve_ranked`. `--take-idle` only makes sense once `rank()` itself
+    has already found nothing ordinarily due; a `RANKED` state has its own
+    top candidate, which `--take`/`--record-skip` already act on."""
+    payload = rank(root)
+    if payload.get("state") != NOTHING_DUE:
+        print(
+            "FAIL: rank() is not currently {0!r} (state={1!r}), so there is "
+            "no below-threshold backlog to take".format(
+                NOTHING_DUE, payload.get("state")
+            )
+        )
+        return None
+    return payload
+
+
+def _take_idle_cli(root, source, state_file_override=None):
+    """#1758: the below-threshold counterpart of `_take_cli` -- commits to
+    `source` from `rank()`'s own `idle_candidates` rather than its ordinary
+    `candidates[0]`, for the case a `nothing-due` reading still has a
+    standing backlog nobody has acted on. Arms the same
+    `_arm_route_source` receipt `_take_cli` does; for curate/triage's own
+    `UNDER`-threshold branch that write is already a no-op (only the `OVER`
+    branch ever checks `_route_already_seen`), so this call is exactly as
+    harmless where nothing needs arming as `_take_cli` already is for
+    inbound/release."""
+    payload = _resolve_idle(root)
+    if payload is None:
+        return 1
+    idle = payload.get("idle_candidates", [])
+    match = next((entry for entry in idle if entry.get("source") == source), None)
+    if match is None:
+        available = ", ".join(sorted(entry["source"] for entry in idle)) or "none"
+        print(
+            "FAIL: {0!r} is not a below-threshold idle candidate right now "
+            "(available: {1})".format(source, available)
+        )
+        return 1
+    config = payload["config"]
+    if state_file_override is not None:
+        config = dict(config)
+        config["state_file"] = state_file_override
+    routes = _routes(root, config, git_bin=gh_which.safe_which("git"))
+    _arm_route_source(root, config, routes, source)
+    print("OK: took {0} (idle)".format(source))
+    return 0
 
 
 def _take_cli(root, source, state_file_override=None):
@@ -1105,6 +1231,10 @@ def main(argv=None):
         )
     if args.take is not None:
         return _take_cli(args.root, args.take, state_file_override=args.state_file)
+    if args.take_idle is not None:
+        return _take_idle_cli(
+            args.root, args.take_idle, state_file_override=args.state_file
+        )
     payload = rank(args.root)
     if args.json:
         print(json.dumps(payload, indent=2, sort_keys=True))
