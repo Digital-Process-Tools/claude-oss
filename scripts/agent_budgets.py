@@ -572,7 +572,20 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # skipped only on the could-not-tell stop at the top of the file, where
     # no marker of this run's own was ever written. 13062 B became 14256 B,
     # past the 13300 B ceiling. Ceiling moves to 14400 B, ~1% headroom.
-    "agents/doctor.md": (14799, 14900),
+    # Re-baselined for #1778: the classifier-denial clause (disposition 2 --
+    # one identical retry, then could-not-repair) and its pinning test
+    # landed with no ceiling raise, leaving CI red on this file's own
+    # baseline/budget guard. 14799 B became 15344 B, past the 14900 B
+    # ceiling. Nothing already in the file argued for cutting to make room;
+    # ceiling moves to 15500 B, ~1% headroom.
+    # Re-baselined for #1786, same lane: the exit-4 prose conflated an
+    # unreadable role marker with a confirmed live overwrite, one message
+    # for both. The fix splits the two, naming which line to write for
+    # each rather than asserting an overwrite the command never confirmed.
+    # 15344 B became 15978 B, past the 15500 B ceiling. Nothing already in
+    # the file argued for cutting to make room; ceiling moves to 16200 B,
+    # ~1.4% headroom.
+    "agents/doctor.md": (15978, 16200),
     # #1499: new file. A developer lane used to start with thirty
     # orientation reads it then carried for three hundred turns; measured
     # on one three-issue lane, 134.4M context tokens against 65.8M for the

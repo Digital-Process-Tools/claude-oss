@@ -672,12 +672,28 @@ def main(argv=None):
             elif state == _agent_role._MARKER_OS_ERROR:
                 marker_note = "could not clear: {0}".format(exc)
             elif state == _agent_role._MARKER_OWNER_MISMATCH:
-                marker_note = (
-                    "refused (owner mismatch): a live marker now names "
-                    "role {0!r}, not sub-manager -- left alone rather than "
-                    "dropping someone else's live declaration "
-                    "(#1752)".format(exc)
-                )
+                if exc is None:
+                    # #1786: `exc` is `None` for the unreadable-marker case
+                    # (agent_role.py:385), not only for the live-mismatch
+                    # case (agent_role.py:390, where `exc` is the role
+                    # string) -- the two share one state constant. Printing
+                    # "role {0!r}".format(exc) here for the unreadable case
+                    # rendered "role None", asserting a read that never
+                    # happened. Mirrors agent_role.py's own CLI, which
+                    # already carries this distinction (lines 668-677).
+                    marker_note = (
+                        "refused (owner mismatch): the marker could not be "
+                        "read to confirm it still names sub-manager -- left "
+                        "alone rather than risk dropping someone else's "
+                        "live declaration (#1752)"
+                    )
+                else:
+                    marker_note = (
+                        "refused (owner mismatch): a live marker now names "
+                        "role {0!r}, not sub-manager -- left alone rather than "
+                        "dropping someone else's live declaration "
+                        "(#1752)".format(exc)
+                    )
             else:
                 marker_note = "nothing to clear"
 

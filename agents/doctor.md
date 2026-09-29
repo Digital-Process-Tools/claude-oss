@@ -215,11 +215,17 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --clear --root . --expect-
 
 `--expect-role doctor` (#1752) guards against a race a plain `--clear` cannot see: a sub-manager's
 own forced retry (#1740) can overwrite a live `doctor` marker mid-run, and an unconditional clear
-would then delete that sub-manager's own declaration instead of yours. Exit 4 means exactly that
-happened and was correctly left alone -- informational, not a failure: add `could-not-tell: this
-run's own role marker was overwritten mid-run (exit 4, #1752) -- another agent's declaration, left
-in place`. Any other nonzero exit is not fatal to your report either, but it is still a finding: add
-`could-not-tell: could not
+would then delete that sub-manager's own declaration instead of yours. Exit 4 means the refusal
+fired, and that is correctly left alone -- informational, not a failure -- but it covers two
+different states, not one (#1786): the marker may be LIVE and now name a different role (the
+overwrite this paragraph describes), or it may exist but could not be READ at all, which says
+nothing about any overwrite having happened. What the command printed on stdout says which; read
+it before writing your own line. For a confirmed overwrite, add `could-not-tell: this run's own
+role marker was overwritten mid-run (exit 4, #1752) -- another agent's declaration, left in place`.
+For an unreadable marker, add `could-not-tell: this run's own role marker could not be read to
+confirm it still names doctor (exit 4, #1752) -- left alone rather than risk dropping someone
+else's live declaration` instead; do not claim an overwrite you cannot confirm. Any other nonzero
+exit is not fatal to your report either, but it is still a finding: add `could-not-tell: could not
 clear this run's own role marker -- <what the command printed>` as one more line rather than staying
 silent about it, the same "never fold this into a clean report" rule the digest check just above
 gives.
