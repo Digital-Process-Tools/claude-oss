@@ -135,6 +135,14 @@ For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
    untrusted-input and upstream-dependency rules below rather than patching around it). Report
    `not-ours: <who> -- <one line of evidence>`, naming the upstream issue number when one already
    exists.
+
+   **A classifier denial falls under this disposition. It is not an obstacle to route around
+   (#1778).** Follow `skills/manager/SKILL.md`'s classifier-denial rule (#1724, #1751): retry the
+   identical, unmodified call at most once. A second denial is final. Report
+   `could-not-repair: denied by the permission classifier -- <exact command>; allow rule that
+   would permit it: Bash(...)` and move to the next line.
+   Never state that anyone else re-sent, approved or authorised a call
+   unless a tool result in your own context says so.
 3. **Genuinely unclear, after you tried.** Investigation that ran and did not resolve -- a
    rate-limit mystery, something else you tried and could not settle that is not disposition
    1's own `could-not-repair` (which covers everything a repair itself could not determine, so
