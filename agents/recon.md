@@ -54,7 +54,9 @@ very next call's plain `pwd` printed the parent dir again). Prefix every read wi
 instead, as its own top-level argument beside the op -- `supertool "cwd:<worktree>" "read:..."`,
 the same two-argument form `.claude/jit-context/vocabulary/00-manual/worktree-writes-land-where-
 cwd-says.md` documents for a write -- so each call is pinned on its own rather than trusting one
-`cd` to hold for the rest of your run.
+`cd` to hold for the rest of your run. `cwd:PATH` cannot ride inside a `batch:@-` payload as one of
+its entries -- issue it as its own top-level call immediately before the batch when you are
+batching several reads per call, per that same jit-context file's own last bullet.
 
 When no worktree path is named at all (a dispatcher's own `--suggest-companions` call, made before
 any lane's worktree exists), cut one yourself at `<worktree_root>/recon-<UTC timestamp,

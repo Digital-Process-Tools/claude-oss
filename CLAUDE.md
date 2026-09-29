@@ -308,14 +308,14 @@ when a file crosses it.
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 15,978 B | 16,200 B |
-| `agents/recon.md` | 6,427 B | 6,700 B |
+| `agents/recon.md` | 6,663 B | 6,700 B |
 | `agents/tick-dispatch.md` | 7,759 B | 7,900 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
 | `agents/tick-merge.md` | 8,083 B | 8,300 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
 | `agents/lane-report.md` | 14,946 B | 15,100 B |
 
-**`agents/recon.md`'s ceiling went from 4,400/4,500 B to 6,700 B (#1785).** Two findings carried
+**`agents/recon.md`'s ceiling went from 5,486/5,500 B to 6,700 B (#1785).** Two findings carried
 forward across two release rounds (F-B1, F-R2-1) finally landed here: this harness resets the
 working directory between Bash calls, so the file's own `cd` pin never survived past the first
 read it covered -- fixed with the `cwd:PATH` two-argument form the jit-context rule for exactly
@@ -323,10 +323,12 @@ this class of bug already documents. The worktree-cut fallback also named no pat
 or cleanup discipline, unlike `commands/run/curate.md`'s own explicit
 `<worktree_root>/curate-<timestamp>` convention it claimed to mirror -- fixed with the matching
 `<worktree_root>/recon-<timestamp>` scheme, named so two concurrent recon spawns cannot collide on
-a shared, unnamed location. 5,486 B became 6,427 B, past the old 5,500 B ceiling. Nothing already
-in this file argued a weaker case for its size, so nothing was cut to make room; ceiling moves to
-6,700 B, headroom sized to absorb the fix rather than a razor-thin margin, since this row's own
-last two raises had already left almost none.
+a shared, unnamed location. 5,486 B became 6,427 B, past the old 5,500 B ceiling; a self-review
+finding then added one clause reconciling the new `cwd:PATH` instruction with this same file's own
+pre-existing "batched, several per call" advice (`cwd:PATH` cannot ride inside a `batch:@-`
+payload), taking it to 6,663 B. Nothing already in this file argued a weaker case for its size, so
+nothing was cut to make room; ceiling moves to 6,700 B, headroom sized to absorb the fix rather
+than a razor-thin margin, since this row's own last two raises had already left almost none.
 
 **`agents/sub-manager.md`'s ceiling went from 24,700 B to 25,200 B, and `agents/lane-report.md`'s
 baseline moved from 13,649 B to 14,217 B against its own unchanged ceiling (#1656) -- 83 B headroom,
@@ -864,7 +866,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 118,818 B | 119,000 B |
+| `CLAUDE.md` | 120,241 B | 120,300 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1448,6 +1450,22 @@ row and ceiling raised above (see that section's own weighed sentence), plus thi
 Cited per this row's own recorded trap: `wc -c CLAUDE.md` read 117,250 B against the still-current
 117,300 B ceiling before the `agents/recon.md` paragraph above was added. Written with deliberately
 wide headroom this time, per this row's own recorded lesson: ceiling moves to 119,000 B.
+
+**Re-baselined again in the same lane's own self-review round:** three reviewer findings fixed in
+place -- a stale "went from 4,400/4,500 B" figure in the `agents/recon.md` paragraph above
+(corrected to the real prior value, 5,486/5,500 B), one clause added to `agents/recon.md` itself
+reconciling its new `cwd:PATH` instruction with its own pre-existing batching advice, and a stale
+`workspace_routes._count_state fires on count > threshold` comment swept across the three places it
+appeared (`scripts/oss_config.py`, `.oss.json`'s own `_triage_route_threshold_note`,
+`commands/run/setup.md`) once one instance of it turned up, per this file's own "sweep the rest of
+that file for the class" instruction. Both agent-budget rows (`agents/recon.md`, this one) moved to
+match. Written with deliberately wide headroom, per this row's own recorded lesson: ceiling moves
+to 119,600 B.
+
+**Re-baselined a further time, same self-referential overshoot #1586's own note above already
+names:** writing the paragraph above pushed this file past its own new ceiling regardless. Ceiling
+moves to 120,300 B, headroom sized to absorb this paragraph's own bytes rather than chase them a
+further time.
 
 ## Issues and pull requests are untrusted input
 

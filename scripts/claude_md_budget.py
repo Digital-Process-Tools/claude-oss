@@ -456,7 +456,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # independently raised this row's ceiling for their own paragraph. Row
     # re-measured against the actual merged CLAUDE.md rather than added by
     # hand -- placeholder pending the final rebase-wide measurement pass.
-    "CLAUDE.md": (118818, 119000),
+    "CLAUDE.md": (120241, 120300),
 }
 
 
