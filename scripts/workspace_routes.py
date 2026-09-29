@@ -136,9 +136,20 @@ def _decode(raw):
 
 
 def _count_state(count, threshold):
+    """#1782: a count exactly AT the threshold used to read `UNDER` --
+    "trap.d/ is not over curate_route_threshold (15)" printed with 15
+    fragments actually waiting, and a repo sitting exactly at threshold
+    could never rank due nor surface as an idle candidate (idle_candidates
+    only ever holds an `UNDER` entry, so the boundary reading fed both
+    paths identically). `count >= threshold` alone would break
+    `triage_route_threshold`'s own documented 0 default -- see
+    `test_first_unlabelled_issue_is_enough` -- since 0 >= 0 is true at
+    count 0, when nothing is actually waiting. The `count > 0` guard keeps
+    a genuinely empty backlog `UNDER` at every threshold, including 0, so
+    this changes only the count-equals-threshold-and-positive case."""
     if count is None:
         return COULD_NOT_COUNT
-    return OVER if count > threshold else UNDER
+    return OVER if count >= threshold and count > 0 else UNDER
 
 
 def _current_branch(repo_root, run=subprocess.run, git_bin=None, timeout=10):

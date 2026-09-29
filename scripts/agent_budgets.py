@@ -624,7 +624,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # contradicted this file's pre-existing "never run a git write" line a
     # few lines above -- reconciled by naming the one narrow exception
     # inline. 5291 B became 5486 B. Ceiling unchanged; 14 B headroom.
-    "agents/recon.md": (5486, 5500),
+    "agents/recon.md": (6663, 6700),
     # #1544: new file. `oss:sub-manager` used to read the board, rank it and
     # reason about dispatch fill inline, in the same context that goes on to
     # review, merge and account for the whole tick -- one sub-manager was

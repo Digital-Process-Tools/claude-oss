@@ -451,7 +451,13 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # wide headroom per the same self-referential-overshoot lesson CLAUDE.md's
     # own #1586 note already gives, rather than converged on across a
     # second pass: ceiling moves to 118500 B.
-    "CLAUDE.md": (117558, 118500),
+    #
+    # Merged: fix/1782 x origin/main (#1781 already merged, commit 22e2ddca).
+    # Both branches independently raised this row's ceiling for their own
+    # paragraph. Row re-measured against the actual merged CLAUDE.md rather
+    # than added by hand, including two further self-referential-overshoot
+    # corrections recorded in CLAUDE.md's own history section above.
+    "CLAUDE.md": (123647, 124200),
 }
 
 

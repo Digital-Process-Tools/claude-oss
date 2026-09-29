@@ -365,6 +365,8 @@ def test_record_skip_with_state_file_override_writes_scratch_not_configured_file
             "--root",
             str(root),
             "--record-skip",
+            "inbound",
+            "--taking",
             "curate",
             "--reason",
             "quiet board",

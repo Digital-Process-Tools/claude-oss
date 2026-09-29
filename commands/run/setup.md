@@ -126,8 +126,9 @@ The rules that matter, all enforced by `scripts/oss_config.py`:
   `trap.d/` fragment is inert while it waits, so curate batches them. An unlabelled issue is
   invisible to dispatch for exactly as long as it stays unlabelled -- `select_issues_rank` refuses
   to rank without a priority label -- so there is no backlog size at which waiting is correct, and
-  the route fires on `count > threshold`. Until #1651 gave doctor a line for it, an absent key
-  here read as `not-due` rather than as unconfigured, on every repo this plugin ever onboarded.
+  the route fires on `count >= threshold and count > 0` (#1782). Until #1651 gave doctor a line for
+  it, an absent key here read as `not-due` rather than as unconfigured, on every repo this plugin
+  ever onboarded.
 
 ## Verify the test command before writing it
 

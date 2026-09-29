@@ -80,7 +80,7 @@ def test_written_threshold_validates_and_is_project_scoped():
 def test_written_threshold_actually_arms_the_curate_route(monkeypatch):
     """Wiring check, not just presence -- the control the issue itself names: with the
     written threshold, a fragment count one over it must arm the route (`decide()`'s
-    own OVER state), and a count at the threshold must not (`UNDER`)."""
+    own OVER state), and a count exactly at a positive threshold must too (#1782)."""
     config = oss_config.build(_probe())
     threshold = config["curate_route_threshold"]
     # #1676: build() now writes triage_route_threshold too, so decide() would
@@ -119,11 +119,12 @@ def test_written_threshold_actually_arms_the_curate_route(monkeypatch):
         ),
     )
     armed_route, results = workspace_routes.decide(Path("."), config=config)
-    assert results["curate"]["state"] == workspace_routes.UNDER, (
-        "a fragment count at the written threshold armed the curate route early: "
-        "{!r}".format(results["curate"])
+    assert results["curate"]["state"] == workspace_routes.OVER, (
+        "a fragment count exactly at a positive written threshold must read 'over' "
+        "(#1782) -- a repo sitting exactly at threshold could never rank due "
+        "otherwise: {!r}".format(results["curate"])
     )
-    assert armed_route is None
+    assert armed_route == "curate"
 
 
 # ------------------------------------------------------------------- gap 2: CLAUDE_MD

@@ -2793,8 +2793,11 @@ def build(probe):
         # them; an unlabelled issue is invisible to dispatch for exactly as long as it
         # stays unlabelled (`select_issues_rank.rank` refuses to rank without a
         # priority label), so there is no backlog size at which waiting is correct.
-        # `workspace_routes._count_state` fires on `count > threshold`, so 0 means the
-        # first unlabelled issue makes a sweep due. Cost is bounded by how often
+        # `workspace_routes._count_state` fires on `count >= threshold and count > 0`
+        # (#1782 added the `>=` half for curate's own at-threshold boundary; the
+        # `count > 0` guard keeps this identical to plain `count > threshold` for a 0
+        # threshold, since 0 is never itself a positive count), so 0 means the first
+        # unlabelled issue makes a sweep due. Cost is bounded by how often
         # `/oss:run` polls, not by issue count: one triager spawn labels the whole
         # backlog, `next_action.py`'s signature receipt stops the same count from
         # re-firing, and `DEFAULT_ORDER` ranks triage last so it never displaces

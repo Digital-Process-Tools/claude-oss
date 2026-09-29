@@ -987,6 +987,8 @@ def test_skipping_curate_over_triage_does_not_arm_curates_receipt(
             "--root",
             str(root),
             "--record-skip",
+            "curate",
+            "--taking",
             "triage",
             "--reason",
             "label coverage matters more this tick",
@@ -1090,7 +1092,16 @@ def test_record_skip_cli_writes_a_state_entry(tmp_path, monkeypatch, capsys):
         },
     )
     rc = next_action.main(
-        ["--root", str(root), "--record-skip", "release", "--reason", "quiet board"]
+        [
+            "--root",
+            str(root),
+            "--record-skip",
+            "inbound",
+            "--taking",
+            "release",
+            "--reason",
+            "quiet board",
+        ]
     )
     assert rc == 0
     out = capsys.readouterr().out
@@ -1117,7 +1128,16 @@ def test_record_skip_cli_fails_loudly_when_nothing_is_ranked(
     _quiet_inbound(monkeypatch)
     _not_fired_release(monkeypatch)
     rc = next_action.main(
-        ["--root", str(root), "--record-skip", "release", "--reason", "no reason"]
+        [
+            "--root",
+            str(root),
+            "--record-skip",
+            "release",
+            "--taking",
+            "curate",
+            "--reason",
+            "no reason",
+        ]
     )
     assert rc != 0
     assert "FAIL:" in capsys.readouterr().out
@@ -1149,10 +1169,100 @@ def test_record_skip_cli_traps_a_too_long_reason_as_fail_not_a_traceback(
     )
     too_long_reason = "x" * 250
     rc = next_action.main(
-        ["--root", str(root), "--record-skip", "release", "--reason", too_long_reason]
+        [
+            "--root",
+            str(root),
+            "--record-skip",
+            "inbound",
+            "--taking",
+            "release",
+            "--reason",
+            too_long_reason,
+        ]
     )
     assert rc != 0
     assert "FAIL:" in capsys.readouterr().out
+
+
+def test_record_skip_cli_needs_taking(tmp_path, monkeypatch, capsys):
+    """#1782: `--record-skip` alone (no `--taking`) must be refused with a
+    clear message naming the missing flag, rather than silently falling
+    back to the pre-#1782 single-argument reading."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"state_file": ".max/oss-watch.json"})
+    _quiet_inbound(monkeypatch, unruled=1)
+    _not_fired_release(monkeypatch)
+    rc = next_action.main(
+        ["--root", str(root), "--record-skip", "inbound", "--reason", "quiet board"]
+    )
+    out = capsys.readouterr().out
+    assert rc != 0, out
+    assert "--taking" in out
+
+
+def test_record_skip_cli_refuses_when_the_skipped_source_is_stale(
+    tmp_path, monkeypatch, capsys
+):
+    """#1782's own repro: a scheduler session named `release` (the
+    candidate it was skipping) as `--record-skip`'s value and `curate` as
+    what it was actually taking. If `release` is not really the current
+    top candidate any more, the call must fail loudly naming the mismatch
+    rather than silently recording a skip against a stale reading."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"state_file": ".max/oss-watch.json"})
+    _quiet_inbound(monkeypatch, unruled=1)
+    _not_fired_release(monkeypatch)
+    rc = next_action.main(
+        [
+            "--root",
+            str(root),
+            "--record-skip",
+            "release",
+            "--taking",
+            "curate",
+            "--reason",
+            "release already in flight; maintainer asked to curate",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc != 0, out
+    assert "does not match the current top candidate" in out
+    assert "'inbound'" in out
+
+
+def test_record_skip_cli_succeeds_when_skipping_the_real_top_candidate(
+    tmp_path, monkeypatch, capsys
+):
+    """Positive control for the test above, and #1782's own exact scenario
+    made to work: skipping the genuine top candidate (`inbound`) while
+    taking a different source (`curate`) must succeed -- this is the call
+    that used to be refused as "there is nothing to record" when a caller
+    passed the taken source (not the skipped one) as `--record-skip`'s
+    single argument."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"state_file": ".max/oss-watch.json", "curate_route_threshold": 0}
+    )
+    (root / "trap.d").mkdir()
+    (root / "trap.d" / "1.some-lesson.md").write_text("a lesson\n")
+    _quiet_inbound(monkeypatch, unruled=1)
+    _not_fired_release(monkeypatch)
+    rc = next_action.main(
+        [
+            "--root",
+            str(root),
+            "--record-skip",
+            "inbound",
+            "--taking",
+            "curate",
+            "--reason",
+            "inbound can wait; curate backlog matters more this tick",
+        ]
+    )
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "OK:" in out
+    assert "took curate over inbound" in out
 
 
 # --- inbound repeat-suppression (#1433) -------------------------------------
@@ -1512,6 +1622,91 @@ def test_take_idle_arms_the_receipt_the_same_way_take_does(tmp_path, monkeypatch
 
     second = next_action.rank(root)
     assert second["idle_candidates"] == []
+
+
+def test_take_idle_cli_fails_loudly_when_the_receipt_write_fails(
+    tmp_path, monkeypatch, capsys
+):
+    """#1787: `_take_idle_cli` discarded `_idle_already_seen`'s own return
+    value and printed `OK:` unconditionally, identically whether the
+    receipt was written or nothing was persisted at all. Pointing
+    `--state-file` at a path whose parent is itself a plain file (so the
+    write's own `mkdir(parents=True, exist_ok=True)` cannot create a real
+    parent directory there) makes `_route_already_seen` return
+    `(False, "armed (...), but the receipt could not be recorded (...)")`
+    -- this must now print `FAIL:` and exit non-zero rather than the
+    misleading `OK:` the discarded return used to produce regardless."""
+    root = _git_repo(tmp_path)
+    _write_config(root, {"curate_route_threshold": 15})
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    monkeypatch.setattr(
+        next_action.workspace_routes,
+        "decide",
+        _decide_with(
+            curate={
+                "configured": True,
+                "state": workspace_routes.UNDER,
+                "count": 12,
+                "threshold": 15,
+                "why": "trap.d/ is not over curate_route_threshold (15)",
+            }
+        ),
+    )
+    blocking_file = root / "not-a-directory"
+    blocking_file.write_text("this is a file, not a directory\n")
+    unwritable = blocking_file / "child.json"
+    rc = next_action.main(
+        ["--root", str(root), "--take-idle", "curate", "--state-file", str(unwritable)]
+    )
+    out = capsys.readouterr().out
+    assert rc != 0, out
+    assert "FAIL:" in out
+    assert "OK:" not in out
+
+
+def test_take_idle_cli_reports_ok_when_the_receipt_was_already_recorded(
+    tmp_path, monkeypatch, capsys
+):
+    """Positive control for the test above: a genuine no-op (`seen=True`,
+    the identical reading already recorded) is not a failure and must
+    still print `OK:`. Unreachable through the ordinary `--take-idle` flow
+    -- `idle_candidates` already filters out anything `_idle_already_seen`
+    (arm=False) reports as seen, so a second real CLI call on the same
+    source refuses at the "not a below-threshold idle candidate" stage
+    before ever reaching this branch -- so `_idle_already_seen` itself is
+    stubbed directly to exercise it."""
+    root = _git_repo(tmp_path)
+    _write_config(
+        root, {"curate_route_threshold": 15, "state_file": ".max/oss-watch.json"}
+    )
+    (root / "trap.d").mkdir()
+    for i in range(3):
+        (root / "trap.d" / "{0}.some-lesson.md".format(i)).write_text("a lesson\n")
+    _quiet_inbound(monkeypatch)
+    _not_fired_release(monkeypatch)
+    _quiet_triage_trigger(monkeypatch)
+    real_idle_already_seen = next_action._idle_already_seen
+
+    def _seen_once_armed(repo_root, config, source, signature, arm=False):
+        # `_idle_candidates` (inside `rank()`) calls this with `arm=False`
+        # to decide whether `source` still belongs in the idle list at
+        # all -- it must see the real, not-yet-seen answer, or `curate`
+        # would be filtered out of `idle_candidates` before
+        # `_take_idle_cli` ever got a `match` to act on. Only the
+        # `arm=True` call `_take_idle_cli` itself makes is stubbed to the
+        # already-recorded outcome this test exercises.
+        if not arm:
+            return real_idle_already_seen(repo_root, config, source, signature, arm=arm)
+        return True, "unchanged since the receipt already recorded (fixture)"
+
+    monkeypatch.setattr(next_action, "_idle_already_seen", _seen_once_armed)
+
+    rc = next_action.main(["--root", str(root), "--take-idle", "curate"])
+    out = capsys.readouterr().out
+    assert rc == 0, out
+    assert "OK:" in out
 
 
 def test_idle_candidates_re_arm_when_the_reading_changes(tmp_path, monkeypatch):
