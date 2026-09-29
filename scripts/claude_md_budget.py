@@ -443,7 +443,15 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # already names. Ceiling moves to 116500 B this time, headroom
     # deliberately wide rather than a tight margin, so the CLAUDE.md-side
     # sentence recording this does not chase it a further time.
-    "CLAUDE.md": (115361, 116500),
+    # Re-baselined for #1778/#1786, the third editing exception: the agent
+    # budget table's agents/doctor.md row and ceiling raised twice in the
+    # same lane (CI-unblock for #1778's own already-merged fix, then the
+    # #1786 exit-4 prose fix on the same file), plus two weighed sentences
+    # recording both raises, all in CLAUDE.md itself. Set with deliberately
+    # wide headroom per the same self-referential-overshoot lesson CLAUDE.md's
+    # own #1586 note already gives, rather than converged on across a
+    # second pass: ceiling moves to 118500 B.
+    "CLAUDE.md": (117558, 118500),
 }
 
 

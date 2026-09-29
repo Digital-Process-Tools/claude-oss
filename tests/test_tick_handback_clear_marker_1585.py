@@ -142,3 +142,39 @@ def test_a_completed_tick_does_not_drop_a_marker_that_now_names_a_different_role
     )
     out = capsys.readouterr().out
     assert "marker: refused" in out or "owner mismatch" in out.lower()
+
+
+# -- #1786: an unreadable marker must not render as a live overwrite --
+
+
+def test_a_completed_tick_reports_an_unreadable_marker_distinctly_from_a_live_mismatch(
+    tmp_path, capsys, monkeypatch
+):
+    """`_clear_role_marker_detail` returns the same `_MARKER_OWNER_MISMATCH`
+    state for two different things: a LIVE marker naming a different role
+    (`exc` is that role string) and a marker that exists but could not be
+    read at all (`exc` is `None`). Before this fix, tick_handback.py's own
+    formatting did not distinguish them and printed "a live marker now
+    names role None, not sub-manager" for the unreadable case -- asserting
+    both "live" and "now names" for a state that is neither. This proves
+    the unreadable case gets its own message, matching agent_role.py's own
+    CLI (#1752), and never claims a role was read."""
+    root = _repo(tmp_path)
+    agent_role.write_role_marker("sub-manager", root=str(root), written_at=time.time())
+
+    def _unreadable(root, expect_role=None):
+        return agent_role._MARKER_OWNER_MISMATCH, None
+
+    monkeypatch.setattr(agent_role, "_clear_role_marker_detail", _unreadable)
+
+    msg = tmp_path / "handback.txt"
+    msg.write_text(
+        "TICK: completed\nTICK-ENDS: nothing-left\nAll clean.\n", encoding="utf-8"
+    )
+    rc = tick_handback.main([str(msg), "--clear-marker-root", str(root)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "marker: refused" in out
+    assert "could not be read" in out
+    assert "role None" not in out
+    assert "live marker now names" not in out

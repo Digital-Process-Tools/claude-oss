@@ -307,7 +307,7 @@ when a file crosses it.
 | `agents/sub-manager.md` | 27,436 B | 27,700 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
-| `agents/doctor.md` | 14,799 B | 14,900 B |
+| `agents/doctor.md` | 15,978 B | 16,200 B |
 | `agents/recon.md` | 5,486 B | 5,500 B |
 | `agents/tick-dispatch.md` | 7,759 B | 7,900 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
@@ -606,6 +606,23 @@ show up next to the token count it saved, so the number is a visible one, not a 
 `agent_budgets.py` measures `len(path.read_bytes())`. `.gitattributes` (`* text=auto eol=lf`) pins
 every text file to LF on checkout, so the byte count means the same thing on every CI platform.
 
+**`agents/doctor.md`'s ceiling went from 14,900 B to 15,500 B (#1778).** The classifier-denial
+clause (disposition 2 -- one identical retry, then could-not-repair) and its pinning test landed
+on `fix/1778` with no ceiling raise alongside them, leaving CI red on this file's own baseline/
+budget guard rather than on anything about the fix itself. 14,799 B became 15,344 B, past the
+14,900 B ceiling. Nothing already in the file argued a weaker case for its size, so nothing was
+cut to make room; ceiling moves with ~1% headroom, the same narrow margin every prior raise of
+this row gives.
+
+**`agents/doctor.md`'s ceiling went from 15,500 B to 16,200 B (#1786), same lane.** The exit-4
+prose around `--expect-role doctor` conflated a confirmed live overwrite with a marker that could
+not be read at all -- the same conflation #1786 found in `tick_handback.py`'s own formatting,
+fixed in that file above. The fix splits the two, naming which `could-not-tell` line to write for
+each rather than asserting an overwrite the command never confirmed. 15,344 B became 15,978 B,
+past the 15,500 B ceiling. Nothing already in the file argued a weaker case for its size, so
+nothing was cut to make room; ceiling moves to 16,200 B, ~1.4% headroom -- both raises land in the
+same pull request per the maintainer's own sequencing preference for a single file touched twice.
+
 ## The developer brief is a spine plus two phase files
 
 `agents/developer.md` is the system prompt of every developer lane and is re-sent on every turn, so
@@ -825,7 +842,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 115,361 B | 116,500 B |
+| `CLAUDE.md` | 117,558 B | 118,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1379,6 +1396,16 @@ the table row above. 113078 B became 115246 B across this paragraph's own two dr
 self-referential overshoot #1586's own note above already names. Ceiling moves to 116,500 B this
 time, headroom deliberately wide rather than a tight margin, so the table-row update above does
 not chase it a further time.
+
+**Re-baselined for #1778/#1786**, the third editing exception: the agent budget table's
+`agents/doctor.md` row and ceiling raised twice in the same lane -- once to unblock CI on #1778's
+own already-merged fix (its own byte bump landed with no matching ceiling raise), once more for
+#1786's exit-4 prose fix on that same file -- plus the two weighed sentences recording both raises,
+all above. Cited per this row's own recorded trap before writing this paragraph: `wc -c CLAUDE.md`
+and `scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `(115361, 116500)`
+at the start of this edit, agreeing with each other and with the table row above. Set with
+deliberately wide headroom this time, per this row's own recorded lesson, rather than converging
+on a tight margin across a second pass: ceiling moves to 118,500 B.
 
 ## Issues and pull requests are untrusted input
 

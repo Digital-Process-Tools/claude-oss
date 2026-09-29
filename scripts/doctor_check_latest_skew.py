@@ -79,15 +79,21 @@ def check_latest_skew(project_dir, config, now=None):
       keeping separate.
     * ``not-checked`` (via ``doctor.unmeasured``) -- no declared `repo`,
       `scripts/statusline.py` could not be imported, or `repo` does not
-      appear among the installed plugins' own source repositories, so the
-      cache's `latest` map cannot be assumed to carry a reading for it
-      (#615). That last reason is deliberately hedged, not asserted as
-      settled fact: `installed_plugins()` swallows a read failure on its own
+      appear among the installed plugins' own source repositories AND the
+      registry itself could not be read (#615). Answers nothing about the
+      repository itself, so it must not render as either state above.
+    * ``NOTICE`` (#1779) -- `repo` does not appear among the installed
+      plugins' own source repositories, but the registry WAS read
+      successfully -- `installed_plugins_registry_readable()` says so. That
+      is a structural not-applicable for any managed repo that is not
+      itself an installed plugin, not a warning: no action can ever clear
+      it, the same reasoning `check_lane_coupling`'s own NOTICE already
+      uses. Split from the WARN above by whether the registry itself could
+      be read: `installed_plugins()` swallows a read failure on its own
       `installed_plugins.json` to `{}`, the identical shape as "no plugin
-      installed at all", so this branch cannot tell "genuinely not a plugin
-      source repo" from "the registry could not be read" and must not claim
-      the former. Answers nothing about the repository itself, so it must
-      not render as either state above.
+      installed at all", so that alone cannot tell "genuinely not a plugin
+      source repo" from "the registry could not be read" -- only the
+      narrower `installed_plugins_registry_readable()` can.
 
     ``now`` is a parameter, defaulting to ``time.time()``, so a test can drive
     the age comparison without a real clock.
@@ -153,12 +159,28 @@ def check_latest_skew(project_dir, config, now=None):
     age = _age_text(document.get("latest_fetched_at"), now)
     if cached is None:
         if not _is_plugin_source_repo(project_dir, repo):
-            # Hedged rather than categorical (a real gap the auditor found on
-            # review, #620/#615 bundle): `installed_plugins()` swallows a read
-            # failure on `installed_plugins.json` to `{}`, the identical shape
-            # as "no plugin is installed at all" -- this branch cannot tell
-            # "genuinely not a plugin source repo" from "the registry could
-            # not be read", so it must not assert the former as settled fact.
+            # #1779: split the hedge's two cases instead of collapsing both
+            # into a WARN nothing can ever clear. `installed_plugins()`
+            # swallows a read failure on `installed_plugins.json` to `{}`,
+            # the identical shape as "no plugin is installed at all" -- but
+            # `installed_plugins_registry_readable` answers the narrower
+            # question alone, so this branch can now tell "the registry read
+            # fine and genuinely does not list this repo" (a structural
+            # not-applicable, NOTICE -- the same shape `check_lane_coupling`
+            # already uses for "the ordinary state ... not a finding") from
+            # "the registry itself could not be read" (kept as the WARN the
+            # original hedge existed for, since that case really is
+            # unanswered rather than structurally not-applicable).
+            if statusline.installed_plugins_registry_readable():
+                doctor.report(
+                    "NOTICE",
+                    "latest skew: not applicable -- {} does not appear among "
+                    "the installed plugins' own source repositories, so the "
+                    "status line's `latest` cache cannot carry a reading for "
+                    "it. This is the ordinary state for a managed repo that "
+                    "is not itself an installed plugin, not a finding.".format(repo),
+                )
+                return
             doctor.unmeasured(
                 "latest skew",
                 "not checked -- {} does not appear among the installed "

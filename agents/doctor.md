@@ -135,6 +135,14 @@ For every `WARN`/`FAIL` line, decide which of three things it is, in this order:
    untrusted-input and upstream-dependency rules below rather than patching around it). Report
    `not-ours: <who> -- <one line of evidence>`, naming the upstream issue number when one already
    exists.
+
+   **A classifier denial falls under this disposition. It is not an obstacle to route around
+   (#1778).** Follow `skills/manager/SKILL.md`'s classifier-denial rule (#1724, #1751): retry the
+   identical, unmodified call at most once. A second denial is final. Report
+   `could-not-repair: denied by the permission classifier -- <exact command>; allow rule that
+   would permit it: Bash(...)` and move to the next line.
+   Never state that anyone else re-sent, approved or authorised a call
+   unless a tool result in your own context says so.
 3. **Genuinely unclear, after you tried.** Investigation that ran and did not resolve -- a
    rate-limit mystery, something else you tried and could not settle that is not disposition
    1's own `could-not-repair` (which covers everything a repair itself could not determine, so
@@ -207,11 +215,17 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_role.py" --clear --root . --expect-
 
 `--expect-role doctor` (#1752) guards against a race a plain `--clear` cannot see: a sub-manager's
 own forced retry (#1740) can overwrite a live `doctor` marker mid-run, and an unconditional clear
-would then delete that sub-manager's own declaration instead of yours. Exit 4 means exactly that
-happened and was correctly left alone -- informational, not a failure: add `could-not-tell: this
-run's own role marker was overwritten mid-run (exit 4, #1752) -- another agent's declaration, left
-in place`. Any other nonzero exit is not fatal to your report either, but it is still a finding: add
-`could-not-tell: could not
+would then delete that sub-manager's own declaration instead of yours. Exit 4 means the refusal
+fired, and that is correctly left alone -- informational, not a failure -- but it covers two
+different states, not one (#1786): the marker may be LIVE and now name a different role (the
+overwrite this paragraph describes), or it may exist but could not be READ at all, which says
+nothing about any overwrite having happened. What the command printed on stdout says which; read
+it before writing your own line. For a confirmed overwrite, add `could-not-tell: this run's own
+role marker was overwritten mid-run (exit 4, #1752) -- another agent's declaration, left in place`.
+For an unreadable marker, add `could-not-tell: this run's own role marker could not be read to
+confirm it still names doctor (exit 4, #1752) -- left alone rather than risk dropping someone
+else's live declaration` instead; do not claim an overwrite you cannot confirm. Any other nonzero
+exit is not fatal to your report either, but it is still a finding: add `could-not-tell: could not
 clear this run's own role marker -- <what the command printed>` as one more line rather than staying
 silent about it, the same "never fold this into a clean report" rule the digest check just above
 gives.
