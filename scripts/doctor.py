@@ -7541,9 +7541,13 @@ def check_priority_labels(project_dir, config):
             "WARN",
             "labels.priority: could-not-tell -- the list {!r} contains an "
             "entry that is not a usable label name (expected every element "
-            "to be a non-empty string). select_issues_rank.rank treats a "
-            "malformed list the same as undeclared: could-not-rank for "
-            "every issue.".format(value),
+            "to be a non-empty string). select_issues_rank.rank does NOT "
+            "treat this uniformly like an absent/empty list: an issue whose "
+            "labels match one of the valid string entries still ranks, but "
+            "any issue that falls through to prefix-based band matching "
+            "raises TypeError on the non-string entry instead of "
+            "could-not-rank. Fix the offending entry in .oss.json's "
+            "labels.priority.".format(value),
         )
         return
     if value is None or (isinstance(value, list) and not value):

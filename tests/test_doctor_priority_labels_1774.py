@@ -14,6 +14,7 @@ control (`declared`) proves the same fixture does NOT trip the empty-list
 consequence line when the labels are actually set.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -21,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
+import oss_config  # noqa: E402
 
 
 def _config(labels):
@@ -97,3 +99,40 @@ def test_missing_config_is_reported_not_silently_skipped():
     assert state == "WARN"
     assert "labels.priority" in message
     doctor.FINDINGS.clear()
+
+
+def test_doctor_main_runs_the_check(tmp_path, monkeypatch, capsys):
+    """The check is registered: doctor's own run prints its line. Without
+    this, `check_priority_labels(project_dir, config)` could be dropped from
+    `main()` (typo, merge conflict, refactor) and no test would catch the
+    regression -- every other test above calls the function directly, never
+    through `main()`. Mirrors `test_doctor_check_event_filter_1499.py`'s own
+    `test_doctor_main_runs_the_check`.
+    """
+    config = {
+        "repo": "owner/name",
+        "default_branch": "main",
+        "clone": str(tmp_path),
+        "worktree_root": str(tmp_path / "wt"),
+        "branch_pattern": "fix/{issue}",
+        "test_command": "pytest",
+        "version_sites": ["README.md"],
+        "changelog_dir": None,
+        "docs_targets": ["README.md"],
+        "labels": {"priority": [], "lanes": []},
+        "state_file": ".max/oss-watch.json",
+    }
+    project, local = oss_config.split(config)
+    (tmp_path / oss_config.CONFIG_NAME).write_text(
+        json.dumps(project, indent=2), encoding="utf-8"
+    )
+    (tmp_path / oss_config.LOCAL_CONFIG_NAME).write_text(
+        json.dumps(local, indent=2), encoding="utf-8"
+    )
+    monkeypatch.setattr(doctor, "PLUGIN_ROOT", REPO_ROOT)
+    # #1577: a real `supertool doctor:probe` call, answering about this
+    # machine's install rather than this fixture's tmp_path tree.
+    monkeypatch.setattr(doctor, "check_supertool_validators", lambda *a, **k: None)
+    doctor.main(["--root", str(tmp_path), "--plugin-root", str(REPO_ROOT)])
+    out = capsys.readouterr().out
+    assert "labels.priority is empty" in out
