@@ -136,7 +136,13 @@ def test_a_non_plugin_repo_with_no_reading_is_not_checked_not_a_permanent_warn(
     for it is not a transient gap this check should keep warning about forever --
     it is structurally unanswerable, and the permanent `WARN ... could not be
     determined` this issue was filed against is what that renders as without this
-    branch."""
+    branch.
+
+    #1779: this is the exact scenario that issue was filed against -- a
+    readable registry that simply does not list this repo -- so the answer
+    is now NOTICE, not WARN; `installed_plugins_registry_readable` is
+    mocked to `True` (the registry reads fine here) rather than left to
+    whatever `installed_plugins.json` happens to be on this machine."""
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(
         statusline,
@@ -145,12 +151,17 @@ def test_a_non_plugin_repo_with_no_reading_is_not_checked_not_a_permanent_warn(
             "oss": {"repository": "Digital-Process-Tools/claude-oss"}
         },
     )
+    monkeypatch.setattr(
+        statusline,
+        "installed_plugins_registry_readable",
+        lambda plugins_root=None: True,
+    )
     _write_cache(tmp_path, {"fetched_at": 1.0, "prs": 0, "issues": 0})
     _reset()
     doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"})
     state, message = _finding()
-    assert state == "WARN"
-    assert "not checked" in message
+    assert state == "NOTICE"
+    assert "not a finding" in message
     assert "could not be determined" not in message
     assert "owner/name" in message
 
@@ -164,12 +175,22 @@ def test_the_not_checked_reason_is_hedged_not_a_categorical_claim(
     apart, so the not-checked message must not assert "is not an installed
     plugin's own source repository" as settled fact when it could equally be
     "the registry could not be read". `is not` reads as a claim the branch did
-    not actually establish; `does not appear among` does not."""
+    not actually establish; `does not appear among` does not.
+
+    #1779: this is now specifically the REGISTRY-UNREADABLE case -- the WARN
+    the hedge exists to keep -- distinguished from the readable-but-absent
+    case below by `installed_plugins_registry_readable`, mocked to `False`
+    here rather than left to the ambient filesystem."""
     monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
     monkeypatch.setattr(
         statusline,
         "installed_plugins",
         lambda project_root, plugins_root=None: {},
+    )
+    monkeypatch.setattr(
+        statusline,
+        "installed_plugins_registry_readable",
+        lambda plugins_root=None: False,
     )
     _write_cache(tmp_path, {"fetched_at": 1.0, "prs": 0, "issues": 0})
     _reset()
@@ -178,6 +199,34 @@ def test_the_not_checked_reason_is_hedged_not_a_categorical_claim(
     assert state == "WARN"
     assert "is not an installed plugin" not in message
     assert "does not appear among" in message
+
+
+def test_a_readable_registry_that_omits_the_repo_is_notice_not_warn(
+    tmp_path, monkeypatch
+):
+    """#1779: when the registry itself was read fine and simply does not list
+    this repo as a plugin source, that is a structural not-applicable, not a
+    warning nothing can ever clear. Mirrors `check_lane_coupling`'s own
+    NOTICE for "the ordinary state ... not a finding" -- and must add
+    nothing to the warning count."""
+    monkeypatch.setattr(statusline, "cache_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        statusline,
+        "installed_plugins",
+        lambda project_root, plugins_root=None: {},
+    )
+    monkeypatch.setattr(
+        statusline,
+        "installed_plugins_registry_readable",
+        lambda plugins_root=None: True,
+    )
+    _write_cache(tmp_path, {"fetched_at": 1.0, "prs": 0, "issues": 0})
+    _reset()
+    doctor_check_latest_skew.check_latest_skew(".", {"repo": "owner/name"})
+    state, message = _finding()
+    assert state == "NOTICE"
+    assert "owner/name" in message
+    assert "not a finding" in message
 
 
 def test_a_live_read_that_does_not_answer_could_not_be_determined(

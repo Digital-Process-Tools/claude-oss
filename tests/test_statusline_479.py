@@ -429,6 +429,42 @@ def test_a_project_with_no_matching_entry_has_no_version_521(tmp_path):
     assert "oss" not in statusline.installed_plugins(here, tmp_path)
 
 
+def test_installed_plugins_registry_readable_is_true_for_a_parseable_object_1779(
+    tmp_path,
+):
+    """The narrow question `_is_plugin_source_repo`'s own hedge needs (#1779):
+    can the registry itself be read, separate from what it lists."""
+    (tmp_path / "installed_plugins.json").write_text(
+        json.dumps({"plugins": {}}), encoding="utf-8"
+    )
+    assert statusline.installed_plugins_registry_readable(tmp_path) is True
+
+
+def test_installed_plugins_registry_readable_is_false_when_the_file_is_absent_1779(
+    tmp_path,
+):
+    """The must-fire control for the case above: no file at all is exactly the
+    same unreadable state `installed_plugins()` itself already treats it as."""
+    assert statusline.installed_plugins_registry_readable(tmp_path) is False
+
+
+def test_installed_plugins_registry_readable_is_false_for_unparseable_json_1779(
+    tmp_path,
+):
+    (tmp_path / "installed_plugins.json").write_text("{not json", encoding="utf-8")
+    assert statusline.installed_plugins_registry_readable(tmp_path) is False
+
+
+def test_installed_plugins_registry_readable_is_false_for_a_non_object_top_level_1779(
+    tmp_path,
+):
+    """Matches `installed_plugins()`'s own `isinstance(doc, dict)` guard -- a
+    valid JSON array is not a registry either function can read anything
+    out of."""
+    (tmp_path / "installed_plugins.json").write_text("[]", encoding="utf-8")
+    assert statusline.installed_plugins_registry_readable(tmp_path) is False
+
+
 def test_normalized_path_folds_case_on_windows_521():
     """Self-review finding on #521: an installed-plugin `projectPath` and the path this
     session resolves can differ only in case on a case-insensitive filesystem, which
