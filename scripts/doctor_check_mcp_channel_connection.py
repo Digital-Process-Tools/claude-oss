@@ -416,6 +416,44 @@ def check_mcp_channel_connection(
                 "may have failed on.".format(detail, aged),
             )
             return
+        # #1780: `raw_state == "unproven"` (`BOUND, UNPROVEN` in statusline's
+        # own vocabulary, per `_channel_field`'s own docstring: bound and
+        # subscribed, but nothing has forwarded yet) is the same #1379
+        # mechanism seen through a different reading. `claude mcp list`
+        # forks its own consumer, the fork cannot bind a socket a live,
+        # verified consumer already holds, and the probe row reads
+        # `Connection closed` -- by construction, not by fault. The WARN
+        # below claims "no channel:health reading establishes a live
+        # consumer"; that is false exactly here, and printing its
+        # kill-the-holder remedy would point at the very consumer that is
+        # working. Reported as a NOTICE rather than folded into the OK
+        # suppression above: delivery is still UNPROVEN, which is the third
+        # state -- not connected, not broken.
+        if raw_state == "unproven" and source not in (None, "cached-stale"):
+            aged = (
+                " ({:.0f}s old)".format(age)
+                if isinstance(age, (int, float)) and age
+                else ""
+            )
+            doctor.report(
+                "NOTICE",
+                "channel MCP connection: {}, and that is the EXPECTED "
+                "reading here rather than a fault: channel:health reports a "
+                "live, socket-holder-verified consumer{} (BOUND, "
+                "UNPROVEN){}. `claude mcp list` forks its own consumer to "
+                "produce a status, and the consumer binds an exclusive "
+                "socket, so the fork cannot bind one a live consumer "
+                "already holds and exits -- for the working server too. "
+                "Delivery is not yet demonstrated: nothing has forwarded, "
+                "which is the third state, neither connected nor broken.".format(
+                    detail,
+                    " (unverified cross-session reading)"
+                    if source == "cached-other-session"
+                    else "",
+                    aged,
+                ),
+            )
+            return
         doctor.report(
             "WARN",
             "channel MCP connection: {}, and no channel:health reading "
