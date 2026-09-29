@@ -86,14 +86,19 @@ PR_OUTCOMES = ("green-and-mergeable", "needs-answer", "could-not-tell")
 #: *translation table* the two modules each apply to their own input.
 _MAINTAINER_ASSOCIATIONS = frozenset(("OWNER", "MEMBER", "COLLABORATOR"))
 #: FIRST_TIME_CONTRIBUTOR/FIRST_TIMER are included here, unlike in
-#: `select_issues.py`'s own sibling table (#1777): that module ranks an
-#: *issue's author*, where an unfamiliar association is deliberately left
-#: untranslated rather than guessed at, since it cannot tell which axis a
-#: value it does not recognise belongs to. GitHub itself only ever emits
-#: FIRST_TIME_CONTRIBUTOR/FIRST_TIMER for a genuinely external author --
-#: it is not an unfamiliar value, it is a named, unambiguous population --
-#: so treating it as `could-not-tell` here would under-classify a case
-#: this module can tell.
+#: `select_issues.py`'s own sibling table (#1777): that module's own
+#: comment names these same two values, alongside a typo and a missing
+#: field, as something it deliberately leaves untranslated because it
+#: cannot tell which axis an unfamiliar value belongs to. This module
+#: takes the opposite reading for the same values: GitHub only emits
+#: FIRST_TIME_CONTRIBUTOR/FIRST_TIMER for an author who is not also
+#: OWNER/MEMBER/COLLABORATOR, so treating either as `could-not-tell`
+#: under-classifies a pull request this module can in fact tell is
+#: external. **This is a live, unreconciled tension between the two
+#: modules' stated rationales, not a settled one** -- if this reading is
+#: right, `select_issues.py` likely has the identical bug for the
+#: author-ranking case; that is out of this issue's scope and is not
+#: fixed here.
 _EXTERNAL_ASSOCIATIONS = frozenset(
     ("CONTRIBUTOR", "NONE", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER")
 )

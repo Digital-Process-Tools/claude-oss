@@ -162,6 +162,23 @@ def test_maintainer_comment_is_excluded():
     assert result == []
 
 
+def test_first_time_contributor_comment_is_kept():
+    """#1777's fix moves FIRST_TIME_CONTRIBUTOR from `None` to `"external"` in
+    the shared `_translate_association` helper `comments_needing_answer` also
+    calls -- confirm that shared change still keeps a first-time contributor's
+    comment (only `"maintainer"` is ever excluded here)."""
+    comments = [
+        {
+            "created_at": "2026-09-09T10:00:00Z",
+            "author_association": "FIRST_TIME_CONTRIBUTOR",
+        }
+    ]
+    result = inbound_triage.comments_needing_answer(
+        comments, since_iso="2026-09-08T00:00:00Z"
+    )
+    assert result == comments
+
+
 def test_own_login_comment_is_excluded_by_author():
     comments = [
         {
