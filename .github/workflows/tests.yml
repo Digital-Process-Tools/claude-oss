@@ -99,9 +99,12 @@ jobs:
     # raised a third time: the growth (873s -> 1176.55s -> 1773.10s) has tracked
     # each cap raise closely enough that raising it again is not expected to
     # hold either, and #1660's own issue text argues against repeating that fix
-    # for however long the trend continues. The next recurrence, if the
-    # diagnostic can now actually fire, is what settles whether this is a real
-    # hang or something else growing the suite's own reported runtime.
+    # for however long the trend continues (this was true when this cap was
+    # last left at 30; #1784 below raises it a third time anyway, but for a
+    # different, now-measured reason -- see that comment). The next
+    # recurrence, if the diagnostic can now actually fire, is what settles
+    # whether this is a real hang or something else growing the suite's own
+    # reported runtime.
     #
     # #1784: this 30-minute figure was clearing OBSERVED_WORST_CASE_SUITE_MINUTES
     # (`tests/test_pytest_leg_timeout_1658.py`) by only ~26.9s, and that whole

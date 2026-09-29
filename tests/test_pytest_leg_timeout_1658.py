@@ -146,11 +146,17 @@ def test_the_pytest_job_cap_clears_the_observed_worst_case_with_margin():
     again, from 1176.55s to 1773.10s, on a cap already raised from 20 to 30
     minutes: the growth (~596.55s) tracks the cap raise (~600s) closely enough
     that a flat multi-minute floor is not a bound this suite's own growth trend
-    respects. Requiring `margin >= 3` against the corrected constant above would
-    fail outright (margin is ~0.45 minutes) and the honest fix is not to keep
-    raising `timeout-minutes` to chase an unexplained trend (#1660's own issue
-    text argues against exactly that repeat) -- it is a real, if much smaller,
-    floor: some positive margin must survive, and
+    respects. Requiring `margin >= 3` against `OBSERVED_WORST_CASE_SUITE_MINUTES`
+    alone (the only "corrected constant" that existed at the time this paragraph
+    was written) would fail outright (margin was ~0.45 minutes) and the honest
+    fix is not to keep raising `timeout-minutes` to chase an unexplained trend
+    (#1660's own issue text argues against exactly that repeat) -- it is a
+    real, if much smaller, floor: some positive margin must survive. #1784
+    later added a second corrected term, `PRE_PYTEST_OVERHEAD_SECONDS`, and
+    raised the cap to keep that same floor positive (~1.73 minutes now, against
+    the current 32-minute cap) -- the ~0.45-minute figure above describes the
+    margin at the moment #1660 was fixed, not the margin this test currently
+    asserts; do not carry it forward as the live number. And
     `test_posthang_diagnostics_1660.test_dump_delay_fits_inside_the_jobs_own_margin`
     is the test that ties this same margin to what the (now-fixed) faulthandler
     diagnostic actually needs to get a chance to fire before the cap does.
