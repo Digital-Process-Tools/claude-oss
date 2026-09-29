@@ -81,10 +81,12 @@ never arbitrating one verdict:
   instead of an unresolved or a `due` `candidates[0]` is this session's call to make, not a rule to
   follow blindly (#1405's own point: the script measures, the agent decides) -- when you do, record
   it first, or a loop skipping the same top candidate for ticks running is indistinguishable from
-  one that never had a top candidate:
+  one that never had a top candidate. `--record-skip` names the candidate being passed over (must
+  match `candidates[0]`); `--taking` names what you are actually about to act on -- naming the
+  taken source to `--record-skip` alone used to be refused as "there is nothing to record" (#1782):
 
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/next_action.py" --root . --record-skip <source> --reason "<why>"
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/next_action.py" --root . --record-skip <top> --taking <source> --reason "<why>"
   ```
 
   **Reading `rank()`'s answer never commits to it.** `next_action.py --json` is a plain read, and a
@@ -98,8 +100,9 @@ never arbitrating one verdict:
   ```
 
   This is a no-op for `release` only (it carries no receipt of this kind) and refuses if
-  `<source>` is not `candidates[0]` -- use `--record-skip` instead for a deliberate deviation, which
-  arms `<source>`'s own receipt itself once the skip is recorded. `source` is `inbound`, `release`,
+  `<source>` is not `candidates[0]` -- use `--record-skip <top> --taking <source>` instead for a
+  deliberate deviation, which arms `<source>`'s own receipt (the one named via `--taking`) itself
+  once the skip is recorded. `source` is `inbound`, `release`,
   `curate` or `triage`. `inbound` has no dedicated spawn of its own below -- `skills/manager/phases/
   inbound.md` is read inside dispatch's own tick, so an `inbound` `candidates[0]` proceeds straight
   to **dispatch** rather than pointing anywhere new. It still gets the same `--take inbound` call

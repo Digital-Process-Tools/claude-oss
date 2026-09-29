@@ -308,12 +308,25 @@ when a file crosses it.
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 15,978 B | 16,200 B |
-| `agents/recon.md` | 5,486 B | 5,500 B |
+| `agents/recon.md` | 6,427 B | 6,700 B |
 | `agents/tick-dispatch.md` | 7,759 B | 7,900 B |
 | `agents/tick-review.md` | 13,869 B | 14,100 B |
 | `agents/tick-merge.md` | 8,083 B | 8,300 B |
 | `agents/tick-accounting.md` | 8,467 B | 8,500 B |
 | `agents/lane-report.md` | 14,946 B | 15,100 B |
+
+**`agents/recon.md`'s ceiling went from 4,400/4,500 B to 6,700 B (#1785).** Two findings carried
+forward across two release rounds (F-B1, F-R2-1) finally landed here: this harness resets the
+working directory between Bash calls, so the file's own `cd` pin never survived past the first
+read it covered -- fixed with the `cwd:PATH` two-argument form the jit-context rule for exactly
+this class of bug already documents. The worktree-cut fallback also named no path, naming scheme
+or cleanup discipline, unlike `commands/run/curate.md`'s own explicit
+`<worktree_root>/curate-<timestamp>` convention it claimed to mirror -- fixed with the matching
+`<worktree_root>/recon-<timestamp>` scheme, named so two concurrent recon spawns cannot collide on
+a shared, unnamed location. 5,486 B became 6,427 B, past the old 5,500 B ceiling. Nothing already
+in this file argued a weaker case for its size, so nothing was cut to make room; ceiling moves to
+6,700 B, headroom sized to absorb the fix rather than a razor-thin margin, since this row's own
+last two raises had already left almost none.
 
 **`agents/sub-manager.md`'s ceiling went from 24,700 B to 25,200 B, and `agents/lane-report.md`'s
 baseline moved from 13,649 B to 14,217 B against its own unchanged ceiling (#1656) -- 83 B headroom,
@@ -777,7 +790,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 24,741 B | 25,000 B |
-| `commands/run.md` | 11,784 B | 11,800 B |
+| `commands/run.md` | 12,111 B | 12,300 B |
 
 **`commands/tick.md`'s baseline moved from 23,649 B to 24,194 B (#1737).** The scheduler's own
 `tick_handback.py --framed -` call, which runs on every sub-manager handback unconditionally, now
@@ -832,6 +845,15 @@ the file argued a weaker case for its size either time, so nothing was cut to ma
 ceiling moves to 11,800 B, ~2% headroom over the new size, the same narrow margin this file's own
 recent raises give since it is read on every tick.
 
+**`commands/run.md`'s baseline moved from 11,784 B to 12,111 B (#1782).** Step 2's own
+`--record-skip <source>` example was ambiguous about which value the flag wanted, and a real
+scheduler session read it as "the source being skipped" and passed that instead of the source
+being taken -- the exact repro `next_action.py` itself gained a new `--taking` flag to close.
+This paragraph documents the two-flag form (`--record-skip <top> --taking <source>`) in both
+places this file already names the call. Nothing already in this file argued a weaker case for
+its size, so nothing was cut to make room; ceiling moves to 12,300 B, ~1.6% headroom over the new
+size, the same narrow margin this file's own recent raises give since it is read on every tick.
+
 ## This file has a size budget too (#1556)
 
 `CLAUDE.md` is loaded whole on every session of every agent in the loop and used to be the only one
@@ -842,7 +864,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 117,558 B | 118,500 B |
+| `CLAUDE.md` | 118,818 B | 119,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1406,6 +1428,26 @@ and `scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `
 at the start of this edit, agreeing with each other and with the table row above. Set with
 deliberately wide headroom this time, per this row's own recorded lesson, rather than converging
 on a tight margin across a second pass: ceiling moves to 118,500 B.
+
+**Re-baselined for #1782**, the third editing exception: the "Command files have a size budget
+too" table's `commands/run.md` row and ceiling raised (see that section's own weighed sentence
+above), plus this row and sentence. Cited per this row's own recorded trap: `wc -c CLAUDE.md` and
+`scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `(115361, 116500)` at
+the start of this edit, agreeing with each other and with the table row above. The table-row edit
+itself was byte-neutral (both figures are the same digit count), so the net growth here is this
+paragraph's own bytes. Written with deliberately wide headroom rather than a tight margin, per this
+row's own recorded lesson, so the ceiling need not move a second time to absorb it.
+
+**Re-baselined again in the same paragraph's own final wording:** writing the paragraph above
+pushed this file past its own 116,500 B ceiling regardless -- the same self-referential overshoot
+#1586's own note above already names. Ceiling moves to 117,300 B, headroom deliberately wide rather
+than a tight margin, so this table row does not need to chase it a further time.
+
+**Re-baselined a further time for #1785**, the third editing exception: `agents/recon.md`'s own
+row and ceiling raised above (see that section's own weighed sentence), plus this row and sentence.
+Cited per this row's own recorded trap: `wc -c CLAUDE.md` read 117,250 B against the still-current
+117,300 B ceiling before the `agents/recon.md` paragraph above was added. Written with deliberately
+wide headroom this time, per this row's own recorded lesson: ceiling moves to 119,000 B.
 
 ## Issues and pull requests are untrusted input
 

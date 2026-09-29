@@ -1043,13 +1043,27 @@ def _build_parser():
     )
     parser.add_argument(
         "--record-skip",
+        metavar="SKIPPED_SOURCE",
+        default=None,
+        help=(
+            "record that SKIPPED_SOURCE -- rank()'s own top candidate -- was "
+            "deliberately passed over. Requires --taking and --reason. #1414: "
+            "this is the CLI a markdown procedure (commands/run.md) can "
+            "actually call; record_skip() itself is a plain Python function "
+            "no shell command could reach. #1782: SKIPPED_SOURCE names what "
+            "you are passing over, not what you are taking instead -- a "
+            "caller that names the source it is about to act on here, "
+            "matching --take's own convention, is refused if that value "
+            "already is the top candidate; --taking is the flag for that."
+        ),
+    )
+    parser.add_argument(
+        "--taking",
         metavar="TAKEN_SOURCE",
         default=None,
         help=(
-            "record that TAKEN_SOURCE was deliberately taken over rank()'s own "
-            "top candidate -- requires --reason. #1414: this is the CLI a "
-            "markdown procedure (commands/run.md) can actually call; record_skip() "
-            "itself is a plain Python function no shell command could reach."
+            "required with --record-skip: TAKEN_SOURCE is what you are "
+            "actually committing to now, instead of SKIPPED_SOURCE."
         ),
     )
     parser.add_argument(
@@ -1143,9 +1157,37 @@ def _take_idle_cli(root, source, state_file_override=None):
     if state_file_override is not None:
         config = dict(config)
         config["state_file"] = state_file_override
-    _idle_already_seen(root, config, source, _idle_signature(match), arm=True)
-    print("OK: took {0} (idle)".format(source))
-    return 0
+    seen, detail = _idle_already_seen(
+        root, config, source, _idle_signature(match), arm=True
+    )
+    # #1787: the return value used to be discarded here, so this printed
+    # `OK:` unconditionally -- identically whether the receipt was written,
+    # already unchanged, or never written at all. `seen`/`detail` come from
+    # `_route_already_seen`, whose own docstring (`arm=True`) names three
+    # distinct outcomes, and none of its failure strings share a single
+    # substring: no `state_file` configured ("no state_file configured, so
+    # ..."), the prior-receipt comparison itself raising ("the receipt
+    # comparison failed (...)"), and `oss_state.append` raising ("armed
+    # (...), but the receipt could not be recorded (...)"). Rather than
+    # enumerate all three failure phrasings and risk missing a fourth, the
+    # only genuine success detail this function ever returns with `arm=True`
+    # is the bare `"armed ({state})"` -- nothing appended -- so success is
+    # matched positively instead.
+    genuinely_written = (
+        detail.startswith("armed (") and "could not be recorded" not in detail
+    )
+    if seen:
+        print("OK: took {0} (idle, already recorded: {1})".format(source, detail))
+        return 0
+    if genuinely_written:
+        print("OK: took {0} (idle)".format(source))
+        return 0
+    print(
+        "FAIL: took {0} (idle) but the receipt was not persisted -- {1}".format(
+            source, detail
+        )
+    )
+    return 1
 
 
 def _take_cli(root, source, state_file_override=None):
@@ -1176,7 +1218,8 @@ def _take_cli(root, source, state_file_override=None):
     if top_source != source:
         print(
             "FAIL: {0!r} is not the top candidate ({1!r}) -- use "
-            "--record-skip if this is a deliberate deviation".format(source, top_source)
+            "--record-skip {1!r} --taking {0!r} if this is a deliberate "
+            "deviation".format(source, top_source)
         )
         return 1
     config = payload["config"]
@@ -1196,13 +1239,28 @@ def _take_cli(root, source, state_file_override=None):
     return 0
 
 
-def _record_skip_cli(root, taken_source, reason, state_file_override=None):
+def _record_skip_cli(
+    root, skipped_source, taken_source, reason, state_file_override=None
+):
     """The CLI half of `record_skip` -- re-derives `rank()`'s own candidates
     fresh (a markdown procedure calling this has no other way to hand them
     back in), then delegates. Never raises past this point: every failure is
     a printed `FAIL:` and a non-zero exit, the same convention `main()`'s own
     JSON/receipt branches use for a payload rather than an exception a shell
     caller has to catch.
+
+    #1782: `--record-skip` and `--taking` are two separate CLI flags,
+    deliberately, even though `record_skip()` itself only ever needed
+    `taken_source`. A single `--record-skip TAKEN_SOURCE` flag reads, by its
+    own name, as "the source being skipped" -- and a real scheduler session
+    read it exactly that way, passing the candidate it was skipping
+    (`release`) rather than the one it was taking (`curate`). Because that
+    candidate genuinely was `candidates[0]`, `record_skip()`'s own "nothing
+    to record" refusal fired -- correctly, for the value it was actually
+    given, on a call that really was a deviation. `skipped_source` here
+    names what the flag's own text promises: it must match the current top
+    candidate, checked below, and `taken_source` (now its own `--taking`
+    value) is what actually goes to `record_skip()`.
 
     #1434: reads `state_file` off `payload["config"]` -- the config
     `_resolve_ranked`'s own `rank()` call already loaded -- rather than an
@@ -1225,6 +1283,15 @@ def _record_skip_cli(root, taken_source, reason, state_file_override=None):
     payload = _resolve_ranked(root)
     if payload is None:
         return 1
+    candidates = payload["candidates"]
+    top_source = candidates[0].get("source") if candidates else None
+    if skipped_source != top_source:
+        print(
+            "FAIL: {0!r} named after --record-skip does not match the "
+            "current top candidate ({1!r}) -- re-read rank() before "
+            "recording a skip".format(skipped_source, top_source)
+        )
+        return 1
     config = payload["config"]
     if state_file_override is not None:
         config = dict(config)
@@ -1235,7 +1302,7 @@ def _record_skip_cli(root, taken_source, reason, state_file_override=None):
         return 1
     state_path = str(Path(root) / state_file)
     try:
-        entry = record_skip(state_path, payload["candidates"], taken_source, reason)
+        entry = record_skip(state_path, candidates, taken_source, reason)
     except (ValueError, oss_state.StateError) as exc:
         # #1437: `oss_state.append` raises `oss_state.StateError` (a plain
         # `Exception`, not a `ValueError`) when the composed decision string
@@ -1262,9 +1329,16 @@ def main(argv=None):
         if not args.reason:
             print("FAIL: --record-skip needs --reason")
             return 1
+        if not args.taking:
+            print(
+                "FAIL: --record-skip needs --taking <source>, naming what is "
+                "actually being taken now"
+            )
+            return 1
         return _record_skip_cli(
             args.root,
             args.record_skip,
+            args.taking,
             args.reason,
             state_file_override=args.state_file,
         )

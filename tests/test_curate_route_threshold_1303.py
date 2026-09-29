@@ -84,10 +84,13 @@ def test_curate_route_arms_at_the_configured_threshold():
 
         workspace_routes.curate_count = at_count
         _armed, results = workspace_routes.decide(str(REPO_ROOT), config)
-        assert results["curate"]["state"] == "under", (
-            "a count exactly AT the threshold must read 'under' -- over is "
-            "strictly greater than the threshold, per workspace_routes' "
-            "own _count_state: {!r}".format(results["curate"])
+        assert results["curate"]["state"] == "over", (
+            "a count exactly AT a positive threshold must read 'over' "
+            "(#1782) -- 'trap.d/ is not over curate_route_threshold (15)' "
+            "used to print with 15 fragments actually waiting, and a repo "
+            "sitting exactly at threshold could never rank due: {!r}".format(
+                results["curate"]
+            )
         )
     finally:
         workspace_routes.curate_count = real_curate_count

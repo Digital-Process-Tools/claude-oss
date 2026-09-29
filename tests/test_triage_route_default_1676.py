@@ -117,9 +117,12 @@ def test_written_threshold_actually_arms_the_triage_route(monkeypatch):
 def test_first_unlabelled_issue_is_enough():
     """The number itself is load-bearing and pinned on purpose: an unlabelled issue is
     invisible to dispatch for as long as it stays unlabelled, so there is no backlog
-    size at which waiting is correct. `_count_state` fires on `count > threshold`, so
-    0 is the value under which one unlabelled issue makes a sweep due. A future raise
-    has to argue against this docstring, not slip past it."""
+    size at which waiting is correct. `_count_state` fires on `count >= threshold and
+    count > 0` (#1782 added the `>=` half for curate's own at-threshold boundary; the
+    `count > 0` guard keeps this identical to the old `count > threshold` for a 0
+    threshold, since 0 is never itself a positive count), so 0 is the value under
+    which one unlabelled issue makes a sweep due. A future raise has to argue against
+    this docstring, not slip past it."""
     config = oss_config.build(_probe())
     assert config["triage_route_threshold"] == 0
     assert workspace_routes._count_state(1, config["triage_route_threshold"]) == (
