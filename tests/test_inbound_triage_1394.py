@@ -105,6 +105,26 @@ def test_pr_with_unrecognised_association_is_could_not_tell():
     assert inbound_triage.classify_pr(pr) == "could-not-tell"
 
 
+def test_pr_with_first_time_contributor_association_is_external():
+    """#1777: GitHub's FIRST_TIME_CONTRIBUTOR is unambiguously an external
+    author (it is neither OWNER/MEMBER/COLLABORATOR nor CONTRIBUTOR/NONE),
+    and must not collapse into could-not-tell the way a genuinely unknown
+    value does."""
+    pr = {
+        "author_association": "FIRST_TIME_CONTRIBUTOR",
+        "ci_state": "green",
+        "mergeable": True,
+    }
+    assert inbound_triage.classify_pr(pr) == "green-and-mergeable"
+
+
+def test_pr_with_first_timer_association_is_external():
+    """Same as above for FIRST_TIMER, GitHub's other first-contribution
+    association value."""
+    pr = {"author_association": "FIRST_TIMER", "ci_state": "red", "mergeable": True}
+    assert inbound_triage.classify_pr(pr) == "needs-answer"
+
+
 def test_pr_accepts_already_translated_association():
     pr = {"author_association": "external", "ci_state": "green", "mergeable": True}
     assert inbound_triage.classify_pr(pr) == "green-and-mergeable"
@@ -140,6 +160,28 @@ def test_maintainer_comment_is_excluded():
         comments, since_iso="2026-09-08T00:00:00Z"
     )
     assert result == []
+
+
+def test_first_time_contributor_comment_is_kept():
+    """`comments_needing_answer` only excludes a comment whose translated
+    association equals `"maintainer"` -- so a FIRST_TIME_CONTRIBUTOR comment
+    is kept both before and after #1777's fix (translated `None` or
+    `"external"`, neither is `"maintainer"`), and this test cannot
+    distinguish the two by design. It is a plain regression pin for the
+    current exclusion rule, not a differential test for #1777's own change:
+    it exists because #1777 touches the shared `_translate_association`
+    helper this function also calls, and a caller of that helper should have
+    at least one direct assertion rather than none."""
+    comments = [
+        {
+            "created_at": "2026-09-09T10:00:00Z",
+            "author_association": "FIRST_TIME_CONTRIBUTOR",
+        }
+    ]
+    result = inbound_triage.comments_needing_answer(
+        comments, since_iso="2026-09-08T00:00:00Z"
+    )
+    assert result == comments
 
 
 def test_own_login_comment_is_excluded_by_author():
