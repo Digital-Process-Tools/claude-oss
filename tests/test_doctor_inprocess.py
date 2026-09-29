@@ -1026,10 +1026,17 @@ def test_verdict_says_ok_only_when_nothing_warned(tmp_path, monkeypatch, capsys)
     # #990: a "fully configured, everything clean" fixture now needs
     # labels.filed_by_loop declared too, or check_filed_by_loop's new WARN fires
     # here for a fact this test is not about.
+    # #1774: same reasoning one key over -- an empty labels.priority now fires
+    # check_priority_labels's new WARN, so this "fully configured, everything
+    # clean" fixture needs a real priority-* label ladder declared too.
     config = _config(
         tmp_path,
         test_measurement_configured=True,
-        labels={"priority": [], "lanes": [], "filed_by_loop": "filed-by-loop"},
+        labels={
+            "priority": ["priority-high", "priority-medium", "priority-low"],
+            "lanes": [],
+            "filed_by_loop": "filed-by-loop",
+        },
     )
     _fully_configured(tmp_path)
     (tmp_path / "pyproject.toml").write_text(

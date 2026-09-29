@@ -114,6 +114,11 @@ PENDING = (
     # right beside check_release_authority above, which the same reasoning already
     # applies to and which extraction has not reached yet either.
     "check_filed_by_loop",
+    # #1774, same reasoning one key over: small, self-contained (report and one
+    # private read of config, no shared helpers of its own), and deliberately
+    # mirrors check_filed_by_loop's own three-state shape right beside it rather
+    # than living in a module by itself.
+    "check_priority_labels",
 )
 
 #: A tally of something the filesystem already answers. `modules` and `checks`
