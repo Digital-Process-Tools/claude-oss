@@ -85,7 +85,18 @@ PR_OUTCOMES = ("green-and-mergeable", "needs-answer", "could-not-tell")
 #: duplicated *fact* does not cover a duplicated, independently-testable
 #: *translation table* the two modules each apply to their own input.
 _MAINTAINER_ASSOCIATIONS = frozenset(("OWNER", "MEMBER", "COLLABORATOR"))
-_EXTERNAL_ASSOCIATIONS = frozenset(("CONTRIBUTOR", "NONE"))
+#: FIRST_TIME_CONTRIBUTOR/FIRST_TIMER are included here, unlike in
+#: `select_issues.py`'s own sibling table (#1777): that module ranks an
+#: *issue's author*, where an unfamiliar association is deliberately left
+#: untranslated rather than guessed at, since it cannot tell which axis a
+#: value it does not recognise belongs to. GitHub itself only ever emits
+#: FIRST_TIME_CONTRIBUTOR/FIRST_TIMER for a genuinely external author --
+#: it is not an unfamiliar value, it is a named, unambiguous population --
+#: so treating it as `could-not-tell` here would under-classify a case
+#: this module can tell.
+_EXTERNAL_ASSOCIATIONS = frozenset(
+    ("CONTRIBUTOR", "NONE", "FIRST_TIME_CONTRIBUTOR", "FIRST_TIMER")
+)
 _TRANSLATED = frozenset(("maintainer", "external"))
 
 

@@ -105,6 +105,26 @@ def test_pr_with_unrecognised_association_is_could_not_tell():
     assert inbound_triage.classify_pr(pr) == "could-not-tell"
 
 
+def test_pr_with_first_time_contributor_association_is_external():
+    """#1777: GitHub's FIRST_TIME_CONTRIBUTOR is unambiguously an external
+    author (it is neither OWNER/MEMBER/COLLABORATOR nor CONTRIBUTOR/NONE),
+    and must not collapse into could-not-tell the way a genuinely unknown
+    value does."""
+    pr = {
+        "author_association": "FIRST_TIME_CONTRIBUTOR",
+        "ci_state": "green",
+        "mergeable": True,
+    }
+    assert inbound_triage.classify_pr(pr) == "green-and-mergeable"
+
+
+def test_pr_with_first_timer_association_is_external():
+    """Same as above for FIRST_TIMER, GitHub's other first-contribution
+    association value."""
+    pr = {"author_association": "FIRST_TIMER", "ci_state": "red", "mergeable": True}
+    assert inbound_triage.classify_pr(pr) == "needs-answer"
+
+
 def test_pr_accepts_already_translated_association():
     pr = {"author_association": "external", "ci_state": "green", "mergeable": True}
     assert inbound_triage.classify_pr(pr) == "green-and-mergeable"
