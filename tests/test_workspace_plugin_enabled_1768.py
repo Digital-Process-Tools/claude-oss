@@ -154,7 +154,12 @@ def test_claude_config_dir_registry_is_read_when_plugins_root_is_not_given(
     project = _project(tmp_path)
     home = tmp_path / "home"
     home.mkdir()
+    # ntpath.expanduser reads USERPROFILE before it ever looks at HOME, so
+    # HOME alone is a no-op for "~" resolution on Windows -- pin both, the
+    # same pairing the existing subprocess-shaped test on this file already
+    # uses (`env = dict(os.environ, HOME=..., USERPROFILE=...)` above).
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     config_dir = tmp_path / "elsewhere"
     config_dir.mkdir()
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
@@ -187,7 +192,10 @@ def test_no_claude_config_dir_falls_back_to_home_dot_claude(tmp_path, monkeypatc
     project = _project(tmp_path)
     home = tmp_path / "home"
     home.mkdir()
+    # Same Windows pairing as the sibling test above: ntpath.expanduser
+    # reads USERPROFILE before HOME.
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
     plugins_root = home / ".claude" / "plugins"
     plugins_root.mkdir(parents=True)
