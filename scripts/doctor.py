@@ -7500,6 +7500,75 @@ def check_filed_by_loop(project_dir, config):
         )
 
 
+def check_priority_labels(project_dir, config):
+    """#1774: three states for `labels.priority`, and what an empty list costs.
+
+    `select_issues_rank.rank` (#798) treats `labels.priority == []` exactly the
+    same as the key being entirely absent -- `not priority` is true for both --
+    so a repo `/oss:setup` scaffolded with no `priority-*` labels on the forge
+    gets a *declared*, *empty* list written to `.oss.json`, and dispatch has no
+    bands to rank within for any issue, forever, with nothing anywhere naming
+    why. This mirrors `check_filed_by_loop`'s own three-state shape one key
+    over, adjusted for a list-typed value: `declared` (a non-empty list of
+    usable label names), `declared-empty` (the key is present but the list has
+    nothing in it -- the scaffold-produced case #1774 reports), and
+    `could-not-tell` (present but not a usable list -- a bool, a string, a
+    number, or a list containing something other than a non-empty string).
+    `not-declared` (the key missing entirely, or null) is folded into
+    `declared-empty`'s own WARN text rather than a fourth state: both leave
+    `select_issues_rank.rank` in the identical could-not-rank posture, and
+    splitting them would only tempt a reader into believing the absent case is
+    somehow less broken than the empty one.
+    """
+    if config is None:
+        report("WARN", "labels.priority: not checked (.oss.json could not be read)")
+        return
+    labels = config.get("labels") if isinstance(config, dict) else None
+    if not isinstance(labels, dict) or "priority" not in labels:
+        value = None
+    else:
+        value = labels["priority"]
+    if isinstance(value, list) and value:
+        usable = [name for name in value if isinstance(name, str) and name.strip()]
+        if len(usable) == len(value):
+            report(
+                "OK",
+                "labels.priority: declared as {} -- the dispatch order can "
+                "rank issues within these bands.".format(value),
+            )
+            return
+        report(
+            "WARN",
+            "labels.priority: could-not-tell -- the list {!r} contains an "
+            "entry that is not a usable label name (expected every element "
+            "to be a non-empty string). select_issues_rank.rank treats a "
+            "malformed list the same as undeclared: could-not-rank for "
+            "every issue.".format(value),
+        )
+        return
+    if value is None or (isinstance(value, list) and not value):
+        report(
+            "WARN",
+            "labels.priority is empty: dispatch cannot rank any issue -- "
+            "select_issues_rank.rank answers could-not-rank for EVERY issue "
+            "on this board (#798) until this key names at least one "
+            "priority-* label, and the refusal is permanent, not "
+            "today's-board-only (#1774). Create the priority-* labels on "
+            "the forge (e.g. `gh label create priority-high --repo <repo> "
+            "--color d93f0b`, plus priority-medium/priority-low), declare "
+            "them in .oss.json's labels.priority, then run /oss:triage to "
+            "apply them.",
+        )
+        return
+    report(
+        "WARN",
+        "labels.priority: could-not-tell -- the value {!r} is not a usable "
+        "list of label names (expected a non-empty list of strings, or an "
+        "empty list). select_issues_rank.rank treats this the same as "
+        "undeclared: could-not-rank for every issue.".format(value),
+    )
+
+
 def check_ci_enforcement(project_dir, config):
     """Does anything in CI run the tests?
 
@@ -9750,6 +9819,10 @@ def main(argv=None):
     # /oss:setup ran must be visible before a tick spends a whole board read pretending
     # it is picking issues, not only after somebody notices the order never moves.
     check_filed_by_loop(project_dir, config)
+    # #1774: same reasoning one key over -- an undeclared or scaffold-produced
+    # empty labels.priority is a permanent could-not-rank refusal, not merely
+    # today's board being empty of ranked issues.
+    check_priority_labels(project_dir, config)
     # #1181: same local gating as check_label_vocabulary/check_filed_by_loop
     # (gh on PATH, repo/origin resolvable) -- does the declared
     # labels.lane_other spelling actually exist as a label on the forge?
