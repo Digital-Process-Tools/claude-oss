@@ -163,10 +163,15 @@ def test_maintainer_comment_is_excluded():
 
 
 def test_first_time_contributor_comment_is_kept():
-    """#1777's fix moves FIRST_TIME_CONTRIBUTOR from `None` to `"external"` in
-    the shared `_translate_association` helper `comments_needing_answer` also
-    calls -- confirm that shared change still keeps a first-time contributor's
-    comment (only `"maintainer"` is ever excluded here)."""
+    """`comments_needing_answer` only excludes a comment whose translated
+    association equals `"maintainer"` -- so a FIRST_TIME_CONTRIBUTOR comment
+    is kept both before and after #1777's fix (translated `None` or
+    `"external"`, neither is `"maintainer"`), and this test cannot
+    distinguish the two by design. It is a plain regression pin for the
+    current exclusion rule, not a differential test for #1777's own change:
+    it exists because #1777 touches the shared `_translate_association`
+    helper this function also calls, and a caller of that helper should have
+    at least one direct assertion rather than none."""
     comments = [
         {
             "created_at": "2026-09-09T10:00:00Z",
