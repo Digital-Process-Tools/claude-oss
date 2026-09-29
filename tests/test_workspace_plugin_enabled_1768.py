@@ -138,6 +138,78 @@ def test_no_registry_file_at_all_is_not_installed(tmp_path):
     )
 
 
+def test_claude_config_dir_registry_is_read_when_plugins_root_is_not_given(
+    tmp_path, monkeypatch
+):
+    """#1788: `enablement()` (and every other reader sharing `_default_
+    plugins_root`) must resolve the registry Claude Code itself actually
+    wrote, not an unconditional `~/.claude/plugins` -- a machine with
+    `$CLAUDE_CONFIG_DIR` set keeps its registry elsewhere, and reading the
+    wrong path finds no file, which used to render identically to a genuine
+    not-installed answer.
+
+    `HOME` is pinned to an empty directory alongside `$CLAUDE_CONFIG_DIR` so
+    a real `~/.claude/plugins` on the machine running this test can never
+    supply the record instead and mask the bug this test exists to catch."""
+    project = _project(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    config_dir = tmp_path / "elsewhere"
+    config_dir.mkdir()
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+    plugins_root = config_dir / "plugins"
+    plugins_root.mkdir()
+    (plugins_root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "oss@dpt-plugins": [
+                        {"scope": "project", "projectPath": str(project)}
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.enablement(project, _plugin_root(tmp_path)) == (
+        "installed",
+        "oss@dpt-plugins",
+    )
+
+
+def test_no_claude_config_dir_falls_back_to_home_dot_claude(tmp_path, monkeypatch):
+    """Positive control for the test above: with `$CLAUDE_CONFIG_DIR` unset,
+    resolution still falls back to `~/.claude/plugins` exactly as before --
+    the fix must not stop reading the default location for the common case
+    where the variable was never set at all."""
+    project = _project(tmp_path)
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    plugins_root = home / ".claude" / "plugins"
+    plugins_root.mkdir(parents=True)
+    (plugins_root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "oss@dpt-plugins": [
+                        {"scope": "project", "projectPath": str(project)}
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert plugin_update.enablement(project, _plugin_root(tmp_path)) == (
+        "installed",
+        "oss@dpt-plugins",
+    )
+
+
 def test_an_unreadable_registry_is_could_not_tell_not_not_installed(tmp_path):
     project = _project(tmp_path)
     plugins_root = tmp_path / "plugins"

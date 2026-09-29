@@ -195,6 +195,48 @@ def test_a_failed_transport_beside_an_untrusted_forwarding_reading_reports_both_
     ), text
 
 
+def test_a_failed_transport_beside_a_bound_verified_unproven_reading_is_a_notice_1780():
+    """#1780: `raw_state == "unproven"` (`BOUND, UNPROVEN` in statusline's own
+    vocabulary -- bound, socket-holder verified, subscribed, but nothing has
+    forwarded yet) is a real, positively-established reading, not an absence
+    of one. Landing it in the plain WARN below makes that WARN's own claim
+    ("no channel:health reading establishes a live consumer to explain it")
+    false: a reading does establish a live consumer here, it just hasn't
+    moved an event yet. #1379 already explains why the failed `claude mcp
+    list` row is the expected-by-construction reading while a live consumer
+    holds the socket; this is the same mechanism seen through an `unproven`
+    reading instead of a `forwarding` one, so it earns the same NOTICE
+    treatment `cached-other-session` already gets for `forwarding` -- not the
+    kill-the-holder remedy WARN prints, since the holder here already is the
+    verified consumer."""
+    conn.check_mcp_channel_connection(
+        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _name: "/usr/bin/claude",
+        env=LAUNCHED,
+        resolve=lambda _d: ("unproven", "cached", 5.0),
+    )
+    assert _levels() == ["NOTICE"]
+    text = _text()
+    assert "no channel:health reading establishes a live consumer" not in text, text
+    assert "UNPROVEN" in text, text
+    assert "lsof" not in text, text
+
+
+def test_a_failed_transport_with_no_reading_still_warns_1780():
+    """Positive control for the NOTICE above: no consumer bound at all (no
+    resolve, so the default real resolver finds nothing in a test sandbox)
+    still produces the WARN this check exists to give -- the `unproven`
+    branch must not swallow the case it does not cover."""
+    conn.check_mcp_channel_connection(
+        run=lambda *a, **k: type("C", (), {"returncode": 0, "stdout": FAILED_ROW})(),
+        which=lambda _name: "/usr/bin/claude",
+        env=LAUNCHED,
+        resolve=lambda _d: (None, None, None),
+    )
+    assert _levels() == ["WARN"]
+    assert "no channel:health reading establishes a live consumer" in _text()
+
+
 def test_a_single_failing_server_is_not_reported_as_every_server_1696():
     """#1696: 'every MCP server resolving to the claude-channel consumer
     reports a failed transport' reads as a universal claim about every MCP

@@ -353,6 +353,23 @@ def declared_dependencies(plugin_root=None):
     return names, "ok"
 
 
+#: #1788: Claude Code itself, not this file, decides where the plugin
+#: registry lives -- `$CLAUDE_CONFIG_DIR/plugins` when that variable is set,
+#: `~/.claude/plugins` otherwise. Every reader below that resolves the
+#: registry without an explicit `plugins_root` went through its own copy of
+#: `Path(os.path.expanduser("~")) / ".claude" / "plugins"` (six of them,
+#: byte-identical), so a machine with `$CLAUDE_CONFIG_DIR` set got the same
+#: wrong answer -- "not installed" for a plugin that is, in fact, installed
+#: -- from every one of the six, not only `enablement`. One function now
+#: carries the resolution so the fix cannot land in five of six call sites
+#: and miss the sixth.
+def _default_plugins_root():
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir) / "plugins"
+    return Path(os.path.expanduser("~")) / ".claude" / "plugins"
+
+
 def installed_scopes(name, project_root, plugins_root=None):
     """Which scopes this plugin is installed at, FOR THIS PROJECT (#521).
 
@@ -371,7 +388,7 @@ def installed_scopes(name, project_root, plugins_root=None):
 
     Order matters only for the receipt, which names the newest.
     """
-    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    root = Path(plugins_root) if plugins_root else _default_plugins_root()
     try:
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -399,6 +416,12 @@ def enablement(project_root, plugin_root=None, plugins_root=None):
     """``(state, name)`` -- is this plugin installed for ``project_root`` at all
     (#1768)?
 
+    #1788: the registry root itself, `_default_plugins_root`, already honours
+    `$CLAUDE_CONFIG_DIR` -- a machine that keeps its Claude config elsewhere
+    used to read the default `~/.claude/plugins` path unconditionally here,
+    finding no file and reporting `not-installed` for a plugin that is, in
+    fact, installed.
+
     `bin/oss-workspace` runs every one of its own steps from the copy its symlink
     points into, so they all succeed whether or not the plugin applies to the
     repository being opened -- and then it opens `claude "/oss:run"` on a command
@@ -422,7 +445,7 @@ def enablement(project_root, plugin_root=None, plugins_root=None):
     on the machine carries a marketplace, else the bare name, which `claude plugin
     install` also accepts.
     """
-    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    root = Path(plugins_root) if plugins_root else _default_plugins_root()
     name = plugin_name(plugin_root)
     if not name:
         return "could-not-tell", "(this plugin's own manifest)"
@@ -456,7 +479,7 @@ def qualified_name(name, plugins_root=None):
     The CLI accepts either, and the qualified form is the unambiguous one when two
     marketplaces ship a plugin under one name.
     """
-    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    root = Path(plugins_root) if plugins_root else _default_plugins_root()
     try:
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -539,7 +562,7 @@ def newest_cached_version(name, plugins_root=None):
     describe) or the cache directory does not exist or holds nothing that
     parses as a version.
     """
-    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    root = Path(plugins_root) if plugins_root else _default_plugins_root()
     qualified = qualified_name(name, plugins_root)
     if "@" not in qualified:
         return None
@@ -580,7 +603,7 @@ def installed_version(name, project_root, plugins_root=None):
     before/after comparison already treats a `None` on either end as "unknown" rather
     than as a version, which is the correct behaviour for both.
     """
-    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    root = Path(plugins_root) if plugins_root else _default_plugins_root()
     try:
         doc = json.loads((root / "installed_plugins.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -628,7 +651,7 @@ def resolved_plugin_root(name, project_root, plugins_root=None):
     comment is explicit that route failing to resolve must render as its own
     state, never silently fall back to comparing nothing.
     """
-    root = Path(plugins_root or Path(os.path.expanduser("~")) / ".claude" / "plugins")
+    root = Path(plugins_root) if plugins_root else _default_plugins_root()
     version = installed_version(name, project_root, plugins_root)
     if not version:
         return None
