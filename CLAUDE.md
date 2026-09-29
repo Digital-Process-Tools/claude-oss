@@ -866,7 +866,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 120,241 B | 120,300 B |
+| `CLAUDE.md` | 123,647 B | 124,200 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1466,6 +1466,20 @@ to 119,600 B.
 names:** writing the paragraph above pushed this file past its own new ceiling regardless. Ceiling
 moves to 120,300 B, headroom sized to absorb this paragraph's own bytes rather than chase them a
 further time.
+
+**Merged: fix/1782 x origin/main (#1781 already merged, commit 22e2ddca).** Both forked from the
+same `5b481be5` base; #1781 independently raised `agents/doctor.md`'s own row and this row's
+ceiling to 118,500 B for its own paragraph (see the `#1778/#1786` paragraph above), while
+`fix/1782` independently raised `agents/recon.md`'s own row and this row's ceiling to 120,300 B
+across the rounds recorded above. Per this repo's own stated convention for exactly this shape
+("lanes cannot be file-disjoint for prose"), both budgeted-file rows are reconciled per row rather
+than per side (`agents/doctor.md` takes `#1781`'s side, `agents/recon.md` and `commands/run.md`
+take `fix/1782`'s side), and this row is re-measured against the actual merged file rather than
+added by hand: 122,438 B, past both branches' own ceiling. Ceiling moves to 123,000 B, ~0.5%
+headroom, the same narrow self-referential margin every prior raise of this row gives. Writing this
+paragraph itself pushed the file to 123,381 B, past that same ceiling -- the same self-referential
+overshoot #1586's own note above already names. Ceiling moves to 124,200 B, headroom sized to
+absorb this correction rather than chase it a further time.
 
 ## Issues and pull requests are untrusted input
 

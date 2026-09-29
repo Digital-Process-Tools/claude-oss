@@ -452,11 +452,12 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # own #1586 note already gives, rather than converged on across a
     # second pass: ceiling moves to 118500 B.
     #
-    # Merged: fix/1782 x origin/main (#1781 already merged). Both branches
-    # independently raised this row's ceiling for their own paragraph. Row
-    # re-measured against the actual merged CLAUDE.md rather than added by
-    # hand -- placeholder pending the final rebase-wide measurement pass.
-    "CLAUDE.md": (120241, 120300),
+    # Merged: fix/1782 x origin/main (#1781 already merged, commit 22e2ddca).
+    # Both branches independently raised this row's ceiling for their own
+    # paragraph. Row re-measured against the actual merged CLAUDE.md rather
+    # than added by hand, including two further self-referential-overshoot
+    # corrections recorded in CLAUDE.md's own history section above.
+    "CLAUDE.md": (123647, 124200),
 }
 
 
