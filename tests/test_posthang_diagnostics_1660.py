@@ -9,6 +9,7 @@ import posthang_diagnostics_1660 as phd
 
 from test_pytest_leg_timeout_1658 import (  # noqa: E402
     OBSERVED_WORST_CASE_SUITE_MINUTES,
+    PRE_PYTEST_OVERHEAD_SECONDS,
     needs_yaml,
     _pytest_job,
 )
@@ -138,13 +139,21 @@ def test_controller_dump_delay_fits_inside_the_jobs_own_margin():
             phd.CONTROLLER_DUMP_AFTER_SECONDS, worst_case_seconds
         )
     )
-    assert phd.CONTROLLER_DUMP_AFTER_SECONDS < cap_seconds, (
+    # #1784: the controller's own clock starts at `pytest_configure` (process
+    # start), which is already PRE_PYTEST_OVERHEAD_SECONDS into the job's own
+    # wall clock -- checkout/setup-python/install all run first, as separate
+    # steps `pytest_configure` never sees. So the real ceiling this timer must
+    # clear is `cap_seconds - PRE_PYTEST_OVERHEAD_SECONDS`, not the bare cap.
+    assert (
+        phd.CONTROLLER_DUMP_AFTER_SECONDS < cap_seconds - PRE_PYTEST_OVERHEAD_SECONDS
+    ), (
         "posthang_diagnostics_1660.CONTROLLER_DUMP_AFTER_SECONDS ({!r}s) is not "
-        "less than the job's own timeout-minutes cap ({:.1f}s) -- the "
-        "controller's own watchdog would be killed by the job's cap before it "
-        "ever gets a chance to dump a stack, exactly the #1660 recurrence this "
-        "module exists to explain".format(
-            phd.CONTROLLER_DUMP_AFTER_SECONDS, cap_seconds
+        "less than the job's own timeout-minutes cap ({:.1f}s) minus the "
+        "measured pre-pytest overhead ({!r}s, #1784) -- the controller's own "
+        "watchdog would be killed by the job's cap before it ever gets a "
+        "chance to dump a stack, exactly the #1660 recurrence this module "
+        "exists to explain".format(
+            phd.CONTROLLER_DUMP_AFTER_SECONDS, cap_seconds, PRE_PYTEST_OVERHEAD_SECONDS
         )
     )
 
@@ -185,13 +194,26 @@ def test_dump_delay_fits_inside_the_jobs_own_margin():
     assert isinstance(cap_minutes, int), "timeout-minutes is not an int: {!r}".format(
         cap_minutes
     )
-    margin_seconds = (cap_minutes * 60) - (OBSERVED_WORST_CASE_SUITE_MINUTES * 60)
+    # #1784: subtract the measured pre-pytest overhead too -- pytest's own
+    # summary line never sees checkout/setup-python/install, which all run
+    # before it, so the job's real margin over pytest's own reported worst
+    # case is smaller than the bare cap-minus-runtime subtraction below used
+    # to assume.
+    margin_seconds = (
+        (cap_minutes * 60)
+        - (OBSERVED_WORST_CASE_SUITE_MINUTES * 60)
+        - PRE_PYTEST_OVERHEAD_SECONDS
+    )
     assert phd.POST_SESSION_DUMP_AFTER_SECONDS < margin_seconds, (
         "posthang_diagnostics_1660.POST_SESSION_DUMP_AFTER_SECONDS ({!r}s) is not "
         "less than the job's own margin over the observed worst-case suite "
-        "runtime ({:.1f}s) -- the diagnostic would be killed by the job's own "
-        "timeout-minutes cap before it ever gets a chance to dump a stack, "
-        "exactly the #1660 recurrence this module exists to explain".format(
-            phd.POST_SESSION_DUMP_AFTER_SECONDS, margin_seconds
+        "runtime, once the measured pre-pytest overhead ({!r}s, #1784) is also "
+        "subtracted ({:.1f}s) -- the diagnostic would be killed by the job's "
+        "own timeout-minutes cap before it ever gets a chance to dump a "
+        "stack, exactly the #1660 recurrence this module exists to "
+        "explain".format(
+            phd.POST_SESSION_DUMP_AFTER_SECONDS,
+            PRE_PYTEST_OVERHEAD_SECONDS,
+            margin_seconds,
         )
     )

@@ -148,31 +148,40 @@ def pytest_sessionfinish(session, exitstatus):
 #: `tests/test_pytest_leg_timeout_1658.py`) is pytest's OWN self-reported
 #: elapsed time -- i.e. measured from close to this same `pytest_configure`
 #: to `pytest_sessionfinish` -- so the ~26.9s gap between that figure and the
-#: job's 1800s cap is the TOTAL slack left over for everything pytest's own
+#: (then-)1800s cap was the TOTAL slack left over for everything pytest's own
 #: clock does not cover: checkout/setup/install BEFORE pytest starts, and
-#: teardown/cancellation-handling AFTER it finishes, combined. How that ~27s
-#: splits between the two halves is NOT measured. This constant therefore
-#: carries a real, unquantified risk this diagnostic accepts rather than
-#: hides: if checkout+setup+install alone take longer than
-#: `1800 - CONTROLLER_DUMP_AFTER_SECONDS` seconds, this timer fires AFTER
-#: the job's own cap has already killed the process, reproducing -- for the
-#: controller specifically -- the exact "diagnostic mathematically incapable
-#: of firing" failure #1660's own original 60s choice suffered for the
-#: worker-side timer. Set close to OBSERVED_WORST_CASE_SUITE_MINUTES*60
-#: (only +7s, deliberately smaller than POST_SESSION_DUMP_AFTER_SECONDS's
-#: own +15s) specifically to leave as much of that ~27s of total slack as
-#: possible for the unmeasured pre-pytest half, at the cost of a smaller
-#: buffer above a normal green run's own worst-case duration (so a stray
-#: controller dump on an ordinary run is a somewhat more real possibility
-#: here than on the worker-side timer -- the same class of accepted
-#: tradeoff POST_SESSION_DUMP_AFTER_SECONDS's own comment already names for
-#: itself). Hand-maintained, same as POST_SESSION_DUMP_AFTER_SECONDS above
-#: and for the same reason: not read from a live CI measurement, and
+#: teardown/cancellation-handling AFTER it finishes, combined. #1784 measured
+#: the pre-pytest half directly from the GitHub Actions API (job start to the
+#: "Run tests" step's own start) across the six jobs already cited in
+#: `tests/test_pytest_leg_timeout_1658.py`'s own `PRE_PYTEST_OVERHEAD_SECONDS`:
+#: 26-43s -- already comparable to, and at its worst exceeding, that entire
+#: ~27s of assumed-free slack. That finding is what raised the job's own cap
+#: (30 -> 32 minutes, `.github/workflows/tests.yml`); the post-finish
+#: teardown/cancellation-handling half remains unmeasured. This constant
+#: therefore still carries a real, if smaller and now partly quantified,
+#: risk: if checkout+setup+install alone take longer than
+#: `cap_seconds - CONTROLLER_DUMP_AFTER_SECONDS` (checked by
+#: `test_controller_dump_delay_fits_inside_the_jobs_own_margin`, which now
+#: subtracts the measured overhead from the cap rather than comparing
+#: against the bare cap), this timer fires AFTER the job's own cap has
+#: already killed the process, reproducing -- for the controller
+#: specifically -- the exact "diagnostic mathematically incapable of firing"
+#: failure #1660's own original 60s choice suffered for the worker-side
+#: timer. Set close to OBSERVED_WORST_CASE_SUITE_MINUTES*60 (only +7s,
+#: deliberately smaller than POST_SESSION_DUMP_AFTER_SECONDS's own +15s)
+#: specifically to leave as much of the job's own slack as possible for the
+#: pre-pytest half, at the cost of a smaller buffer above a normal green
+#: run's own worst-case duration (so a stray controller dump on an ordinary
+#: run is a somewhat more real possibility here than on the worker-side
+#: timer -- the same class of accepted tradeoff
+#: POST_SESSION_DUMP_AFTER_SECONDS's own comment already names for itself).
+#: Hand-maintained, same as POST_SESSION_DUMP_AFTER_SECONDS above and for
+#: the same reason: not read from a live CI measurement on every run, and
 #: `test_controller_dump_delay_fits_inside_the_jobs_own_margin` in
 #: `tests/test_posthang_diagnostics_1660.py` only catches this value going
-#: stale against whatever the two constants it is derived from currently
-#: say -- it cannot measure, and does not claim to measure, the real
-#: pre-pytest overhead this constant is silent about.
+#: stale against whatever the constants it is derived from currently say --
+#: it cannot measure, and does not claim to measure, the post-finish half of
+#: the overhead this constant is still silent about.
 CONTROLLER_DUMP_AFTER_SECONDS = 1780
 
 

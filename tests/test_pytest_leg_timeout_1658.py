@@ -40,6 +40,17 @@ measurement-free `cap > 0`, but it is a much smaller floor than "real headroom" 
 to promise, and a reader should not take this paragraph's older framing at face
 value: there is no multi-minute buffer here anymore.
 
+UPDATE (#1784): that ~27s figure was itself an overstatement of the true margin --
+it compared the job's `timeout-minutes` cap only against pytest's OWN self-reported
+runtime, but the cap counts from JOB start, and checkout/setup-python/the Windows
+Defender exclusion step/`pip install` all run, as separate steps, before pytest
+ever starts. Measured directly from the GitHub Actions API for the six jobs already
+cited in this file, that pre-pytest overhead ran 26-43s -- already comparable to,
+and at its worst exceeding, the entire ~27s this file used to treat as free margin.
+`PRE_PYTEST_OVERHEAD_SECONDS` below is that measurement; the margin test now
+subtracts it, and the job's own cap was raised (30 -> 32 minutes) to keep a real,
+if still thin, margin once it is subtracted.
+
 Python 3.9 compatible.
 """
 
@@ -60,6 +71,24 @@ WORKFLOW = REPO_ROOT / ".github" / "workflows" / "tests.yml"
 #: for setup/checkout/install overhead on top of it, AND for the fact that this
 #: number has now grown twice, unexplained, and may again.
 OBSERVED_WORST_CASE_SUITE_MINUTES = 1773.10 / 60.0
+
+#: #1784: the margin below used to treat OBSERVED_WORST_CASE_SUITE_MINUTES as
+#: the whole job, but `timeout-minutes` counts from JOB start, and
+#: checkout/setup-python/the Windows Defender exclusion step/`pip install`
+#: all run as separate steps BEFORE "Run tests" ever invokes pytest -- none
+#: of that time is in pytest's own "in Xs" summary line. Measured directly
+#: via the GitHub Actions API (`gh api repos/.../actions/jobs/<id>`, each
+#: job's own `started_at` to its "Run tests" step's own `started_at`) for the
+#: exact six job IDs already cited in this file and in
+#: `tests/posthang_diagnostics_1660.py`:
+#:   105401634166 -> 43s   105406249723 -> 29s   105410692355 -> 33s
+#:   105421966394 -> 28s   105427076121 -> 26s   105442284149 -> 29s
+#: 43s is the largest of the six and is what the margin below now subtracts.
+#: This is real, measured overhead for this leg -- not another
+#: hand-maintained guess alongside the constant above -- but six samples is
+#: not a guarantee: a seventh occurrence outside this range needs this
+#: constant updated by hand, the same way the constant above already is.
+PRE_PYTEST_OVERHEAD_SECONDS = 43
 
 try:
     import yaml
@@ -129,13 +158,16 @@ def test_the_pytest_job_cap_clears_the_observed_worst_case_with_margin():
     job = _pytest_job()
     cap = job.get("timeout-minutes")
     assert isinstance(cap, int), "timeout-minutes is not an int: {!r}".format(cap)
-    margin = cap - OBSERVED_WORST_CASE_SUITE_MINUTES
+    margin = (
+        cap * 60 - OBSERVED_WORST_CASE_SUITE_MINUTES * 60 - PRE_PYTEST_OVERHEAD_SECONDS
+    ) / 60.0
     assert margin > 0, (
         "the pytest job's timeout-minutes ({!r}) leaves NO margin over the "
         "observed worst-case suite runtime of {:.2f} minutes (job "
-        "#105442284149, commit c201a8a0, 1773.10s) -- the job would already be "
-        "cancelled before the suite's own summary line could even print, which "
-        "is worse than #1658 and #1660's prior two occurrences combined".format(
-            cap, OBSERVED_WORST_CASE_SUITE_MINUTES
+        "#105442284149, commit c201a8a0, 1773.10s) once the measured "
+        "pre-pytest overhead ({!r}s, #1784) is also subtracted -- the job "
+        "would already be cancelled before or shortly after the suite's own "
+        "summary line could even print".format(
+            cap, OBSERVED_WORST_CASE_SUITE_MINUTES, PRE_PYTEST_OVERHEAD_SECONDS
         )
     )
