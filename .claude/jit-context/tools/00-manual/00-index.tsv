@@ -2,6 +2,7 @@ Monitor	~.*	a-watcher-is-a-checker.md	once
 Bash	~open.*['\"][wa]['\"]|[.]write[(]|[.]write_text[(]	a-write-outside-supertool-meets-no-validator.md	once			
 Bash	~gh-run|gh-branch|gh-pr:[0-9]+:status	ci-evidence-is-about-one-commit.md	once			
 Bash	~\|[[:space:]]*(head|tail)([[:space:];&|><)]|$)	exit-sensitive-pipe-to-head-tail.md	once			
+Bash	~gh-pr-merge	gh-pr-merge-unknown-after-sibling.md	once			
 Bash	~gh api rate_limit|rate limit exceeded	gh-rate-limit-reset-and-pollers.md	once			
 Bash	~git-commit	git-commit-no-paths-refusal.md	once			
 Bash	~git[[:space:]]+stash	git-stash-unstages-git-rm-deletions.md	once			
