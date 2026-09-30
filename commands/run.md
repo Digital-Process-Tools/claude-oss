@@ -53,7 +53,9 @@ request, the way this step treats a `curate/` branch.** `git push` the branch, t
 `no_close = true` in the payload (the same escape hatch `commands/run/curate.md` uses) rather than
 inventing one. Never wait on it (#1549) -- the ordinary dispatch/review/merge cadence picks it up
 on a later tick, on green, the same route `tick-merge.md` merges a `curate/`-branch pull request
-through. A `repaired:` line with `untracked -- no commit` needs none of this.
+through, via the CI-wait sweep in `agents/sub-manager.md`'s own step 2 (#1798) -- fires once a
+tick has nothing left to dispatch, not guaranteed the very next one. A `repaired:` line with
+`untracked -- no commit` needs none of this.
 
 **This step never stops the session by itself.** The one thing that can stop `/oss:run` is step 2
 reporting `unsafe`, immediately below -- so an unrepairable gap is named once, at the point that

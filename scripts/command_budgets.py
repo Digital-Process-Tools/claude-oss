@@ -311,7 +311,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # lines, ~10 minutes) listing what setup was about to write. The first
     # draft was 110 B over; trimmed to fit instead, including a redundant
     # clause in the setup section's own hand-back line. Ceiling unchanged.
-    "commands/run.md": (12111, 12300),
+    "commands/run.md": (12266, 12300),
 }
 
 

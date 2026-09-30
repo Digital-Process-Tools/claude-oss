@@ -253,9 +253,23 @@ moment the only thing left this tick looks like "wait on CI, then review":
    Dispatch into it instead of waiting at all.
 2. **Else, spawn `oss:tick-review`** with exactly the pull request number(s) open this tick --
    plus any pull request `skills/manager/phases/handback.md` named from a lane's own
-   `superseded_by_pr` field this tick (#1656), added to the same list rather than dispatched as
-   a second spawn -- nothing else. It inherits the `sub-manager` marker you already wrote, so it
-   can no more publish a release than you can. It waits on `pr_green.py --wait --timeout T`, one
+   `superseded_by_pr` field this tick (#1656), plus any loop-authored orphan
+   `scripts/orphan_pr_sweep.py` names -- added to the same list rather than dispatched as a
+   second spawn, and nothing beyond those three sources. **Run the sweep first (#1798):** list the
+   open pull requests as `(number, branch)` pairs, in the exact key names the script below reads
+   -- `gh pr list --state open --json number,headRefName --jq '[.[] | {number: .number, branch:
+   .headRefName}]'` produces that shape directly, never a raw `headRefName`-keyed payload the
+   script would read as every branch missing -- alongside this list's own numbers so far, and feed
+   both to
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/orphan_pr_sweep.py" --open-prs-json <PATH-or-'-'>
+   --known-json <PATH-or-'-'>`. Fold every number its `ORPHANS:` line names into the list: a
+   `curate/*` or `doctor/*` pull request nobody dispatched this tick otherwise has no reviewer and
+   no merger by construction, the exact gap #1798 names (a curate PR sat unmerged across three
+   consecutive ticks). `ORPHANS: none` or `could-not-tell` adds nothing -- `could-not-tell` is not
+   evidence there is nothing to sweep, so a later tick's own step 2 tries again rather than
+   treating this one's failure as clearance. It inherits the `sub-manager` marker you already
+   wrote, so it can no more publish a release than you can. It waits on `pr_green.py --wait
+   --timeout T`, one
    call per pull request rather than one for the whole batch (`agents/tick-review.md`'s step 1
    says why),
    and once each resolves applies `skills/manager/phases/review.md` in full **including its

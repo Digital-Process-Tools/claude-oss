@@ -457,7 +457,7 @@ BUDGETS: dict[str, tuple[int, int]] = {
     # paragraph. Row re-measured against the actual merged CLAUDE.md rather
     # than added by hand, including two further self-referential-overshoot
     # corrections recorded in CLAUDE.md's own history section above.
-    "CLAUDE.md": (123647, 124200),
+    "CLAUDE.md": (128007, 128500),
 }
 
 
