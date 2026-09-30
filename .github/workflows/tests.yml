@@ -99,10 +99,29 @@ jobs:
     # raised a third time: the growth (873s -> 1176.55s -> 1773.10s) has tracked
     # each cap raise closely enough that raising it again is not expected to
     # hold either, and #1660's own issue text argues against repeating that fix
-    # for however long the trend continues. The next recurrence, if the
-    # diagnostic can now actually fire, is what settles whether this is a real
-    # hang or something else growing the suite's own reported runtime.
-    timeout-minutes: 30
+    # for however long the trend continues (this was true when this cap was
+    # last left at 30; #1784 below raises it a third time anyway, but for a
+    # different, now-measured reason -- see that comment). The next
+    # recurrence, if the diagnostic can now actually fire, is what settles
+    # whether this is a real hang or something else growing the suite's own
+    # reported runtime.
+    #
+    # #1784: this 30-minute figure was clearing OBSERVED_WORST_CASE_SUITE_MINUTES
+    # (`tests/test_pytest_leg_timeout_1658.py`) by only ~26.9s, and that whole
+    # margin was computed against pytest's own self-reported runtime alone --
+    # `timeout-minutes` counts from JOB start, so checkout/setup-python/the
+    # Windows Defender exclusion step/`pip install`, none of which pytest's own
+    # clock ever sees, were silently eating into it. Measured directly from the
+    # GitHub Actions API for the six jobs already cited above and in
+    # `tests/posthang_diagnostics_1660.py`, that pre-pytest overhead ran 26-43s
+    # -- already comparable to, and at its worst exceeding, the entire 26.9s
+    # margin the arithmetic assumed was free. Raised by 2 minutes specifically
+    # to cover that now-measured, largely fixed overhead (not to chase the
+    # suite's own separate, unexplained runtime growth the paragraph above
+    # already argues against re-raising for) -- see
+    # `tests/test_pytest_leg_timeout_1658.py`'s own `PRE_PYTEST_OVERHEAD_SECONDS`
+    # for the six measured values this raise is sized against.
+    timeout-minutes: 32
     # #1246: the `os` x `python-version` product below is the full 3x4 release matrix,
     # unconditionally -- so `full_matrix: true` restores full coverage by excluding
     # nothing, rather than needing a second, separately-maintained matrix to drift out
