@@ -6,6 +6,69 @@ named and reasoned in the pass's own pull request, rather than forced into one o
 This file is the record of the declines, so the next lane to hit the same thing finds a decision
 rather than an absence and does not refile it. The rule builder skips this file by name.
 
+## 2026-09-29 -- 13 fragments: 2 promoted, 2 merged, 7 filed, 1 declined (cannot tell), 1 deferred
+
+Two new rules: `paths/00-manual/launcher-test-oss-enablement-fixture.md`
+(`1768.launcher-tests-read-the-real-plugin-registry`), `tools/00-manual/gh-pr-merge-unknown-after-sibling.md`
+(`1769.gh-pr-merge-unknown-right-after-a-sibling-merge`). Both driven through `pre-path-hook.sh` /
+`pre-tool-hook.sh` with a must-fire and a must-stay-silent payload, plus a known-good control that
+already fired for both hooks -- all agreed.
+
+Two merges: into `paths/00-manual/test-fixture-pitfalls.md`
+(`1768.bash-c-path-splice-breaks-on-git-bash` -- the `PATH`-via-`bash -c`-splice and the 3.9-floor
+`write_text(newline=...)` traps, both from the same PR round), and into
+`paths/00-manual/agent-call-needs-run-in-background-pin.md`
+(`1770.scheduler-dropped-run-in-background-pin-on-doctor-spawn` -- the pin can be present in the
+file's own text and still be dropped or ignored by the harness at call time, both directions
+observed on the same real session).
+
+**Filed as issues -- each a live, still-reproducible code gap, confirmed against this repo's own
+HEAD at the time of this pass rather than trusted from the fragment's own age.**
+
+- `1630.fifty-one-worktrees-accumulate-because-every-reap-gate-declines` -- filed as #1783.
+  Deferred twice before (2026-09-17, 2026-09-23) as a design decision this pass could not make
+  alone; converting it to a tracked issue this time rather than deferring a third time, since
+  deferral alone was not moving it anywhere a human could act on it. Still the same gap: no sweep
+  exists for a `[merged, clean]` tree stuck inside a tick's own 15-minute activity window.
+- `1660.pytest-leg-margin-arithmetic-ignores-pre-run-tests-step-overhead` -- filed as #1784, same
+  reasoning as #1630 above (deferred twice, converted to a tracked issue this time). Confirmed:
+  `tests/test_posthang_diagnostics_1660.py`'s margin arithmetic still has no term for job-start
+  overhead (checkout, setup-python, pip install) ahead of pytest's own "in Xs" line.
+- `1745.recon-cwd-pin-does-not-survive-past-the-first-bash-call` and
+  `1745.recon-worktree-cut-fallback-has-no-naming-or-cleanup-discipline` -- filed together as
+  #1785, since both target the same section of `agents/recon.md` and neither is fixable from this
+  pass (both need editing a budgeted agent file, outside `trap.d/`/`.claude/jit-context/`).
+  Confirmed still true against `agents/recon.md` at HEAD: the `cd` pin covers only the first Bash
+  call, and the worktree-cut fallback still names no path, naming scheme, or cleanup discipline.
+- `1752.tick-handback-and-doctor-md-misreport-unreadable-marker-as-overwrite` -- filed as #1786.
+  Confirmed at HEAD: `scripts/agent_role.py`'s `_clear_role_marker_detail` returns the same
+  `_MARKER_OWNER_MISMATCH` state (with `exc=None`) for an unreadable marker as for a genuine live
+  overwrite, and `scripts/tick_handback.py`/`agents/doctor.md:210` both still render/state the
+  overwrite case for both.
+- `1758.take-idle-prints-ok-while-persisting-nothing` -- filed as #1787. Confirmed at HEAD:
+  `scripts/next_action.py:1146`'s `_take_idle_cli` still discards `_idle_already_seen`'s return
+  value and unconditionally prints `OK`.
+- `1768.plugin-update-enablement-conflates-config-dir-miss-with-not-installed` -- filed as #1788.
+  Confirmed: `git grep CLAUDE_CONFIG_DIR -- scripts bin` still finds nothing in this repo, so a
+  machine with `$CLAUDE_CONFIG_DIR` set still reads as not-installed by `enablement()`.
+
+**Declined, cannot tell.**
+
+- `1767.github-pr-feed-emits-every-pr-opened-twice` -- a single day's channel-delivery observation
+  ("confirmed by eye only... nothing was probed"), about supertool's own `watch` infrastructure
+  rather than this repo's code. Ran the suggested probe (`channel:health`) during this pass: it
+  reports the channel bound, subscribed, and zero events forwarded since the last restart -- no
+  evidence either way of two live `github-pr-feed` pollers right now. Not this repo's code to file
+  an issue against, and too thin (single-day, unreproduced) to be worth a rule even if it were.
+
+**Deferred, left in `trap.d/` unchanged.**
+
+- `1770.doctor-enabled-github-security-settings-unasked` -- the fragment itself poses the open
+  question ("is a repo-settings PATCH a repair the doctor may make unasked, or a
+  `could-not-repair: needs the maintainer` line?"). This is a maintainer policy decision about
+  `agents/doctor.md`'s own authority, not a jit-context lesson or a code-defect claim this pass can
+  check against HEAD -- genuinely not something this pass is positioned to decide alone.
+
 ## 2026-09-27 -- 12 fragments: 2 promoted, 1 merged, 2 declined, 5 filed, 2 deferred
 
 Two new rules: `paths/00-manual/agent-role-marker-plugin-lag.md`

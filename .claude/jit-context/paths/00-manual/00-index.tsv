@@ -18,6 +18,7 @@
 (^|/)scripts/(select_issues|lane_setup)[a-z_]*\.py$	issue-selection-goal.md
 (^|/)scripts/lane_setup\.py$	lane-setup-claim-reuses-stale-merged-branch.md
 (^|/)bin/oss-workspace$	launcher-prompt-selection.md
+(^|/)(tests/test_workspace_launcher.*\.py|bin/oss-workspace)$	launcher-test-oss-enablement-fixture.md
 (^|/)(CLAUDE\.md|agents/[^/]+\.md|skills/manager/([^/]+\.md|phases/[^/]+\.md))$	loop-prose-parity.md
 (^|/)(agents/([^/]+\.md|[^/]+/[^/]+\.md)|skills/manager/([^/]+\.md|phases/[^/]+\.md)|commands/[^/]+\.md|\.claude/jit-context/.+\.md)$	md-is-a-manual-not-a-rationale.md
 (^|/)(CLAUDE\.md|agents/.+\.md|commands/.+\.md|skills/manager/.+\.md|trap\.d/.+\.md|\.claude/jit-context/.+\.md)$	md018-issue-ref-at-line-start.md

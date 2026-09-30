@@ -151,3 +151,15 @@ it. (Root cause of the case difference itself: still unexplained.)
   on disk until the guard already needs to see it. Prefer an obviously synthetic fixture string
   (`fixtures/example-a.md`, `held-example.txt`) over a real, well-known repo path whenever the test's
   own subject does not actually depend on the path being real.
+- **A `bash -c` script that splices `PATH` into its own text breaks on Windows Git Bash.**
+  `'PATH="{}:$PATH"'.format(bin_dir.as_posix())` works on every POSIX leg; `as_posix()` gives a
+  drive-letter path (`C:/...`) and Git Bash splits `PATH` at the colon after the drive letter, so
+  the stub is never found and the call exits 127 (#1768, `tests/test_workspace_plugin_enabled_1768.py`,
+  3 failures on `pytest (windows-latest, 3.12)`). Pass `PATH` through the child's environment
+  instead, joined with `os.pathsep` (`;` on Windows) -- Git Bash converts it at startup -- the same
+  way `tests/launcher_env.py` already does for the launcher suites.
+- **`Path.write_text(..., newline=...)` is Python 3.10+; the floor is 3.9.** Same PR, same round,
+  a different leg: `write_text(newline="\n")` failed all ten tests on `pytest (ubuntu-latest, 3.9)`
+  with `TypeError: write_text() got an unexpected keyword argument 'newline'`. No local 3.9
+  interpreter catches this before pushing. `write_bytes(body.encode("utf-8"))` works on 3.9 and
+  keeps LF for a shebang on Windows too.
