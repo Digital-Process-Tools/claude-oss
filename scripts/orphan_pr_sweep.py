@@ -139,7 +139,11 @@ def _read_arg(value, flag_name, parser):
     if value == UNKNOWN:
         return UNKNOWN
     try:
-        raw = sys.stdin.read() if value == "-" else Path(value).read_text()
+        raw = (
+            sys.stdin.read()
+            if value == "-"
+            else Path(value).read_text(encoding="utf-8")
+        )
     except (OSError, UnicodeDecodeError) as exc:
         parser.error("{0} could not be read: {1}".format(flag_name, exc))
         return None  # pragma: no cover -- parser.error exits

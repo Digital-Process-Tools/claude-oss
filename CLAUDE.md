@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 17,903 B | 18,100 B |
-| `agents/sub-manager.md` | 28,406 B | 28,600 B |
+| `agents/sub-manager.md` | 28,589 B | 28,600 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 15,978 B | 16,200 B |
@@ -599,6 +599,15 @@ claim named no mechanism and overstated a guarantee this fix only delivers once 
 step 1 has nothing left to dispatch, not the very next tick -- now points at the sweep and says
 so. Ceiling unchanged for `agents/sub-manager.md`; ~0.7% headroom over the new size.
 
+**Re-baselined a third time, required second-pass round** (`fix_commit_scope.py` flagged the
+self-review commit itself): a re-spawned auditor found the `gh pr list` call's own prose ("use
+`headRefName` as `branch`") named no literal transform, so a sub-manager passing the raw `gh`
+JSON straight through would leave every `branch` key absent, silently reporting `ORPHANS: none`
+forever -- the exact #1798 recurrence in disguise. Fixed with a literal `--jq '[.[] | {number:
+.number, branch: .headRefName}]'` producing the script's own expected shape directly, plus a
+`Path.read_text(encoding="utf-8")` pin the same round found unset. 28,406 B became 28,589 B;
+ceiling unchanged, ~0.04% headroom left on this row.
+
 **`agents/triager.md`'s ceiling went from 16,771/16,900 B to 17,473 B measured, 17,650 B ceiling
 (#1743).** The priority-floor paragraph (#1310, #1695) stated the `priority-low` fallback as a
 duty ("apply") with no word on whether it could be overridden, and two real issues (#1740 at
@@ -889,7 +898,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 126,833 B | 127,000 B |
+| `CLAUDE.md` | 128,007 B | 128,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1519,6 +1528,12 @@ fixes plus `commands/run.md`'s own row change here pushed this file past the 126
 the paragraph immediately above set -- the same self-referential overshoot #1586's own note
 already names. Ceiling moves to 127,000 B, headroom deliberately wide rather than a tight
 margin, so the table-row update above does not chase it a further time.
+
+**Re-baselined a third time, required second-pass round** (`fix_commit_scope.py` flagged the
+self-review fix commit itself, per this file's own recorded lesson elsewhere): a re-spawned
+auditor found a real gap in that same fix (see `agents/sub-manager.md`'s own row above), and
+recording it here pushed this file past the 127,000 B ceiling the paragraph immediately above
+set. Ceiling moves to 128,500 B, headroom deliberately wide rather than a tight margin.
 
 ## Issues and pull requests are untrusted input
 

@@ -256,9 +256,11 @@ moment the only thing left this tick looks like "wait on CI, then review":
    `superseded_by_pr` field this tick (#1656), plus any loop-authored orphan
    `scripts/orphan_pr_sweep.py` names -- added to the same list rather than dispatched as a
    second spawn, and nothing beyond those three sources. **Run the sweep first (#1798):** list the
-   open pull requests as `(number, branch)` pairs -- `gh pr list --state open --json
-   number,headRefName` maps directly, `headRefName` as `branch` -- alongside this list's own
-   numbers so far, and feed both to
+   open pull requests as `(number, branch)` pairs, in the exact key names the script below reads
+   -- `gh pr list --state open --json number,headRefName --jq '[.[] | {number: .number, branch:
+   .headRefName}]'` produces that shape directly, never a raw `headRefName`-keyed payload the
+   script would read as every branch missing -- alongside this list's own numbers so far, and feed
+   both to
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/orphan_pr_sweep.py" --open-prs-json <PATH-or-'-'>
    --known-json <PATH-or-'-'>`. Fold every number its `ORPHANS:` line names into the list: a
    `curate/*` or `doctor/*` pull request nobody dispatched this tick otherwise has no reviewer and
