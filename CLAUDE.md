@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 17,903 B | 18,100 B |
-| `agents/sub-manager.md` | 27,436 B | 27,700 B |
+| `agents/sub-manager.md` | 28,278 B | 28,600 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 15,978 B | 16,200 B |
@@ -575,6 +575,16 @@ return exit 1. Both fixed in the same rewrite: any nonzero `write-exit` now rout
 in the file's own `TICK:`/`REASON:` shape, and the forced retry's own `force-write-exit` is
 checked the same way. Ceiling moves to 27,700 B, ~1% headroom over the new size, the same narrow
 margin the first raise above already gave.
+
+**`agents/sub-manager.md`'s ceiling went from 27,436/27,700 B to 28,278 B measured, 28,600 B
+ceiling (#1798).** No step in the tick cadence ever reviewed or merged a pull request its own
+tick did not dispatch -- a curate pull request (#1789), 10/10 checks green, sat unmerged across
+three consecutive ticks, each handback silent about it. Step 2 of the CI-wait shape now runs a
+new script, `scripts/orphan_pr_sweep.py` (reusing `release_gate2.is_loop_authored_branch()`
+rather than a second copy of the same two branch prefixes), and folds any `curate/*`/`doctor/*`
+pull request it names into the same `oss:tick-review` call. Nothing already in this file argued
+a weaker case for its size, so nothing was cut to make room; ~1.1% headroom over the new size,
+the same narrow margin every prior raise of this row gives.
 
 **`agents/triager.md`'s ceiling went from 16,771/16,900 B to 17,473 B measured, 17,650 B ceiling
 (#1743).** The priority-floor paragraph (#1310, #1695) stated the `priority-low` fallback as a
@@ -866,7 +876,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 123,647 B | 124,200 B |
+| `CLAUDE.md` | 125,172 B | 126,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1480,6 +1490,15 @@ headroom, the same narrow self-referential margin every prior raise of this row 
 paragraph itself pushed the file to 123,381 B, past that same ceiling -- the same self-referential
 overshoot #1586's own note above already names. Ceiling moves to 124,200 B, headroom sized to
 absorb this correction rather than chase it a further time.
+
+**Re-baselined for #1798**, the third editing exception: `agents/sub-manager.md`'s own row and
+ceiling raised (see its own weighed sentence above), plus this row and sentence. Cross-checked
+per this row's own recorded trap before writing this paragraph: `wc -c CLAUDE.md` and
+`scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `(123647, 124200)` at
+the start of this edit, agreeing with each other and with the table row above, so this paragraph
+starts from a confirmed number rather than a claimed one. Written with deliberately wide headroom
+this time, per this row's own recorded lesson, rather than converging on a tight margin across a
+second pass: ceiling moves to 126,000 B.
 
 ## Issues and pull requests are untrusted input
 
