@@ -1100,6 +1100,20 @@ not yet known well enough to write a rule from.
 - `1725.triage-signature-receipt-suppresses-a-standing-over-threshold-reading` -> #1709. A real
   question about `next_action.py`'s own suppression-receipt semantics, needing a decision about
   intended behaviour, not knowledge a rule could carry.
+- `1770.doctor-enabled-github-security-settings-unasked` -> #1795. A policy question about
+  `agents/doctor.md`'s own disposition list (does an outward GitHub security-setting PATCH need a
+  maintainer's yes), not an agent-facing lesson a rule can carry.
+- `1777.select-issues-first-time-contributor-tension` -> #1796. Confirmed still true at HEAD
+  (`scripts/select_issues.py` lines 234-246 unchanged); a design decision about two sibling
+  modules' intended behaviour for the same GitHub vocabulary, needing a maintainer's call, not a
+  rule.
+- `1788.default-plugins-root-more-sites` -> #1797. Confirmed still true at HEAD across all three
+  named sites (`scripts/statusline.py`, `bin/oss-workspace`, `scripts/doctor.py`); a real code
+  convergence with a cross-import design question, not knowledge a rule could carry.
+- `1789.curate-pr-stranded-no-tick-reviews-it` -> #1798. Confirmed the described gap is still
+  current in both `commands/run.md` and `agents/sub-manager.md`'s own CI-wait shape; the fix is a
+  real step missing from the tick cadence, not something a jit-context rule intercepting a tool
+  call can close.
 
 **Declined outright.**
 
