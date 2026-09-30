@@ -66,6 +66,17 @@ def test_a_pr_with_no_branch_field_is_never_swept_in():
     assert result["orphans"] == []
 
 
+def test_a_loop_authored_pr_with_no_number_field_is_never_swept_in():
+    """A malformed PR dict (loop-authored branch, no ``number``) must never
+    surface as a bare ``None`` orphan -- a caller folding this straight into
+    a spawn call would pass a garbage identifier rather than a missed
+    sweep, the opposite of the module's own conservative-by-design claim."""
+    open_prs = [{"branch": "curate/x"}]
+    result = orphan_pr_sweep.orphan_numbers(open_prs, known_numbers=[])
+    assert result["orphans"] == []
+    assert None not in result["orphans"]
+
+
 def test_empty_open_pr_list_is_determined_with_no_orphans():
     result = orphan_pr_sweep.orphan_numbers(open_prs=[], known_numbers=[])
     assert result["status"] == "determined"

@@ -255,10 +255,12 @@ moment the only thing left this tick looks like "wait on CI, then review":
    plus any pull request `skills/manager/phases/handback.md` named from a lane's own
    `superseded_by_pr` field this tick (#1656), plus any loop-authored orphan
    `scripts/orphan_pr_sweep.py` names -- added to the same list rather than dispatched as a
-   second spawn, and nothing beyond those three sources. **Run the sweep first (#1798):** feed it
-   the open pull requests (number, branch) and this list's own numbers so far --
+   second spawn, and nothing beyond those three sources. **Run the sweep first (#1798):** list the
+   open pull requests as `(number, branch)` pairs -- `gh pr list --state open --json
+   number,headRefName` maps directly, `headRefName` as `branch` -- alongside this list's own
+   numbers so far, and feed both to
    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/orphan_pr_sweep.py" --open-prs-json <PATH-or-'-'>
-   --known-json <PATH-or-'-'>` -- and fold every number its `ORPHANS:` line names into the list: a
+   --known-json <PATH-or-'-'>`. Fold every number its `ORPHANS:` line names into the list: a
    `curate/*` or `doctor/*` pull request nobody dispatched this tick otherwise has no reviewer and
    no merger by construction, the exact gap #1798 names (a curate PR sat unmerged across three
    consecutive ticks). `ORPHANS: none` or `could-not-tell` adds nothing -- `could-not-tell` is not

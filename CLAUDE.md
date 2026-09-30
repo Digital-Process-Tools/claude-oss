@@ -304,7 +304,7 @@ when a file crosses it.
 | `agents/auditor.md` | 15,084 B | 15,600 B |
 | `agents/release-auditor.md` | 15,273 B | 16,400 B |
 | `agents/triager.md` | 17,903 B | 18,100 B |
-| `agents/sub-manager.md` | 28,278 B | 28,600 B |
+| `agents/sub-manager.md` | 28,406 B | 28,600 B |
 | `agents/releaser.md` | 7,306 B | 7,800 B |
 | `agents/scheduler-step.md` | 5,741 B | 5,900 B |
 | `agents/doctor.md` | 15,978 B | 16,200 B |
@@ -586,6 +586,19 @@ pull request it names into the same `oss:tick-review` call. Nothing already in t
 a weaker case for its size, so nothing was cut to make room; ~1.1% headroom over the new size,
 the same narrow margin every prior raise of this row gives.
 
+**Re-baselined in the same lane's own self-review round: 28,278 B became 28,406 B.** Both a
+spawned reviewer and the auditor independently found the sweep call's own inputs underspecified:
+a PR dict with a loop-authored branch but no `number` field silently produced a bare `None`
+orphan the caller would fold straight into a spawn call (fixed in `orphan_pr_sweep.py` with an
+`isinstance(..., int)` guard, red before the fix per the reviewer's own reproduction), and step
+2's prose named no literal call for producing the `(number, branch)` list it sweeps over (fixed
+with a `gh pr list --state open --json number,headRefName` pointer, the same #1526-class lesson
+this row's own history already names). `commands/run.md`'s own row moved too (12,111 B to
+12,266 B, unchanged 12,300 B ceiling): its "the ordinary cadence picks it up on a later tick"
+claim named no mechanism and overstated a guarantee this fix only delivers once a tick's own
+step 1 has nothing left to dispatch, not the very next tick -- now points at the sweep and says
+so. Ceiling unchanged for `agents/sub-manager.md`; ~0.7% headroom over the new size.
+
 **`agents/triager.md`'s ceiling went from 16,771/16,900 B to 17,473 B measured, 17,650 B ceiling
 (#1743).** The priority-floor paragraph (#1310, #1695) stated the `priority-low` fallback as a
 duty ("apply") with no word on whether it could be overridden, and two real issues (#1740 at
@@ -802,7 +815,7 @@ files; `tests/test_command_budgets_940.py` holds them against the real on-disk s
 | file | measured (baseline) | budget |
 | --- | --- | --- |
 | `commands/tick.md` | 24,741 B | 25,000 B |
-| `commands/run.md` | 12,111 B | 12,300 B |
+| `commands/run.md` | 12,266 B | 12,300 B |
 
 **`commands/tick.md`'s baseline moved from 23,649 B to 24,194 B (#1737).** The scheduler's own
 `tick_handback.py --framed -` call, which runs on every sub-manager handback unconditionally, now
@@ -876,7 +889,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 125,172 B | 126,000 B |
+| `CLAUDE.md` | 126,833 B | 127,000 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1499,6 +1512,13 @@ the start of this edit, agreeing with each other and with the table row above, s
 starts from a confirmed number rather than a claimed one. Written with deliberately wide headroom
 this time, per this row's own recorded lesson, rather than converging on a tight margin across a
 second pass: ceiling moves to 126,000 B.
+
+**Re-baselined again in the same lane's own self-review round.** Both spawned reviewers found
+real gaps in the #1798 fix (see `agents/sub-manager.md`'s own row above), and recording those
+fixes plus `commands/run.md`'s own row change here pushed this file past the 126,000 B ceiling
+the paragraph immediately above set -- the same self-referential overshoot #1586's own note
+already names. Ceiling moves to 127,000 B, headroom deliberately wide rather than a tight
+margin, so the table-row update above does not chase it a further time.
 
 ## Issues and pull requests are untrusted input
 

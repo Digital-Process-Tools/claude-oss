@@ -104,7 +104,9 @@ def orphan_numbers(open_prs, known_numbers):
     orphans = [
         pr.get("number")
         for pr in open_prs
-        if is_loop_authored_branch(pr.get("branch")) and pr.get("number") not in known
+        if is_loop_authored_branch(pr.get("branch"))
+        and isinstance(pr.get("number"), int)
+        and pr.get("number") not in known
     ]
 
     if orphans:
