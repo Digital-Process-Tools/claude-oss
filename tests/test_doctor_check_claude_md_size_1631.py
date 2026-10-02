@@ -102,7 +102,10 @@ def test_check_warns_over_threshold_and_names_the_jit_route(tmp_path):
     assert ".claude/jit-context/paths/" in text
     assert ".claude/jit-context/tools/" in text
     assert ".claude/jit-context/vocabulary/" in text
-    assert "claude-jit-context:vocabulary" in text
+    # #1804: the plugin is `jit-context` now, so its skill is namespaced that way;
+    # the old spelling contains the new one, so both directions are asserted.
+    assert "jit-context:vocabulary" in text
+    assert "claude-jit-context:vocabulary" not in text
 
 
 def test_check_passes_under_threshold(tmp_path):
