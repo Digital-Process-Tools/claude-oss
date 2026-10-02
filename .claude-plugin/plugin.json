@@ -19,6 +19,6 @@
   "dependencies": [
     "supertool-cli",
     "remember",
-    "claude-jit-context"
+    "jit-context"
   ]
 }

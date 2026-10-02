@@ -162,6 +162,4 @@ def test_manifest_declares_its_plugin_dependencies():
     turns a documented capability into a missing tool at runtime.
     """
     dependencies = _manifest()["dependencies"]
-    assert dependencies == ["supertool-cli", "remember", "claude-jit-context"], (
-        dependencies
-    )
+    assert dependencies == ["supertool-cli", "remember", "jit-context"], dependencies

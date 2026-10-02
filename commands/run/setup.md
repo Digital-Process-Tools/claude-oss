@@ -210,7 +210,7 @@ stray file.
 
 ## The dependencies install themselves; they do not configure themselves
 
-`supertool`, `remember` and `claude-jit-context` are declared dependencies, so they arrive with the
+`supertool`, `remember` and `jit-context` are declared dependencies, so they arrive with the
 plugin. Arriving is not the same as working, and the gap is invisible:
 
 - **Memory with no identity** still runs and still saves. What it cannot do is record
