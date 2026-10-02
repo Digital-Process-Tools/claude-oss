@@ -67,7 +67,10 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import doctor  # noqa: E402
 
-PLUGIN = "claude-jit-context"
+# #1804: the plugin is `jit-context` now. The former name is still accepted, and that half
+# is pinned in test_jit_context_rename_1804.py; this suite builds its fixtures under the
+# current one, which is the name doctor's findings report.
+PLUGIN = "jit-context"
 VERSION = "9.9.9"
 LAYER = "01-oss"
 
