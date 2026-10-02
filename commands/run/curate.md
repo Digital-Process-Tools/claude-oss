@@ -219,7 +219,7 @@ time it does.
 
 A rule that never matched and a rule with nothing to say **render identically**. Rebuilding the index
 is not evidence. **Drive the hook, in both directions**, following the *Prove it fires* section of
-the `claude-jit-context:vocabulary` skill — that skill owns the recipe and the paths, and a second
+the `jit-context:vocabulary` skill — that skill owns the recipe and the paths, and a second
 copy of them here would go stale the first time that plugin moves a script. Two payloads, never one:
 
 - one naming a file the rule **must** govern, and

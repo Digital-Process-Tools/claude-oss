@@ -6164,6 +6164,29 @@ def owned_drift_summary(findings):
     return lines
 
 
+#: #1804: a dependency renamed upstream, mapped to every name it was published
+#: under before. `claude-jit-context` became `jit-context` because the `claude-`
+#: prefix is reserved for Anthropic's own plugins, and the marketplace maps the
+#: old name onto the new one -- but nothing migrates an install that already
+#: exists, so during the transition an install record or a cache unpack under
+#: either spelling is the same plugin. Matched on the whole name, never a suffix:
+#: `my-jit-context` is somebody else's plugin.
+DEPENDENCY_RENAMES = {"jit-context": ("claude-jit-context",)}
+
+
+def dependency_spellings(name):
+    """``name`` first, then every other name the same plugin is published under.
+
+    Symmetric: asking for the old name finds the new one too, so a manifest still
+    declaring the old name reads a migrated install correctly.
+    """
+    for current, previous in DEPENDENCY_RENAMES.items():
+        group = (current,) + tuple(previous)
+        if name in group:
+            return (name,) + tuple(other for other in group if other != name)
+    return (name,)
+
+
 def declared_dependencies():
     manifest = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
     try:
@@ -6201,8 +6224,10 @@ def active_versions(names, record=None):
 
     found = {}
     for key, entries in plugins.items():
-        name = key.split("@", 1)[0]
-        if name not in names or not isinstance(entries, list):
+        installed = key.split("@", 1)[0]
+        # #1804: a renamed dependency answers to every name it was published under.
+        requested = [name for name in names if installed in dependency_spellings(name)]
+        if not requested or not isinstance(entries, list):
             continue
         # One entry per scope; take the highest, which is the one that wins at load.
         versions = [
@@ -6210,9 +6235,13 @@ def active_versions(names, record=None):
             for e in entries
             if isinstance(e, dict) and e.get("version")
         ]
-        for version in versions:
-            if name not in found or compare_versions(found[name], version) == "behind":
-                found[name] = version
+        for name in requested:
+            for version in versions:
+                if (
+                    name not in found
+                    or compare_versions(found[name], version) == "behind"
+                ):
+                    found[name] = version
     return found
 
 
@@ -6227,7 +6256,11 @@ def dependency_repositories(names):
     root = Path(os.path.expanduser("~/.claude/plugins/cache"))
     for name in names:
         for manifest in sorted(
-            root.glob("*/{}/*/.claude-plugin/plugin.json".format(name))
+            manifest
+            for spelling in dependency_spellings(name)
+            for manifest in root.glob(
+                "*/{}/*/.claude-plugin/plugin.json".format(spelling)
+            )
         ):
             try:
                 doc = json.loads(manifest.read_text(encoding="utf-8"))
@@ -6356,15 +6389,16 @@ def published_versions(repos):
 
 #: The dependency that consumes ``JIT_RULES_DIR``. It is declared in this plugin's own
 #: manifest, and the check below refuses to answer if it stops being declared rather
-#: than quietly measuring a plugin nobody depends on any more.
-JIT_PLUGIN = "claude-jit-context"
+#: than quietly measuring a plugin nobody depends on any more. Its previous name
+#: still counts everywhere this is matched (#1804, ``dependency_spellings``).
+JIT_PLUGIN = "jit-context"
 
 PLUGIN_CACHE_ROOT = "~/.claude/plugins/cache"
 
 #: Per declared dependency, how to reach its own diagnostic. Three shapes exist
 #: today (#638): `supertool` ships its diagnostic as a supertool OP, run through
 #: the `supertool` binary against the repo under diagnosis; `remember` and
-#: `claude-jit-context` each ship a versioned SCRIPT under their own install
+#: `jit-context` each ship a versioned SCRIPT under their own install
 #: root. This is a fact about each dependency's own contract -- not a fact about
 #: a repo this plugin manages -- so it is not the kind of hardcoding the rest of
 #: this file avoids; it is the same kind of fact `JIT_HOOK_MANIFEST` above
@@ -6399,14 +6433,15 @@ def dependency_install_roots(name, record=None, cache_root=None):
 
     Generalises ``jit_hook_roots``'s own derivation (``installPath`` from the
     install record preferred, a cache glob the fallback for records that
-    predate the field) to any declared dependency, not only
-    `claude-jit-context`. Kept as a separate function rather than a shared one
-    `jit_hook_roots` is rewritten to call, so this addition carries no risk to
-    that function's own callers and their tests.
+    predate the field) to any declared dependency, not only `jit-context`.
+    ``jit_hook_roots`` is now this function called with ``JIT_PLUGIN``: #1804
+    had to teach both copies every spelling of a renamed plugin, and a second
+    copy kept in sync forever was the larger risk.
     """
     version = active_versions([name], record).get(name)
     if not version:
         return [], None
+    spellings = dependency_spellings(name)
 
     roots = []
     path = Path(record or os.path.expanduser(INSTALL_RECORD))
@@ -6416,7 +6451,7 @@ def dependency_install_roots(name, record=None, cache_root=None):
         doc = {}
     plugins = doc.get("plugins") if isinstance(doc, dict) else None
     for key, entries in (plugins or {}).items() if isinstance(plugins, dict) else ():
-        if key.split("@", 1)[0] != name or not isinstance(entries, list):
+        if key.split("@", 1)[0] not in spellings or not isinstance(entries, list):
             continue
         for entry in entries:
             if not isinstance(entry, dict) or entry.get("version") != version:
@@ -6429,7 +6464,16 @@ def dependency_install_roots(name, record=None, cache_root=None):
         try:
             roots = [
                 candidate
-                for candidate in sorted(cache.glob("*/{}/{}".format(name, version)))
+                for candidate in sorted(
+                    match
+                    for spelling in spellings
+                    for match in cache.glob("*/{}/{}".format(spelling, version))
+                )
+                # #363: `_safe_is_dir`, not a bare `.is_dir()` -- one
+                # unreadable candidate raising here used to propagate out of
+                # the whole comprehension and be caught by the `except
+                # OSError` below, discarding every candidate already found,
+                # readable ones included.
                 if _safe_is_dir(candidate)
             ]
         except OSError:
@@ -6465,7 +6509,7 @@ def dependency_diagnostic_state(
       remember` must be able to trust that remember's own script said so, not
       that this function gave up quietly.
 
-    `claude-jit-context`'s exit code is a documented three-state contract in
+    `jit-context`'s exit code is a documented three-state contract in
     its own right (0 nothing inert / 1 a layer the matcher can never load / 2
     SKIPPED) and is honoured rather than flattened: all three still relay,
     because all three are the dependency answering -- `SKIPPED` is not the
@@ -6482,7 +6526,14 @@ def dependency_diagnostic_state(
     which = gh_which.safe_which if which is None else which
     timeout = DEPENDENCY_DIAGNOSTIC_TIMEOUT if timeout is None else timeout
 
-    spec = DEPENDENCY_DIAGNOSTICS.get(name)
+    spec = next(
+        (
+            DEPENDENCY_DIAGNOSTICS[spelling]
+            for spelling in dependency_spellings(name)
+            if spelling in DEPENDENCY_DIAGNOSTICS
+        ),
+        None,
+    )
     if spec is None:
         return "could-not-run", (
             "no known diagnostic route for {} -- not one of the shapes this relay "
@@ -6601,7 +6652,7 @@ def dependency_diagnostic_state(
         else (done.stdout or "")
     )
     verdict_line = _last_line_with_prefix(output, "VERDICT:")
-    if name == JIT_PLUGIN:
+    if JIT_PLUGIN in dependency_spellings(name):
         if done.returncode in (0, 1, 2):
             return "relayed", "{} {}: exit {} -- {}".format(
                 name,
@@ -6764,7 +6815,7 @@ JIT_LAYER_LEVELS = {
 
 
 def jit_hook_roots(record=None, cache_root=None):
-    """``(roots, version)`` -- where the *running* ``claude-jit-context`` is unpacked.
+    """``(roots, version)`` -- where the *running* ``jit-context`` is unpacked.
 
     The version comes from the install record for the reason ``active_versions``
     documents at length: old versions stay unpacked on disk and a cache listing returns
@@ -6774,45 +6825,11 @@ def jit_hook_roots(record=None, cache_root=None):
     ``installPath`` from that same record is preferred over rebuilding the cache path,
     because it is the runtime's own answer rather than this file's second copy of a
     layout it does not own. The glob is the fallback for records that predate the field.
+
+    Either name the plugin was published under counts, in the record and in the cache
+    (#1804, ``dependency_spellings``).
     """
-    version = active_versions([JIT_PLUGIN], record).get(JIT_PLUGIN)
-    if not version:
-        return [], None
-
-    roots = []
-    path = Path(record or os.path.expanduser(INSTALL_RECORD))
-    try:
-        doc = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        doc = {}
-    plugins = doc.get("plugins") if isinstance(doc, dict) else None
-    for key, entries in (plugins or {}).items() if isinstance(plugins, dict) else ():
-        if key.split("@", 1)[0] != JIT_PLUGIN or not isinstance(entries, list):
-            continue
-        for entry in entries:
-            if not isinstance(entry, dict) or entry.get("version") != version:
-                continue
-            if entry.get("installPath"):
-                roots.append(Path(str(entry["installPath"])))
-
-    if not roots:
-        cache = Path(cache_root or os.path.expanduser(PLUGIN_CACHE_ROOT))
-        try:
-            roots = [
-                candidate
-                for candidate in sorted(
-                    cache.glob("*/{}/{}".format(JIT_PLUGIN, version))
-                )
-                # #363: `_safe_is_dir`, not a bare `.is_dir()` -- one
-                # unreadable candidate raising here used to propagate out of
-                # the whole comprehension and be caught by the `except
-                # OSError` below, discarding every candidate already found,
-                # readable ones included.
-                if _safe_is_dir(candidate)
-            ]
-        except OSError:
-            roots = []
-    return list(dict.fromkeys(roots)), version
+    return dependency_install_roots(JIT_PLUGIN, record=record, cache_root=cache_root)
 
 
 def _jit_manifest_paths(root):
@@ -7066,7 +7083,10 @@ def _jit_layer_verdict(project_dir, layer, record, cache_root):
             "imported, so there was nothing to look for",
         )
 
-    if JIT_PLUGIN not in (declared_dependencies() or []):
+    if not any(
+        JIT_PLUGIN in dependency_spellings(name)
+        for name in (declared_dependencies() or [])
+    ):
         return (
             "could-not-determine",
             "{} is no longer a declared dependency of this plugin, so which component "

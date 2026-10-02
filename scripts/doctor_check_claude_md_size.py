@@ -52,7 +52,7 @@ filesystem-probe-states.md` and `counter-scripts-silent-gaps.md` both name.
 Per `doctor-check-contract.md` test 2 ("the remedy has to be runnable"), the
 WARN names the three jit-context dimensions and their directory paths
 (`.claude/jit-context/paths/`, `tools/`, `vocabulary/`) plus the
-`claude-jit-context:vocabulary` skill, which already covers picking a
+`jit-context:vocabulary` skill, which already covers picking a
 dimension, keywording a rule and proving it fires -- "rewrite entries into
 jit-context" is judgment work a script cannot do FOR a maintainer, so the
 remedy hands over the tool that does the judging, rather than attempting to
@@ -157,7 +157,7 @@ _REMEDY = (
     "Move the knowledge that fires on touching a file, using a tool or "
     "meeting a term into a jit-context rule instead of leaving it always-on: "
     "{} for path-triggered knowledge, {} for a tool's own call shape, {} for "
-    "a term. The claude-jit-context:vocabulary skill covers picking the "
+    "a term. The jit-context:vocabulary skill covers picking the "
     "right dimension, keywording a rule so it fires without noise, and "
     "proving that it does -- use it rather than guessing at the shape by "
     "hand.".format(*JIT_CONTEXT_DIRS)
