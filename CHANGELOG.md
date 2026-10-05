@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.3] - 2026-10-06
+
+### Fixed
+
+- `/oss:doctor` now WARNs when `.oss.json`'s `labels.priority` is empty or undeclared, naming the
+  consequence (`select_issues_rank.rank` answers could-not-rank for every issue, permanently) and
+  the remedy (create the `priority-*` labels on the forge, declare them, run `/oss:triage`). A fresh
+  onboarding that finds no `priority-*` labels on the repo used to write `"priority": []` to
+  `.oss.json` with nothing anywhere flagging that dispatch could never rank an issue again (#1774).
+
+- `inbound_triage.classify_pr` no longer reports `could-not-tell` for a pull request GitHub
+  itself already labels `FIRST_TIME_CONTRIBUTOR` or `FIRST_TIMER`: both now translate to
+  `external`, the same population `CONTRIBUTOR`/`NONE` already cover, so an unambiguously
+  external first-time contribution is classified rather than left unclassifiable (#1777).
+
+- The doctor agent now follows the loop's classifier-denial rule: a call the permission classifier
+  denies is retried once at most, a second denial is reported as `could-not-repair` with the exact
+  command and the allow rule that would permit it, and the doctor never claims someone else re-sent
+  or approved a call. Before this, it retried a twice-denied `worktree_reap.py --apply` until it
+  passed and misattributed the retry (#1778).
+
+- The doctor's `latest skew` check no longer prints a permanent `WARN` on every managed repo that
+  is not itself an installed plugin. That state can never be cleared by any action, so it now
+  splits on whether the installed-plugins registry itself could be read: a genuinely unreadable
+  registry keeps the `WARN`, while a repo that simply does not appear in a readable registry now
+  reports `NOTICE` -- the ordinary state for a managed repo, not a finding (#1779).
+
+- `doctor.py`'s `channel MCP connection` check now reports a NOTICE, not a WARN, when `channel:health`
+  reads `BOUND, UNPROVEN` (bound, socket-holder verified, subscribed, but nothing forwarded yet) beside
+  a failed `claude mcp list` transport -- the same #1379 by-construction mechanism seen through an
+  `unproven` reading instead of a `forwarding` one. The WARN used to claim "no channel:health reading
+  establishes a live consumer to explain it" and print a kill-the-holder remedy, both false when the
+  holder is the verified consumer itself (#1780).
+
+- `next_action.py --record-skip` gained a companion `--taking <source>` flag: `--record-skip`
+  now names the candidate being passed over and `--taking` names what is actually being taken,
+  so a caller no longer has to guess which of the two the single old argument meant. The old
+  single-argument form used to be refused with "there is nothing to record" whenever a caller
+  named the taken source instead of the skipped one, even on a genuine deviation (#1782).
+- `workspace_routes._count_state` now treats a count exactly at its own threshold as due --
+  `curate_route_threshold: 15` with 15 fragments waiting used to read "not over" the threshold
+  and never rank due nor surface as an idle candidate (#1782).
+
+- The CI leg-timeout margin tests (`tests/test_pytest_leg_timeout_1658.py`,
+  `tests/test_posthang_diagnostics_1660.py`) now subtract measured pre-pytest
+  overhead (checkout, setup-python, the Windows Defender exclusion step,
+  `pip install`) from the job's margin, instead of comparing the
+  `timeout-minutes` cap only against pytest's own self-reported runtime.
+  That overhead, measured from the GitHub Actions API at 26-43s across the
+  six CI jobs these tests already cite, was already comparable to the
+  entire ~27s margin the old arithmetic assumed was free. The `pytest`
+  job's own `timeout-minutes` cap is raised 30 -> 32 minutes to restore a
+  real margin once the overhead is accounted for (#1784).
+
+- `agents/recon.md`'s own worktree pinning is fixed on two fronts: reads now use the `cwd:PATH`
+  two-argument form on every call instead of a `cd` that this harness resets between Bash calls
+  and so never actually pinned past the first read, and its worktree-cut fallback (used when no
+  worktree exists yet) now names a concrete `<worktree_root>/recon-<timestamp>` path and cleanup
+  discipline instead of leaving both unnamed (#1785).
+
+- `tick_handback.py` and `agents/doctor.md`'s own role-marker clear no longer report an unreadable
+  marker as a confirmed live overwrite. Both used the same message for two different states an
+  `_MARKER_OWNER_MISMATCH` result can carry -- a live marker naming a different role, and a marker
+  that exists but could not be read at all -- and the unreadable case rendered as "a live marker now
+  names role None, not sub-manager", asserting a read that never happened. Each state now gets its
+  own message, matching `agent_role.py`'s own CLI (#1786).
+
+- `next_action.py --take-idle` no longer discards the return value of the receipt write it makes:
+  it used to print `OK:` unconditionally, identically whether the receipt was actually persisted,
+  already recorded, or never written at all (no `state_file` configured, or the write itself
+  failing) -- it now prints `FAIL:` and exits non-zero when the receipt was not genuinely written
+  (#1787).
+
+- `plugin_update.py`'s registry resolution (`enablement`, `qualified_name`, `installed_scopes`,
+  `installed_version`, `resolved_plugin_root`, `newest_cached_version`) now honours `$CLAUDE_CONFIG_DIR`
+  instead of always reading `~/.claude/plugins`. A machine that keeps its Claude config elsewhere used
+  to find no registry file at the wrong default path and report a plugin as `not-installed` -- which
+  `bin/oss-workspace`'s own first-run check (#1768/#1769) turns into a hard refusal plus an offer to
+  install a plugin that is already present (#1788).
+
+- A tick's own CI-wait step now sweeps for loop-authored pull requests -- a `curate/*` or
+  `doctor/*` branch -- that nothing in that tick's own dispatch opened, and folds any it finds
+  into the same review pass. A curate pull request previously had no reviewer and no merger by
+  construction, sitting green and unmerged across three consecutive ticks until an unrelated fold
+  picked it up (#1798).
+
+- The manifest now declares its supertool dependency as `supertool-cli`, the name the dpt-plugins marketplace publishes it under, so installing oss no longer shows `Dependency "supertool@dpt-plugins" is not installed` and leaves `/oss:run` unregistered (#1806). `/oss:doctor` and `oss-workspace` recognise an install registered under either name.
+
 ## [0.42.2] - 2026-09-27
 
 ### Fixed
@@ -12640,7 +12728,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.2...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.3...HEAD
+[0.42.3]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.3
 [0.42.2]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.2
 [0.42.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.1
 [0.42.0]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.0
