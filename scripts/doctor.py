@@ -1419,6 +1419,18 @@ def check_tool(name, probe):
 # mid-session, has none -- and no diagnostic said so.
 SUPERTOOL_ENTRY = "supertool"
 
+#: The supertool plugin's marketplace names, current first. dpt-plugins renamed
+#: it from `supertool` to `supertool-cli`; an install registered before the
+#: rename keeps the old key in `installed_plugins.json` and the plugin cache, so
+#: every lookup by plugin name accepts both.
+SUPERTOOL_PLUGIN_NAMES = ("supertool-cli", "supertool")
+
+
+def is_supertool_plugin_key(key):
+    """True when an `installed_plugins.json` key (`name@marketplace`) is supertool."""
+    return str(key).split("@")[0] in SUPERTOOL_PLUGIN_NAMES
+
+
 #: The file the hook links to, and the file a supertool checkout carries at its own
 #: root. Both spellings are the same name on purpose; which one is meant is decided by
 #: what else is beside it.
@@ -1751,11 +1763,15 @@ def _supertool_tree_identity_confirmed(directory, dependency_repos=None, run=Non
     confirm" rather than reading both as the same silence.
     """
     repos = (
-        dependency_repositories(["supertool"])
+        dependency_repositories(list(SUPERTOOL_PLUGIN_NAMES))
         if dependency_repos is None
         else dependency_repos
     )
-    expected = repos.get("supertool") if isinstance(repos, dict) else None
+    expected = (
+        next((repos[n] for n in SUPERTOOL_PLUGIN_NAMES if repos.get(n)), None)
+        if isinstance(repos, dict)
+        else None
+    )
     if not expected:
         return False, "no installed supertool dependency to compare against"
     match = re.search(r"github\.com[:/]+([^/]+/[^/]+?)(?:\.git)?/?$", str(expected))
@@ -4480,7 +4496,7 @@ def _supertool_installs():
     installs = [
         entry.get("installPath")
         for key, entries in plugins.items()
-        if key.split("@")[0] == "supertool"
+        if is_supertool_plugin_key(key)
         for entry in (entries if isinstance(entries, list) else [])
         if isinstance(entry, dict) and entry.get("installPath")
     ]
@@ -6371,6 +6387,7 @@ PLUGIN_CACHE_ROOT = "~/.claude/plugins/cache"
 #: already is. A fourth dependency with a fourth shape lands in `could-not-run`
 #: below until it is added here.
 DEPENDENCY_DIAGNOSTICS = {
+    "supertool-cli": {"kind": "op", "argv": ["doctor"]},
     "supertool": {"kind": "op", "argv": ["doctor"]},
     "remember": {"kind": "script", "rel": ("scripts", "doctor.sh")},
     JIT_PLUGIN: {"kind": "script", "rel": ("scripts", "jit-doctor.sh")},
