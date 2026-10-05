@@ -1598,17 +1598,17 @@ freezing, never this release's own, because the freeze runs after the tag.
 this release and reported `ok -- cohort-34 was already frozen`, so the citation is unchanged from
 the prior releases: `measured` at 22, frozen at the `v0.36.0` tag.
 
-**The reach probe WAS re-derived at `v0.42.3`, for the first time since `v0.21.0`.** `gh repo list
-Digital-Process-Tools --limit 100`, run at this release, returns **fourteen** repositories in that
-one GitHub organisation (up from eleven), **six** carrying `.oss.json` (`claude-remember`,
-`claude-oss`, `claude-jit-context`, `mcp-rector-warm`, `claude-5h-window-spread`,
-`claude-swarm-builder`), each confirmed by its own contents read via the forge API (up from four).
-The count is still scoped to the organisation the command names, never to "the field": a
-repository under a different account renders identically to one that does not exist. The
-owned-files table, the two installs and the `doctor` run are still `v0.17.0`'s, carried through
-one more tag now; `#1127` tracks re-deriving that narrower scope, which was not attempted here.
-The readings live in `docs/release-currency.md`; re-derive them inside the release commit rather
-than editing this section.
+**The reach probe WAS re-derived at `v0.42.3`, for the first time since `v0.21.0`.**
+`gh repo list Digital-Process-Tools --limit 100`, run at this release, returns **fourteen**
+repositories in that one GitHub organisation (up from eleven), **six** carrying `.oss.json`
+(`claude-remember`, `claude-oss`, `claude-jit-context`, `mcp-rector-warm`,
+`claude-5h-window-spread`, `claude-swarm-builder`), each confirmed by its own contents read via the
+forge API (up from four). The count is still scoped to the organisation the command names, never
+to "the field": a repository under a different account renders identically to one that does not
+exist. The owned-files table, the two installs and the `doctor` run are still `v0.17.0`'s, carried
+through one more tag now; `#1127` tracks re-deriving that narrower scope, which was not attempted
+here. The readings live in `docs/release-currency.md`; re-derive them inside the release commit
+rather than editing this section.
 
 What has not been observed, across every round inside the one organisation this probe can
 see: any repository scaffolded by a maintainer who is not this plugin's author. That
