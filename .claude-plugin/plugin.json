@@ -17,7 +17,7 @@
     "github"
   ],
   "dependencies": [
-    "supertool",
+    "supertool-cli",
     "remember",
     "claude-jit-context"
   ]

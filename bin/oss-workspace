@@ -1258,7 +1258,7 @@ if not isinstance(plugins, dict):
 installs = []
 malformed = ""
 for key, entries in plugins.items():
-    if key.split("@")[0] != "supertool":
+    if key.split("@")[0] not in ("supertool-cli", "supertool"):
         continue
     if entries and not isinstance(entries, list):
         malformed = "%s's supertool entry is not a JSON array" % registry
@@ -1499,7 +1499,7 @@ if not isinstance(plugins, dict):
 installs = []
 malformed = ""
 for key, entries in plugins.items():
-    if key.split("@")[0] != "supertool":
+    if key.split("@")[0] not in ("supertool-cli", "supertool"):
         continue
     if entries and not isinstance(entries, list):
         malformed = "%s's supertool entry is not a JSON array" % registry
