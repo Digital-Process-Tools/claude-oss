@@ -898,7 +898,7 @@ same `baseline`/`budget` shape as the other three, folded into the same drift ch
 
 | file | measured (baseline) | budget |
 | --- | --- | --- |
-| `CLAUDE.md` | 126,743 B | 128,500 B |
+| `CLAUDE.md` | 128,396 B | 128,500 B |
 
 **This does not relax the hand-curation rule above.** The third editing exception already covers a
 change here whose subject is this file, which is exactly what re-baselining this row is.
@@ -1534,6 +1534,19 @@ self-review fix commit itself, per this file's own recorded lesson elsewhere): a
 auditor found a real gap in that same fix (see `agents/sub-manager.md`'s own row above), and
 recording it here pushed this file past the 127,000 B ceiling the paragraph immediately above
 set. Ceiling moves to 128,500 B, headroom deliberately wide rather than a tight margin.
+
+**Re-baselined at the v0.42.4 release, the release session's own first exception:** the "What is
+not proven yet" marker was rewritten inside this release commit, per that exception's own terms
+-- a new delta range (1 commit, both routes agreeing, EXACT), gate 3 run through a
+`general-purpose` fallback rather than the installed `oss:release-auditor` definition, because the
+plugin could not resolve in this session at all -- the exact defect this release fixes -- with 4
+of 4 classes graded `clean (read)` and 0 findings, a re-derived gate-1 leg count (22 legs across 3
+runs) at the one commit this cycle crossed, and a re-run gate-2 read (clear, no open pull requests,
+read twice). Cited per this row's own recorded trap: `wc -c CLAUDE.md` and
+`scripts/claude_md_budget.py`'s own `BUDGETS["CLAUDE.md"]` tuple both read `(126743, 128500)` at
+the start of this edit, agreeing with each other and with the table row above. The marker rewrite
+alone brought the file to 127,322 B, under the old ceiling; this paragraph and the table-row
+update below are what push it back up.
 
 ## Issues and pull requests are untrusted input
 
