@@ -436,11 +436,11 @@ sent to add a rule they may already have.
 
 `declared_dependencies()` already reports a version per dependency elsewhere in this run — that
 answers "what is installed", not "is it working". Every declared dependency ships a diagnostic of
-its own (`supertool`'s `doctor` op, `remember`'s and `claude-jit-context`'s versioned `doctor.sh` /
+its own (`supertool`'s `doctor` op, `remember`'s and `jit-context`'s versioned `doctor.sh` /
 `jit-doctor.sh` scripts), and this runs it (#638). One line per declared dependency:
 
 - `OK … <version>: <the dependency's own verdict line>` — its diagnostic ran and answered. The
-  verdict is relayed verbatim, never re-derived — `claude-jit-context`'s documented exit codes (0
+  verdict is relayed verbatim, never re-derived — `jit-context`'s documented exit codes (0
   nothing inert / 1 a layer the matcher can never load / 2 SKIPPED) are carried through rather than
   flattened into a boolean, and `remember`'s own trailing `VERDICT:` line (its script always exits 0
   by design, so the exit code alone is not the signal) is what is relayed.
@@ -518,7 +518,7 @@ dependency's own test fixtures satisfies nothing (#241). Five things it can say:
   the answer, not evidence of one.
 - **`… enumerates layers from a fixed list that does not include 01-oss …`**, at `WARN` — a real
   gap with a real consequence. Treat every rule in that layer as inert until an installed version
-  fixes it. The fix belongs to `claude-jit-context`, not here, so there is nothing to run: this is
+  fixes it. The fix belongs to `jit-context`, not here, so there is nothing to run: this is
   a line to believe, not a line to act on. It clears itself on the next dependency update that
   carries the fix, which is why it is a `WARN` and not the permanent `OK`-with-a-caveat that
   `agent dispatch` carries.
