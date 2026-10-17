@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.42.4] - 2026-10-17
+
+### Fixed
+
+- `claude-jit-context` is renamed `jit-context` upstream (the `claude-` prefix is reserved for
+  Anthropic's own plugins), so this plugin's declared dependency and its own `.claude/settings.json`
+  now name `jit-context`, and the `jit-context:vocabulary` skill is cited under its new namespace.
+  `/oss:doctor` reads either name as the same plugin -- in the install record, in the plugin cache
+  and in the declared dependencies -- so a user who has migrated and one who has not both read as
+  having it installed, where a migrated install previously read as absent; a lookalike such as
+  `my-jit-context` still does not count (#1804).
+
 ## [0.42.3] - 2026-10-06
 
 ### Fixed
@@ -12728,7 +12740,8 @@ commit. It is declared to the audit instead, with `--untagged 0.1.0`, in
 .github/workflows/changelog.yml and in the command that runs it by hand (#93).
 -->
 
-[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.3...HEAD
+[Unreleased]: https://github.com/Digital-Process-Tools/claude-oss/compare/v0.42.4...HEAD
+[0.42.4]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.4
 [0.42.3]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.3
 [0.42.2]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.2
 [0.42.1]: https://github.com/Digital-Process-Tools/claude-oss/releases/tag/v0.42.1
